@@ -64,6 +64,12 @@ var (
 
 	// HTML: matches <script src="path"> or <link href="path">
 	htmlImportRegex = regexp.MustCompile(`(?m)<script\s+[^>]*src=['"]([^'"]+)['"]|<link\s+[^>]*href=['"]([^'"]+)['"]`)
+
+	// Bash: matches source script.sh or . script.sh
+	shImportRegex = regexp.MustCompile(`(?m)^\s*(?:source|\.)\s+['"]?([^'"\s#;]+)['"]?`)
+
+	// Lua: matches require("module") or dofile("file.lua") or loadfile("file.lua")
+	luaImportRegex = regexp.MustCompile(`(?m)(?:require|dofile|loadfile)\s*\(?\s*['"]([^'"]+)['"]\s*\)?`)
 )
 
 // SyncGraph scans the project directory, builds the dependency graph, and saves it in SQLite.
@@ -92,7 +98,7 @@ func SyncGraph(db *sql.DB, projectID string, projPath string) error {
 
 		ext := strings.ToLower(filepath.Ext(relPath))
 		switch ext {
-		case ".go", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".php", ".css":
+		case ".go", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".php", ".css", ".astro", ".sh", ".lua":
 			nodeID := relPath
 			nodes[nodeID] = &Node{
 				ID:    nodeID,
@@ -127,7 +133,7 @@ func SyncGraph(db *sql.DB, projectID string, projPath string) error {
 		var imports []string
 
 		switch ext {
-		case ".js", ".ts", ".jsx", ".tsx":
+		case ".js", ".ts", ".jsx", ".tsx", ".astro":
 			matches := jsImportRegex.FindAllSubmatch(content, -1)
 			for _, m := range matches {
 				if len(m) > 1 && len(m[1]) > 0 {
@@ -188,6 +194,20 @@ func SyncGraph(db *sql.DB, projectID string, projPath string) error {
 					imports = append(imports, string(m[1]))
 				} else if len(m) > 2 && len(m[2]) > 0 {
 					imports = append(imports, string(m[2]))
+				}
+			}
+		case ".sh":
+			matches := shImportRegex.FindAllSubmatch(content, -1)
+			for _, m := range matches {
+				if len(m) > 1 && len(m[1]) > 0 {
+					imports = append(imports, string(m[1]))
+				}
+			}
+		case ".lua":
+			matches := luaImportRegex.FindAllSubmatch(content, -1)
+			for _, m := range matches {
+				if len(m) > 1 && len(m[1]) > 0 {
+					imports = append(imports, string(m[1]))
 				}
 			}
 		}
@@ -298,7 +318,7 @@ func resolveImport(projPath, sourcePath, imp string, nodes map[string]*Node) (st
 		resolvedRel := filepath.Clean(filepath.Join(sourceDir, imp))
 
 		// Check options with extensions
-		exts := []string{"", ".ts", ".js", ".tsx", ".jsx", "/index.ts", "/index.js", "/index.tsx", "/index.jsx"}
+		exts := []string{"", ".ts", ".js", ".tsx", ".jsx", ".astro", ".sh", ".lua", "/index.ts", "/index.js", "/index.tsx", "/index.jsx"}
 		for _, ext := range exts {
 			testPath := resolvedRel + ext
 			if _, exists := nodes[testPath]; exists {

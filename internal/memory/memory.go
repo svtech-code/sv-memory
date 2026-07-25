@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/svtech/sv-memory/internal/security"
 )
 
 // Memory represents a recorded design decision, bugfix, or coding standard.
@@ -30,6 +32,12 @@ func SaveMemory(db *sql.DB, mem *Memory) error {
 	if mem.ProjectID == "" {
 		return errors.New("memory ProjectID cannot be empty")
 	}
+
+	// Sanitize fields to prevent secret leakages
+	mem.What = security.SanitizeText(mem.What)
+	mem.Why = security.SanitizeText(mem.Why)
+	mem.WherePath = security.SanitizeText(mem.WherePath)
+	mem.Learned = security.SanitizeText(mem.Learned)
 
 	query := `
 	INSERT INTO memories (id, project_id, category, what, why, where_path, learned, created_at)
