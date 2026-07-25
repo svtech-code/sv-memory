@@ -1,0 +1,26 @@
+# Binarios compilados
+sv-memory
+sv-memory.exe
+*.test
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Archivos de base de datos locales (si los hay)
+*.db
+*.sqlite
+
+# Carpetas temporales y de dependencias
+/vendor/
+.venv/
+venv/
+__pycache__/
+
+# Clutter del sistema operativo
+.DS_Store
+Thumbs.db
+
+# NOTA: No ignoramos la carpeta '.sv-memory/' porque contiene 'memories.json',
+# el cual es necesario commitear en Git para compartir el contexto con el equipo.
