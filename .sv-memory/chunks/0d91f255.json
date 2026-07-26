@@ -1,0 +1,18 @@
+{
+  "id": "0d91f255",
+  "project_id": "ce22c23ac33d7a36",
+  "category": "decision",
+  "what": "Integrate journal and git metadata fields",
+  "why": "Enable tracking of active branch, commit, author, impact, errors faced, and next steps in the progress logs.",
+  "where_path": "internal/memory/memory.go",
+  "learned": "Always design extensible schemas and automate rules injection to make agent operations continuous.",
+  "git_branch": "main",
+  "git_commit": "8dc5e73",
+  "author": "Mario Sandoval (Sv Tech)",
+  "impact": "Allows seamless handoff between AI agents working on separate sessions.",
+  "errors_faced": "Permission limits on macOS requires manual signing and copying.",
+  "next_steps": "Verify that git metadata and progress fields are correctly populated in SQLite and exported to JSON.",
+  "last_seen_at": "0001-01-01T00:00:00Z",
+  "deleted_at": "0001-01-01T00:00:00Z",
+  "created_at": "2026-07-26T02:42:44.655712-04:00"
+}

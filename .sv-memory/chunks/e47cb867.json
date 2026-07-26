@@ -1,0 +1,15 @@
+{
+  "id": "e47cb867",
+  "project_id": "ce22c23ac33d7a36",
+  "category": "architecture",
+  "what": "Optimización concurrente de escaneo de grafos y aceleración de SQLite",
+  "why": "Evitar cuellos de botella al analizar repositorios grandes y reducir el tiempo de respuesta general del servidor MCP.",
+  "learned": "El análisis de imports en paralelo con un pool de goroutines (de hasta 8 workers) acelera enormemente el escaneo del grafo del código, mientras que las pragmas synchronous=NORMAL y temp_store=MEMORY en SQLite optimizan drásticamente los tiempos de lectura y escritura concurrentes en WAL mode.",
+  "git_branch": "main",
+  "git_commit": "d18fb0b",
+  "author": "Mario Sandoval (Sv Tech)",
+  "next_steps": "Recompilar y reinstalar el binario globalmente para aplicar estas optimizaciones en el cliente MCP.",
+  "last_seen_at": "0001-01-01T00:00:00Z",
+  "deleted_at": "0001-01-01T00:00:00Z",
+  "created_at": "2026-07-26T03:52:01.840544-04:00"
+}

@@ -246,7 +246,22 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		} else {
 			action = "created"
 		}
-		return mcp.NewToolResultText(fmt.Sprintf("Successfully %s memory (ID: %s) and synced to Git workspace (.sv-memory/memories.json)", action, saved.ID)), nil
+
+		response := fmt.Sprintf("Successfully %s memory (ID: %s) and synced to Git workspace (.sv-memory/memories.json)", action, saved.ID)
+
+		// Conflict surfacing: check for similar titles after save
+		candidates, err := memory.FindSimilarMemories(pool.Reader, cfg.ProjectID, what, 5, 0.85)
+		if err == nil && len(candidates) > 0 {
+			response += "\n\n**Similar memories detected (consider reviewing with sv_mem_judge if these are conflicts):**\n"
+			for _, c := range candidates {
+				if c.ID != saved.ID {
+					response += fmt.Sprintf("- [%s] **%s** (ID: %s, similarity: %.0f%%)\n",
+						strings.ToUpper(c.Category), c.What, c.ID, c.Similarity*100)
+				}
+			}
+		}
+
+		return mcp.NewToolResultText(response), nil
 	})
 
 	// 2. Tool: sv_mem_suggest_topic_key

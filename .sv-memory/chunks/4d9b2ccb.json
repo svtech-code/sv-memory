@@ -1,0 +1,12 @@
+{
+  "id": "4d9b2ccb",
+  "project_id": "ce22c23ac33d7a36",
+  "category": "decision",
+  "what": "Auto-build dependency graph on sv_graph_query if empty",
+  "why": "Prevent returning empty/unfound nodes when querying a project that was initialized but not yet scanned, making client interaction seamless without manual rebuild requirements.",
+  "where_path": "internal/mcp/mcp.go",
+  "learned": "Always verify if the target dataset (like graph nodes) exists before performing queries, and auto-initialize/rebuild it dynamically if missing.",
+  "last_seen_at": "0001-01-01T00:00:00Z",
+  "deleted_at": "0001-01-01T00:00:00Z",
+  "created_at": "2026-07-26T02:20:34.594606-04:00"
+}

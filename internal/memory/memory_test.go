@@ -186,3 +186,173 @@ func TestGitSync(t *testing.T) {
 		t.Errorf("expected database to have 2 memories after sync, got %d", count)
 	}
 }
+
+func TestFindSimilarMemories(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-similar-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_storage.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-similar"
+	err = db.RegisterProject(database, projectID, "Similar Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// Save memories with overlapping and distinct titles
+	mems := []*Memory{
+		{
+			ID:        "m-1",
+			ProjectID: projectID,
+			Category:  "architecture",
+			What:      "Use clean architecture in Golang service",
+			Why:       "Decouple concerns",
+			Learned:   "Keep domain clean",
+			CreatedAt: time.Now(),
+		},
+		{
+			ID:        "m-2",
+			ProjectID: projectID,
+			Category:  "decision",
+			What:      "Use hexagonal architecture in Golang backend",
+			Why:       "Ports and adapters",
+			Learned:   "Separate domain from infra",
+			CreatedAt: time.Now(),
+		},
+		{
+			ID:        "m-3",
+			ProjectID: projectID,
+			Category:  "journal",
+			What:      "Fixed memory leak in connection pool",
+			Why:       "Connections not closed",
+			Learned:   "Check defer close",
+			CreatedAt: time.Now(),
+		},
+		{
+			ID:        "m-4",
+			ProjectID: projectID,
+			Category:  "standard",
+			What:      "Linter configuration for Golang",
+			Why:       "Consistent style",
+			Learned:   "Run linter on commit",
+			CreatedAt: time.Now(),
+		},
+	}
+	for _, m := range mems {
+		if _, err := SaveMemory(database, m); err != nil {
+			t.Fatalf("failed saving memory: %v", err)
+		}
+	}
+
+	tests := []struct {
+		name      string
+		title     string
+		wantMin   int
+		wantMax   int
+		threshold float64
+	}{
+		{
+			name:      "similar architecture title",
+			title:     "Use clean architecture in Golang service",
+			wantMin:   1,
+			wantMax:   2,
+			threshold: 0.85,
+		},
+		{
+			name:      "similar hexagonal title",
+			title:     "Use hexagonal architecture in Golang backend",
+			wantMin:   1,
+			wantMax:   2,
+			threshold: 0.85,
+		},
+		{
+			name:      "unique title no match",
+			title:     "Setup CI/CD pipeline with GitHub Actions",
+			wantMin:   0,
+			wantMax:   0,
+			threshold: 0.85,
+		},
+		{
+			name:      "low threshold catches more",
+			title:     "Golang architecture clean backend",
+			wantMin:   1,
+			wantMax:   4,
+			threshold: 0.50,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			candidates, err := FindSimilarMemories(database, projectID, tt.title, 5, tt.threshold)
+			if err != nil {
+				t.Fatalf("FindSimilarMemories failed: %v", err)
+			}
+			if len(candidates) < tt.wantMin || len(candidates) > tt.wantMax {
+				t.Errorf("expected %d-%d candidates, got %d", tt.wantMin, tt.wantMax, len(candidates))
+			}
+			// Check similarity values are within bounds
+			for _, c := range candidates {
+				if c.Similarity < 0 || c.Similarity > 1.0 {
+					t.Errorf("similarity out of range [0,1]: %f", c.Similarity)
+				}
+				if c.ID == "" {
+					t.Error("candidate ID is empty")
+				}
+			}
+		})
+	}
+}
+
+func TestTokenizeTitle(t *testing.T) {
+	tests := []struct {
+		input string
+		want  []string
+	}{
+		{"Use clean architecture in Golang service", []string{"clean", "architecture", "golang", "service"}},
+		{"Fixed memory leak in connection pool", []string{"fixed", "memory", "leak", "connection", "pool"}},
+		{"a an the", nil},
+		{"hello world", []string{"hello", "world"}},
+		{"", nil},
+	}
+	for _, tt := range tests {
+		got := tokenizeTitle(tt.input)
+		if len(got) != len(tt.want) {
+			t.Errorf("tokenizeTitle(%q) = %v, want %v", tt.input, got, tt.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tt.want[i] {
+				t.Errorf("tokenizeTitle(%q) = %v, want %v", tt.input, got, tt.want)
+				break
+			}
+		}
+	}
+}
+
+func TestJaccardSimilarity(t *testing.T) {
+	tests := []struct {
+		a    []string
+		b    []string
+		want float64
+	}{
+		{[]string{"a", "b"}, []string{"a", "b"}, 1.0},
+		{[]string{"a", "b"}, []string{"a", "c"}, 1.0 / 3.0},
+		{[]string{"a"}, []string{"b"}, 0.0},
+		{[]string{}, []string{}, 1.0},
+		{[]string{"a", "b", "c"}, []string{"a", "b"}, 2.0 / 3.0},
+	}
+	for _, tt := range tests {
+		got := jaccardSimilarity(tt.a, tt.b)
+		if got != tt.want {
+			t.Errorf("jaccardSimilarity(%v, %v) = %f, want %f", tt.a, tt.b, got, tt.want)
+		}
+	}
+}

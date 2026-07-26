@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -414,6 +415,137 @@ func scanCompactMemories(rows *sql.Rows) ([]*MemorySearchResult, error) {
 		results = append(results, &r)
 	}
 	return results, rows.Err()
+}
+
+// MemoryCandidate is a potential duplicate returned by conflict surfacing.
+type MemoryCandidate struct {
+	ID         string  `json:"id"`
+	Category   string  `json:"category"`
+	What       string  `json:"what"`
+	Similarity float64 `json:"similarity"`
+}
+
+// stopWords for English titles — common words that don't carry semantic weight.
+var stopWords = map[string]bool{
+	"the": true, "a": true, "an": true, "and": true, "or": true, "but": true,
+	"in": true, "on": true, "at": true, "to": true, "for": true, "of": true,
+	"with": true, "by": true, "from": true, "as": true, "is": true, "it": true,
+	"be": true, "are": true, "was": true, "were": true, "been": true, "being": true,
+	"have": true, "has": true, "had": true, "do": true, "does": true, "did": true,
+	"will": true, "would": true, "could": true, "should": true, "may": true, "might": true,
+	"not": true, "no": true, "nor": true, "this": true, "that": true, "these": true, "those": true,
+	"i": true, "me": true, "my": true, "we": true, "our": true, "you": true, "your": true,
+	"he": true, "she": true, "his": true, "her": true, "they": true, "them": true, "their": true,
+	"use": true, "using": true, "used": true, "set": true, "via": true, "per": true,
+	"all": true, "each": true, "every": true, "some": true, "any": true, "both": true,
+	"its": true, "if": true, "then": true, "else": true, "than": true, "so": true,
+}
+
+// tokenizeTitle splits a title into normalized tokens, removing stop words.
+func tokenizeTitle(title string) []string {
+	title = strings.ToLower(title)
+	var tokens []string
+	var current strings.Builder
+	for _, r := range title {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' {
+			current.WriteRune(r)
+		} else {
+			if current.Len() > 0 {
+				tokens = append(tokens, current.String())
+				current.Reset()
+			}
+		}
+	}
+	if current.Len() > 0 {
+		tokens = append(tokens, current.String())
+	}
+	filtered := tokens[:0]
+	for _, t := range tokens {
+		if !stopWords[t] && len(t) > 1 {
+			filtered = append(filtered, t)
+		}
+	}
+	return filtered
+}
+
+// jaccardSimilarity computes the Jaccard similarity between two token slices.
+func jaccardSimilarity(a, b []string) float64 {
+	if len(a) == 0 && len(b) == 0 {
+		return 1.0
+	}
+	setA := make(map[string]bool, len(a))
+	for _, t := range a {
+		setA[t] = true
+	}
+	intersection := 0
+	setB := make(map[string]bool, len(b))
+	for _, t := range b {
+		setB[t] = true
+		if setA[t] {
+			intersection++
+		}
+	}
+	union := len(setA)
+	for t := range setB {
+		if !setA[t] {
+			union++
+		}
+	}
+	if union == 0 {
+		return 0.0
+	}
+	return float64(intersection) / float64(union)
+}
+
+// FindSimilarMemories returns up to `limit` memory candidates whose title
+// tokens overlap significantly with the given title (Jaccard > threshold).
+// Uses FTS5 for initial candidate retrieval, then filters by token similarity.
+func FindSimilarMemories(db *sql.DB, projectID, title string, limit int, threshold float64) ([]*MemoryCandidate, error) {
+	tokens := tokenizeTitle(title)
+	if len(tokens) == 0 {
+		return nil, nil
+	}
+
+	// Build FTS5 query from tokens (OR match to maximize recall).
+	ftsQuery := strings.Join(tokens, " OR ")
+
+	rows, err := db.Query(`
+		SELECT m.id, m.category, m.what
+		FROM memories m
+		JOIN memories_fts f ON m.rowid = f.rowid
+		WHERE m.project_id = ? AND memories_fts MATCH ? AND m.deleted_at IS NULL
+		ORDER BY rank
+		LIMIT ?`, projectID, ftsQuery, limit*3)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search similar memories: %w", err)
+	}
+	defer rows.Close()
+
+	var candidates []*MemoryCandidate
+	for rows.Next() {
+		var id, category, what string
+		if err := rows.Scan(&id, &category, &what); err != nil {
+			return nil, fmt.Errorf("failed scanning similar memory: %w", err)
+		}
+		candidateTokens := tokenizeTitle(what)
+		sim := jaccardSimilarity(tokens, candidateTokens)
+		if sim >= threshold {
+			candidates = append(candidates, &MemoryCandidate{
+				ID:         id,
+				Category:   category,
+				What:       what,
+				Similarity: math.Round(sim*100) / 100,
+			})
+			if len(candidates) >= limit {
+				break
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return candidates, nil
 }
 
 // computeHash returns a SHA256 hex digest of the concatenated what/why/learned fields.
