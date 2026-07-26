@@ -787,6 +787,88 @@ func helperFunc() {
 	}
 }
 
+func TestSyncGraphWithMarkdown(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-graph-md-test")
+	if err != nil {
+		t.Fatalf("failed to create temp workspace: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_md.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-md-test"
+	err = db.RegisterProject(database, projectID, "Markdown Test Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// Create mock markdown files
+	readmeMD := `
+# Project README
+
+We have our [[architecture]] specifications.
+See also the [specifications link](specs/specification.md).
+`
+	err = os.WriteFile(filepath.Join(tempDir, "README.md"), []byte(readmeMD), 0644)
+	if err != nil {
+		t.Fatalf("failed writing README.md: %v", err)
+	}
+
+	err = os.WriteFile(filepath.Join(tempDir, "architecture.md"), []byte("# Architecture"), 0644)
+	if err != nil {
+		t.Fatalf("failed writing architecture.md: %v", err)
+	}
+
+	err = os.MkdirAll(filepath.Join(tempDir, "specs"), 0755)
+	if err != nil {
+		t.Fatalf("failed creating folder: %v", err)
+	}
+
+	err = os.WriteFile(filepath.Join(tempDir, "specs", "specification.md"), []byte("# Spec"), 0644)
+	if err != nil {
+		t.Fatalf("failed writing specification.md: %v", err)
+	}
+
+	// Run SyncGraph
+	err = SyncGraph(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("SyncGraph failed: %v", err)
+	}
+
+	// Verify README.md node exists and has type "document"
+	var nodeType string
+	err = database.QueryRow("SELECT node_type FROM graph_nodes WHERE project_id = ? AND id = 'README.md'", projectID).Scan(&nodeType)
+	if err != nil {
+		t.Fatalf("failed to query README.md node: %v", err)
+	}
+	if nodeType != "document" {
+		t.Errorf("expected node_type to be 'document', got: %q", nodeType)
+	}
+
+	// Verify edges
+	var count int
+	err = database.QueryRow(`
+		SELECT COUNT(*) FROM graph_edges 
+		WHERE project_id = ? AND source_id = 'README.md' AND target_id = 'architecture.md' AND relation_type = 'references'
+	`, projectID).Scan(&count)
+	if err != nil || count != 1 {
+		t.Errorf("expected 1 edge from README.md to architecture.md, got %d (err: %v)", count, err)
+	}
+
+	err = database.QueryRow(`
+		SELECT COUNT(*) FROM graph_edges 
+		WHERE project_id = ? AND source_id = 'README.md' AND target_id = 'specs/specification.md' AND relation_type = 'references'
+	`, projectID).Scan(&count)
+	if err != nil || count != 1 {
+		t.Errorf("expected 1 edge from README.md to specs/specification.md, got %d (err: %v)", count, err)
+	}
+}
+
 
 
 func stringSliceEqual(a, b []string) bool {

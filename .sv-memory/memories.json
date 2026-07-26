@@ -264,5 +264,24 @@
     "normalized_hash": "fe047479ec4d8f273143d2685f972d4943b1327e2554c8dd523b059bfcb0bdbf",
     "deleted_at": "0001-01-01T00:00:00Z",
     "created_at": "2026-07-26T12:37:21.388885-04:00"
+  },
+  {
+    "id": "4a6bde0d",
+    "project_id": "ce22c23ac33d7a36",
+    "category": "journal",
+    "what": "Phase 3: Integrate markdown documentation files into the knowledge graph",
+    "why": "Enable mapping and indexing of spec and design markdown documentation, linking them to codebase nodes.",
+    "where_path": "internal/graph/graph.go",
+    "learned": "Including .md files as 'document' type nodes in scanFiles and implementing a Markdown resolver (resolving relative paths, project paths, and wikilinks) provides cross-document structural context to the knowledge graph.",
+    "git_branch": "main",
+    "git_commit": "70a7243",
+    "author": "Mario Sandoval (Sv Tech)",
+    "impact": "Documentation markdown files and their references/wikilinks are parsed and linked. Test TestSyncGraphWithMarkdown validates the node/edge creation.",
+    "next_steps": "Proceed to Phase 4: unified Obsidian vault export.",
+    "session_id": "84df179f",
+    "last_seen_at": "0001-01-01T00:00:00Z",
+    "normalized_hash": "55673ce9be6ac20bead906efc2766d3cc928c9e6e3250a2d610df3328480c47c",
+    "deleted_at": "0001-01-01T00:00:00Z",
+    "created_at": "2026-07-26T12:39:22.297291-04:00"
   }
 ]

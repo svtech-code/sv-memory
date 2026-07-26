@@ -259,6 +259,10 @@ var (
 	// HTML: matches <script src="path"> or <link href="path">
 	htmlImportRegex = regexp.MustCompile(`(?m)<script\s+[^>]*src=['"]([^'"]+)['"]|<link\s+[^>]*href=['"]([^'"]+)['"]`)
 
+	// Markdown links: matches standard [label](target) and Obsidian [[target]] or [[target|label]]
+	mdLinkRegex     = regexp.MustCompile(`\[[^\]]*\]\(([^)]+)\)`)
+	mdWikilinkRegex = regexp.MustCompile(`\[\[([^\]|]+)(?:\|[^\]]*)?\]\]`)
+
 	// Bash: matches source script.sh or . script.sh
 	shImportRegex = regexp.MustCompile(`(?m)^\s*(?:source|\.)\s+['"]?([^'"\s#;]+)['"]?`)
 
@@ -339,7 +343,7 @@ func scanFiles(projPath string) (*walkResult, error) {
 
 		ext := strings.ToLower(filepath.Ext(relPath))
 		switch ext {
-		case ".go", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".php", ".css", ".astro", ".sh", ".lua", ".rb", ".rs", ".java", ".vue", ".svelte":
+		case ".go", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".php", ".css", ".astro", ".sh", ".lua", ".rb", ".rs", ".java", ".vue", ".svelte", ".md":
 			fi, fiErr := os.Stat(path)
 			mtimeMs := int64(0)
 			size := int64(0)
@@ -367,9 +371,13 @@ func scanFiles(projPath string) (*walkResult, error) {
 				}
 			}
 
+			nodeType := "file"
+			if ext == ".md" {
+				nodeType = "document"
+			}
 			nodes[relPath] = &Node{
 				ID:       relPath,
-				Type:     "file",
+				Type:     nodeType,
 				Label:    filepath.Base(relPath),
 				Path:     relPath,
 				Metadata: baseMeta,
@@ -550,6 +558,17 @@ func parseFiles(projPath string, nodes map[string]*Node, toParse []string) []*Ed
 							imports = append(imports, string(m[1]))
 						}
 					}
+				case ".md":
+					for _, m := range mdLinkRegex.FindAllSubmatch(content, -1) {
+						if len(m) > 1 && len(m[1]) > 0 {
+							imports = append(imports, string(m[1]))
+						}
+					}
+					for _, m := range mdWikilinkRegex.FindAllSubmatch(content, -1) {
+						if len(m) > 1 && len(m[1]) > 0 {
+							imports = append(imports, string(m[1]))
+						}
+					}
 				}
 				results <- parseResult{sourcePath: sourcePath, ext: ext, imports: imports}
 			}
@@ -570,17 +589,28 @@ func parseFiles(projPath string, nodes map[string]*Node, toParse []string) []*Ed
 			continue
 		}
 		for _, imp := range res.imports {
-			targetID, found := resolveImport(projPath, res.sourcePath, imp, nodes)
+			var targetID string
+			var found bool
+			if res.ext == ".md" {
+				targetID, found = resolveMarkdownLink(projPath, res.sourcePath, imp, nodes)
+			} else {
+				targetID, found = resolveImport(projPath, res.sourcePath, imp, nodes)
+			}
+
 			if found {
-				edgeID := fmt.Sprintf("%s-%s-%s", res.sourcePath, targetID, "imports")
+				relType := "imports"
+				if res.ext == ".md" {
+					relType = "references"
+				}
+				edgeID := fmt.Sprintf("%s-%s-%s", res.sourcePath, targetID, relType)
 				edges = append(edges, &Edge{
 					ID:           edgeID,
 					SourceID:     res.sourcePath,
 					TargetID:     targetID,
-					RelationType: "imports",
+					RelationType: relType,
 					Confidence:   "EXTRACTED",
 				})
-			} else if isExternalPkg(imp) && !isStdlib(imp, res.ext) {
+			} else if res.ext != ".md" && isExternalPkg(imp) && !isStdlib(imp, res.ext) {
 				pkgNodeID := "pkg:" + imp
 				if _, exists := nodes[pkgNodeID]; !exists {
 					nodes[pkgNodeID] = &Node{
@@ -1410,4 +1440,64 @@ func tokenizeText(text string) map[string]int {
 		}
 	}
 	return words
+}
+
+// resolveMarkdownLink resolves a markdown link or wikilink to a node in the graph,
+// supporting relative paths, project absolute paths, and fuzzy base name matches.
+func resolveMarkdownLink(projPath, sourcePath, target string, nodes map[string]*Node) (string, bool) {
+	if idx := strings.IndexAny(target, "#?"); idx != -1 {
+		target = target[:idx]
+	}
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return "", false
+	}
+
+	if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "mailto:") {
+		return "", false
+	}
+
+	sourceDir := filepath.Dir(sourcePath)
+	relTarget := filepath.Join(sourceDir, target)
+	relTarget = filepath.Clean(relTarget)
+	relTarget = strings.ReplaceAll(relTarget, "\\", "/")
+	relTarget = strings.TrimPrefix(relTarget, "./")
+
+	if _, exists := nodes[relTarget]; exists {
+		return relTarget, true
+	}
+	if filepath.Ext(relTarget) == "" {
+		if _, exists := nodes[relTarget+".md"]; exists {
+			return relTarget + ".md", true
+		}
+	}
+
+	targetClean := filepath.Clean(target)
+	targetClean = strings.ReplaceAll(targetClean, "\\", "/")
+	targetClean = strings.TrimPrefix(targetClean, "./")
+	if _, exists := nodes[targetClean]; exists {
+		return targetClean, true
+	}
+	if filepath.Ext(targetClean) == "" {
+		if _, exists := nodes[targetClean+".md"]; exists {
+			return targetClean + ".md", true
+		}
+	}
+
+	targetBase := filepath.Base(target)
+	for id, node := range nodes {
+		if node.Type == "file" || node.Type == "document" {
+			nodeBase := filepath.Base(node.Path)
+			if strings.EqualFold(nodeBase, targetBase) {
+				return id, true
+			}
+			if filepath.Ext(targetBase) == "" {
+				if strings.EqualFold(nodeBase, targetBase+".md") {
+					return id, true
+				}
+			}
+		}
+	}
+
+	return "", false
 }
