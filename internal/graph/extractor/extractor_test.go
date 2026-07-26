@@ -144,3 +144,75 @@ function runPage() {
 		t.Error("expected function symbol 'runPage' not found")
 	}
 }
+
+func TestTreeSitterExtractor_Html(t *testing.T) {
+	ext := NewTreeSitterExtractor()
+	src := []byte(`<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <script src="app.js"></script>
+</body>
+</html>`)
+
+	_, imports, err := ext.Extract(src, "index.html", ".html")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expectedImports := map[string]bool{"style.css": true, "app.js": true}
+	for _, imp := range imports {
+		if !expectedImports[imp] {
+			t.Errorf("unexpected import: %s", imp)
+		}
+	}
+}
+
+func TestTreeSitterExtractor_Css(t *testing.T) {
+	ext := NewTreeSitterExtractor()
+	src := []byte(`
+@import "theme.css";
+@import url('layout.css');
+
+.btn-primary {
+    background-color: blue;
+}
+.card {
+    border: 1px solid black;
+}
+`)
+
+	symbols, imports, err := ext.Extract(src, "style.css", ".css")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify imports
+	expectedImports := map[string]bool{"theme.css": true, "layout.css": true}
+	for _, imp := range imports {
+		if !expectedImports[imp] {
+			t.Errorf("unexpected import: %s", imp)
+		}
+	}
+
+	// Verify symbols
+	var foundBtn, foundCard bool
+	for _, sym := range symbols {
+		if sym.Name == "btn-primary" && sym.Type == "class" {
+			foundBtn = true
+		}
+		if sym.Name == "card" && sym.Type == "class" {
+			foundCard = true
+		}
+	}
+
+	if !foundBtn {
+		t.Error("expected CSS class selector 'btn-primary' not found")
+	}
+	if !foundCard {
+		t.Error("expected CSS class selector 'card' not found")
+	}
+}
+

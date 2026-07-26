@@ -42,7 +42,7 @@ func (t *TreeSitterExtractor) Extract(content []byte, relPath, ext string) ([]Sy
 		symbols, imports = parseGo(root, lang, content)
 	case ".py":
 		symbols, imports = parsePython(root, lang, content)
-	case ".js", ".jsx", ".ts", ".tsx", ".astro":
+	case ".js", ".jsx", ".ts", ".tsx":
 		symbols, imports = parseJavascript(root, lang, content)
 	case ".php":
 		symbols, imports = parsePhp(root, lang, content)
@@ -52,6 +52,10 @@ func (t *TreeSitterExtractor) Extract(content []byte, relPath, ext string) ([]Sy
 		symbols, imports = parseRuby(root, lang, content)
 	case ".java":
 		symbols, imports = parseJava(root, lang, content)
+	case ".html":
+		symbols, imports = parseHtml(root, lang, content)
+	case ".css":
+		symbols, imports = parseCss(root, lang, content)
 	default:
 		return t.regexFallback.Extract(content, relPath, ext)
 	}
@@ -618,6 +622,84 @@ func parseJava(root *gotreesitter.Node, lang *gotreesitter.Language, content []b
 				if child.Type(lang) == "scoped_identifier" || child.Type(lang) == "identifier" {
 					imports = append(imports, child.Text(content))
 				}
+			}
+		}
+	})
+
+	return symbols, imports
+}
+
+func parseHtml(root *gotreesitter.Node, lang *gotreesitter.Language, content []byte) ([]Symbol, []string) {
+	var symbols []Symbol
+	var imports []string
+
+	traverse(root, func(n *gotreesitter.Node) {
+		nodeType := n.Type(lang)
+		if nodeType == "attribute" {
+			var isImportAttr bool
+			var val string
+			for i := 0; i < n.ChildCount(); i++ {
+				child := n.Child(i)
+				t := child.Type(lang)
+				if t == "attribute_name" && (child.Text(content) == "src" || child.Text(content) == "href") {
+					isImportAttr = true
+				} else if t == "attribute_value" {
+					val = strings.Trim(child.Text(content), `"'`)
+				}
+			}
+			if isImportAttr && val != "" {
+				imports = append(imports, val)
+			}
+		}
+	})
+
+	return symbols, imports
+}
+
+func parseCss(root *gotreesitter.Node, lang *gotreesitter.Language, content []byte) ([]Symbol, []string) {
+	var symbols []Symbol
+	var imports []string
+
+	traverse(root, func(n *gotreesitter.Node) {
+		nodeType := n.Type(lang)
+		switch nodeType {
+		case "import_statement":
+			for i := 0; i < n.ChildCount(); i++ {
+				child := n.Child(i)
+				t := child.Type(lang)
+				if t == "string_value" || t == "string" {
+					path := strings.Trim(child.Text(content), `"'()`)
+					if path != "" {
+						imports = append(imports, path)
+					}
+				} else if t == "call_expression" {
+					for j := 0; j < child.ChildCount(); j++ {
+						arg := child.Child(j)
+						if arg.Type(lang) == "arguments" {
+							for k := 0; k < arg.ChildCount(); k++ {
+								param := arg.Child(k)
+								if param.Type(lang) == "string_value" || param.Type(lang) == "string" {
+									path := strings.Trim(param.Text(content), `"'()`)
+									if path != "" {
+										imports = append(imports, path)
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+
+		case "class_selector":
+			// We can capture class names in CSS as class symbols!
+			name := strings.TrimPrefix(n.Text(content), ".")
+			if name != "" {
+				symbols = append(symbols, Symbol{
+					Name:     name,
+					Type:     "class",
+					Line:     int(n.StartPoint().Row) + 1,
+					Exported: true,
+				})
 			}
 		}
 	})
