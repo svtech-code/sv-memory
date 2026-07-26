@@ -2,8 +2,6 @@ package mcp
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -133,11 +131,11 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 	// visited node. Invalidated by sv_graph_sync.
 var (
 	graphMu     sync.Mutex
-	cachedGraph *graph.Graph
+	cachedGraph *graph.InMemoryGraph
 )
 
 
-	getOrLoadGraph := func() (*inMemoryGraph, error) {
+	getOrLoadGraph := func() (*graph.InMemoryGraph, error) {
 		graphMu.Lock()
 		defer graphMu.Unlock()
 		if cachedGraph != nil {
@@ -154,7 +152,7 @@ var (
 			}
 			debugLog("graph_query auto-built graph in %s", time.Since(startBuild))
 		}
-		g, err := loadFullGraph(pool.Reader, cfg.ProjectID)
+		g, err := graph.LoadFullGraph(pool.Reader, cfg.ProjectID)
 		if err != nil {
 			return nil, err
 		}
@@ -822,21 +820,21 @@ var (
 
 		sb.WriteString("### Nodes in Sub-graph:\n")
 		for _, node := range subGraph.Nodes {
-			sb.WriteString(fmt.Sprintf("- **%s** (`%s`): %s (fan-in: %d, fan-out: %d)\n", node.Label, node.ID, node.Type, g.fanIn[node.ID], g.fanOut[node.ID]))
+			sb.WriteString(fmt.Sprintf("- **%s** (`%s`): %s (fan-in: %d, fan-out: %d)\n", node.Label, node.ID, node.Type, g.FanIn[node.ID], g.FanOut[node.ID]))
 		}
 		sb.WriteString("\n")
 
 		// Identify potential God Nodes (arbitrarily defined as > 10 fan-in or fan-out)
 		var godNodes []string
 		for _, node := range subGraph.Nodes {
-			if g.fanIn[node.ID] > 10 || g.fanOut[node.ID] > 10 {
+			if g.FanIn[node.ID] > 10 || g.FanOut[node.ID] > 10 {
 				godNodes = append(godNodes, node.ID)
 			}
 		}
 		if len(godNodes) > 0 {
 			sb.WriteString("### Potential God Nodes:\n")
 			for _, id := range godNodes {
-				sb.WriteString(fmt.Sprintf("- **%s** (fan-in: %d, fan-out: %d)\n", g.nodes[id].Label, g.fanIn[id], g.fanOut[id]))
+				sb.WriteString(fmt.Sprintf("- **%s** (fan-in: %d, fan-out: %d)\n", g.Nodes[id].Label, g.FanIn[id], g.FanOut[id]))
 			}
 			sb.WriteString("\n")
 		}
@@ -892,8 +890,8 @@ var (
 		}
 
 		// Find start and end nodes based on input (fuzzy match)
-		startNode := g.findNode(source)
-		endNode := g.findNode(target)
+		startNode := g.FindNode(source)
+		endNode := g.FindNode(target)
 
 		if startNode == "" || endNode == "" {
 			return mcp.NewToolResultText("Could not find start or end node in the graph."), nil
@@ -932,174 +930,7 @@ var (
 	return server.ServeStdio(s)
 }
 
-// loadFullGraph executes two queries to load all nodes and edges for a project
-// into an inMemoryGraph.
-func loadFullGraph(db *sql.DB, projectID string) (*inMemoryGraph, error) {
-	nodeMap := make(map[string]*graph.Node)
-	nRows, err := db.Query("SELECT id, node_type, label, path, metadata FROM graph_nodes WHERE project_id = ?", projectID)
-	if err != nil {
-		return nil, err
-	}
-	defer nRows.Close()
-	for nRows.Next() {
-		var n graph.Node
-		var metaStr string
-		if err := nRows.Scan(&n.ID, &n.Type, &n.Label, &n.Path, &metaStr); err == nil {
-			_ = json.Unmarshal([]byte(metaStr), &n.Metadata)
-			nodeMap[n.ID] = &n
-		}
-	}
-	if err := nRows.Err(); err != nil {
-		return nil, err
-	}
 
-	edgesBySrc := make(map[string][]*graph.Edge)
-	edgesByTgt := make(map[string][]*graph.Edge)
-	fanIn := make(map[string]int)
-	fanOut := make(map[string]int)
-
-	eRows, err := db.Query("SELECT id, source_id, target_id, relation_type, confidence, source_location FROM graph_edges WHERE project_id = ?", projectID)
-	if err != nil {
-		return nil, err
-	}
-	defer eRows.Close()
-	for eRows.Next() {
-		var e graph.Edge
-		if err := eRows.Scan(&e.ID, &e.SourceID, &e.TargetID, &e.RelationType, &e.Confidence, &e.SourceLocation); err == nil {
-			edgesBySrc[e.SourceID] = append(edgesBySrc[e.SourceID], &e)
-			edgesByTgt[e.TargetID] = append(edgesByTgt[e.TargetID], &e)
-			fanOut[e.SourceID]++
-			fanIn[e.TargetID]++
-		}
-	}
-	if err := eRows.Err(); err != nil {
-		return nil, err
-	}
-
-	return &inMemoryGraph{
-		nodes:         nodeMap,
-		edgesBySource: edgesBySrc,
-		edgesByTarget: edgesByTgt,
-		fanIn:         fanIn,
-		fanOut:        fanOut,
-	}, nil
-}
-
-// query performs a BFS traversal over the in-memory graph starting from the
-// node matching 'start' (by id, path, or label) and returns all reachable
-// nodes and edges within maxDepth hops. Zero SQL calls.
-func (g *inMemoryGraph) ShortestPath(start, end string, maxHops int) []string {
-	if _, ok := g.nodes[start]; !ok {
-		return nil
-	}
-	if _, ok := g.nodes[end]; !ok {
-		return nil
-	}
-
-	queue := []string{start}
-	parent := map[string]string{start: ""}
-
-	for len(queue) > 0 {
-		curr := queue[0]
-		queue = queue[1:]
-
-		if curr == end {
-			path := []string{}
-			for curr != "" {
-				path = append([]string{curr}, path...)
-				curr = parent[curr]
-			}
-			return path
-		}
-
-		if len(parent) > 10000 {
-			break // Safety limit
-		}
-
-		for _, edge := range g.edgesBySource[curr] {
-			if _, visited := parent[edge.TargetID]; !visited {
-				parent[edge.TargetID] = curr
-				queue = append(queue, edge.TargetID)
-			}
-		}
-	}
-	return nil
-}
-
-// query performs a BFS traversal to find all nodes and edges within maxDepth,
-// filtered by optional relation type and direction ('in', 'out', 'all').
-func (g *inMemoryGraph) query(start string, maxDepth int, relationType string, direction string) *subGraph {
-	startID := g.findNode(start)
-	if startID == "" {
-		return &subGraph{}
-	}
-
-	type queueItem struct {
-		id    string
-		depth int
-	}
-
-	queue := []queueItem{{id: startID, depth: 0}}
-	visitedNodes := map[string]*graph.Node{startID: g.nodes[startID]}
-	visitedEdges := map[string]*graph.Edge{}
-
-	for len(queue) > 0 {
-		curr := queue[0]
-		queue = queue[1:]
-
-		if curr.depth >= maxDepth {
-			continue
-		}
-
-		// Explore outgoing edges if direction is 'out' or 'all'
-		if direction == "out" || direction == "all" {
-			for _, edge := range g.edgesBySource[curr.id] {
-				if relationType != "" && edge.RelationType != relationType {
-					continue
-				}
-				visitedEdges[edge.ID] = edge
-				if _, visited := visitedNodes[edge.TargetID]; !visited {
-					visitedNodes[edge.TargetID] = g.nodes[edge.TargetID]
-					queue = append(queue, queueItem{id: edge.TargetID, depth: curr.depth + 1})
-				}
-			}
-		}
-
-		// Explore incoming edges if direction is 'in' or 'all'
-		if direction == "in" || direction == "all" {
-			for _, edge := range g.edgesByTarget[curr.id] {
-				if relationType != "" && edge.RelationType != relationType {
-					continue
-				}
-				visitedEdges[edge.ID] = edge
-				if _, visited := visitedNodes[edge.SourceID]; !visited {
-					visitedNodes[edge.SourceID] = g.nodes[edge.SourceID]
-					queue = append(queue, queueItem{id: edge.SourceID, depth: curr.depth + 1})
-				}
-			}
-		}
-	}
-
-	var nodes []*graph.Node
-	for _, n := range visitedNodes {
-		nodes = append(nodes, n)
-	}
-	var edges []*graph.Edge
-	for _, e := range visitedEdges {
-		edges = append(edges, e)
-	}
-	return &subGraph{Nodes: nodes, Edges: edges}
-}
-
-// findNode returns the node ID matching by exact id, path, or label.
-func (g *inMemoryGraph) findNode(start string) string {
-	for id, n := range g.nodes {
-		if id == start || n.Path == start || n.Label == start {
-			return id
-		}
-	}
-	return ""
-}
 
 func escapeMermaid(s string) string {
 	// Replaces path slash/special chars with underscores or quotes for Mermaid

@@ -118,7 +118,7 @@ type SubGraph struct {
 // Query performs a BFS traversal to find all nodes and edges within maxDepth,
 // filtered by optional relation type and direction ('in', 'out', 'all').
 func (g *InMemoryGraph) Query(start string, maxDepth int, relationType string, direction string) *SubGraph {
-	startID := g.findNode(start)
+	startID := g.FindNode(start)
 	if startID == "" {
 		return &SubGraph{}
 	}
@@ -180,8 +180,8 @@ func (g *InMemoryGraph) Query(start string, maxDepth int, relationType string, d
 	return &SubGraph{Nodes: nodes, Edges: edges}
 }
 
-// findNode performs a fuzzy match to find a node ID, prioritizing exact matches.
-func (g *InMemoryGraph) findNode(start string) string {
+// FindNode performs a fuzzy match to find a node ID, prioritizing exact matches.
+func (g *InMemoryGraph) FindNode(start string) string {
 	if _, ok := g.Nodes[start]; ok {
 		return start
 	}
