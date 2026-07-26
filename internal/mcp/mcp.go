@@ -26,7 +26,7 @@ func StartServer(db *sql.DB, cfg *config.Config) error {
 	// 1. Tool: sv_mem_save
 	saveTool := mcp.NewTool("sv_mem_save",
 		mcp.WithDescription("Persist a key architectural decision, bug fix, progress journal, or standard guidelines to the project's memory. This will also update the shared workspace JSON file for Git versioning."),
-		mcp.WithString("category", mcp.Required(), mcp.Description("Category of memory: 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem'")),
+		mcp.WithString("category", mcp.Required(), mcp.Description("Category of memory: 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem' | 'discussion' | 'idea' | 'qa'")),
 		mcp.WithString("what", mcp.Required(), mcp.Description("Concise description of the decision, standard, or fix")),
 		mcp.WithString("why", mcp.Required(), mcp.Description("Detailed reasoning for this choice")),
 		mcp.WithString("learned", mcp.Required(), mcp.Description("Rule or key lesson to guide future agents")),
@@ -93,7 +93,8 @@ func StartServer(db *sql.DB, cfg *config.Config) error {
 	searchTool := mcp.NewTool("sv_mem_search",
 		mcp.WithDescription("Query the historical project decisions, architectural rules, and past bugfixes using keyword/FTS search."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("The keyword or phrase to search for")),
-		mcp.WithString("category", mcp.Description("Optional category to filter results: 'bugfix' | 'architecture' | 'standard' | 'decision'")),
+		mcp.WithString("category", mcp.Description("Optional category to filter results: 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem' | 'discussion' | 'idea' | 'qa'")),
+		mcp.WithString("limit", mcp.Description("Optional limit of results to return (default is '10')")),
 	)
 
 	s.AddTool(searchTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -102,11 +103,19 @@ func StartServer(db *sql.DB, cfg *config.Config) error {
 			return mcp.NewToolResultError("missing required field: query"), nil
 		}
 		category := req.GetString("category", "")
+		limitStr := req.GetString("limit", "10")
+
+		limit := 10
+		if limitStr != "" {
+			if l, err := strconv.Atoi(limitStr); err == nil {
+				limit = l
+			}
+		}
 
 		// Sync from Git first to load any new teammate memories
 		_ = memory.SyncFromGit(db, cfg.ProjectID, cfg.ProjPath)
 
-		memories, err := memory.SearchMemories(db, cfg.ProjectID, query, category)
+		memories, err := memory.SearchMemories(db, cfg.ProjectID, query, category, limit)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed searching memories: %v", err)), nil
 		}

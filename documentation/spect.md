@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS memories (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
-    category TEXT NOT NULL, -- 'bugfix' | 'architecture' | 'standard' | 'decision'
+    category TEXT NOT NULL, -- 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem' | 'discussion' | 'idea' | 'qa'
     what TEXT NOT NULL,
     why TEXT NOT NULL,
     where_path TEXT,
@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS graph_edges (
 
 - **Description:** Persist a key architectural decision, bug fix, or standard.
 - **Parameters:**
-  - `category` (string, required): `bugfix` | `architecture` | `standard` | `decision`
+  - `category` (string, required): `bugfix` | `architecture` | `standard` | `decision` | `journal` | `postmortem` | `discussion` | `idea` | `qa`
   - `what` (string, required): Concise summary of what was done.
   - `why` (string, required): Reasoning behind the action.
   - `where_path` (string, optional): Affected file or module.
@@ -174,8 +174,9 @@ This project uses `sv-memory` for persistent architectural memory and structural
 
 ## Mandatory Agent Workflow:
 
-1. **Context Initialization:** Before proposing or executing architectural changes, call `sv_mem_search` to check past project decisions, standards, and solved bugs.
+ 1. **Context Initialization:** Before proposing or executing architectural changes, call `sv_mem_search` to check past project decisions, standards, solved bugs, and previous discussions or Q&As.
 2. **Context Save:** You MUST invoke `sv_mem_save` whenever you:
+   - Discuss or agree on a significant design suggestion, Q&A, or idea (category `discussion`, `idea`, or `qa`).
    - Fix a complex or non-obvious bug.
    - Introduce or refactor a design pattern / rule.
    - Make an explicit choice to avoid a library/framework feature.

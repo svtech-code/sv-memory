@@ -48,7 +48,7 @@ func TestMemoryCRUDAndFTS(t *testing.T) {
 	}
 
 	// 2. Test SearchMemories with exact category and search term
-	results, err := SearchMemories(database, projectID, "leak", "")
+	results, err := SearchMemories(database, projectID, "leak", "", 0)
 	if err != nil {
 		t.Fatalf("failed searching memories: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestMemoryCRUDAndFTS(t *testing.T) {
 	}
 
 	// Test SearchMemories with category filter
-	resultsCat, err := SearchMemories(database, projectID, "", "bugfix")
+	resultsCat, err := SearchMemories(database, projectID, "", "bugfix", 0)
 	if err != nil {
 		t.Fatalf("failed searching memories with category filter: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestMemoryCRUDAndFTS(t *testing.T) {
 	}
 
 	// Test SearchMemories with wrong keyword
-	resultsEmpty, err := SearchMemories(database, projectID, "nonexistentword", "")
+	resultsEmpty, err := SearchMemories(database, projectID, "nonexistentword", "", 0)
 	if err != nil {
 		t.Fatalf("failed searching: %v", err)
 	}

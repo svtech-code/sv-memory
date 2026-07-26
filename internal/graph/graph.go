@@ -119,113 +119,142 @@ func SyncGraph(db *sql.DB, projectID string, projPath string) error {
 		return fmt.Errorf("failed walking directory: %w", err)
 	}
 
-	// 2. Parse imports & create edges
-	var edges []*Edge
+	// 2. Parse imports & create edges concurrently using a worker pool
+	numWorkers := 8
+	if len(fileList) < numWorkers {
+		numWorkers = len(fileList)
+	}
 
+	type parseResult struct {
+		sourcePath string
+		imports    []string
+		err        error
+	}
+
+	jobs := make(chan string, len(fileList))
+	results := make(chan parseResult, len(fileList))
+
+	// Spawn workers
+	for w := 0; w < numWorkers; w++ {
+		go func() {
+			for sourcePath := range jobs {
+				absPath := filepath.Join(projPath, sourcePath)
+				content, err := os.ReadFile(absPath)
+				if err != nil {
+					results <- parseResult{sourcePath: sourcePath, err: err}
+					continue
+				}
+
+				ext := strings.ToLower(filepath.Ext(sourcePath))
+				var imports []string
+
+				switch ext {
+				case ".js", ".ts", ".jsx", ".tsx", ".astro":
+					matches := jsImportRegex.FindAllSubmatch(content, -1)
+					for _, m := range matches {
+						if len(m) > 1 && len(m[1]) > 0 {
+							imports = append(imports, string(m[1]))
+						} else if len(m) > 2 && len(m[2]) > 0 {
+							imports = append(imports, string(m[2]))
+						}
+					}
+				case ".py":
+					lines := strings.Split(string(content), "\n")
+					for _, line := range lines {
+						m := pyImportRegex.FindStringSubmatch(line)
+						if len(m) > 0 {
+							if len(m[1]) > 0 { // import x
+								parts := strings.Split(m[1], ",")
+								for _, p := range parts {
+									imports = append(imports, strings.TrimSpace(p))
+								}
+							} else if len(m[2]) > 0 { // from x import y
+								imports = append(imports, strings.TrimSpace(m[2]))
+							}
+						}
+					}
+				case ".go":
+					strContent := string(content)
+					importIdx := strings.Index(strContent, "import")
+					if importIdx != -1 {
+						matches := goImportRegex.FindAllSubmatch(content, -1)
+						for _, m := range matches {
+							if len(m) > 1 {
+								imports = append(imports, string(m[1]))
+							}
+						}
+					}
+				case ".php":
+					matches := phpImportRegex.FindAllSubmatch(content, -1)
+					for _, m := range matches {
+						if len(m) > 1 && len(m[1]) > 0 {
+							imports = append(imports, string(m[1]))
+						} else if len(m) > 2 && len(m[2]) > 0 {
+							imports = append(imports, strings.ReplaceAll(string(m[2]), "\\", "/"))
+						}
+					}
+				case ".css":
+					matches := cssImportRegex.FindAllSubmatch(content, -1)
+					for _, m := range matches {
+						if len(m) > 1 {
+							imports = append(imports, string(m[1]))
+						}
+					}
+				case ".html":
+					matches := htmlImportRegex.FindAllSubmatch(content, -1)
+					for _, m := range matches {
+						if len(m) > 1 && len(m[1]) > 0 {
+							imports = append(imports, string(m[1]))
+						} else if len(m) > 2 && len(m[2]) > 0 {
+							imports = append(imports, string(m[2]))
+						}
+					}
+				case ".sh":
+					matches := shImportRegex.FindAllSubmatch(content, -1)
+					for _, m := range matches {
+						if len(m) > 1 && len(m[1]) > 0 {
+							imports = append(imports, string(m[1]))
+						}
+					}
+				case ".lua":
+					matches := luaImportRegex.FindAllSubmatch(content, -1)
+					for _, m := range matches {
+						if len(m) > 1 && len(m[1]) > 0 {
+							imports = append(imports, string(m[1]))
+						}
+					}
+				}
+				results <- parseResult{sourcePath: sourcePath, imports: imports}
+			}
+		}()
+	}
+
+	// Feed jobs
 	for _, sourcePath := range fileList {
-		absPath := filepath.Join(projPath, sourcePath)
-		content, err := os.ReadFile(absPath)
-		if err != nil {
+		jobs <- sourcePath
+	}
+	close(jobs)
+
+	// Collect results and build edges (main thread resolves target nodes from map safely)
+	var edges []*Edge
+	for i := 0; i < len(fileList); i++ {
+		res := <-results
+		if res.err != nil {
 			continue // skip unreadable files
 		}
 
-		ext := strings.ToLower(filepath.Ext(sourcePath))
-		var imports []string
-
-		switch ext {
-		case ".js", ".ts", ".jsx", ".tsx", ".astro":
-			matches := jsImportRegex.FindAllSubmatch(content, -1)
-			for _, m := range matches {
-				if len(m) > 1 && len(m[1]) > 0 {
-					imports = append(imports, string(m[1]))
-				} else if len(m) > 2 && len(m[2]) > 0 {
-					imports = append(imports, string(m[2]))
-				}
-			}
-		case ".py":
-			// Simple line scanner for python imports
-			lines := strings.Split(string(content), "\n")
-			for _, line := range lines {
-				m := pyImportRegex.FindStringSubmatch(line)
-				if len(m) > 0 {
-					if len(m[1]) > 0 { // import x
-						parts := strings.Split(m[1], ",")
-						for _, p := range parts {
-							imports = append(imports, strings.TrimSpace(p))
-						}
-					} else if len(m[2]) > 0 { // from x import y
-						imports = append(imports, strings.TrimSpace(m[2]))
-					}
-				}
-			}
-		case ".go":
-			// Go imports are usually in an import block
-			strContent := string(content)
-			importIdx := strings.Index(strContent, "import")
-			if importIdx != -1 {
-				// Scan Go imports
-				matches := goImportRegex.FindAllSubmatch(content, -1)
-				for _, m := range matches {
-					if len(m) > 1 {
-						imports = append(imports, string(m[1]))
-					}
-				}
-			}
-		case ".php":
-			matches := phpImportRegex.FindAllSubmatch(content, -1)
-			for _, m := range matches {
-				if len(m) > 1 && len(m[1]) > 0 {
-					imports = append(imports, string(m[1]))
-				} else if len(m) > 2 && len(m[2]) > 0 {
-					imports = append(imports, strings.ReplaceAll(string(m[2]), "\\", "/"))
-				}
-			}
-		case ".css":
-			matches := cssImportRegex.FindAllSubmatch(content, -1)
-			for _, m := range matches {
-				if len(m) > 1 {
-					imports = append(imports, string(m[1]))
-				}
-			}
-		case ".html":
-			matches := htmlImportRegex.FindAllSubmatch(content, -1)
-			for _, m := range matches {
-				if len(m) > 1 && len(m[1]) > 0 {
-					imports = append(imports, string(m[1]))
-				} else if len(m) > 2 && len(m[2]) > 0 {
-					imports = append(imports, string(m[2]))
-				}
-			}
-		case ".sh":
-			matches := shImportRegex.FindAllSubmatch(content, -1)
-			for _, m := range matches {
-				if len(m) > 1 && len(m[1]) > 0 {
-					imports = append(imports, string(m[1]))
-				}
-			}
-		case ".lua":
-			matches := luaImportRegex.FindAllSubmatch(content, -1)
-			for _, m := range matches {
-				if len(m) > 1 && len(m[1]) > 0 {
-					imports = append(imports, string(m[1]))
-				}
-			}
-		}
-
-		// Resolve imports into target nodes
-		for _, imp := range imports {
-			targetID, found := resolveImport(projPath, sourcePath, imp, nodes)
+		for _, imp := range res.imports {
+			targetID, found := resolveImport(projPath, res.sourcePath, imp, nodes)
 			if found {
-				edgeID := fmt.Sprintf("%s-%s-%s", sourcePath, targetID, "imports")
+				edgeID := fmt.Sprintf("%s-%s-%s", res.sourcePath, targetID, "imports")
 				edges = append(edges, &Edge{
 					ID:           edgeID,
-					SourceID:     sourcePath,
+					SourceID:     res.sourcePath,
 					TargetID:     targetID,
 					RelationType: "imports",
 				})
 			} else {
 				// It's an external library / package
-				// Create an external package node if it's a standard/library import
 				if isExternalPkg(imp) {
 					pkgNodeID := "pkg:" + imp
 					if _, exists := nodes[pkgNodeID]; !exists {
@@ -236,10 +265,10 @@ func SyncGraph(db *sql.DB, projectID string, projPath string) error {
 							Path:  imp,
 						}
 					}
-					edgeID := fmt.Sprintf("%s-%s-%s", sourcePath, pkgNodeID, "imports")
+					edgeID := fmt.Sprintf("%s-%s-%s", res.sourcePath, pkgNodeID, "imports")
 					edges = append(edges, &Edge{
 						ID:           edgeID,
-						SourceID:     sourcePath,
+						SourceID:     res.sourcePath,
 						TargetID:     pkgNodeID,
 						RelationType: "imports",
 					})

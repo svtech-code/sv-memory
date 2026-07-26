@@ -16,7 +16,7 @@ import (
 type Memory struct {
 	ID          string    `json:"id"`
 	ProjectID   string    `json:"project_id"`
-	Category    string    `json:"category"` // 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem'
+	Category    string    `json:"category"` // 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem' | 'discussion' | 'idea' | 'qa'
 	What        string    `json:"what"`
 	Why         string    `json:"why"`
 	WherePath   string    `json:"where_path,omitempty"`
@@ -81,7 +81,7 @@ func SaveMemory(db *sql.DB, mem *Memory) error {
 }
 
 // SearchMemories queries the database using FTS5 full-text search.
-func SearchMemories(db *sql.DB, projectID string, searchTerm string, category string) ([]*Memory, error) {
+func SearchMemories(db *sql.DB, projectID string, searchTerm string, category string, limit int) ([]*Memory, error) {
 	var query string
 	var args []interface{}
 
@@ -112,6 +112,11 @@ func SearchMemories(db *sql.DB, projectID string, searchTerm string, category st
 			args = append(args, category)
 		}
 		query += " ORDER BY rank"
+	}
+
+	if limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, limit)
 	}
 
 	rows, err := db.Query(query, args...)
@@ -155,7 +160,7 @@ func SearchMemories(db *sql.DB, projectID string, searchTerm string, category st
 
 // SyncToGit serializes all project memories to a local file in `.sv-memory/memories.json`.
 func SyncToGit(db *sql.DB, projectID string, projPath string) error {
-	memories, err := SearchMemories(db, projectID, "", "")
+	memories, err := SearchMemories(db, projectID, "", "", 0)
 	if err != nil {
 		return err
 	}

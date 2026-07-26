@@ -1,5 +1,44 @@
 [
   {
+    "id": "e47cb867",
+    "project_id": "ce22c23ac33d7a36",
+    "category": "architecture",
+    "what": "Optimización concurrente de escaneo de grafos y aceleración de SQLite",
+    "why": "Evitar cuellos de botella al analizar repositorios grandes y reducir el tiempo de respuesta general del servidor MCP.",
+    "learned": "El análisis de imports en paralelo con un pool de goroutines (de hasta 8 workers) acelera enormemente el escaneo del grafo del código, mientras que las pragmas synchronous=NORMAL y temp_store=MEMORY en SQLite optimizan drásticamente los tiempos de lectura y escritura concurrentes en WAL mode.",
+    "git_branch": "main",
+    "git_commit": "d18fb0b",
+    "author": "Mario Sandoval (Sv Tech)",
+    "next_steps": "Recompilar y reinstalar el binario globalmente para aplicar estas optimizaciones en el cliente MCP.",
+    "created_at": "2026-07-26T03:52:01.840544-04:00"
+  },
+  {
+    "id": "9930847e",
+    "project_id": "ce22c23ac33d7a36",
+    "category": "decision",
+    "what": "Optimización de tokens mediante parámetro 'limit' en sv_mem_search",
+    "why": "Prevenir que búsquedas de memoria muy amplias devuelvan demasiados registros y saturen el contexto de la sesión de la IA con tokens redundantes.",
+    "learned": "Limitar las consultas de búsqueda de memoria del proyecto (usando LIMIT en SQLite) evita la sobrecarga del contexto y optimiza el uso de tokens en el agente de IA.",
+    "git_branch": "main",
+    "git_commit": "d18fb0b",
+    "author": "Mario Sandoval (Sv Tech)",
+    "next_steps": "Reinstalar el ejecutable compilado en el entorno global para activar el parámetro limit en los clientes MCP.",
+    "created_at": "2026-07-26T03:46:12.212369-04:00"
+  },
+  {
+    "id": "4b6e8ad2",
+    "project_id": "ce22c23ac33d7a36",
+    "category": "discussion",
+    "what": "Integración de categorías de memoria 'discussion', 'idea' y 'qa'",
+    "why": "Permitir que el agente de IA persista interacciones conversacionales, debates sobre mejoras del sistema y preguntas y respuestas clave con el usuario.",
+    "learned": "Los agentes deben guardar los resúmenes de preguntas (qa), propuestas (idea) y discusiones (discussion) clave para evitar la amnesia de contexto en debates de diseño e interacciones de mejora con el usuario.",
+    "git_branch": "main",
+    "git_commit": "d18fb0b",
+    "author": "Mario Sandoval (Sv Tech)",
+    "next_steps": "El usuario debe compilar e instalar el ejecutable actualizado en su sistema, o usar el binario compilado localmente.",
+    "created_at": "2026-07-26T03:43:34.104086-04:00"
+  },
+  {
     "id": "e37cbb81",
     "project_id": "ce22c23ac33d7a36",
     "category": "standard",

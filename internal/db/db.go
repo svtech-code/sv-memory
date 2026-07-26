@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS memories (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
-    category TEXT NOT NULL, -- 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem'
+    category TEXT NOT NULL, -- 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem' | 'discussion' | 'idea' | 'qa'
     what TEXT NOT NULL,
     why TEXT NOT NULL,
     where_path TEXT,
@@ -96,6 +96,18 @@ func InitDB(dbPath string) (*sql.DB, error) {
 	if _, err := db.Exec("PRAGMA journal_mode = WAL;"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to enable WAL mode: %w", err)
+	}
+
+	// Optimize write safety level in WAL mode (Normal is safe and much faster than Full)
+	if _, err := db.Exec("PRAGMA synchronous = NORMAL;"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to set synchronous mode: %w", err)
+	}
+
+	// Store temporary tables and indexes in memory for search performance
+	if _, err := db.Exec("PRAGMA temp_store = MEMORY;"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to set temp_store: %w", err)
 	}
 
 	// Migrate if old single-column primary key schema is detected
