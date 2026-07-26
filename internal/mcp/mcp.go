@@ -845,6 +845,51 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		return mcp.NewToolResultText(sb.String()), nil
 	})
 
+	// 19. Tool: sv_graph_path
+	graphPathTool := mcp.NewTool("sv_graph_path",
+		mcp.WithDescription("Find the shortest path between two nodes in the dependency graph."),
+		mcp.WithString("source", mcp.Required(), mcp.Description("The starting node ID (file path, package name, etc.)")),
+		mcp.WithString("target", mcp.Required(), mcp.Description("The target node ID to reach")),
+		mcp.WithString("max_hops", mcp.Description("Maximum hop distance (default '10')")),
+	)
+
+	s.AddTool(graphPathTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		source, err := req.RequireString("source")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: source"), nil
+		}
+		target, err := req.RequireString("target")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: target"), nil
+		}
+		maxHopsStr := req.GetString("max_hops", "10")
+		maxHops := 10
+		if d, err := strconv.Atoi(maxHopsStr); err == nil {
+			maxHops = d
+		}
+
+		g, err := getOrLoadGraph()
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
+		}
+
+		// Find start and end nodes based on input (fuzzy match)
+		startNode := g.findNode(source)
+		endNode := g.findNode(target)
+
+		if startNode == "" || endNode == "" {
+			return mcp.NewToolResultText("Could not find start or end node in the graph."), nil
+		}
+
+		path := g.ShortestPath(startNode, endNode, maxHops)
+
+		if len(path) == 0 {
+			return mcp.NewToolResultText(fmt.Sprintf("No path found between %s and %s.", startNode, endNode)), nil
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Path found: %s", strings.Join(path, " -> "))), nil
+	})
+
 	// 18. Tool: sv_graph_sync
 	graphSyncTool := mcp.NewTool("sv_graph_sync",
 		mcp.WithDescription("Trigger a full re-scan of the project code directory and refresh the structural dependency graph stored in SQLite."),
@@ -908,14 +953,14 @@ func loadFullGraph(db *sql.DB, projectID string) (*inMemoryGraph, error) {
 
 	edgesBySrc := make(map[string][]*graph.Edge)
 	edgesByTgt := make(map[string][]*graph.Edge)
-	eRows, err := db.Query("SELECT id, source_id, target_id, relation_type FROM graph_edges WHERE project_id = ?", projectID)
+	eRows, err := db.Query("SELECT id, source_id, target_id, relation_type, confidence, source_location FROM graph_edges WHERE project_id = ?", projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer eRows.Close()
 	for eRows.Next() {
 		var e graph.Edge
-		if err := eRows.Scan(&e.ID, &e.SourceID, &e.TargetID, &e.RelationType); err == nil {
+		if err := eRows.Scan(&e.ID, &e.SourceID, &e.TargetID, &e.RelationType, &e.Confidence, &e.SourceLocation); err == nil {
 			edgesBySrc[e.SourceID] = append(edgesBySrc[e.SourceID], &e)
 			edgesByTgt[e.TargetID] = append(edgesByTgt[e.TargetID], &e)
 		}
@@ -934,6 +979,44 @@ func loadFullGraph(db *sql.DB, projectID string) (*inMemoryGraph, error) {
 // query performs a BFS traversal over the in-memory graph starting from the
 // node matching 'start' (by id, path, or label) and returns all reachable
 // nodes and edges within maxDepth hops. Zero SQL calls.
+func (g *inMemoryGraph) ShortestPath(start, end string, maxHops int) []string {
+	if _, ok := g.nodes[start]; !ok {
+		return nil
+	}
+	if _, ok := g.nodes[end]; !ok {
+		return nil
+	}
+
+	queue := []string{start}
+	parent := map[string]string{start: ""}
+
+	for len(queue) > 0 {
+		curr := queue[0]
+		queue = queue[1:]
+
+		if curr == end {
+			path := []string{}
+			for curr != "" {
+				path = append([]string{curr}, path...)
+				curr = parent[curr]
+			}
+			return path
+		}
+
+		if len(parent) > 10000 {
+			break // Safety limit
+		}
+
+		for _, edge := range g.edgesBySource[curr] {
+			if _, visited := parent[edge.TargetID]; !visited {
+				parent[edge.TargetID] = curr
+				queue = append(queue, edge.TargetID)
+			}
+		}
+	}
+	return nil
+}
+
 func (g *inMemoryGraph) query(start string, maxDepth int) *subGraph {
 	startID := g.findNode(start)
 	if startID == "" {
