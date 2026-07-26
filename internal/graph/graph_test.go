@@ -141,3 +141,146 @@ from utils import helper
 		t.Error("expected dependency edge from index.js to pkg:path to exist")
 	}
 }
+
+func TestSyncGraphIncremental(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-incr-test")
+	if err != nil {
+		t.Fatalf("failed to create temp workspace: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_incr.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "prog-incr-test"
+	err = db.RegisterProject(database, projectID, "Incremental Test", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// ---- FIRST BUILD ----
+	// a.js imports b.js and react
+	err = os.WriteFile(filepath.Join(tempDir, "a.js"), []byte(`import b from './b'; import React from 'react';`), 0644)
+	if err != nil {
+		t.Fatalf("failed writing a.js: %v", err)
+	}
+	err = os.WriteFile(filepath.Join(tempDir, "b.js"), []byte(`export const x = 1;`), 0644)
+	if err != nil {
+		t.Fatalf("failed writing b.js: %v", err)
+	}
+
+	err = SyncGraph(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("first SyncGraph failed: %v", err)
+	}
+
+	// Verify nodes from first build
+	var nodeCount int
+	err = database.QueryRow("SELECT COUNT(*) FROM graph_nodes WHERE project_id = ?", projectID).Scan(&nodeCount)
+	if err != nil {
+		t.Fatalf("failed counting nodes: %v", err)
+	}
+	if nodeCount < 3 {
+		t.Errorf("expected at least 3 nodes (a.js, b.js, pkg:react), got %d", nodeCount)
+	}
+
+	// Verify a.js->b.js edge
+	var edgeCount int
+	err = database.QueryRow(`
+		SELECT COUNT(*) FROM graph_edges
+		WHERE project_id = ? AND source_id = 'a.js' AND target_id = 'b.js' AND relation_type = 'imports'
+	`, projectID).Scan(&edgeCount)
+	if err != nil {
+		t.Fatalf("failed checking a.js->b.js edge: %v", err)
+	}
+	if edgeCount != 1 {
+		t.Errorf("expected a.js->b.js edge after first build, got %d", edgeCount)
+	}
+
+	// Verify a.js->pkg:react edge
+	err = database.QueryRow(`
+		SELECT COUNT(*) FROM graph_edges
+		WHERE project_id = ? AND source_id = 'a.js' AND target_id = 'pkg:react' AND relation_type = 'imports'
+	`, projectID).Scan(&edgeCount)
+	if err != nil {
+		t.Fatalf("failed checking a.js->pkg:react edge: %v", err)
+	}
+	if edgeCount != 1 {
+		t.Errorf("expected a.js->pkg:react edge after first build, got %d", edgeCount)
+	}
+
+	// ---- INCREMENTAL BUILD ----
+	// Modify a.js to also import 'vue' (a new external dep not seen before)
+	// This tests: pkg nodes created by parseFiles are upserted to the DB
+	err = os.WriteFile(filepath.Join(tempDir, "a.js"), []byte(`import b from './b'; import React from 'react'; import Vue from 'vue';`), 0644)
+	if err != nil {
+		t.Fatalf("failed updating a.js: %v", err)
+	}
+
+	err = SyncGraph(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("incremental SyncGraph failed: %v", err)
+	}
+
+	// Verify pkg:vue node was created (the actual bug fix)
+	var vueNodeExists int
+	err = database.QueryRow("SELECT COUNT(*) FROM graph_nodes WHERE project_id = ? AND id = 'pkg:vue'", projectID).Scan(&vueNodeExists)
+	if err != nil {
+		t.Fatalf("failed checking pkg:vue node: %v", err)
+	}
+	if vueNodeExists != 1 {
+		t.Errorf("expected pkg:vue node to exist after incremental rebuild, got %d", vueNodeExists)
+	}
+
+	// Verify a.js->pkg:vue edge was created
+	err = database.QueryRow(`
+		SELECT COUNT(*) FROM graph_edges
+		WHERE project_id = ? AND source_id = 'a.js' AND target_id = 'pkg:vue' AND relation_type = 'imports'
+	`, projectID).Scan(&edgeCount)
+	if err != nil {
+		t.Fatalf("failed checking a.js->pkg:vue edge: %v", err)
+	}
+	if edgeCount != 1 {
+		t.Errorf("expected a.js->pkg:vue edge after incremental build, got %d", edgeCount)
+	}
+
+	// Verify old edges are preserved
+	err = database.QueryRow(`
+		SELECT COUNT(*) FROM graph_edges
+		WHERE project_id = ? AND source_id = 'a.js' AND target_id = 'b.js' AND relation_type = 'imports'
+	`, projectID).Scan(&edgeCount)
+	if err != nil {
+		t.Fatalf("failed checking a.js->b.js after incremental: %v", err)
+	}
+	if edgeCount != 1 {
+		t.Errorf("expected a.js->b.js edge to survive incremental, got %d", edgeCount)
+	}
+
+	err = database.QueryRow(`
+		SELECT COUNT(*) FROM graph_edges
+		WHERE project_id = ? AND source_id = 'a.js' AND target_id = 'pkg:react' AND relation_type = 'imports'
+	`, projectID).Scan(&edgeCount)
+	if err != nil {
+		t.Fatalf("failed checking a.js->pkg:react after incremental: %v", err)
+	}
+	if edgeCount != 1 {
+		t.Errorf("expected a.js->pkg:react edge to survive incremental, got %d", edgeCount)
+	}
+
+	// Verify b.js is unchanged (still has no edges)
+	var bEdges int
+	err = database.QueryRow(`
+		SELECT COUNT(*) FROM graph_edges
+		WHERE project_id = ? AND source_id = 'b.js'
+	`, projectID).Scan(&bEdges)
+	if err != nil {
+		t.Fatalf("failed checking b.js edges: %v", err)
+	}
+	if bEdges != 0 {
+		t.Errorf("expected b.js to have 0 outgoing edges, got %d", bEdges)
+	}
+}

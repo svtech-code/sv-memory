@@ -451,6 +451,16 @@ func trySyncGraphIncremental(db *sql.DB, projectID string, projPath string) (boo
 	for _, p := range toParse {
 		upsertNode(tx, projectID, wr.nodes[p])
 	}
+	// Also upsert package nodes that parseFiles may have added to wr.nodes.
+	// These are external dependencies (e.g. "pkg:react") referenced by edges;
+	// without them the FK constraint on graph_edges would fail.
+	for _, node := range wr.nodes {
+		if node.Type == "package" {
+			if err := upsertNode(tx, projectID, node); err != nil {
+				return false, fmt.Errorf("failed upserting package node %s: %w", node.ID, err)
+			}
+		}
+	}
 	if err := bulkInsertEdges(tx, projectID, edges); err != nil {
 		return false, err
 	}
