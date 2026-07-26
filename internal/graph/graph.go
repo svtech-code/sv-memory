@@ -408,6 +408,7 @@ func parseFiles(projPath string, nodes map[string]*Node, toParse []string) []*Ed
 
 	type parseResult struct {
 		sourcePath string
+		ext        string
 		imports    []string
 		err        error
 	}
@@ -424,11 +425,11 @@ func parseFiles(projPath string, nodes map[string]*Node, toParse []string) []*Ed
 			for sourcePath := range jobs {
 				absPath := filepath.Join(projPath, sourcePath)
 				content, err := os.ReadFile(absPath)
+				ext := strings.ToLower(filepath.Ext(sourcePath))
 				if err != nil {
-					results <- parseResult{sourcePath: sourcePath, err: err}
+					results <- parseResult{sourcePath: sourcePath, ext: ext, err: err}
 					continue
 				}
-				ext := strings.ToLower(filepath.Ext(sourcePath))
 				var imports []string
 
 				switch ext {
@@ -507,7 +508,7 @@ func parseFiles(projPath string, nodes map[string]*Node, toParse []string) []*Ed
 						}
 					}
 				}
-				results <- parseResult{sourcePath: sourcePath, imports: imports}
+				results <- parseResult{sourcePath: sourcePath, ext: ext, imports: imports}
 			}
 		}()
 	}
@@ -536,7 +537,7 @@ func parseFiles(projPath string, nodes map[string]*Node, toParse []string) []*Ed
 					RelationType: "imports",
 					Confidence:   "EXTRACTED",
 				})
-			} else if isExternalPkg(imp) {
+			} else if isExternalPkg(imp) && !isStdlib(imp, res.ext) {
 				pkgNodeID := "pkg:" + imp
 				if _, exists := nodes[pkgNodeID]; !exists {
 					nodes[pkgNodeID] = &Node{
@@ -987,6 +988,79 @@ func resolveImport(projPath, sourcePath, imp string, nodes map[string]*Node) (st
 	}
 
 	return "", false
+}
+
+// Stdlib module sets — imports matching these are not registered as pkg: nodes.
+var (
+	goStdlib = map[string]bool{
+		"archive": true, "arena": true, "bufio": true, "bytes": true, "cmp": true,
+		"compress": true, "container": true, "context": true, "crypto": true,
+		"database": true, "debug": true, "embed": true, "encoding": true,
+		"errors": true, "expvar": true, "flag": true, "fmt": true, "go": true,
+		"hash": true, "html": true, "image": true, "index": true, "io": true,
+		"iter": true, "log": true, "maps": true, "math": true, "mime": true,
+		"net": true, "os": true, "path": true, "plugin": true, "reflect": true,
+		"regexp": true, "runtime": true, "slices": true, "sort": true,
+		"strconv": true, "strings": true, "structs": true, "sync": true,
+		"syscall": true, "testing": true, "text": true, "time": true,
+		"unicode": true, "unique": true, "unsafe": true,
+	}
+
+	pyStdlib = map[string]bool{
+		"abc": true, "argparse": true, "array": true, "ast": true, "asyncio": true,
+		"base64": true, "binascii": true, "bisect": true, "builtins": true,
+		"calendar": true, "collections": true, "configparser": true, "contextlib": true,
+		"copy": true, "csv": true, "ctypes": true, "dataclasses": true,
+		"datetime": true, "decimal": true, "difflib": true, "dis": true,
+		"email": true, "enum": true, "errno": true, "functools": true,
+		"gc": true, "getpass": true, "glob": true, "gzip": true, "hashlib": true,
+		"heapq": true, "hmac": true, "html": true, "http": true, "importlib": true,
+		"inspect": true, "io": true, "itertools": true, "json": true,
+		"logging": true, "lzma": true, "math": true, "multiprocessing": true,
+		"operator": true, "os": true, "pathlib": true, "pickle": true,
+		"platform": true, "pprint": true, "profile": true, "pstats": true,
+		"queue": true, "random": true, "re": true, "readline": true,
+		"reprlib": true, "resource": true, "runpy": true, "selectors": true,
+		"shlex": true, "shutil": true, "signal": true, "site": true,
+		"smtplib": true, "socket": true, "socketserver": true, "sqlite3": true,
+		"ssl": true, "stat": true, "statistics": true, "string": true,
+		"struct": true, "subprocess": true, "symtable": true, "sys": true,
+		"tabnanny": true, "tarfile": true, "tempfile": true, "textwrap": true,
+		"threading": true, "time": true, "timeit": true, "tkinter": true,
+		"tokenize": true, "tomllib": true, "trace": true, "traceback": true,
+		"tracemalloc": true, "turtle": true, "types": true, "typing": true,
+		"unicodedata": true, "unittest": true, "urllib": true, "uuid": true,
+		"venv": true, "warnings": true, "wave": true, "weakref": true,
+		"winreg": true, "winsound": true, "xml": true, "xmlrpc": true,
+		"zipfile": true, "zipimport": true, "zoneinfo": true, "__future__": true,
+	}
+
+	nodeStdlib = map[string]bool{
+		"assert": true, "async_hooks": true, "buffer": true, "child_process": true,
+		"cluster": true, "console": true, "constants": true, "crypto": true,
+		"dgram": true, "diagnostics_channel": true, "dns": true, "domain": true,
+		"events": true, "fs": true, "http": true, "http2": true, "https": true,
+		"inspector": true, "module": true, "net": true, "os": true, "path": true,
+		"perf_hooks": true, "process": true, "punycode": true, "querystring": true,
+		"readline": true, "repl": true, "stream": true, "string_decoder": true,
+		"sys": true, "timers": true, "tls": true, "trace_events": true,
+		"tty": true, "url": true, "util": true, "v8": true, "vm": true,
+		"wasi": true, "worker_threads": true, "zlib": true,
+	}
+)
+
+// isStdlib returns true if the import is a built-in module for the given
+// language extension (e.g. "os" in Python, "fmt" in Go, "fs" in Node).
+func isStdlib(imp, ext string) bool {
+	switch ext {
+	case ".go":
+		return goStdlib[imp]
+	case ".py":
+		return pyStdlib[imp]
+	case ".js", ".ts", ".jsx", ".tsx":
+		return nodeStdlib[imp]
+	}
+	return false
 }
 
 // isExternalPkg returns true if the import path represents a external library.

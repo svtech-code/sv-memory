@@ -31,10 +31,10 @@ func TestSyncGraph(t *testing.T) {
 	}
 
 	// Create mock code files in the workspace
-	// 1. JS file index.js (imports relative utils.js and external path/fs)
+	// 1. JS file index.js (imports relative utils.js and external lodash/express)
 	indexJS := `
 	import utils from './utils';
-	const path = require('path');
+	const lodash = require('lodash');
 	import { test } from "./components/Button";
 	`
 	err = os.WriteFile(filepath.Join(tempDir, "index.js"), []byte(indexJS), 0644)
@@ -129,17 +129,17 @@ from utils import helper
 		t.Error("expected dependency edge from index.js to utils.js to exist")
 	}
 
-	// index.js -> pkg:path (imports) should exist
+	// index.js -> pkg:lodash (imports) should exist
 	err = database.QueryRow(`
 		SELECT COUNT(*) FROM graph_edges 
-		WHERE project_id = ? AND source_id = 'index.js' AND target_id = 'pkg:path' AND relation_type = 'imports'
+		WHERE project_id = ? AND source_id = 'index.js' AND target_id = 'pkg:lodash' AND relation_type = 'imports'
 	`, projectID).Scan(&edgeExists)
 	if err != nil {
 		t.Fatalf("failed checking imports edge: %v", err)
 	}
 
 	if edgeExists != 1 {
-		t.Error("expected dependency edge from index.js to pkg:path to exist")
+		t.Error("expected dependency edge from index.js to pkg:lodash to exist")
 	}
 
 	// Verify confidence column
