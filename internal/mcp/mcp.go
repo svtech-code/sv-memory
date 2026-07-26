@@ -46,6 +46,13 @@ func debugLog(format string, args ...interface{}) {
 // Reads use the pool's Reader so concurrent tool calls scale; writes (save)
 // go through the Writer to keep SQLite serialized under WAL.
 func StartServer(pool *db.Pool, cfg *config.Config) error {
+	s := NewServer(pool, cfg)
+	return server.ServeStdio(s)
+}
+
+// NewServer initializes the MCP server, registers all 19 tools, and returns it.
+// Split from StartServer for programmatic unit testing.
+func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	// Initialize server
 	s := server.NewMCPServer("sv-memory", "1.0.0")
 
@@ -926,8 +933,7 @@ var (
 		return mcp.NewToolResultText("Dependency graph refreshed and synchronized successfully in SQLite."), nil
 	})
 
-	// Start standard IO transport server using convenience function
-	return server.ServeStdio(s)
+	return s
 }
 
 
