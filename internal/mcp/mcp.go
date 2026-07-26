@@ -705,7 +705,20 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		return mcp.NewToolResultText(sb.String()), nil
 	})
 
-	// 14. Tool: sv_mem_delete
+	// 14. Tool: sv_mem_current_project
+	currentProjectTool := mcp.NewTool("sv_mem_current_project",
+		mcp.WithDescription("Get the current project's ID and display name. Useful for confirming which project context is active before saving or searching."),
+	)
+
+	s.AddTool(currentProjectTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var projName, projPath string
+		if err := pool.Reader.QueryRow("SELECT name, path FROM projects WHERE id=?", cfg.ProjectID).Scan(&projName, &projPath); err != nil {
+			return mcp.NewToolResultText(fmt.Sprintf("**Current project:** %s (ID: `%s`)", cfg.ProjName, cfg.ProjectID)), nil
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("**Current project:** %s (ID: `%s`, path: `%s`)", projName, cfg.ProjectID, projPath)), nil
+	})
+
+	// 15. Tool: sv_mem_delete
 	deleteTool := mcp.NewTool("sv_mem_delete",
 		mcp.WithDescription("Delete a memory. Soft delete (default) marks it as deleted but preserves it in the database for potential recovery. Hard delete removes it permanently."),
 		mcp.WithString("id", mcp.Required(), mcp.Description("The memory ID to delete")),
@@ -732,7 +745,7 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		return mcp.NewToolResultText(fmt.Sprintf("Memory %s %s-deleted successfully.", id, mode)), nil
 	})
 
-	// 15. Tool: sv_mem_capture_passive
+	// 16. Tool: sv_mem_capture_passive
 	captureTool := mcp.NewTool("sv_mem_capture_passive",
 		mcp.WithDescription("Save a lightweight passive observation (e.g. 'modified file X', 'test Y failed'). Unlike sv_mem_save, this requires no explicit decision — it logs context automatically. Category is set to 'journal'."),
 		mcp.WithString("what", mcp.Required(), mcp.Description("Brief description of what happened")),
@@ -763,7 +776,7 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		return mcp.NewToolResultText(fmt.Sprintf("Passive observation captured (ID: %s, category: journal). Use sv_mem_get(id=\"%s\") for details.", mem.ID, mem.ID)), nil
 	})
 
-	// 16. Tool: sv_graph_query
+	// 17. Tool: sv_graph_query
 	graphQueryTool := mcp.NewTool("sv_graph_query",
 		mcp.WithDescription("Retrieve project code structure, connections, imports, and dependencies for a given module, file, or package."),
 		mcp.WithString("path_or_node", mcp.Required(), mcp.Description("The file path, package name, or module to inspect")),
@@ -832,7 +845,7 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		return mcp.NewToolResultText(sb.String()), nil
 	})
 
-	// 17. Tool: sv_graph_sync
+	// 18. Tool: sv_graph_sync
 	graphSyncTool := mcp.NewTool("sv_graph_sync",
 		mcp.WithDescription("Trigger a full re-scan of the project code directory and refresh the structural dependency graph stored in SQLite."),
 	)
