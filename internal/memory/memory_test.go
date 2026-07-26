@@ -42,7 +42,7 @@ func TestMemoryCRUDAndFTS(t *testing.T) {
 		CreatedAt: time.Now(),
 	}
 
-	err = SaveMemory(database, mem1)
+	_, err = SaveMemory(database, mem1)
 	if err != nil {
 		t.Fatalf("failed to save memory: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestGitSync(t *testing.T) {
 	}
 
 	for _, m := range mems {
-		if err := SaveMemory(database, m); err != nil {
+		if _, err := SaveMemory(database, m); err != nil {
 			t.Fatalf("failed saving memory: %v", err)
 		}
 	}

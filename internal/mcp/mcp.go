@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
@@ -119,7 +118,7 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 
 	// 1. Tool: sv_mem_save
 	saveTool := mcp.NewTool("sv_mem_save",
-		mcp.WithDescription("Persist a key architectural decision, bug fix, progress journal, or standard guidelines to the project's memory. This will also update the shared workspace JSON file for Git versioning."),
+		mcp.WithDescription("Persist a key architectural decision, bug fix, progress journal, or standard guidelines to the project's memory. Supports optional topic_key for upsert semantics (update in place on same project+topic) and session_id for session association."),
 		mcp.WithString("category", mcp.Required(), mcp.Description("Category of memory: 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem' | 'discussion' | 'idea' | 'qa'")),
 		mcp.WithString("what", mcp.Required(), mcp.Description("Concise description of the decision, standard, or fix")),
 		mcp.WithString("why", mcp.Required(), mcp.Description("Detailed reasoning for this choice")),
@@ -128,6 +127,8 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		mcp.WithString("impact", mcp.Description("Achievements, successes, or what went well")),
 		mcp.WithString("errors_faced", mcp.Description("Errors faced, roadblocks, or what went wrong")),
 		mcp.WithString("next_steps", mcp.Description("Next actions or pending tasks to continue work")),
+		mcp.WithString("topic_key", mcp.Description("Optional stable topic key for upsert semantics. When set, saves to the same project+topic update in place instead of creating a new record. Format: 'category/kebab-case-description'. Use sv_mem_suggest_topic_key to generate one.")),
+		mcp.WithString("session_id", mcp.Description("Optional session ID to associate this memory with an active session.")),
 	)
 
 	s.AddTool(saveTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -152,9 +153,10 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		impact := req.GetString("impact", "")
 		errorsFaced := req.GetString("errors_faced", "")
 		nextSteps := req.GetString("next_steps", "")
+		topicKey := req.GetString("topic_key", "")
+		sessionID := req.GetString("session_id", "")
 
 		mem := &memory.Memory{
-			ID:          uuid.New().String()[:8], // Compact 8-char UUID
 			ProjectID:   cfg.ProjectID,
 			Category:    category,
 			What:        what,
@@ -167,36 +169,62 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 			Impact:      impact,
 			ErrorsFaced: errorsFaced,
 			NextSteps:   nextSteps,
-			CreatedAt:   time.Now(),
+			TopicKey:    topicKey,
+			SessionID:   sessionID,
 		}
 
-		// Save locally in SQLite (write goes through the pool's Writer to
-		// keep SQLite serialized under WAL — MaxOpenConns=1).
 		startSave := time.Now()
-		if err := memory.SaveMemory(pool.Writer, mem); err != nil {
+		saved, err := memory.SaveMemory(pool.Writer, mem)
+		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to save memory to SQLite: %v", err)), nil
 		}
-		debugLog("mem_save SQLite write for id=%s took %s", mem.ID, time.Since(startSave))
+		debugLog("mem_save SQLite write for id=%s took %s", saved.ID, time.Since(startSave))
 
-		// Sync immediately to Git json file
 		startSync := time.Now()
 		if err := memory.SyncToGit(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
-			return mcp.NewToolResultText(fmt.Sprintf("Saved to local SQLite database (ID: %s) but failed Git Sync: %v", mem.ID, err)), nil
+			return mcp.NewToolResultText(fmt.Sprintf("Saved to local SQLite database (ID: %s) but failed Git Sync: %v", saved.ID, err)), nil
 		}
-		debugLog("mem_save syncToGit for id=%s took %s", mem.ID, time.Since(startSync))
+		debugLog("mem_save syncToGit for id=%s took %s", saved.ID, time.Since(startSync))
 
-		// Bump our own mtime cache so a subsequent sv_mem_search doesn't re-pull
-		// the file we ourselves just wrote.
 		syncMu.Lock()
 		if info, err := os.Stat(syncFile); err == nil {
 			lastSyncMtim = info.ModTime()
 		}
 		syncMu.Unlock()
 
-		return mcp.NewToolResultText(fmt.Sprintf("Successfully saved decision memory (ID: %s) and synced to Git workspace (.sv-memory/memories.json)", mem.ID)), nil
+		// Build contextual response based on what SaveMemory did
+		var action string
+		if saved.DuplicateCount > 0 {
+			action = fmt.Sprintf("duplicate suppressed (count: %d)", saved.DuplicateCount)
+		} else if saved.RevisionCount > 1 {
+			action = fmt.Sprintf("updated existing topic_key (revision: %d)", saved.RevisionCount)
+		} else {
+			action = "created"
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("Successfully %s memory (ID: %s) and synced to Git workspace (.sv-memory/memories.json)", action, saved.ID)), nil
 	})
 
-	// 2. Tool: sv_mem_search
+	// 2. Tool: sv_mem_suggest_topic_key
+	suggestTool := mcp.NewTool("sv_mem_suggest_topic_key",
+		mcp.WithDescription("Suggest a stable topic_key for an evolving topic before saving. The key follows 'category/kebab-case-description' format and enables upsert semantics in sv_mem_save."),
+		mcp.WithString("category", mcp.Required(), mcp.Description("Category of memory: 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem' | 'discussion' | 'idea' | 'qa'")),
+		mcp.WithString("what", mcp.Required(), mcp.Description("The title or description of the memory")),
+	)
+
+	s.AddTool(suggestTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		category, err := req.RequireString("category")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: category"), nil
+		}
+		what, err := req.RequireString("what")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: what"), nil
+		}
+		key := memory.SuggestTopicKey(category, what)
+		return mcp.NewToolResultText(fmt.Sprintf("Suggested topic_key: `%s`\nUse this key with sv_mem_save(topic_key=\"%s\") to enable upsert semantics.", key, key)), nil
+	})
+
+	// 3. Tool: sv_mem_search
 	searchTool := mcp.NewTool("sv_mem_search",
 		mcp.WithDescription("Query the historical project decisions, architectural rules, and past bugfixes using keyword/FTS search."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("The keyword or phrase to search for")),
@@ -273,7 +301,7 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		return mcp.NewToolResultText(sb.String()), nil
 	})
 
-	// 3. Tool: sv_graph_query
+	// 4. Tool: sv_graph_query
 	graphQueryTool := mcp.NewTool("sv_graph_query",
 		mcp.WithDescription("Retrieve project code structure, connections, imports, and dependencies for a given module, file, or package."),
 		mcp.WithString("path_or_node", mcp.Required(), mcp.Description("The file path, package name, or module to inspect")),
@@ -342,7 +370,7 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		return mcp.NewToolResultText(sb.String()), nil
 	})
 
-	// 4. Tool: sv_graph_sync
+	// 5. Tool: sv_graph_sync
 	graphSyncTool := mcp.NewTool("sv_graph_sync",
 		mcp.WithDescription("Trigger a full re-scan of the project code directory and refresh the structural dependency graph stored in SQLite."),
 	)

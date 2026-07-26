@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS graph_files_meta (
     FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
--- Performance indexes (Fase 1 quick wins):
+-- Performance indexes:
 -- graph_edges are queried by (project_id, source_id) and (project_id, target_id)
 -- during BFS in querySubGraph. Without these, SQLite does a full table scan per hop.
 CREATE INDEX IF NOT EXISTS idx_graph_edges_source ON graph_edges(project_id, source_id);
@@ -115,6 +115,7 @@ CREATE INDEX IF NOT EXISTS idx_graph_edges_target ON graph_edges(project_id, tar
 -- project + category (filter path). Both patterns hit the search handler.
 CREATE INDEX IF NOT EXISTS idx_memories_project_created ON memories(project_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_memories_project_category ON memories(project_id, category);
+
 `
 
 // InitDB initializes the SQLite database and runs all migrations.
@@ -271,12 +272,18 @@ func applyMigrations(db *sql.DB) error {
 
 	// Migrate memories schema if missing columns
 	columnChecks := map[string]string{
-		"git_branch":   "ALTER TABLE memories ADD COLUMN git_branch TEXT;",
-		"git_commit":   "ALTER TABLE memories ADD COLUMN git_commit TEXT;",
-		"author":       "ALTER TABLE memories ADD COLUMN author TEXT;",
-		"impact":       "ALTER TABLE memories ADD COLUMN impact TEXT;",
-		"errors_faced": "ALTER TABLE memories ADD COLUMN errors_faced TEXT;",
-		"next_steps":   "ALTER TABLE memories ADD COLUMN next_steps TEXT;",
+		"git_branch":       "ALTER TABLE memories ADD COLUMN git_branch TEXT;",
+		"git_commit":       "ALTER TABLE memories ADD COLUMN git_commit TEXT;",
+		"author":           "ALTER TABLE memories ADD COLUMN author TEXT;",
+		"impact":           "ALTER TABLE memories ADD COLUMN impact TEXT;",
+		"errors_faced":     "ALTER TABLE memories ADD COLUMN errors_faced TEXT;",
+		"next_steps":       "ALTER TABLE memories ADD COLUMN next_steps TEXT;",
+		"session_id":       "ALTER TABLE memories ADD COLUMN session_id TEXT;",
+		"topic_key":        "ALTER TABLE memories ADD COLUMN topic_key TEXT;",
+		"revision_count":   "ALTER TABLE memories ADD COLUMN revision_count INTEGER DEFAULT 1;",
+		"duplicate_count":  "ALTER TABLE memories ADD COLUMN duplicate_count INTEGER DEFAULT 0;",
+		"last_seen_at":     "ALTER TABLE memories ADD COLUMN last_seen_at DATETIME;",
+		"normalized_hash":  "ALTER TABLE memories ADD COLUMN normalized_hash TEXT;",
 	}
 	for col, alterStmt := range columnChecks {
 		var exists bool
@@ -302,6 +309,17 @@ func applyMigrations(db *sql.DB) error {
 			if _, errAlter := db.Exec(alterStmt); errAlter != nil {
 				fmt.Printf("Warning: failed to add column %s to memories: %v\n", col, errAlter)
 			}
+		}
+	}
+
+	// Create indexes that depend on columns added above (may not exist at schema time).
+	postIndexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_memories_topic ON memories(project_id, topic_key);",
+		"CREATE INDEX IF NOT EXISTS idx_memories_hash ON memories(project_id, normalized_hash);",
+	}
+	for _, idx := range postIndexes {
+		if _, err := db.Exec(idx); err != nil {
+			fmt.Printf("Warning: failed to create index: %v\n", err)
 		}
 	}
 

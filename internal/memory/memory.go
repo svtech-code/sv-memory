@@ -1,15 +1,20 @@
 package memory
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
 
+	"github.com/google/uuid"
 	"github.com/svtech/sv-memory/internal/security"
 )
 
@@ -28,32 +33,50 @@ type syncCacheEntry struct {
 
 // Memory represents a recorded design decision, bugfix, or coding standard.
 type Memory struct {
-	ID          string    `json:"id"`
-	ProjectID   string    `json:"project_id"`
-	Category    string    `json:"category"` // 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem' | 'discussion' | 'idea' | 'qa'
-	What        string    `json:"what"`
-	Why         string    `json:"why"`
-	WherePath   string    `json:"where_path,omitempty"`
-	Learned     string    `json:"learned"`
-	GitBranch   string    `json:"git_branch,omitempty"`
-	GitCommit   string    `json:"git_commit,omitempty"`
-	Author      string    `json:"author,omitempty"`
-	Impact      string    `json:"impact,omitempty"`
-	ErrorsFaced string    `json:"errors_faced,omitempty"`
-	NextSteps   string    `json:"next_steps,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID             string    `json:"id"`
+	ProjectID      string    `json:"project_id"`
+	Category       string    `json:"category"` // 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem' | 'discussion' | 'idea' | 'qa'
+	What           string    `json:"what"`
+	Why            string    `json:"why"`
+	WherePath      string    `json:"where_path,omitempty"`
+	Learned        string    `json:"learned"`
+	GitBranch      string    `json:"git_branch,omitempty"`
+	GitCommit      string    `json:"git_commit,omitempty"`
+	Author         string    `json:"author,omitempty"`
+	Impact         string    `json:"impact,omitempty"`
+	ErrorsFaced    string    `json:"errors_faced,omitempty"`
+	NextSteps      string    `json:"next_steps,omitempty"`
+	SessionID      string    `json:"session_id,omitempty"`
+	TopicKey       string    `json:"topic_key,omitempty"`
+	RevisionCount  int       `json:"revision_count,omitempty"`
+	DuplicateCount int       `json:"duplicate_count,omitempty"`
+	LastSeenAt     time.Time `json:"last_seen_at,omitempty"`
+	NormalizedHash string    `json:"normalized_hash,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
-// SaveMemory inserts or replaces a memory record in the database.
-func SaveMemory(db *sql.DB, mem *Memory) error {
-	if mem.ID == "" {
-		return errors.New("memory ID cannot be empty")
-	}
+// computeHash returns a SHA256 hex digest of the concatenated what/why/learned fields.
+func computeHash(what, why, learned string) string {
+	data := what + "\x00" + why + "\x00" + learned
+	h := sha256.Sum256([]byte(data))
+	return hex.EncodeToString(h[:])
+}
+
+// SaveMemory inserts or updates a memory record in the database.
+// It implements two economisation strategies:
+//  1. Topic-key upsert: if topic_key is set and a record with the same
+//     project_id + topic_key exists, that record is updated (revision_count++)
+//     instead of creating a new one.
+//  2. Rolling-window dedup: if topic_key is NOT set and an identical
+//     normalized_hash exists for the same project + category within the last
+//     24 hours, duplicate_count is incremented and last_seen_at is bumped
+//     without creating a new row.
+// Returns the saved/updated memory so callers can inspect resulting state.
+func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 	if mem.ProjectID == "" {
-		return errors.New("memory ProjectID cannot be empty")
+		return nil, errors.New("memory ProjectID cannot be empty")
 	}
 
-	// Sanitize fields to prevent secret leakages
 	mem.What = security.SanitizeText(mem.What)
 	mem.Why = security.SanitizeText(mem.Why)
 	mem.WherePath = security.SanitizeText(mem.WherePath)
@@ -65,9 +88,82 @@ func SaveMemory(db *sql.DB, mem *Memory) error {
 	mem.ErrorsFaced = security.SanitizeText(mem.ErrorsFaced)
 	mem.NextSteps = security.SanitizeText(mem.NextSteps)
 
+	now := time.Now()
+	mem.NormalizedHash = computeHash(mem.What, mem.Why, mem.Learned)
+
+	// Strategy 1 — topic_key upsert: update existing record if same project + topic
+	if mem.TopicKey != "" {
+		var existingID string
+		var revCount int
+		err := db.QueryRow(
+			"SELECT id, revision_count FROM memories WHERE project_id = ? AND topic_key = ?",
+			mem.ProjectID, mem.TopicKey,
+		).Scan(&existingID, &revCount)
+		if err == nil {
+			mem.ID = existingID
+			mem.RevisionCount = revCount + 1
+			if mem.CreatedAt.IsZero() {
+				mem.CreatedAt = now
+			}
+			query := `
+			UPDATE memories SET
+				category = ?, what = ?, why = ?, where_path = ?, learned = ?,
+				git_branch = ?, git_commit = ?, author = ?, impact = ?,
+				errors_faced = ?, next_steps = ?, session_id = ?,
+				topic_key = ?, revision_count = ?, normalized_hash = ?,
+				last_seen_at = ?, created_at = ?
+			WHERE id = ?`
+			_, err := db.Exec(query,
+				mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned,
+				mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact,
+				mem.ErrorsFaced, mem.NextSteps, mem.SessionID,
+				mem.TopicKey, mem.RevisionCount, mem.NormalizedHash,
+				now, mem.CreatedAt, mem.ID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to update memory via topic_key: %w", err)
+			}
+			return mem, nil
+		}
+		// Not found: fall through to insert
+	}
+
+	// Strategy 2 — rolling-window dedup: same content hash within 24h
+	if mem.TopicKey == "" {
+		var existingID string
+		var dupCount int
+		err := db.QueryRow(
+			"SELECT id, duplicate_count FROM memories WHERE project_id = ? AND normalized_hash = ? AND category = ? AND created_at > datetime('now', '-24 hours')",
+			mem.ProjectID, mem.NormalizedHash, mem.Category,
+		).Scan(&existingID, &dupCount)
+		if err == nil {
+			_, err := db.Exec("UPDATE memories SET duplicate_count = ?, last_seen_at = ? WHERE id = ?",
+				dupCount+1, now, existingID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to update duplicate count: %w", err)
+			}
+			mem.ID = existingID
+			mem.DuplicateCount = dupCount + 1
+			mem.LastSeenAt = now
+			return mem, nil
+		}
+		// Not found: fall through to insert
+	}
+
+	// New memory insert
+	if mem.ID == "" {
+		mem.ID = uuid.New().String()[:8]
+	}
+	if mem.CreatedAt.IsZero() {
+		mem.CreatedAt = now
+	}
+	if mem.TopicKey != "" {
+		mem.RevisionCount = 1
+	}
+	mem.DuplicateCount = 0
+
 	query := `
-	INSERT INTO memories (id, project_id, category, what, why, where_path, learned, git_branch, git_commit, author, impact, errors_faced, next_steps, created_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO memories (id, project_id, category, what, why, where_path, learned, git_branch, git_commit, author, impact, errors_faced, next_steps, session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
 		category = excluded.category,
 		what = excluded.what,
@@ -80,18 +176,22 @@ func SaveMemory(db *sql.DB, mem *Memory) error {
 		impact = excluded.impact,
 		errors_faced = excluded.errors_faced,
 		next_steps = excluded.next_steps,
-		created_at = excluded.created_at;
-	`
-	createdAt := mem.CreatedAt
-	if createdAt.IsZero() {
-		createdAt = time.Now()
-	}
-
-	_, err := db.Exec(query, mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned, mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact, mem.ErrorsFaced, mem.NextSteps, createdAt)
+		session_id = excluded.session_id,
+		topic_key = excluded.topic_key,
+		revision_count = excluded.revision_count,
+		duplicate_count = excluded.duplicate_count,
+		last_seen_at = excluded.last_seen_at,
+		normalized_hash = excluded.normalized_hash,
+		created_at = excluded.created_at;`
+	_, err := db.Exec(query,
+		mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned,
+		mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact, mem.ErrorsFaced, mem.NextSteps,
+		mem.SessionID, mem.TopicKey, mem.RevisionCount, mem.DuplicateCount, mem.LastSeenAt,
+		mem.NormalizedHash, mem.CreatedAt)
 	if err != nil {
-		return fmt.Errorf("failed to save memory: %w", err)
+		return nil, fmt.Errorf("failed to save memory: %w", err)
 	}
-	return nil
+	return mem, nil
 }
 
 // SearchMemories queries the database using FTS5 full-text search.
@@ -100,9 +200,10 @@ func SearchMemories(db *sql.DB, projectID string, searchTerm string, category st
 	var args []interface{}
 
 	if searchTerm == "" {
-		// No search term: do a regular metadata query
 		query = `
-		SELECT id, project_id, category, what, why, where_path, learned, git_branch, git_commit, author, impact, errors_faced, next_steps, created_at
+		SELECT id, project_id, category, what, why, where_path, learned,
+			git_branch, git_commit, author, impact, errors_faced, next_steps,
+			session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at
 		FROM memories
 		WHERE project_id = ?
 		`
@@ -113,9 +214,10 @@ func SearchMemories(db *sql.DB, projectID string, searchTerm string, category st
 		}
 		query += " ORDER BY created_at DESC"
 	} else {
-		// Use FTS5 match query joining memories table on rowid
 		query = `
-		SELECT m.id, m.project_id, m.category, m.what, m.why, m.where_path, m.learned, m.git_branch, m.git_commit, m.author, m.impact, m.errors_faced, m.next_steps, m.created_at
+		SELECT m.id, m.project_id, m.category, m.what, m.why, m.where_path, m.learned,
+			m.git_branch, m.git_commit, m.author, m.impact, m.errors_faced, m.next_steps,
+			m.session_id, m.topic_key, m.revision_count, m.duplicate_count, m.last_seen_at, m.normalized_hash, m.created_at
 		FROM memories m
 		JOIN memories_fts f ON m.rowid = f.rowid
 		WHERE m.project_id = ? AND memories_fts MATCH ?
@@ -143,8 +245,11 @@ func SearchMemories(db *sql.DB, projectID string, searchTerm string, category st
 	for rows.Next() {
 		var mem Memory
 		var createdAtStr string
-		var gitBranch, gitCommit, author, impact, errorsFaced, nextSteps sql.NullString
-		err := rows.Scan(&mem.ID, &mem.ProjectID, &mem.Category, &mem.What, &mem.Why, &mem.WherePath, &mem.Learned, &gitBranch, &gitCommit, &author, &impact, &errorsFaced, &nextSteps, &createdAtStr)
+		var lastSeenAtStr string
+		var gitBranch, gitCommit, author, impact, errorsFaced, nextSteps, sessionID, topicKey sql.NullString
+		var revisionCount, duplicateCount sql.NullInt64
+		var normalizedHash sql.NullString
+		err := rows.Scan(&mem.ID, &mem.ProjectID, &mem.Category, &mem.What, &mem.Why, &mem.WherePath, &mem.Learned, &gitBranch, &gitCommit, &author, &impact, &errorsFaced, &nextSteps, &sessionID, &topicKey, &revisionCount, &duplicateCount, &lastSeenAtStr, &normalizedHash, &createdAtStr)
 		if err != nil {
 			return nil, fmt.Errorf("failed scanning memory row: %w", err)
 		}
@@ -154,22 +259,42 @@ func SearchMemories(db *sql.DB, projectID string, searchTerm string, category st
 		mem.Impact = impact.String
 		mem.ErrorsFaced = errorsFaced.String
 		mem.NextSteps = nextSteps.String
-		t, parseErr := time.Parse(time.RFC3339, createdAtStr)
-		if parseErr == nil {
+		mem.SessionID = sessionID.String
+		mem.TopicKey = topicKey.String
+		if revisionCount.Valid {
+			mem.RevisionCount = int(revisionCount.Int64)
+		}
+		if duplicateCount.Valid {
+			mem.DuplicateCount = int(duplicateCount.Int64)
+		}
+		mem.NormalizedHash = normalizedHash.String
+		if lastSeenAtStr != "" {
+			if t, err := parseTime(lastSeenAtStr); err == nil {
+				mem.LastSeenAt = t
+			}
+		}
+		if t, err := parseTime(createdAtStr); err == nil {
 			mem.CreatedAt = t
 		} else {
-			// Try fallback SQLite standard formats
-			t, parseErr = time.Parse("2006-01-02 15:04:05", createdAtStr)
-			if parseErr == nil {
-				mem.CreatedAt = t
-			} else {
-				mem.CreatedAt = time.Now()
-			}
+			mem.CreatedAt = time.Now()
 		}
 		memories = append(memories, &mem)
 	}
 
 	return memories, nil
+}
+
+// parseTime tries RFC3339 first, then the SQLite default datetime format.
+func parseTime(s string) (time.Time, error) {
+	t, err := time.Parse(time.RFC3339, s)
+	if err == nil {
+		return t, nil
+	}
+	t, err = time.Parse("2006-01-02 15:04:05", s)
+	if err == nil {
+		return t, nil
+	}
+	return time.Time{}, fmt.Errorf("cannot parse time %q", s)
 }
 
 // countMemories returns the total number of memories for a given project.
@@ -276,8 +401,8 @@ func SyncFromGit(db *sql.DB, projectID string, projPath string) error {
 	defer tx.Rollback()
 
 	query := `
-	INSERT INTO memories (id, project_id, category, what, why, where_path, learned, git_branch, git_commit, author, impact, errors_faced, next_steps, created_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO memories (id, project_id, category, what, why, where_path, learned, git_branch, git_commit, author, impact, errors_faced, next_steps, session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
 		category = excluded.category,
 		what = excluded.what,
@@ -290,8 +415,13 @@ func SyncFromGit(db *sql.DB, projectID string, projPath string) error {
 		impact = excluded.impact,
 		errors_faced = excluded.errors_faced,
 		next_steps = excluded.next_steps,
-		created_at = excluded.created_at;
-	`
+		session_id = excluded.session_id,
+		topic_key = excluded.topic_key,
+		revision_count = excluded.revision_count,
+		duplicate_count = excluded.duplicate_count,
+		last_seen_at = excluded.last_seen_at,
+		normalized_hash = excluded.normalized_hash,
+		created_at = excluded.created_at;`
 	stmt, err := tx.Prepare(query)
 	if err != nil {
 		return err
@@ -299,17 +429,224 @@ func SyncFromGit(db *sql.DB, projectID string, projPath string) error {
 	defer stmt.Close()
 
 	for _, mem := range memories {
-		// Safety check: force correct projectID in case of copy-paste files
 		mem.ProjectID = projectID
 		createdAt := mem.CreatedAt
 		if createdAt.IsZero() {
 			createdAt = time.Now()
 		}
-		_, err := stmt.Exec(mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned, mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact, mem.ErrorsFaced, mem.NextSteps, createdAt)
+		_, err := stmt.Exec(
+			mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned,
+			mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact, mem.ErrorsFaced, mem.NextSteps,
+			nullString(mem.SessionID), nullString(mem.TopicKey),
+			mem.RevisionCount, mem.DuplicateCount,
+			nullTime(mem.LastSeenAt), nullString(mem.NormalizedHash),
+			createdAt)
 		if err != nil {
 			return fmt.Errorf("failed to sync memory %s: %w", mem.ID, err)
 		}
 	}
 
 	return tx.Commit()
+}
+
+// nullString returns a *string for SQL NULL handling: empty string → nil.
+func nullString(s string) interface{} {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+// nullTime returns a *time.Time for SQL NULL handling: zero time → nil.
+func nullTime(t time.Time) interface{} {
+	if t.IsZero() {
+		return nil
+	}
+	return t
+}
+
+// GetMemory retrieves a single memory by its full ID (project_id + id).
+// Returns nil without error when the memory is not found.
+func GetMemory(db *sql.DB, projectID, id string) (*Memory, error) {
+	query := `
+	SELECT id, project_id, category, what, why, where_path, learned,
+		git_branch, git_commit, author, impact, errors_faced, next_steps,
+		session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at
+	FROM memories WHERE project_id = ? AND id = ?`
+	row := db.QueryRow(query, projectID, id)
+	var mem Memory
+	var createdAtStr string
+	var lastSeenAtStr string
+	var gitBranch, gitCommit, author, impact, errorsFaced, nextSteps, sessionID, topicKey sql.NullString
+	var revisionCount, duplicateCount sql.NullInt64
+	var normalizedHash sql.NullString
+	err := row.Scan(&mem.ID, &mem.ProjectID, &mem.Category, &mem.What, &mem.Why, &mem.WherePath, &mem.Learned, &gitBranch, &gitCommit, &author, &impact, &errorsFaced, &nextSteps, &sessionID, &topicKey, &revisionCount, &duplicateCount, &lastSeenAtStr, &normalizedHash, &createdAtStr)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get memory: %w", err)
+	}
+	mem.GitBranch = gitBranch.String
+	mem.GitCommit = gitCommit.String
+	mem.Author = author.String
+	mem.Impact = impact.String
+	mem.ErrorsFaced = errorsFaced.String
+	mem.NextSteps = nextSteps.String
+	mem.SessionID = sessionID.String
+	mem.TopicKey = topicKey.String
+	if revisionCount.Valid {
+		mem.RevisionCount = int(revisionCount.Int64)
+	}
+	if duplicateCount.Valid {
+		mem.DuplicateCount = int(duplicateCount.Int64)
+	}
+	mem.NormalizedHash = normalizedHash.String
+	if lastSeenAtStr != "" {
+		if t, err := parseTime(lastSeenAtStr); err == nil {
+			mem.LastSeenAt = t
+		}
+	}
+	if t, err := parseTime(createdAtStr); err == nil {
+		mem.CreatedAt = t
+	} else {
+		mem.CreatedAt = time.Now()
+	}
+	return &mem, nil
+}
+
+// GetTimeline returns N memories created before and N memories after the
+// given observation id, ordered chronologically. This is the second layer
+// of the progressive disclosure pattern (context around a specific memory).
+func GetTimeline(db *sql.DB, projectID, obsID string, before, after int) (previous, next []*Memory, err error) {
+	// Find the created_at of the target observation
+	var targetTime time.Time
+	var targetCreatedAt string
+	err = db.QueryRow("SELECT created_at FROM memories WHERE project_id = ? AND id = ?", projectID, obsID).Scan(&targetCreatedAt)
+	if err != nil {
+		return nil, nil, fmt.Errorf("observation not found: %w", err)
+	}
+	targetTime, err = parseTime(targetCreatedAt)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// N memories strictly before targetTime
+	if before > 0 {
+		rows, qErr := db.Query(`
+		SELECT id, project_id, category, what, why, where_path, learned,
+			git_branch, git_commit, author, impact, errors_faced, next_steps,
+			session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at
+		FROM memories WHERE project_id = ? AND created_at < ? AND id != ?
+		ORDER BY created_at DESC LIMIT ?`, projectID, targetTime.Format("2006-01-02 15:04:05"), obsID, before)
+		if qErr != nil {
+			return nil, nil, qErr
+		}
+		defer rows.Close()
+		previous, qErr = scanMemories(rows)
+		if qErr != nil {
+			return nil, nil, qErr
+		}
+		// Reverse to get ascending order
+		for i, j := 0, len(previous)-1; i < j; i, j = i+1, j-1 {
+			previous[i], previous[j] = previous[j], previous[i]
+		}
+	}
+
+	// N memories strictly after targetTime
+	if after > 0 {
+		rows, qErr := db.Query(`
+		SELECT id, project_id, category, what, why, where_path, learned,
+			git_branch, git_commit, author, impact, errors_faced, next_steps,
+			session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at
+		FROM memories WHERE project_id = ? AND created_at > ? AND id != ?
+		ORDER BY created_at ASC LIMIT ?`, projectID, targetTime.Format("2006-01-02 15:04:05"), obsID, after)
+		if qErr != nil {
+			return nil, nil, qErr
+		}
+		defer rows.Close()
+		next, qErr = scanMemories(rows)
+		if qErr != nil {
+			return nil, nil, qErr
+		}
+	}
+
+	return previous, next, nil
+}
+
+// scanMemories is a helper that scans all rows from a query result into []*Memory.
+func scanMemories(rows *sql.Rows) ([]*Memory, error) {
+	var memories []*Memory
+	for rows.Next() {
+		var mem Memory
+		var createdAtStr string
+		var lastSeenAtStr string
+		var gitBranch, gitCommit, author, impact, errorsFaced, nextSteps, sessionID, topicKey sql.NullString
+		var revisionCount, duplicateCount sql.NullInt64
+		var normalizedHash sql.NullString
+		err := rows.Scan(&mem.ID, &mem.ProjectID, &mem.Category, &mem.What, &mem.Why, &mem.WherePath, &mem.Learned, &gitBranch, &gitCommit, &author, &impact, &errorsFaced, &nextSteps, &sessionID, &topicKey, &revisionCount, &duplicateCount, &lastSeenAtStr, &normalizedHash, &createdAtStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed scanning memory row: %w", err)
+		}
+		mem.GitBranch = gitBranch.String
+		mem.GitCommit = gitCommit.String
+		mem.Author = author.String
+		mem.Impact = impact.String
+		mem.ErrorsFaced = errorsFaced.String
+		mem.NextSteps = nextSteps.String
+		mem.SessionID = sessionID.String
+		mem.TopicKey = topicKey.String
+		if revisionCount.Valid {
+			mem.RevisionCount = int(revisionCount.Int64)
+		}
+		if duplicateCount.Valid {
+			mem.DuplicateCount = int(duplicateCount.Int64)
+		}
+		mem.NormalizedHash = normalizedHash.String
+		if lastSeenAtStr != "" {
+			if t, err := parseTime(lastSeenAtStr); err == nil {
+				mem.LastSeenAt = t
+			}
+		}
+		if t, err := parseTime(createdAtStr); err == nil {
+			mem.CreatedAt = t
+		} else {
+			mem.CreatedAt = time.Now()
+		}
+		memories = append(memories, &mem)
+	}
+	return memories, rows.Err()
+}
+
+// SuggestTopicKey generates a topic_key suggestion in the format
+// "category/kebab-case-description" from the memory category and title.
+// This helps agents adopt a consistent naming convention for topic upserts.
+func SuggestTopicKey(category, what string) string {
+	var sb strings.Builder
+	sb.Grow(len(category) + 1 + len(what))
+
+	sb.WriteString(category)
+	sb.WriteByte('/')
+
+	for _, r := range strings.ToLower(what) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			sb.WriteRune(r)
+		} else if r == ' ' || r == '-' || r == '_' {
+			sb.WriteByte('-')
+		}
+	}
+
+	key := sb.String()
+	// Collapse multiple consecutive hyphens
+	for strings.Contains(key, "--") {
+		key = strings.ReplaceAll(key, "--", "-")
+	}
+	// Trim leading/trailing hyphens
+	key = strings.Trim(key, "-")
+	// Limit length
+	if len(key) > 80 {
+		key = key[:80]
+	}
+	key = strings.TrimRight(key, "-")
+	return key
 }
