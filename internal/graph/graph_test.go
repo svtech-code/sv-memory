@@ -648,6 +648,77 @@ function newFunc() {}
 	}
 }
 
+func TestSyncGraphWithMemories(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-graph-memories-test")
+	if err != nil {
+		t.Fatalf("failed to create temp workspace: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_storage.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-memories-test"
+	err = db.RegisterProject(database, projectID, "Memories Test Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// Create a mock code file in the workspace
+	err = os.WriteFile(filepath.Join(tempDir, "main.go"), []byte("package main\n\nfunc main() {}"), 0644)
+	if err != nil {
+		t.Fatalf("failed writing main.go: %v", err)
+	}
+
+	// Insert a memory in the DB
+	_, err = database.Exec(`
+		INSERT INTO memories (id, project_id, category, what, why, learned, where_path, revision_count, created_at)
+		VALUES ('mem-1234', ?, 'architecture', 'Use WAL in SQLite', 'Concurrency support', 'WAL works great', 'main.go', 1, CURRENT_TIMESTAMP)
+	`, projectID)
+	if err != nil {
+		t.Fatalf("failed to insert mock memory: %v", err)
+	}
+
+	// Run full SyncGraph
+	err = SyncGraph(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("SyncGraph failed: %v", err)
+	}
+
+	// Verify memory node exists in graph_nodes
+	var nodeType, label, path string
+	err = database.QueryRow("SELECT node_type, label, path FROM graph_nodes WHERE project_id = ? AND id = 'mem-1234'", projectID).Scan(&nodeType, &label, &path)
+	if err != nil {
+		t.Fatalf("failed to query memory node: %v", err)
+	}
+	if nodeType != "concept" {
+		t.Errorf("expected node_type to be 'concept', got: %q", nodeType)
+	}
+	if label != "Use WAL in SQLite" {
+		t.Errorf("expected label to be 'Use WAL in SQLite', got: %q", label)
+	}
+	if path != "main.go" {
+		t.Errorf("expected path to be 'main.go', got: %q", path)
+	}
+
+	// Verify edge exists in graph_edges
+	var sourceID, targetID, relType string
+	err = database.QueryRow("SELECT source_id, target_id, relation_type FROM graph_edges WHERE project_id = ? AND source_id = 'mem-1234'", projectID).Scan(&sourceID, &targetID, &relType)
+	if err != nil {
+		t.Fatalf("failed to query edge: %v", err)
+	}
+	if targetID != "main.go" {
+		t.Errorf("expected target_id to be 'main.go', got: %q", targetID)
+	}
+	if relType != "rationale_for" {
+		t.Errorf("expected relation_type to be 'rationale_for', got: %q", relType)
+	}
+}
+
 func stringSliceEqual(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

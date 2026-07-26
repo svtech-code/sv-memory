@@ -772,6 +772,11 @@ func syncGraphFull(db *sql.DB, projectID string, projPath string) error {
 		return err
 	}
 
+	// Phase 1: Unify code graph with memories
+	if err := syncMemoriesToGraph(tx, projectID); err != nil {
+		return fmt.Errorf("failed syncing memories to graph: %w", err)
+	}
+
 	// Store fresh file metadata for future incremental runs.
 	updateFileMeta(tx, projectID, wr.fileMeta)
 
@@ -908,6 +913,14 @@ func trySyncGraphIncremental(db *sql.DB, projectID string, projPath string) (boo
 		if _, e := tx.Exec("INSERT OR REPLACE INTO graph_files_meta (project_id, path, mtime_ms, size) VALUES (?, ?, ?, ?)", projectID, p, m.mtimeMs, m.size); e != nil {
 			return false, fmt.Errorf("failed upserting file meta for %s: %w", p, e)
 		}
+	}
+
+	// Phase 1: Unify code graph with memories (re-create all memory nodes/edges)
+	if _, err := tx.Exec("DELETE FROM graph_nodes WHERE project_id = ? AND node_type = 'concept'", projectID); err != nil {
+		return false, fmt.Errorf("failed deleting old memory nodes: %w", err)
+	}
+	if err := syncMemoriesToGraph(tx, projectID); err != nil {
+		return false, fmt.Errorf("failed syncing memories to graph: %w", err)
 	}
 
 	return true, tx.Commit()
@@ -1125,4 +1138,81 @@ func getFileSize(path string) int64 {
 		return 0
 	}
 	return stat.Size()
+}
+
+// syncMemoriesToGraph queries all memories for the project and creates 'concept' nodes
+// and 'rationale_for' edges linking them to files in the structural codebase graph.
+func syncMemoriesToGraph(tx *sql.Tx, projectID string) error {
+	rows, err := tx.Query("SELECT id, category, what, where_path, why, learned FROM memories WHERE project_id = ? AND deleted_at IS NULL", projectID)
+	if err != nil {
+		return fmt.Errorf("failed to query memories for graph sync: %w", err)
+	}
+	defer rows.Close()
+
+	type memoryNode struct {
+		id        string
+		category  string
+		what      string
+		wherePath string
+		why       string
+		learned   string
+	}
+	var memories []memoryNode
+	for rows.Next() {
+		var m memoryNode
+		var wherePath sql.NullString
+		if errScan := rows.Scan(&m.id, &m.category, &m.what, &wherePath, &m.why, &m.learned); errScan == nil {
+			if wherePath.Valid {
+				m.wherePath = wherePath.String
+			}
+			memories = append(memories, m)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	nodeStmt, err := tx.Prepare("INSERT INTO graph_nodes (id, project_id, node_type, label, path, metadata) VALUES (?, ?, ?, ?, ?, ?)")
+	if err != nil {
+		return err
+	}
+	defer nodeStmt.Close()
+
+	edgeStmt, err := tx.Prepare("INSERT INTO graph_edges (id, project_id, source_id, target_id, relation_type, confidence, source_location) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")
+	if err != nil {
+		return err
+	}
+	defer edgeStmt.Close()
+
+	for _, m := range memories {
+		metaMap := map[string]interface{}{
+			"category": m.category,
+			"why":      m.why,
+			"learned":  m.learned,
+		}
+		metaBytes, _ := json.Marshal(metaMap)
+
+		_, err = nodeStmt.Exec(m.id, projectID, "concept", m.what, m.wherePath, string(metaBytes))
+		if err != nil {
+			return fmt.Errorf("failed to insert memory node %s: %w", m.id, err)
+		}
+
+		if m.wherePath != "" {
+			cleanedPath := filepath.Clean(m.wherePath)
+			cleanedPath = strings.ReplaceAll(cleanedPath, "\\", "/")
+			cleanedPath = strings.TrimPrefix(cleanedPath, "./")
+
+			var count int
+			errRow := tx.QueryRow("SELECT COUNT(*) FROM graph_nodes WHERE project_id = ? AND id = ?", projectID, cleanedPath).Scan(&count)
+			if errRow == nil && count > 0 {
+				edgeID := fmt.Sprintf("%s-%s-rationale_for", m.id, cleanedPath)
+				_, errEdge := edgeStmt.Exec(edgeID, projectID, m.id, cleanedPath, "rationale_for", "EXTRACTED", nil)
+				if errEdge != nil {
+					return fmt.Errorf("failed to insert rationale edge for memory %s: %w", m.id, errEdge)
+				}
+			}
+		}
+	}
+
+	return nil
 }

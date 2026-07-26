@@ -1,0 +1,19 @@
+{
+  "id": "ce3e87ec",
+  "project_id": "ce22c23ac33d7a36",
+  "category": "journal",
+  "what": "Phase 1: Bridge persistent memories and code structural graph",
+  "why": "Enable connection of architectural decisions and diaries directly into the structural codebase dependency graph, linking documentation and code.",
+  "where_path": "internal/graph/graph.go",
+  "learned": "Querying memories within the database and inserting them as 'concept' nodes in graph_nodes during both full and incremental sync connects context and structural code, using cascades for cleanup.",
+  "git_branch": "main",
+  "git_commit": "54c83e4",
+  "author": "Mario Sandoval (Sv Tech)",
+  "impact": "Unified knowledge graph now bridges structural code and design memories. Test TestSyncGraphWithMemories verifies the node and edge creation.",
+  "next_steps": "Proceed to Phase 2: calls relation extraction.",
+  "session_id": "1f50bd49",
+  "last_seen_at": "0001-01-01T00:00:00Z",
+  "normalized_hash": "a50860000f8d3804ea3f7e0e4b12db6723a620da046b99c0a3c00096868100a8",
+  "deleted_at": "0001-01-01T00:00:00Z",
+  "created_at": "2026-07-26T12:33:55.322968-04:00"
+}
