@@ -14,14 +14,20 @@ import (
 
 // Memory represents a recorded design decision, bugfix, or coding standard.
 type Memory struct {
-	ID        string    `json:"id"`
-	ProjectID string    `json:"project_id"`
-	Category  string    `json:"category"` // 'bugfix' | 'architecture' | 'standard' | 'decision'
-	What      string    `json:"what"`
-	Why       string    `json:"why"`
-	WherePath string    `json:"where_path,omitempty"`
-	Learned   string    `json:"learned"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          string    `json:"id"`
+	ProjectID   string    `json:"project_id"`
+	Category    string    `json:"category"` // 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem'
+	What        string    `json:"what"`
+	Why         string    `json:"why"`
+	WherePath   string    `json:"where_path,omitempty"`
+	Learned     string    `json:"learned"`
+	GitBranch   string    `json:"git_branch,omitempty"`
+	GitCommit   string    `json:"git_commit,omitempty"`
+	Author      string    `json:"author,omitempty"`
+	Impact      string    `json:"impact,omitempty"`
+	ErrorsFaced string    `json:"errors_faced,omitempty"`
+	NextSteps   string    `json:"next_steps,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // SaveMemory inserts or replaces a memory record in the database.
@@ -38,16 +44,28 @@ func SaveMemory(db *sql.DB, mem *Memory) error {
 	mem.Why = security.SanitizeText(mem.Why)
 	mem.WherePath = security.SanitizeText(mem.WherePath)
 	mem.Learned = security.SanitizeText(mem.Learned)
+	mem.GitBranch = security.SanitizeText(mem.GitBranch)
+	mem.GitCommit = security.SanitizeText(mem.GitCommit)
+	mem.Author = security.SanitizeText(mem.Author)
+	mem.Impact = security.SanitizeText(mem.Impact)
+	mem.ErrorsFaced = security.SanitizeText(mem.ErrorsFaced)
+	mem.NextSteps = security.SanitizeText(mem.NextSteps)
 
 	query := `
-	INSERT INTO memories (id, project_id, category, what, why, where_path, learned, created_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO memories (id, project_id, category, what, why, where_path, learned, git_branch, git_commit, author, impact, errors_faced, next_steps, created_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
 		category = excluded.category,
 		what = excluded.what,
 		why = excluded.why,
 		where_path = excluded.where_path,
 		learned = excluded.learned,
+		git_branch = excluded.git_branch,
+		git_commit = excluded.git_commit,
+		author = excluded.author,
+		impact = excluded.impact,
+		errors_faced = excluded.errors_faced,
+		next_steps = excluded.next_steps,
 		created_at = excluded.created_at;
 	`
 	createdAt := mem.CreatedAt
@@ -55,7 +73,7 @@ func SaveMemory(db *sql.DB, mem *Memory) error {
 		createdAt = time.Now()
 	}
 
-	_, err := db.Exec(query, mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned, createdAt)
+	_, err := db.Exec(query, mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned, mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact, mem.ErrorsFaced, mem.NextSteps, createdAt)
 	if err != nil {
 		return fmt.Errorf("failed to save memory: %w", err)
 	}
@@ -70,7 +88,7 @@ func SearchMemories(db *sql.DB, projectID string, searchTerm string, category st
 	if searchTerm == "" {
 		// No search term: do a regular metadata query
 		query = `
-		SELECT id, project_id, category, what, why, where_path, learned, created_at
+		SELECT id, project_id, category, what, why, where_path, learned, git_branch, git_commit, author, impact, errors_faced, next_steps, created_at
 		FROM memories
 		WHERE project_id = ?
 		`
@@ -83,7 +101,7 @@ func SearchMemories(db *sql.DB, projectID string, searchTerm string, category st
 	} else {
 		// Use FTS5 match query joining memories table on rowid
 		query = `
-		SELECT m.id, m.project_id, m.category, m.what, m.why, m.where_path, m.learned, m.created_at
+		SELECT m.id, m.project_id, m.category, m.what, m.why, m.where_path, m.learned, m.git_branch, m.git_commit, m.author, m.impact, m.errors_faced, m.next_steps, m.created_at
 		FROM memories m
 		JOIN memories_fts f ON m.rowid = f.rowid
 		WHERE m.project_id = ? AND memories_fts MATCH ?
@@ -106,10 +124,17 @@ func SearchMemories(db *sql.DB, projectID string, searchTerm string, category st
 	for rows.Next() {
 		var mem Memory
 		var createdAtStr string
-		err := rows.Scan(&mem.ID, &mem.ProjectID, &mem.Category, &mem.What, &mem.Why, &mem.WherePath, &mem.Learned, &createdAtStr)
+		var gitBranch, gitCommit, author, impact, errorsFaced, nextSteps sql.NullString
+		err := rows.Scan(&mem.ID, &mem.ProjectID, &mem.Category, &mem.What, &mem.Why, &mem.WherePath, &mem.Learned, &gitBranch, &gitCommit, &author, &impact, &errorsFaced, &nextSteps, &createdAtStr)
 		if err != nil {
 			return nil, fmt.Errorf("failed scanning memory row: %w", err)
 		}
+		mem.GitBranch = gitBranch.String
+		mem.GitCommit = gitCommit.String
+		mem.Author = author.String
+		mem.Impact = impact.String
+		mem.ErrorsFaced = errorsFaced.String
+		mem.NextSteps = nextSteps.String
 		t, parseErr := time.Parse(time.RFC3339, createdAtStr)
 		if parseErr == nil {
 			mem.CreatedAt = t
@@ -180,14 +205,20 @@ func SyncFromGit(db *sql.DB, projectID string, projPath string) error {
 	defer tx.Rollback()
 
 	query := `
-	INSERT INTO memories (id, project_id, category, what, why, where_path, learned, created_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO memories (id, project_id, category, what, why, where_path, learned, git_branch, git_commit, author, impact, errors_faced, next_steps, created_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
 		category = excluded.category,
 		what = excluded.what,
 		why = excluded.why,
 		where_path = excluded.where_path,
 		learned = excluded.learned,
+		git_branch = excluded.git_branch,
+		git_commit = excluded.git_commit,
+		author = excluded.author,
+		impact = excluded.impact,
+		errors_faced = excluded.errors_faced,
+		next_steps = excluded.next_steps,
 		created_at = excluded.created_at;
 	`
 	stmt, err := tx.Prepare(query)
@@ -203,7 +234,7 @@ func SyncFromGit(db *sql.DB, projectID string, projPath string) error {
 		if createdAt.IsZero() {
 			createdAt = time.Now()
 		}
-		_, err := stmt.Exec(mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned, createdAt)
+		_, err := stmt.Exec(mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned, mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact, mem.ErrorsFaced, mem.NextSteps, createdAt)
 		if err != nil {
 			return fmt.Errorf("failed to sync memory %s: %w", mem.ID, err)
 		}

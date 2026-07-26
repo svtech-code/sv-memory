@@ -75,3 +75,43 @@ func LoadConfig(cwd string) (*Config, error) {
 		ProjPath:  gitRoot,
 	}, nil
 }
+
+// GetGitBranch returns the current git branch name.
+func GetGitBranch(projPath string) string {
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	cmd.Dir = projPath
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// GetGitCommit returns the current short git commit hash.
+func GetGitCommit(projPath string) string {
+	cmd := exec.Command("git", "rev-parse", "--short", "HEAD")
+	cmd.Dir = projPath
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// GetGitAuthor returns the git configuration user name or email.
+func GetGitAuthor(projPath string) string {
+	cmd := exec.Command("git", "config", "user.name")
+	cmd.Dir = projPath
+	out, err := cmd.Output()
+	if err != nil || strings.TrimSpace(string(out)) == "" {
+		cmdEmail := exec.Command("git", "config", "user.email")
+		cmdEmail.Dir = projPath
+		outEmail, errEmail := cmdEmail.Output()
+		if errEmail != nil {
+			return ""
+		}
+		return strings.TrimSpace(string(outEmail))
+	}
+	return strings.TrimSpace(string(out))
+}
+

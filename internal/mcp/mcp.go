@@ -25,12 +25,15 @@ func StartServer(db *sql.DB, cfg *config.Config) error {
 
 	// 1. Tool: sv_mem_save
 	saveTool := mcp.NewTool("sv_mem_save",
-		mcp.WithDescription("Persist a key architectural decision, bug fix, or standard guidelines to the project's memory. This will also update the shared workspace JSON file for Git versioning."),
-		mcp.WithString("category", mcp.Required(), mcp.Description("Category of memory: 'bugfix' | 'architecture' | 'standard' | 'decision'")),
+		mcp.WithDescription("Persist a key architectural decision, bug fix, progress journal, or standard guidelines to the project's memory. This will also update the shared workspace JSON file for Git versioning."),
+		mcp.WithString("category", mcp.Required(), mcp.Description("Category of memory: 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem'")),
 		mcp.WithString("what", mcp.Required(), mcp.Description("Concise description of the decision, standard, or fix")),
 		mcp.WithString("why", mcp.Required(), mcp.Description("Detailed reasoning for this choice")),
 		mcp.WithString("learned", mcp.Required(), mcp.Description("Rule or key lesson to guide future agents")),
 		mcp.WithString("where_path", mcp.Description("Optional file or folder path affected by this memory")),
+		mcp.WithString("impact", mcp.Description("Achievements, successes, or what went well")),
+		mcp.WithString("errors_faced", mcp.Description("Errors faced, roadblocks, or what went wrong")),
+		mcp.WithString("next_steps", mcp.Description("Next actions or pending tasks to continue work")),
 	)
 
 	s.AddTool(saveTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -52,16 +55,25 @@ func StartServer(db *sql.DB, cfg *config.Config) error {
 		}
 
 		wherePath := req.GetString("where_path", "")
+		impact := req.GetString("impact", "")
+		errorsFaced := req.GetString("errors_faced", "")
+		nextSteps := req.GetString("next_steps", "")
 
 		mem := &memory.Memory{
-			ID:        uuid.New().String()[:8], // Compact 8-char UUID
-			ProjectID: cfg.ProjectID,
-			Category:  category,
-			What:      what,
-			Why:       why,
-			WherePath: wherePath,
-			Learned:   learned,
-			CreatedAt: time.Now(),
+			ID:          uuid.New().String()[:8], // Compact 8-char UUID
+			ProjectID:   cfg.ProjectID,
+			Category:    category,
+			What:        what,
+			Why:         why,
+			WherePath:   wherePath,
+			Learned:     learned,
+			GitBranch:   config.GetGitBranch(cfg.ProjPath),
+			GitCommit:   config.GetGitCommit(cfg.ProjPath),
+			Author:      config.GetGitAuthor(cfg.ProjPath),
+			Impact:      impact,
+			ErrorsFaced: errorsFaced,
+			NextSteps:   nextSteps,
+			CreatedAt:   time.Now(),
 		}
 
 		// Save locally in SQLite
@@ -113,6 +125,24 @@ func StartServer(db *sql.DB, cfg *config.Config) error {
 			if m.WherePath != "" {
 				sb.WriteString(fmt.Sprintf("* **Path:** `%s`\n", m.WherePath))
 			}
+			if m.GitBranch != "" {
+				sb.WriteString(fmt.Sprintf("* **Branch:** `%s`\n", m.GitBranch))
+			}
+			if m.GitCommit != "" {
+				sb.WriteString(fmt.Sprintf("* **Commit:** `%s`\n", m.GitCommit))
+			}
+			if m.Author != "" {
+				sb.WriteString(fmt.Sprintf("* **Author:** `%s`\n", m.Author))
+			}
+			if m.Impact != "" {
+				sb.WriteString(fmt.Sprintf("* **What went well / Impact:** %s\n", m.Impact))
+			}
+			if m.ErrorsFaced != "" {
+				sb.WriteString(fmt.Sprintf("* **Roadblocks / Errors faced:** %s\n", m.ErrorsFaced))
+			}
+			if m.NextSteps != "" {
+				sb.WriteString(fmt.Sprintf("* **Next steps / Pending:** %s\n", m.NextSteps))
+			}
 			sb.WriteString(fmt.Sprintf("* **Date:** %s\n\n", m.CreatedAt.Format("2006-01-02")))
 		}
 
@@ -137,6 +167,18 @@ func StartServer(db *sql.DB, cfg *config.Config) error {
 		if depthStr != "" {
 			if d, err := strconv.Atoi(depthStr); err == nil {
 				depth = d
+			}
+		}
+
+		// Check if graph is already populated for this project. If not, auto-build/sync it.
+		var count int
+		err = db.QueryRow("SELECT COUNT(*) FROM graph_nodes WHERE project_id = ?", cfg.ProjectID).Scan(&count)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to check graph status: %v", err)), nil
+		}
+		if count == 0 {
+			if err := graph.SyncGraph(db, cfg.ProjectID, cfg.ProjPath); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("failed to auto-build dependency graph: %v", err)), nil
 			}
 		}
 

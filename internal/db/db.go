@@ -18,11 +18,17 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS memories (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
-    category TEXT NOT NULL, -- 'bugfix' | 'architecture' | 'standard' | 'decision'
+    category TEXT NOT NULL, -- 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem'
     what TEXT NOT NULL,
     why TEXT NOT NULL,
     where_path TEXT,
     learned TEXT NOT NULL,
+    git_branch TEXT,
+    git_commit TEXT,
+    author TEXT,
+    impact TEXT,
+    errors_faced TEXT,
+    next_steps TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
@@ -86,6 +92,12 @@ func InitDB(dbPath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
 	}
 
+	// Enable Write-Ahead Logging (WAL) mode for better concurrency
+	if _, err := db.Exec("PRAGMA journal_mode = WAL;"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to enable WAL mode: %w", err)
+	}
+
 	// Migrate if old single-column primary key schema is detected
 	rows, err := db.Query("PRAGMA table_info(graph_nodes)")
 	if err == nil {
@@ -116,6 +128,42 @@ func InitDB(dbPath string) (*sql.DB, error) {
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to run database migration schema: %w", err)
+	}
+
+	// Migrate memories schema if missing columns
+	columnChecks := map[string]string{
+		"git_branch":   "ALTER TABLE memories ADD COLUMN git_branch TEXT;",
+		"git_commit":   "ALTER TABLE memories ADD COLUMN git_commit TEXT;",
+		"author":       "ALTER TABLE memories ADD COLUMN author TEXT;",
+		"impact":       "ALTER TABLE memories ADD COLUMN impact TEXT;",
+		"errors_faced": "ALTER TABLE memories ADD COLUMN errors_faced TEXT;",
+		"next_steps":   "ALTER TABLE memories ADD COLUMN next_steps TEXT;",
+	}
+	for col, alterStmt := range columnChecks {
+		var exists bool
+		rows, err := db.Query("PRAGMA table_info(memories)")
+		if err == nil {
+			for rows.Next() {
+				var cid int
+				var name string
+				var typeVal string
+				var notnull int
+				var dfltVal interface{}
+				var pk int
+				if errScan := rows.Scan(&cid, &name, &typeVal, &notnull, &dfltVal, &pk); errScan == nil {
+					if name == col {
+						exists = true
+						break
+					}
+				}
+			}
+			rows.Close()
+		}
+		if !exists {
+			if _, errAlter := db.Exec(alterStmt); errAlter != nil {
+				fmt.Printf("Warning: failed to add column %s to memories: %v\n", col, errAlter)
+			}
+		}
 	}
 
 	return db, nil

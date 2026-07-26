@@ -1,0 +1,51 @@
+[
+  {
+    "id": "e37cbb81",
+    "project_id": "ce22c23ac33d7a36",
+    "category": "standard",
+    "what": "Git commit guidelines and agent execution limits",
+    "why": "Define repository standards for commit formatting (Conventional Commits in English) and explicitly restrict AI agents from performing destructive git operations (add, commit, push) autonomously.",
+    "where_path": "AGENTS.md",
+    "learned": "AI agents must never execute git write operations directly (add, commit, push) and must write commit messages in English using the Conventional Commits format.",
+    "git_branch": "main",
+    "git_commit": "8dc5e73",
+    "author": "Mario Sandoval (Sv Tech)",
+    "created_at": "2026-07-26T02:45:54.842348-04:00"
+  },
+  {
+    "id": "0d91f255",
+    "project_id": "ce22c23ac33d7a36",
+    "category": "decision",
+    "what": "Integrate journal and git metadata fields",
+    "why": "Enable tracking of active branch, commit, author, impact, errors faced, and next steps in the progress logs.",
+    "where_path": "internal/memory/memory.go",
+    "learned": "Always design extensible schemas and automate rules injection to make agent operations continuous.",
+    "git_branch": "main",
+    "git_commit": "8dc5e73",
+    "author": "Mario Sandoval (Sv Tech)",
+    "impact": "Allows seamless handoff between AI agents working on separate sessions.",
+    "errors_faced": "Permission limits on macOS requires manual signing and copying.",
+    "next_steps": "Verify that git metadata and progress fields are correctly populated in SQLite and exported to JSON.",
+    "created_at": "2026-07-26T02:42:44.655712-04:00"
+  },
+  {
+    "id": "d408f073",
+    "project_id": "ce22c23ac33d7a36",
+    "category": "architecture",
+    "what": "Enriched memory storage with WAL mode and Git metadata",
+    "why": "Implement SQL Write-Ahead Logging for concurrency and capture branch, commit, and author dynamically to provide deep context to saved decisions.",
+    "where_path": "internal/db/db.go",
+    "learned": "Enriching persistent memories with active version control state is critical to trace design choices, while WAL prevents concurrency locks on SQLite.",
+    "created_at": "2026-07-26T02:26:59.982358-04:00"
+  },
+  {
+    "id": "4d9b2ccb",
+    "project_id": "ce22c23ac33d7a36",
+    "category": "decision",
+    "what": "Auto-build dependency graph on sv_graph_query if empty",
+    "why": "Prevent returning empty/unfound nodes when querying a project that was initialized but not yet scanned, making client interaction seamless without manual rebuild requirements.",
+    "where_path": "internal/mcp/mcp.go",
+    "learned": "Always verify if the target dataset (like graph nodes) exists before performing queries, and auto-initialize/rebuild it dynamically if missing.",
+    "created_at": "2026-07-26T02:20:34.594606-04:00"
+  }
+]
