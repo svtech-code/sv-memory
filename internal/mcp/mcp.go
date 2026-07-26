@@ -315,7 +315,7 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 
 	// 7. Tool: sv_mem_search
 	searchTool := mcp.NewTool("sv_mem_search",
-		mcp.WithDescription("Query the historical project decisions, architectural rules, and past bugfixes using keyword/FTS search."),
+		mcp.WithDescription("Search historical project memories using keyword/FTS search. Returns compact results (ID, category, title, date, topic_key). Use sv_mem_get to retrieve full content of a specific memory, or sv_mem_timeline for chronological context around it."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("The keyword or phrase to search for")),
 		mcp.WithString("category", mcp.Description("Optional category to filter results: 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem' | 'discussion' | 'idea' | 'qa'")),
 		mcp.WithString("limit", mcp.Description("Optional limit of results to return (default is '10')")),
@@ -336,15 +336,10 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 			}
 		}
 
-		// Only pull from Git if memories.json's mtime advanced since the last
-		// pull. Cheap os.Stat avoids re-reading+parsing the whole file on every
-		// search query (was the previous behavior — O(n) cost per call).
 		startSync := time.Now()
 		maybeSyncFromGit()
 		debugLog("mem_search maybeSyncFromGit took %s", time.Since(startSync))
 
-		// Searches are read-only — route to the Reader to scale concurrently
-		// with other MCP tool calls (WAL allows N parallel readers).
 		startSearch := time.Now()
 		memories, err := memory.SearchMemories(pool.Reader, cfg.ProjectID, query, category, limit)
 		debugLog("mem_search query=%q category=%q returned %d rows in %s", query, category, len(memories), time.Since(startSearch))
@@ -356,35 +351,129 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 			return mcp.NewToolResultText("No relevant project memories found matching the query."), nil
 		}
 
-		// Format output as clean Markdown for the AI agent
+		// Compact output — progressive disclosure: just IDs, titles, and metadata.
+		// Agent drills down with sv_mem_get for full content.
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("Found %d relevant project memories:\n\n", len(memories)))
+		sb.WriteString(fmt.Sprintf("Found %d relevant project memories (use `sv_mem_get` for full content, `sv_mem_timeline` for context):\n\n", len(memories)))
 		for _, m := range memories {
 			sb.WriteString(fmt.Sprintf("### [%s] %s (ID: %s)\n", strings.ToUpper(m.Category), m.What, m.ID))
-			sb.WriteString(fmt.Sprintf("* **Why:** %s\n", m.Why))
-			sb.WriteString(fmt.Sprintf("* **Rule / Learned:** %s\n", m.Learned))
-			if m.WherePath != "" {
-				sb.WriteString(fmt.Sprintf("* **Path:** `%s`\n", m.WherePath))
+			if m.TopicKey != "" {
+				sb.WriteString(fmt.Sprintf("* **Topic:** `%s` (revision %d)\n", m.TopicKey, m.RevisionCount))
 			}
-			if m.GitBranch != "" {
-				sb.WriteString(fmt.Sprintf("* **Branch:** `%s`\n", m.GitBranch))
-			}
-			if m.GitCommit != "" {
-				sb.WriteString(fmt.Sprintf("* **Commit:** `%s`\n", m.GitCommit))
-			}
-			if m.Author != "" {
-				sb.WriteString(fmt.Sprintf("* **Author:** `%s`\n", m.Author))
-			}
-			if m.Impact != "" {
-				sb.WriteString(fmt.Sprintf("* **What went well / Impact:** %s\n", m.Impact))
-			}
-			if m.ErrorsFaced != "" {
-				sb.WriteString(fmt.Sprintf("* **Roadblocks / Errors faced:** %s\n", m.ErrorsFaced))
-			}
-			if m.NextSteps != "" {
-				sb.WriteString(fmt.Sprintf("* **Next steps / Pending:** %s\n", m.NextSteps))
+			if m.DuplicateCount > 0 {
+				sb.WriteString(fmt.Sprintf("* **Duplicates:** %d\n", m.DuplicateCount))
 			}
 			sb.WriteString(fmt.Sprintf("* **Date:** %s\n\n", m.CreatedAt.Format("2006-01-02")))
+		}
+
+		return mcp.NewToolResultText(sb.String()), nil
+	})
+
+	// 8. Tool: sv_mem_get
+	getTool := mcp.NewTool("sv_mem_get",
+		mcp.WithDescription("Retrieve the full content of a specific memory by its ID. This is the third layer of progressive disclosure: use after sv_mem_search to inspect a memory in detail."),
+		mcp.WithString("id", mcp.Required(), mcp.Description("The memory ID to retrieve")),
+	)
+
+	s.AddTool(getTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		id, err := req.RequireString("id")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: id"), nil
+		}
+		mem, err := memory.GetMemory(pool.Reader, cfg.ProjectID, id)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to get memory: %v", err)), nil
+		}
+		if mem == nil {
+			return mcp.NewToolResultText(fmt.Sprintf("Memory with ID %s not found in the current project.", id)), nil
+		}
+
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("### [%s] %s (ID: %s)\n", strings.ToUpper(mem.Category), mem.What, mem.ID))
+		sb.WriteString(fmt.Sprintf("* **Why:** %s\n", mem.Why))
+		sb.WriteString(fmt.Sprintf("* **Rule / Learned:** %s\n", mem.Learned))
+		if mem.WherePath != "" {
+			sb.WriteString(fmt.Sprintf("* **Path:** `%s`\n", mem.WherePath))
+		}
+		if mem.TopicKey != "" {
+			sb.WriteString(fmt.Sprintf("* **Topic:** `%s` (revision %d)\n", mem.TopicKey, mem.RevisionCount))
+		}
+		if mem.DuplicateCount > 0 {
+			sb.WriteString(fmt.Sprintf("* **Duplicates:** %d\n", mem.DuplicateCount))
+		}
+		if mem.GitBranch != "" {
+			sb.WriteString(fmt.Sprintf("* **Branch:** `%s`\n", mem.GitBranch))
+		}
+		if mem.GitCommit != "" {
+			sb.WriteString(fmt.Sprintf("* **Commit:** `%s`\n", mem.GitCommit))
+		}
+		if mem.Author != "" {
+			sb.WriteString(fmt.Sprintf("* **Author:** `%s`\n", mem.Author))
+		}
+		if mem.Impact != "" {
+			sb.WriteString(fmt.Sprintf("* **What went well / Impact:** %s\n", mem.Impact))
+		}
+		if mem.ErrorsFaced != "" {
+			sb.WriteString(fmt.Sprintf("* **Roadblocks / Errors faced:** %s\n", mem.ErrorsFaced))
+		}
+		if mem.NextSteps != "" {
+			sb.WriteString(fmt.Sprintf("* **Next steps / Pending:** %s\n", mem.NextSteps))
+		}
+		sb.WriteString(fmt.Sprintf("* **Date:** %s\n", mem.CreatedAt.Format("2006-01-02")))
+		return mcp.NewToolResultText(sb.String()), nil
+	})
+
+	// 9. Tool: sv_mem_timeline
+	timelineTool := mcp.NewTool("sv_mem_timeline",
+		mcp.WithDescription("Get chronological context around a specific memory observation. Shows what happened before and after it in the session. This is the second layer of progressive disclosure: use after sv_mem_search to understand the context of a result."),
+		mcp.WithString("observation_id", mcp.Required(), mcp.Description("The observation ID to center the timeline around")),
+		mcp.WithString("before", mcp.Description("Number of memories to show before (default '5')")),
+		mcp.WithString("after", mcp.Description("Number of memories to show after (default '5')")),
+	)
+
+	s.AddTool(timelineTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		obsID, err := req.RequireString("observation_id")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: observation_id"), nil
+		}
+		beforeStr := req.GetString("before", "5")
+		afterStr := req.GetString("after", "5")
+		before, _ := strconv.Atoi(beforeStr)
+		after, _ := strconv.Atoi(afterStr)
+		if before <= 0 {
+			before = 5
+		}
+		if after <= 0 {
+			after = 5
+		}
+
+		prev, next, err := memory.GetTimeline(pool.Reader, cfg.ProjectID, obsID, before, after)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to get timeline: %v", err)), nil
+		}
+
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("## Timeline around observation `%s`\n\n", obsID))
+
+		if len(prev) > 0 {
+			sb.WriteString("### Before:\n")
+			for _, m := range prev {
+				sb.WriteString(fmt.Sprintf("- [%s] **%s** (ID: %s, %s)\n",
+					strings.ToUpper(m.Category), m.What, m.ID, m.CreatedAt.Format("2006-01-02 15:04")))
+			}
+		}
+		if len(next) > 0 {
+			if len(prev) > 0 {
+				sb.WriteString("\n")
+			}
+			sb.WriteString("### After:\n")
+			for _, m := range next {
+				sb.WriteString(fmt.Sprintf("- [%s] **%s** (ID: %s, %s)\n",
+					strings.ToUpper(m.Category), m.What, m.ID, m.CreatedAt.Format("2006-01-02 15:04")))
+			}
+		}
+		if len(prev) == 0 && len(next) == 0 {
+			sb.WriteString("No other memories found nearby in time.\n")
 		}
 
 		return mcp.NewToolResultText(sb.String()), nil
