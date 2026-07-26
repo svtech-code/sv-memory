@@ -1,0 +1,40 @@
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - gofmt
+    - goimports
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - gocyclo
+    - revive
+
+linters-settings:
+  gocyclo:
+    min-complexity: 15
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment
+  revive:
+    rules:
+      - name: exported
+        disabled: true
+      - name: package-comments
+        disabled: true
+
+issues:
+  exclude-rules:
+    # Exclude cyclo complexity, errcheck, and revive checks on tests as they are more relaxed
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - errcheck
+        - revive
