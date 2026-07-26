@@ -649,12 +649,25 @@ var (
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to review memories: %v", err)), nil
 		}
-		if len(items) == 0 {
+
+		stats, errStats := memory.ConflictStats(pool.Reader, cfg.ProjectID)
+		pendingConflicts := 0
+		if errStats == nil {
+			pendingConflicts = stats["pending"]
+		}
+
+		if len(items) == 0 && pendingConflicts == 0 {
 			return mcp.NewToolResultText("No memories found for review."), nil
 		}
 
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("## Memory Review — %d memories\n\n", len(items)))
+		sb.WriteString(fmt.Sprintf("## Memory Review — %d memories\n", len(items)))
+		if pendingConflicts > 0 {
+			sb.WriteString(fmt.Sprintf("**⚠ Potential Conflicts:** There are %d pending memory conflict(s). Run 'sv-memory conflicts list' to review.\n\n", pendingConflicts))
+		} else {
+			sb.WriteString("\n")
+		}
+
 		for _, item := range items {
 			sb.WriteString(fmt.Sprintf("### [%s] %s (ID: %s)\n", strings.ToUpper(item.Memory.Category), item.Memory.What, item.Memory.ID))
 			sb.WriteString(fmt.Sprintf("* **Status:** %s\n", item.Reason))
@@ -915,7 +928,7 @@ var (
 
 	// 18. Tool: sv_graph_sync
 	graphSyncTool := mcp.NewTool("sv_graph_sync",
-		mcp.WithDescription("Trigger a full re-scan of the project code directory and refresh the structural dependency graph stored in SQLite."),
+		mcp.WithDescription("Trigger a re-scan of code folder to rebuild graph"),
 	)
 
 	s.AddTool(graphSyncTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -931,6 +944,84 @@ var (
 		cachedGraph = nil
 		graphMu.Unlock()
 		return mcp.NewToolResultText("Dependency graph refreshed and synchronized successfully in SQLite."), nil
+	})
+
+	// 19. Tool: sv_mem_conflicts
+	conflictsTool := mcp.NewTool("sv_mem_conflicts",
+		mcp.WithDescription("Manage potential memory conflicts in the project: list, scan, or ignore conflicts."),
+		mcp.WithString("action", mcp.Required(), mcp.Description("Action to perform: list, scan, or ignore")),
+		mcp.WithString("status", mcp.Description("Optional status filter for list (pending, judged, ignored)")),
+		mcp.WithString("relation_id", mcp.Description("Required for ignore action: the conflict relation ID to ignore")),
+		mcp.WithString("threshold", mcp.Description("Optional similarity threshold for scan (default: '0.45')")),
+		mcp.WithString("apply", mcp.Description("For scan: 'true' to save scanned conflicts to database (default: 'false')")),
+	)
+
+	s.AddTool(conflictsTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		action, err := req.RequireString("action")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: action"), nil
+		}
+
+		switch action {
+		case "list":
+			status := req.GetString("status", "")
+			list, err := memory.ListConflicts(pool.Reader, cfg.ProjectID, status)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("failed to list conflicts: %v", err)), nil
+			}
+			if len(list) == 0 {
+				return mcp.NewToolResultText("No conflicts found matching criteria."), nil
+			}
+			var sb strings.Builder
+			sb.WriteString("## Surfaced Conflicts\n\n")
+			for _, c := range list {
+				sb.WriteString(fmt.Sprintf("- **ID:** %s | **Status:** %s | **Score:** %.2f\n  - A: %s\n  - B: %s\n",
+					c.ID, c.Status, c.Score, c.SourceWhat, c.TargetWhat))
+			}
+			return mcp.NewToolResultText(sb.String()), nil
+
+		case "scan":
+			applyStr := req.GetString("apply", "false")
+			apply := applyStr == "true"
+			thresholdStr := req.GetString("threshold", "0.45")
+			threshold := 0.45
+			if f, err := strconv.ParseFloat(thresholdStr, 64); err == nil {
+				threshold = f
+			}
+			found, err := memory.ScanConflicts(pool.Writer, cfg.ProjectID, apply, 100, threshold)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("failed to scan conflicts: %v", err)), nil
+			}
+			if len(found) == 0 {
+				return mcp.NewToolResultText("No potential conflicts detected."), nil
+			}
+			var sb strings.Builder
+			sb.WriteString(fmt.Sprintf("Found %d potential conflict(s):\n\n", len(found)))
+			for _, c := range found {
+				sb.WriteString(fmt.Sprintf("- **ID:** %s | **Score:** %.2f\n  - A: %s\n  - B: %s\n",
+					c.ID, c.Score, c.SourceWhat, c.TargetWhat))
+			}
+			if apply {
+				sb.WriteString("\nConflicts successfully saved to database (status: pending).")
+			} else {
+				sb.WriteString("\nRun with apply=true to persist these conflicts to database.")
+			}
+			return mcp.NewToolResultText(sb.String()), nil
+
+		case "ignore":
+			relID, err := req.RequireString("relation_id")
+			if err != nil {
+				return mcp.NewToolResultError("missing required field: relation_id for ignore action"), nil
+			}
+			err = memory.IgnoreConflict(pool.Writer, cfg.ProjectID, relID)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("failed to ignore conflict: %v", err)), nil
+			}
+			return mcp.NewToolResultText(fmt.Sprintf("Conflict relation %s marked as ignored.", relID)), nil
+
+		default:
+			return mcp.NewToolResultError(fmt.Sprintf("invalid action: %s", action)), nil
+		}
 	})
 
 	return s

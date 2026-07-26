@@ -126,10 +126,14 @@ CREATE TABLE IF NOT EXISTS memory_relations (
     source_id TEXT NOT NULL,
     target_id TEXT NOT NULL,
     relation_type TEXT NOT NULL, -- 'supersedes' | 'conflicts_with' | 'relates_to'
+    status TEXT DEFAULT 'pending',
+    score REAL,
     reason TEXT,
     judged_by TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY(source_id) REFERENCES memories(id) ON DELETE CASCADE,
+    FOREIGN KEY(target_id) REFERENCES memories(id) ON DELETE CASCADE
 );
 
 -- Performance indexes:
@@ -370,6 +374,40 @@ func applyMigrations(db *sql.DB) error {
 			}
 			if _, errAlter := db.Exec(alterStmt); errAlter != nil {
 				fmt.Printf("Warning: failed to add column %s to graph_edges: %v\n", col, errAlter)
+			}
+		}
+	}
+
+	// Migrate memory_relations schema if missing columns (Fase 2.1 — conflict surfacing).
+	for _, col := range []string{"status", "score"} {
+		var exists bool
+		rows, err := db.Query("PRAGMA table_info(memory_relations)")
+		if err == nil {
+			for rows.Next() {
+				var cid int
+				var name string
+				var typeVal string
+				var notnull int
+				var dfltVal interface{}
+				var pk int
+				if errScan := rows.Scan(&cid, &name, &typeVal, &notnull, &dfltVal, &pk); errScan == nil {
+					if name == col {
+						exists = true
+						break
+					}
+				}
+			}
+			rows.Close()
+		}
+		if !exists {
+			var alterStmt string
+			if col == "status" {
+				alterStmt = "ALTER TABLE memory_relations ADD COLUMN status TEXT DEFAULT 'pending';"
+			} else {
+				alterStmt = "ALTER TABLE memory_relations ADD COLUMN score REAL;"
+			}
+			if _, errAlter := db.Exec(alterStmt); errAlter != nil {
+				fmt.Printf("Warning: failed to add column %s to memory_relations: %v\n", col, errAlter)
 			}
 		}
 	}

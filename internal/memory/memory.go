@@ -77,9 +77,14 @@ type MemoryRelation struct {
 	SourceID     string    `json:"source_id"`
 	TargetID     string    `json:"target_id"`
 	RelationType string    `json:"relation_type"` // 'supersedes' | 'conflicts_with' | 'relates_to'
+	Status       string    `json:"status,omitempty"`
+	Score        float64   `json:"score,omitempty"`
 	Reason       string    `json:"reason"`
 	JudgedBy     string    `json:"judged_by"`
 	CreatedAt    time.Time `json:"created_at"`
+	// Enriched fields for user display
+	SourceWhat   string    `json:"source_what,omitempty"`
+	TargetWhat   string    `json:"target_what,omitempty"`
 }
 
 // MemoryReviewItem is a single item returned by sv_mem_review.

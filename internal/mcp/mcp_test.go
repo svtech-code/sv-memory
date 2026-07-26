@@ -432,6 +432,7 @@ func TestSessionLifecycleAndJudges(t *testing.T) {
 	suggestTool := server.GetTool("sv_mem_suggest_topic_key")
 	reviewTool := server.GetTool("sv_mem_review")
 	graphSyncTool := server.GetTool("sv_graph_sync")
+	conflictsMCPTool := server.GetTool("sv_mem_conflicts")
 
 	// 1. Session Start
 	resStart, err := startTool.Handler(ctx, mcpgo.CallToolRequest{
@@ -610,6 +611,87 @@ func TestSessionLifecycleAndJudges(t *testing.T) {
 	resGraphSync, err := graphSyncTool.Handler(ctx, mcpgo.CallToolRequest{})
 	if err != nil || !strings.Contains(textContent(resGraphSync.Content[0]), "synchronized successfully") {
 		t.Errorf("graph_sync failed: %v", err)
+	}
+	// Inject conflicting memories
+	_, _ = saveTool.Handler(ctx, mcpgo.CallToolRequest{
+		Params: mcpgo.CallToolParams{
+			Arguments: map[string]any{
+				"category": "architecture",
+				"what":     "Conflict memory X",
+				"why":      "Reason X",
+				"learned":  "Learned X",
+			},
+		},
+	})
+	_, _ = saveTool.Handler(ctx, mcpgo.CallToolRequest{
+		Params: mcpgo.CallToolParams{
+			Arguments: map[string]any{
+				"category": "architecture",
+				"what":     "Conflict memory Y",
+				"why":      "Reason Y",
+				"learned":  "Learned Y",
+			},
+		},
+	})
+
+	// 13.a Scan conflicts via MCP
+	resConflictsScan, err := conflictsMCPTool.Handler(ctx, mcpgo.CallToolRequest{
+		Params: mcpgo.CallToolParams{
+			Arguments: map[string]any{
+				"action":    "scan",
+				"apply":     "true",
+				"threshold": "0.4",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("mcp conflicts scan failed: %v", err)
+	}
+	scanMsg := textContent(resConflictsScan.Content[0])
+	if !strings.Contains(scanMsg, "potential conflict") {
+		t.Errorf("expected potential conflicts to be found, got: %s", scanMsg)
+	}
+
+	// Extract relation ID from scan message (e.g. **ID:** e827d81a)
+	partsRel := strings.Split(scanMsg, "**ID:** ")
+	if len(partsRel) < 2 {
+		t.Fatalf("could not extract conflict relation ID from: %s", scanMsg)
+	}
+	relID := strings.Split(partsRel[1], " ")[0]
+	relID = strings.TrimSpace(strings.Split(relID, "|")[0])
+
+	// 13.b List conflicts via MCP
+	resConflictsList, err := conflictsMCPTool.Handler(ctx, mcpgo.CallToolRequest{
+		Params: mcpgo.CallToolParams{
+			Arguments: map[string]any{
+				"action": "list",
+				"status": "pending",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("mcp conflicts list failed: %v", err)
+	}
+	listMsg := textContent(resConflictsList.Content[0])
+	if !strings.Contains(listMsg, relID) {
+		t.Errorf("expected relation %s in listed conflicts, got: %s", relID, listMsg)
+	}
+
+	// 13.c Ignore conflict via MCP
+	resConflictsIgnore, err := conflictsMCPTool.Handler(ctx, mcpgo.CallToolRequest{
+		Params: mcpgo.CallToolParams{
+			Arguments: map[string]any{
+				"action":      "ignore",
+				"relation_id": relID,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("mcp conflicts ignore failed: %v", err)
+	}
+	ignoreMsg := textContent(resConflictsIgnore.Content[0])
+	if !strings.Contains(ignoreMsg, "marked as ignored") {
+		t.Errorf("expected ignore confirmation, got: %s", ignoreMsg)
 	}
 
 	// 14. Delete memory
