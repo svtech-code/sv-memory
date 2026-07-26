@@ -69,13 +69,10 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		defer syncMu.Unlock()
 		info, err := os.Stat(syncFile)
 		if err != nil {
-			// Missing file is benign for solo projects; reset cache so a future
-			// freshly-pulled memories.json still triggers a sync.
 			lastSyncMtim = time.Time{}
 			return
 		}
 		if !info.ModTime().After(lastSyncMtim) {
-			// No change since last pull — skip json parse + SQLite upsert.
 			return
 		}
 		start := time.Now()
@@ -85,6 +82,39 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		}
 		lastSyncMtim = info.ModTime()
 		debugLog("syncFromGit pulled in %s", time.Since(start))
+	}
+
+	// In-memory graph cache: loads the full project's nodes+edges with two
+	// SQL queries then runs BFS in Go-land, avoiding N+1 round-trips per
+	// visited node. Invalidated by sv_graph_sync.
+	var (
+		graphMu    sync.Mutex
+		cachedGraph *inMemoryGraph
+	)
+
+	getOrLoadGraph := func() (*inMemoryGraph, error) {
+		graphMu.Lock()
+		defer graphMu.Unlock()
+		if cachedGraph != nil {
+			return cachedGraph, nil
+		}
+		var count int
+		if err := pool.Reader.QueryRow("SELECT COUNT(*) FROM graph_nodes WHERE project_id = ?", cfg.ProjectID).Scan(&count); err != nil {
+			return nil, err
+		}
+		if count == 0 {
+			startBuild := time.Now()
+			if err := graph.SyncGraph(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
+				return nil, err
+			}
+			debugLog("graph_query auto-built graph in %s", time.Since(startBuild))
+		}
+		g, err := loadFullGraph(pool.Reader, cfg.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		cachedGraph = g
+		return g, nil
 	}
 
 	// 1. Tool: sv_mem_save
@@ -264,28 +294,17 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 			}
 		}
 
-		// Check if graph is already populated for this project. If not, auto-build/sync it.
-		// Count is a read; route through the Reader. Auto-build (SyncGraph) writes,
-		// so it must go through the Writer to keep SQLite serialized under WAL.
-		var count int
-		err = pool.Reader.QueryRow("SELECT COUNT(*) FROM graph_nodes WHERE project_id = ?", cfg.ProjectID).Scan(&count)
+		// Load or retrieve the in-memory graph cache. First call triggers a
+		// full load from SQLite (two bulk queries); subsequent calls hit
+		// cached Go maps until sv_graph_sync invalidates them.
+		startQuery := time.Now()
+		g, err := getOrLoadGraph()
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to check graph status: %v", err)), nil
-		}
-		if count == 0 {
-			startBuild := time.Now()
-			if err := graph.SyncGraph(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("failed to auto-build dependency graph: %v", err)), nil
-			}
-			debugLog("graph_query auto-built graph in %s", time.Since(startBuild))
+			return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
 		}
 
-		startQuery := time.Now()
-		subGraph, err := querySubGraph(pool.Reader, cfg.ProjectID, pathOrNode, depth)
+		subGraph := g.query(pathOrNode, depth)
 		debugLog("graph_query path=%q depth=%d returned %d nodes / %d edges in %s", pathOrNode, depth, len(subGraph.Nodes), len(subGraph.Edges), time.Since(startQuery))
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to query graph: %v", err)), nil
-		}
 
 		if len(subGraph.Nodes) == 0 {
 			return mcp.NewToolResultText(fmt.Sprintf("No nodes found matching '%s' in the project graph.", pathOrNode)), nil
@@ -331,10 +350,15 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 	s.AddTool(graphSyncTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		startSync := time.Now()
 		err := graph.SyncGraph(pool.Writer, cfg.ProjectID, cfg.ProjPath)
-		debugLog("graph_sync full rebuild in %s", time.Since(startSync))
+		debugLog("graph_sync rebuild took %s", time.Since(startSync))
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to sync graph: %v", err)), nil
 		}
+		// Invalidate in-memory cache so the next sv_graph_query reloads fresh
+		// data from the rebuilt graph tables.
+		graphMu.Lock()
+		cachedGraph = nil
+		graphMu.Unlock()
 		return mcp.NewToolResultText("Dependency graph refreshed and synchronized successfully in SQLite."), nil
 	})
 
@@ -342,25 +366,75 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 	return server.ServeStdio(s)
 }
 
+// subGraph is the result of a BFS traversal returned by the sv_graph_query tool.
 type subGraph struct {
 	Nodes []*graph.Node
 	Edges []*graph.Edge
 }
 
-// querySubGraph performs a BFS traversal on the SQLite DB graph starting at node matching pathOrNode.
-func querySubGraph(db *sql.DB, projectID string, start string, maxDepth int) (*subGraph, error) {
-	// Find starting node ID
-	var startID string
-	err := db.QueryRow(`
-		SELECT id FROM graph_nodes 
-		WHERE project_id = ? AND (id = ? OR path = ? OR label = ?)
-		LIMIT 1`, projectID, start, start, start).Scan(&startID)
+// inMemoryGraph holds the full project graph in Go memory so that BFS
+// traversals (sv_graph_query) run without any SQL round-trips once the data
+// is loaded. Two bulk queries replace the previous N+1 pattern of one
+// SELECT per visited node + one SELECT per node's edges.
+type inMemoryGraph struct {
+	nodes         map[string]*graph.Node
+	edgesBySource map[string][]*graph.Edge
+	edgesByTarget map[string][]*graph.Edge
+}
+
+// loadFullGraph executes two queries to load all nodes and edges for a project
+// into an inMemoryGraph.
+func loadFullGraph(db *sql.DB, projectID string) (*inMemoryGraph, error) {
+	nodeMap := make(map[string]*graph.Node)
+	nRows, err := db.Query("SELECT id, node_type, label, path, metadata FROM graph_nodes WHERE project_id = ?", projectID)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			// Start node not found
-			return &subGraph{Nodes: nil, Edges: nil}, nil
-		}
 		return nil, err
+	}
+	defer nRows.Close()
+	for nRows.Next() {
+		var n graph.Node
+		var metaStr string
+		if err := nRows.Scan(&n.ID, &n.Type, &n.Label, &n.Path, &metaStr); err == nil {
+			_ = json.Unmarshal([]byte(metaStr), &n.Metadata)
+			nodeMap[n.ID] = &n
+		}
+	}
+	if err := nRows.Err(); err != nil {
+		return nil, err
+	}
+
+	edgesBySrc := make(map[string][]*graph.Edge)
+	edgesByTgt := make(map[string][]*graph.Edge)
+	eRows, err := db.Query("SELECT id, source_id, target_id, relation_type FROM graph_edges WHERE project_id = ?", projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer eRows.Close()
+	for eRows.Next() {
+		var e graph.Edge
+		if err := eRows.Scan(&e.ID, &e.SourceID, &e.TargetID, &e.RelationType); err == nil {
+			edgesBySrc[e.SourceID] = append(edgesBySrc[e.SourceID], &e)
+			edgesByTgt[e.TargetID] = append(edgesByTgt[e.TargetID], &e)
+		}
+	}
+	if err := eRows.Err(); err != nil {
+		return nil, err
+	}
+
+	return &inMemoryGraph{
+		nodes:         nodeMap,
+		edgesBySource: edgesBySrc,
+		edgesByTarget: edgesByTgt,
+	}, nil
+}
+
+// query performs a BFS traversal over the in-memory graph starting from the
+// node matching 'start' (by id, path, or label) and returns all reachable
+// nodes and edges within maxDepth hops. Zero SQL calls.
+func (g *inMemoryGraph) query(start string, maxDepth int) *subGraph {
+	startID := g.findNode(start)
+	if startID == "" {
+		return &subGraph{}
 	}
 
 	type queueItem struct {
@@ -382,60 +456,47 @@ func querySubGraph(db *sql.DB, projectID string, start string, maxDepth int) (*s
 		}
 		visited[curr.id] = true
 
-		// Load node
-		var node graph.Node
-		var metadataStr string
-		err := db.QueryRow(`
-			SELECT id, node_type, label, path, metadata 
-			FROM graph_nodes 
-			WHERE project_id = ? AND id = ?`, projectID, curr.id).Scan(&node.ID, &node.Type, &node.Label, &node.Path, &metadataStr)
-		if err == nil {
-			_ = json.Unmarshal([]byte(metadataStr), &node.Metadata)
-			nodeMap[node.ID] = &node
+		if n, ok := g.nodes[curr.id]; ok {
+			nodeMap[curr.id] = n
 		}
 
 		if curr.depth >= maxDepth {
 			continue
 		}
 
-		// Find edges where this node is source or target
-		rows, err := db.Query(`
-			SELECT id, source_id, target_id, relation_type 
-			FROM graph_edges 
-			WHERE project_id = ? AND (source_id = ? OR target_id = ?)`, projectID, curr.id, curr.id)
-		if err != nil {
-			return nil, err
-		}
-
-		for rows.Next() {
-			var edge graph.Edge
-			if err := rows.Scan(&edge.ID, &edge.SourceID, &edge.TargetID, &edge.RelationType); err == nil {
-				edgeMap[edge.ID] = &edge
-
-				// Push neighbor to queue
-				neighbor := edge.TargetID
-				if neighbor == curr.id {
-					neighbor = edge.SourceID
-				}
-				if !visited[neighbor] {
-					queue = append(queue, queueItem{id: neighbor, depth: curr.depth + 1})
-				}
+		for _, e := range g.edgesBySource[curr.id] {
+			edgeMap[e.ID] = e
+			if !visited[e.TargetID] {
+				queue = append(queue, queueItem{id: e.TargetID, depth: curr.depth + 1})
 			}
 		}
-		rows.Close()
+		for _, e := range g.edgesByTarget[curr.id] {
+			edgeMap[e.ID] = e
+			if !visited[e.SourceID] {
+				queue = append(queue, queueItem{id: e.SourceID, depth: curr.depth + 1})
+			}
+		}
 	}
 
 	nodes := make([]*graph.Node, 0, len(nodeMap))
 	for _, n := range nodeMap {
 		nodes = append(nodes, n)
 	}
-
 	edges := make([]*graph.Edge, 0, len(edgeMap))
 	for _, e := range edgeMap {
 		edges = append(edges, e)
 	}
+	return &subGraph{Nodes: nodes, Edges: edges}
+}
 
-	return &subGraph{Nodes: nodes, Edges: edges}, nil
+// findNode returns the node ID matching by exact id, path, or label.
+func (g *inMemoryGraph) findNode(start string) string {
+	for id, n := range g.nodes {
+		if id == start || n.Path == start || n.Label == start {
+			return id
+		}
+	}
+	return ""
 }
 
 func escapeMermaid(s string) string {
