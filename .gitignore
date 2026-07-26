@@ -1,8 +1,7 @@
 # Binarios compilados
-sv-memory
-sv-memory.exe
-*.test
-*.exe
+/sv-memory
+/sv-memory.exe
+/bin/
 *.exe~
 *.dll
 *.so

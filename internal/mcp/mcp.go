@@ -843,27 +843,83 @@ var (
 			return mcp.NewToolResultText(fmt.Sprintf("No nodes found matching '%s' in the project graph.", pathOrNode)), nil
 		}
 
+		getBC := func(node *graph.Node) float64 {
+			if node.Metadata == nil {
+				return 0.0
+			}
+			val, ok := node.Metadata["betweenness_centrality"]
+			if !ok {
+				return 0.0
+			}
+			switch v := val.(type) {
+			case float64:
+				return v
+			case float32:
+				return float64(v)
+			}
+			return 0.0
+		}
+		getCommID := func(node *graph.Node) int {
+			if node.Metadata == nil {
+				return 0
+			}
+			val, ok := node.Metadata["community_id"]
+			if !ok {
+				return 0
+			}
+			switch v := val.(type) {
+			case float64:
+				return int(v)
+			case int:
+				return v
+			case int64:
+				return int(v)
+			}
+			return 0
+		}
+		commColors := []string{
+			"#ECECFF", // light purple
+			"#FFF0F5", // lavender blush
+			"#F0FFF0", // honeydew
+			"#F5F5DC", // beige
+			"#FFF8DC", // cornsilk
+			"#F0F8FF", // alice blue
+			"#FDF5E6", // old lace
+			"#FFF5EE", // seashell
+			"#F5FFFA", // mint cream
+			"#F0FFFF", // azure
+		}
+
 		// Build a markdown response containing node details and a Mermaid diagram representation
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("## Code Sub-Graph for '%s' (Depth: %d)\n\n", pathOrNode, depth))
 
 		sb.WriteString("### Nodes in Sub-graph:\n")
 		for _, node := range subGraph.Nodes {
-			sb.WriteString(fmt.Sprintf("- **%s** (`%s`): %s (fan-in: %d, fan-out: %d)\n", node.Label, node.ID, node.Type, g.FanIn[node.ID], g.FanOut[node.ID]))
+			cID := getCommID(node)
+			bc := getBC(node)
+			commStr := "none"
+			if cID > 0 {
+				commStr = strconv.Itoa(cID)
+			}
+			sb.WriteString(fmt.Sprintf("- **%s** (`%s`): %s (fan-in: %d, fan-out: %d, community: %s, BC: %.2f)\n",
+				node.Label, node.ID, node.Type, g.FanIn[node.ID], g.FanOut[node.ID], commStr, bc))
 		}
 		sb.WriteString("\n")
 
-		// Identify potential God Nodes (arbitrarily defined as > 10 fan-in or fan-out)
+		// Identify potential God Nodes (degree > 10 or high betweenness centrality)
 		var godNodes []string
 		for _, node := range subGraph.Nodes {
-			if g.FanIn[node.ID] > 10 || g.FanOut[node.ID] > 10 {
+			bc := getBC(node)
+			if g.FanIn[node.ID] > 10 || g.FanOut[node.ID] > 10 || bc > 50.0 {
 				godNodes = append(godNodes, node.ID)
 			}
 		}
 		if len(godNodes) > 0 {
 			sb.WriteString("### Potential God Nodes:\n")
 			for _, id := range godNodes {
-				sb.WriteString(fmt.Sprintf("- **%s** (fan-in: %d, fan-out: %d)\n", g.Nodes[id].Label, g.FanIn[id], g.FanOut[id]))
+				bc := getBC(g.Nodes[id])
+				sb.WriteString(fmt.Sprintf("- **%s** (fan-in: %d, fan-out: %d, BC: %.2f)\n", g.Nodes[id].Label, g.FanIn[id], g.FanOut[id], bc))
 			}
 			sb.WriteString("\n")
 		}
@@ -882,6 +938,17 @@ var (
 					sb.WriteString(fmt.Sprintf("    %s -->|%s| %s\n", srcEscaped, edge.RelationType, tgtEscaped))
 				}
 			}
+
+			// Apply community styling/coloring
+			for _, node := range subGraph.Nodes {
+				cID := getCommID(node)
+				if cID > 0 {
+					nodeEscaped := escapeMermaid(node.ID)
+					color := commColors[(cID-1)%len(commColors)]
+					sb.WriteString(fmt.Sprintf("    style %s fill:%s,stroke:#333,stroke-width:1px\n", nodeEscaped, color))
+				}
+			}
+
 			sb.WriteString("```\n")
 		} else {
 			sb.WriteString("*No connections/edges found in this range.*\n")
@@ -1033,6 +1100,167 @@ var (
 		default:
 			return mcp.NewToolResultError(fmt.Sprintf("invalid action: %s", action)), nil
 		}
+	})
+
+	// 20. Tool: sv_graph_explain
+	graphExplainTool := mcp.NewTool("sv_graph_explain",
+		mcp.WithDescription("Explain a node's structural role, community, centrality metrics, neighbors, and suggest questions."),
+		mcp.WithString("node", mcp.Required(), mcp.Description("The node ID (file path, package, class, or function name) to explain")),
+	)
+
+	s.AddTool(graphExplainTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		nodeName, err := req.RequireString("node")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: node"), nil
+		}
+
+		g, err := getOrLoadGraph()
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
+		}
+
+		nID := g.FindNode(nodeName)
+		if nID == "" {
+			return mcp.NewToolResultText(fmt.Sprintf("Could not find node matching '%s' in the graph.", nodeName)), nil
+		}
+
+		node := g.Nodes[nID]
+
+		getBC := func(node *graph.Node) float64 {
+			if node.Metadata == nil {
+				return 0.0
+			}
+			val, ok := node.Metadata["betweenness_centrality"]
+			if !ok {
+				return 0.0
+			}
+			switch v := val.(type) {
+			case float64:
+				return v
+			case float32:
+				return float64(v)
+			}
+			return 0.0
+		}
+		getCommID := func(node *graph.Node) int {
+			if node.Metadata == nil {
+				return 0
+			}
+			val, ok := node.Metadata["community_id"]
+			if !ok {
+				return 0
+			}
+			switch v := val.(type) {
+			case float64:
+				return int(v)
+			case int:
+				return v
+			case int64:
+				return int(v)
+			}
+			return 0
+		}
+
+		cID := getCommID(node)
+		bc := getBC(node)
+		fanIn := g.FanIn[nID]
+		fanOut := g.FanOut[nID]
+
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("## Structural Explanation of Node: `%s`\n\n", node.Label))
+		sb.WriteString(fmt.Sprintf("- **Node ID:** `%s`\n", node.ID))
+		sb.WriteString(fmt.Sprintf("- **Type:** `%s`\n", node.Type))
+		if node.Path != "" {
+			sb.WriteString(fmt.Sprintf("- **Path:** `%s`\n", node.Path))
+		}
+
+		if node.Metadata != nil {
+			if lang, ok := node.Metadata["language"]; ok {
+				sb.WriteString(fmt.Sprintf("- **Language:** `%v`\n", lang))
+			}
+			if loc, ok := node.Metadata["loc"]; ok {
+				sb.WriteString(fmt.Sprintf("- **Lines of Code (LOC):** `%v`\n", loc))
+			}
+		}
+
+		sb.WriteString("\n### 📊 Network Metrics:\n")
+		sb.WriteString(fmt.Sprintf("- **Community ID:** `%d`\n", cID))
+		sb.WriteString(fmt.Sprintf("- **Betweenness Centrality (BC):** `%.2f`\n", bc))
+		sb.WriteString(fmt.Sprintf("- **Fan-In (Dependents):** `%d`\n", fanIn))
+		sb.WriteString(fmt.Sprintf("- **Fan-Out (Dependencies):** `%d`\n", fanOut))
+
+		// God node evaluation
+		isGod := false
+		reasons := []string{}
+		if fanIn > 10 {
+			isGod = true
+			reasons = append(reasons, fmt.Sprintf("High Fan-In (%d dependents)", fanIn))
+		}
+		if fanOut > 10 {
+			isGod = true
+			reasons = append(reasons, fmt.Sprintf("High Fan-Out (%d dependencies)", fanOut))
+		}
+		if bc > 50.0 {
+			isGod = true
+			reasons = append(reasons, fmt.Sprintf("High Betweenness Centrality (%.2f) - acts as a structural bridge", bc))
+		}
+
+		sb.WriteString("\n### 🧠 Architectural Role:\n")
+		if isGod {
+			sb.WriteString(fmt.Sprintf("⚠️ **Potential God Node/Hub:** This node plays a central role in the codebase due to:\n"))
+			for _, r := range reasons {
+				sb.WriteString(fmt.Sprintf("  - %s\n", r))
+			}
+			sb.WriteString("Refactoring this node could have significant ripple effects. Consider splitting its responsibilities.\n")
+		} else if fanIn == 0 && fanOut > 0 {
+			sb.WriteString("🟢 **Entry Point / Controller:** This node has dependencies but no local dependents. It is likely an entry point or top-level controller.\n")
+		} else if fanIn > 0 && fanOut == 0 {
+			sb.WriteString("🟢 **Leaf Node / Utility:** This node is depended upon by others but has no dependencies. It represents a low-level utility or core data model.\n")
+		} else if fanIn > 0 && fanOut > 0 {
+			sb.WriteString("🟢 **Intermediate Component:** This node acts as an intermediary, receiving calls/imports and delegating to low-level utilities.\n")
+		} else {
+			sb.WriteString("🟢 **Isolated Node:** This node currently has no connections in the dependency graph.\n")
+		}
+
+		// Neighbors
+		sb.WriteString("\n### 🔗 Immediate Neighbors:\n")
+		if len(g.EdgesByTarget[nID]) > 0 {
+			sb.WriteString("**Dependents (Who imports/calls this):**\n")
+			for _, e := range g.EdgesByTarget[nID] {
+				srcNode := g.Nodes[e.SourceID]
+				if srcNode != nil {
+					sb.WriteString(fmt.Sprintf("- `%s` (relation: `%s`)\n", srcNode.Label, e.RelationType))
+				}
+			}
+		} else {
+			sb.WriteString("**Dependents:** None.\n")
+		}
+
+		if len(g.EdgesBySource[nID]) > 0 {
+			sb.WriteString("\n**Dependencies (What this imports/calls):**\n")
+			for _, e := range g.EdgesBySource[nID] {
+				tgtNode := g.Nodes[e.TargetID]
+				if tgtNode != nil {
+					sb.WriteString(fmt.Sprintf("- `%s` (relation: `%s`)\n", tgtNode.Label, e.RelationType))
+				}
+			}
+		} else {
+			sb.WriteString("\n**Dependencies:** None.\n")
+		}
+
+		// Suggested Questions
+		sb.WriteString("\n### ❓ Suggested Questions to ask Antigravity about this node:\n")
+		sb.WriteString(fmt.Sprintf("1. \"What is the primary responsibility of `%s`?\"\n", node.Label))
+		sb.WriteString(fmt.Sprintf("2. \"Are there any architectural patterns or guidelines used inside `%s`?\"\n", node.Label))
+		if isGod {
+			sb.WriteString(fmt.Sprintf("3. \"How can we refactor or break down the God node `%s` into smaller modules?\"\n", node.Label))
+		} else if fanIn > 0 {
+			sb.WriteString(fmt.Sprintf("3. \"Who are the main dependents of `%s` and how would a change here affect them?\"\n", node.Label))
+		} else {
+			sb.WriteString(fmt.Sprintf("3. \"Show me the source code implementation details of `%s`.\"\n", node.Label))
+		}
+
+		return mcp.NewToolResultText(sb.String()), nil
 	})
 
 	return s

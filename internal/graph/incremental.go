@@ -84,7 +84,11 @@ func syncGraphFull(db *sql.DB, projectID string, projPath string) error {
 	// Store fresh file metadata for future incremental runs.
 	updateFileMeta(tx, projectID, wr.fileMeta)
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	return UpdateCommunitiesAndCentrality(db, projectID)
 }
 
 // trySyncGraphIncremental attempts a partial graph update using file mtime/size
@@ -236,7 +240,15 @@ func trySyncGraphIncremental(db *sql.DB, projectID string, projPath string) (boo
 		return false, err
 	}
 
-	return true, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+
+	if err := UpdateCommunitiesAndCentrality(db, projectID); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 func bulkInsertNodes(tx *sql.Tx, projectID string, nodes map[string]*Node) error {
