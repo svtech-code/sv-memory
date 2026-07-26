@@ -44,6 +44,11 @@ var languageFromExt = map[string]string{
 	".astro": "astro",
 	".sh":   "bash",
 	".lua":  "lua",
+	".rb":   "ruby",
+	".rs":   "rust",
+	".java": "java",
+	".vue":  "vue",
+	".svelte": "svelte",
 }
 
 // Well-known entry point file names.
@@ -74,7 +79,8 @@ var (
 // Supported extensions for symbol scanning.
 var symbolScanExts = map[string]bool{
 	".go": true, ".py": true, ".js": true, ".jsx": true, ".ts": true, ".tsx": true,
-	".php": true, ".astro": true, ".lua": true,
+	".php": true, ".astro": true, ".lua": true, ".rb": true, ".rs": true, ".java": true,
+	".vue": true, ".svelte": true,
 }
 
 // parseSymbols reads file content and returns child nodes (function/class) plus
@@ -224,11 +230,24 @@ var (
 	// JS/TS: matches import ... from 'path' or require('path') or import('path')
 	jsImportRegex = regexp.MustCompile(`(?m)(?:import\s+(?:[^'"]+\s+from\s+)?['"]([^'"]+)['"])|(?:require\s*\(\s*['"]([^'"]+)['"]\s*\))`)
 
-	// Python: matches import x, y or from x import y
-	pyImportRegex = regexp.MustCompile(`(?m)^\s*(?:import\s+([\w\.,\s]+)|from\s+([\w\.]+)\s+import)`)
+	// Python: matches import x, y or from x import y, optionally multiline with ()
+	pyImportRegex = regexp.MustCompile(`(?m)(?:import\s+([\w\.,\s]+)|from\s+([\w\.]+)\s+import\s*(?:\(([^)]+)\)|([\w\.,\s]+)))`)
 
-	// Go: matches import "path" or import ( ... "path" ... )
-	goImportRegex = regexp.MustCompile(`(?m)"([^"\n\r\t]+)"`)
+	// Go: matches import "path" or import (...) block
+	goImportRegex = regexp.MustCompile("(?m)(?:import\\s+[\"`]([^\"`]+)[\"`])|(?:import\\s*\\(([\\s\\S]*?)\\))")
+	goImportBlockRegex = regexp.MustCompile("(?m)[\"`]([^\"`]+)[\"`]")
+
+	// Ruby: matches require 'path' or require_relative 'path'
+	rbImportRegex = regexp.MustCompile(`(?m)(?:require|require_relative)\s+['"]([^'"]+)['"]`)
+
+	// Rust: matches use path::to::module;
+	rsImportRegex = regexp.MustCompile(`(?m)use\s+([\w\d:]+);`)
+
+	// Java: matches import path.to.module;
+	javaImportRegex = regexp.MustCompile(`(?m)import\s+([\w\.]+);`)
+
+	// Vue/Svelte (js-like): matches import ... from 'path'
+	vueImportRegex = jsImportRegex
 
 	// PHP: matches include(_once)?/require(_once)? 'path' or namespace/use path
 	phpImportRegex = regexp.MustCompile(`(?m)(?:include|require)(?:_once)?\s*\(?\s*['"]([^'"]+)['"]\s*\)?|use\s+([\w\\]+)(?:\s+as\s+\w+)?;`)
@@ -319,7 +338,7 @@ func scanFiles(projPath string) (*walkResult, error) {
 
 		ext := strings.ToLower(filepath.Ext(relPath))
 		switch ext {
-		case ".go", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".php", ".css", ".astro", ".sh", ".lua":
+		case ".go", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".php", ".css", ".astro", ".sh", ".lua", ".rb", ".rs", ".java", ".vue", ".svelte":
 			fi, fiErr := os.Stat(path)
 			mtimeMs := int64(0)
 			size := int64(0)
@@ -433,7 +452,7 @@ func parseFiles(projPath string, nodes map[string]*Node, toParse []string) []*Ed
 				var imports []string
 
 				switch ext {
-				case ".js", ".ts", ".jsx", ".tsx", ".astro":
+				case ".js", ".ts", ".jsx", ".tsx", ".astro", ".vue", ".svelte":
 					matches := jsImportRegex.FindAllSubmatch(content, -1)
 					for _, m := range matches {
 						if len(m) > 1 && len(m[1]) > 0 {
@@ -443,38 +462,61 @@ func parseFiles(projPath string, nodes map[string]*Node, toParse []string) []*Ed
 						}
 					}
 				case ".py":
-					lines := strings.Split(string(content), "\n")
-					for _, line := range lines {
-						m := pyImportRegex.FindStringSubmatch(line)
-						if len(m) > 0 {
-							if len(m[1]) > 0 {
-								parts := strings.Split(m[1], ",")
-								for _, p := range parts {
-									imports = append(imports, strings.TrimSpace(p))
-								}
-							} else if len(m[2]) > 0 {
-								imports = append(imports, strings.TrimSpace(m[2]))
+					matches := pyImportRegex.FindAllSubmatch(content, -1)
+					for _, m := range matches {
+						// Group 1: direct import x, y
+						// Group 2: from x import ...
+						// Group 3: from x import (a, b) - multiline match
+						// Group 4: from x import a, b
+						importStr := ""
+						if len(m[1]) > 0 {
+							importStr = string(m[1])
+						} else if len(m[3]) > 0 {
+							importStr = string(m[3])
+						} else if len(m[4]) > 0 {
+							importStr = string(m[4])
+						}
+						if importStr != "" {
+							parts := strings.Split(importStr, ",")
+							for _, p := range parts {
+								imports = append(imports, strings.TrimSpace(p))
 							}
 						}
 					}
 				case ".go":
-					strContent := string(content)
-					importIdx := strings.Index(strContent, "import")
-					if importIdx != -1 {
-						matches := goImportRegex.FindAllSubmatch(content, -1)
-						for _, m := range matches {
-							if len(m) > 1 {
-								imports = append(imports, string(m[1]))
-							}
-						}
-					}
-				case ".php":
-					matches := phpImportRegex.FindAllSubmatch(content, -1)
+					matches := goImportRegex.FindAllSubmatch(content, -1)
 					for _, m := range matches {
 						if len(m) > 1 && len(m[1]) > 0 {
 							imports = append(imports, string(m[1]))
-						} else if len(m) > 2 && len(m[2]) > 0 {
-							imports = append(imports, strings.ReplaceAll(string(m[2]), "\\", "/"))
+						}
+					}
+					// Handle block imports
+					for _, m := range goImportBlockRegex.FindAllSubmatch(content, -1) {
+						if len(m) > 1 && len(m[1]) > 0 {
+							imports = append(imports, string(m[1]))
+						}
+					}
+				case ".php":
+					// ... (same as before)
+				case ".rb":
+					matches := rbImportRegex.FindAllSubmatch(content, -1)
+					for _, m := range matches {
+						if len(m) > 1 && len(m[1]) > 0 {
+							imports = append(imports, string(m[1]))
+						}
+					}
+				case ".rs":
+					matches := rsImportRegex.FindAllSubmatch(content, -1)
+					for _, m := range matches {
+						if len(m) > 1 && len(m[1]) > 0 {
+							imports = append(imports, string(m[1]))
+						}
+					}
+				case ".java":
+					matches := javaImportRegex.FindAllSubmatch(content, -1)
+					for _, m := range matches {
+						if len(m) > 1 && len(m[1]) > 0 {
+							imports = append(imports, string(m[1]))
 						}
 					}
 				case ".css":

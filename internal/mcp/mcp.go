@@ -131,10 +131,11 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 	// In-memory graph cache: loads the full project's nodes+edges with two
 	// SQL queries then runs BFS in Go-land, avoiding N+1 round-trips per
 	// visited node. Invalidated by sv_graph_sync.
-	var (
-		graphMu    sync.Mutex
-		cachedGraph *inMemoryGraph
-	)
+var (
+	graphMu     sync.Mutex
+	cachedGraph *graph.Graph
+)
+
 
 	getOrLoadGraph := func() (*inMemoryGraph, error) {
 		graphMu.Lock()
@@ -802,6 +803,7 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		direction := req.GetString("direction", "out")
 
 		// Load or retrieve the in-memory graph cache.
+		startQuery := time.Now()
 		g, err := getOrLoadGraph()
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
@@ -930,24 +932,6 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 	return server.ServeStdio(s)
 }
 
-// subGraph is the result of a BFS traversal returned by the sv_graph_query tool.
-type subGraph struct {
-	Nodes []*graph.Node
-	Edges []*graph.Edge
-}
-
-// inMemoryGraph holds the full project graph in Go memory so that BFS
-// traversals (sv_graph_query) run without any SQL round-trips once the data
-// is loaded. Two bulk queries replace the previous N+1 pattern of one
-// SELECT per visited node + one SELECT per node's edges.
-type inMemoryGraph struct {
-	nodes         map[string]*graph.Node
-	edgesBySource map[string][]*graph.Edge
-	edgesByTarget map[string][]*graph.Edge
-	fanIn         map[string]int
-	fanOut        map[string]int
-}
-
 // loadFullGraph executes two queries to load all nodes and edges for a project
 // into an inMemoryGraph.
 func loadFullGraph(db *sql.DB, projectID string) (*inMemoryGraph, error) {
@@ -1042,7 +1026,9 @@ func (g *inMemoryGraph) ShortestPath(start, end string, maxHops int) []string {
 	return nil
 }
 
-func (g *inMemoryGraph) query(start string, maxDepth int) *subGraph {
+// query performs a BFS traversal to find all nodes and edges within maxDepth,
+// filtered by optional relation type and direction ('in', 'out', 'all').
+func (g *inMemoryGraph) query(start string, maxDepth int, relationType string, direction string) *subGraph {
 	startID := g.findNode(start)
 	if startID == "" {
 		return &subGraph{}
@@ -1054,47 +1040,52 @@ func (g *inMemoryGraph) query(start string, maxDepth int) *subGraph {
 	}
 
 	queue := []queueItem{{id: startID, depth: 0}}
-	visited := make(map[string]bool)
-	nodeMap := make(map[string]*graph.Node)
-	edgeMap := make(map[string]*graph.Edge)
+	visitedNodes := map[string]*graph.Node{startID: g.nodes[startID]}
+	visitedEdges := map[string]*graph.Edge{}
 
 	for len(queue) > 0 {
 		curr := queue[0]
 		queue = queue[1:]
 
-		if visited[curr.id] {
-			continue
-		}
-		visited[curr.id] = true
-
-		if n, ok := g.nodes[curr.id]; ok {
-			nodeMap[curr.id] = n
-		}
-
 		if curr.depth >= maxDepth {
 			continue
 		}
 
-		for _, e := range g.edgesBySource[curr.id] {
-			edgeMap[e.ID] = e
-			if !visited[e.TargetID] {
-				queue = append(queue, queueItem{id: e.TargetID, depth: curr.depth + 1})
+		// Explore outgoing edges if direction is 'out' or 'all'
+		if direction == "out" || direction == "all" {
+			for _, edge := range g.edgesBySource[curr.id] {
+				if relationType != "" && edge.RelationType != relationType {
+					continue
+				}
+				visitedEdges[edge.ID] = edge
+				if _, visited := visitedNodes[edge.TargetID]; !visited {
+					visitedNodes[edge.TargetID] = g.nodes[edge.TargetID]
+					queue = append(queue, queueItem{id: edge.TargetID, depth: curr.depth + 1})
+				}
 			}
 		}
-		for _, e := range g.edgesByTarget[curr.id] {
-			edgeMap[e.ID] = e
-			if !visited[e.SourceID] {
-				queue = append(queue, queueItem{id: e.SourceID, depth: curr.depth + 1})
+
+		// Explore incoming edges if direction is 'in' or 'all'
+		if direction == "in" || direction == "all" {
+			for _, edge := range g.edgesByTarget[curr.id] {
+				if relationType != "" && edge.RelationType != relationType {
+					continue
+				}
+				visitedEdges[edge.ID] = edge
+				if _, visited := visitedNodes[edge.SourceID]; !visited {
+					visitedNodes[edge.SourceID] = g.nodes[edge.SourceID]
+					queue = append(queue, queueItem{id: edge.SourceID, depth: curr.depth + 1})
+				}
 			}
 		}
 	}
 
-	nodes := make([]*graph.Node, 0, len(nodeMap))
-	for _, n := range nodeMap {
+	var nodes []*graph.Node
+	for _, n := range visitedNodes {
 		nodes = append(nodes, n)
 	}
-	edges := make([]*graph.Edge, 0, len(edgeMap))
-	for _, e := range edgeMap {
+	var edges []*graph.Edge
+	for _, e := range visitedEdges {
 		edges = append(edges, e)
 	}
 	return &subGraph{Nodes: nodes, Edges: edges}
