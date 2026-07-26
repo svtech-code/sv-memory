@@ -7,10 +7,24 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/svtech/sv-memory/internal/security"
 )
+
+// Package-level cache so SyncToGit can skip redundant writes when nothing
+// changed in SQLite and the json file on disk is already up-to-date. Held
+// across the MCP server lifetime (stdio — one process).
+var (
+	syncCacheMu   sync.Mutex
+	lastWriteInfo = map[string]syncCacheEntry{} // keyed by projectID
+)
+
+type syncCacheEntry struct {
+	memoryCount int
+	fileMtim    time.Time // mtime of the JSON file at last write
+}
 
 // Memory represents a recorded design decision, bugfix, or coding standard.
 type Memory struct {
@@ -158,27 +172,79 @@ func SearchMemories(db *sql.DB, projectID string, searchTerm string, category st
 	return memories, nil
 }
 
+// countMemories returns the total number of memories for a given project.
+func countMemories(db *sql.DB, projectID string) (int, error) {
+	var n int
+	err := db.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ?", projectID).Scan(&n)
+	return n, err
+}
+
 // SyncToGit serializes all project memories to a local file in `.sv-memory/memories.json`.
+// It uses an atomic write (tmp file + rename) so concurrent readers never see a partial file.
+// When nothing changed since the last write (same memory count, same file mtime) it skips
+// the write entirely to avoid unnecessary I/O and git diffs.
 func SyncToGit(db *sql.DB, projectID string, projPath string) error {
+	syncDir := filepath.Join(projPath, ".sv-memory")
+	syncFile := filepath.Join(syncDir, "memories.json")
+
+	// Quick check: count current memories and compare with cache.
+	count, err := countMemories(db, projectID)
+	if err != nil {
+		return err
+	}
+
+	syncCacheMu.Lock()
+	info := lastWriteInfo[projectID]
+	currentMtim := time.Time{}
+	if fi, statErr := os.Stat(syncFile); statErr == nil {
+		currentMtim = fi.ModTime()
+	}
+	if count == info.memoryCount && currentMtim.Equal(info.fileMtim) {
+		syncCacheMu.Unlock()
+		return nil // nothing changed — skip write
+	}
+	syncCacheMu.Unlock()
+
+	// Load all memories from SQLite.
 	memories, err := SearchMemories(db, projectID, "", "", 0)
 	if err != nil {
 		return err
 	}
 
-	// Create directory if missing
-	syncDir := filepath.Join(projPath, ".sv-memory")
+	// Create directory if missing.
 	if err := os.MkdirAll(syncDir, 0755); err != nil {
 		return fmt.Errorf("failed to create sync directory: %w", err)
 	}
 
-	syncFile := filepath.Join(syncDir, "memories.json")
 	data, err := json.MarshalIndent(memories, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal memories JSON: %w", err)
 	}
 
-	if err := os.WriteFile(syncFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write memories to %s: %w", syncFile, err)
+	// Atomic write: write to tmp file then rename (atomic on POSIX / macOS).
+	tmpFile := syncFile + ".tmp"
+	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+		return fmt.Errorf("failed to write temp memories file: %w", err)
+	}
+	if err := os.Rename(tmpFile, syncFile); err != nil {
+		// Clean up temp file on rename failure.
+		os.Remove(tmpFile)
+		return fmt.Errorf("failed to rename temp file: %w", err)
+	}
+
+	// Update cache with mtime from the file we just wrote.
+	if fi, statErr := os.Stat(syncFile); statErr == nil {
+		syncCacheMu.Lock()
+		lastWriteInfo[projectID] = syncCacheEntry{
+			memoryCount: count,
+			fileMtim:    fi.ModTime(),
+		}
+		syncCacheMu.Unlock()
+	} else {
+		// Should not happen; purge cache so next call retries.
+		syncCacheMu.Lock()
+		delete(lastWriteInfo, projectID)
+		syncCacheMu.Unlock()
 	}
 
 	return nil

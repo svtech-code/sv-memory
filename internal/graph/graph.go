@@ -72,17 +72,61 @@ var (
 	luaImportRegex = regexp.MustCompile(`(?m)(?:require|dofile|loadfile)\s*\(?\s*['"]([^'"]+)['"]\s*\)?`)
 )
 
-// SyncGraph scans the project directory, builds the dependency graph, and saves it in SQLite.
+// SyncGraph scans the project directory and builds or incrementally updates the
+// dependency graph stored in SQLite. It detects changed files via mtime/size
+// and avoids reparsing unchanged files. When more than 30 % of tracked files
+// have changed, or when no prior metadata exists, it falls back to a full
+// rebuild (delete-all + rescan).
 func SyncGraph(db *sql.DB, projectID string, projPath string) error {
-	// 1. Scan files
-	nodes := make(map[string]*Node) // keyed by node ID (relative path)
+	return syncGraph(db, projectID, projPath)
+}
+
+// SyncGraphFull forces a full rebuild: all existing nodes and edges for the
+// project are deleted and re-scanned from disk. Use this for the CLI `graph
+// rebuild` command. Called internally as a fallback when the incremental path
+// detects too many changes.
+func SyncGraphFull(db *sql.DB, projectID string, projPath string) error {
+	return syncGraphFull(db, projectID, projPath)
+}
+
+// syncGraph dispatches to incremental or full rebuild.
+func syncGraph(db *sql.DB, projectID string, projPath string) error {
+	ok, err := trySyncGraphIncremental(db, projectID, projPath)
+	if err != nil {
+		return err
+	}
+	if ok {
+		return nil
+	}
+	// Fall back to full rebuild when incremental is not viable (first run or
+	// too many changes).
+	return syncGraphFull(db, projectID, projPath)
+}
+
+// walkResult carries the data collected during a single file scan pass.
+type walkResult struct {
+	nodes    map[string]*Node
+	fileList []string
+	fileMeta map[string]fileMetaEntry // relative path → mtime+size
+}
+
+type fileMetaEntry struct {
+	mtimeMs int64
+	size    int64
+}
+
+// scanFiles walks projPath and collects code files into a nodes map, a file
+// list for parsing, and a metadata map for change detection. Shared between
+// full and incremental paths.
+func scanFiles(projPath string) (*walkResult, error) {
+	nodes := make(map[string]*Node)
 	fileList := []string{}
+	fileMeta := make(map[string]fileMetaEntry)
 
 	err := filepath.WalkDir(projPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-
 		if d.IsDir() {
 			if ignoreDirs[d.Name()] {
 				return filepath.SkipDir
@@ -90,7 +134,6 @@ func SyncGraph(db *sql.DB, projectID string, projPath string) error {
 			return nil
 		}
 
-		// Relativize path for consistent IDs
 		relPath, relErr := filepath.Rel(projPath, path)
 		if relErr != nil {
 			return nil
@@ -99,30 +142,46 @@ func SyncGraph(db *sql.DB, projectID string, projPath string) error {
 		ext := strings.ToLower(filepath.Ext(relPath))
 		switch ext {
 		case ".go", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".php", ".css", ".astro", ".sh", ".lua":
-			nodeID := relPath
-			nodes[nodeID] = &Node{
-				ID:    nodeID,
+			fi, fiErr := os.Stat(path)
+			mtimeMs := int64(0)
+			size := int64(0)
+			if fiErr == nil {
+				mtimeMs = fi.ModTime().UnixMilli()
+				size = fi.Size()
+			}
+
+			nodes[relPath] = &Node{
+				ID:    relPath,
 				Type:  "file",
 				Label: filepath.Base(relPath),
 				Path:  relPath,
 				Metadata: map[string]interface{}{
 					"extension": ext,
-					"size":      getFileSize(path),
+					"size":      size,
 				},
 			}
 			fileList = append(fileList, relPath)
+			fileMeta[relPath] = fileMetaEntry{mtimeMs: mtimeMs, size: size}
 		}
 		return nil
 	})
-
 	if err != nil {
-		return fmt.Errorf("failed walking directory: %w", err)
+		return nil, fmt.Errorf("failed walking directory: %w", err)
+	}
+	return &walkResult{nodes: nodes, fileList: fileList, fileMeta: fileMeta}, nil
+}
+
+// parseFiles concurrently parses imports for the given file list using a
+// bounded worker pool. Returns edges for all files; unresolved imports are
+// treated as external package nodes (added to the nodes map).
+func parseFiles(projPath string, nodes map[string]*Node, toParse []string) []*Edge {
+	if len(toParse) == 0 {
+		return nil
 	}
 
-	// 2. Parse imports & create edges concurrently using a worker pool
 	numWorkers := 8
-	if len(fileList) < numWorkers {
-		numWorkers = len(fileList)
+	if len(toParse) < numWorkers {
+		numWorkers = len(toParse)
 	}
 
 	type parseResult struct {
@@ -131,10 +190,13 @@ func SyncGraph(db *sql.DB, projectID string, projPath string) error {
 		err        error
 	}
 
-	jobs := make(chan string, len(fileList))
-	results := make(chan parseResult, len(fileList))
+	bufSize := numWorkers * 2
+	if len(toParse) < bufSize {
+		bufSize = len(toParse)
+	}
+	jobs := make(chan string, bufSize)
+	results := make(chan parseResult, bufSize)
 
-	// Spawn workers
 	for w := 0; w < numWorkers; w++ {
 		go func() {
 			for sourcePath := range jobs {
@@ -144,7 +206,6 @@ func SyncGraph(db *sql.DB, projectID string, projPath string) error {
 					results <- parseResult{sourcePath: sourcePath, err: err}
 					continue
 				}
-
 				ext := strings.ToLower(filepath.Ext(sourcePath))
 				var imports []string
 
@@ -163,12 +224,12 @@ func SyncGraph(db *sql.DB, projectID string, projPath string) error {
 					for _, line := range lines {
 						m := pyImportRegex.FindStringSubmatch(line)
 						if len(m) > 0 {
-							if len(m[1]) > 0 { // import x
+							if len(m[1]) > 0 {
 								parts := strings.Split(m[1], ",")
 								for _, p := range parts {
 									imports = append(imports, strings.TrimSpace(p))
 								}
-							} else if len(m[2]) > 0 { // from x import y
+							} else if len(m[2]) > 0 {
 								imports = append(imports, strings.TrimSpace(m[2]))
 							}
 						}
@@ -229,20 +290,17 @@ func SyncGraph(db *sql.DB, projectID string, projPath string) error {
 		}()
 	}
 
-	// Feed jobs
-	for _, sourcePath := range fileList {
+	for _, sourcePath := range toParse {
 		jobs <- sourcePath
 	}
 	close(jobs)
 
-	// Collect results and build edges (main thread resolves target nodes from map safely)
 	var edges []*Edge
-	for i := 0; i < len(fileList); i++ {
+	for i := 0; i < len(toParse); i++ {
 		res := <-results
 		if res.err != nil {
-			continue // skip unreadable files
+			continue
 		}
-
 		for _, imp := range res.imports {
 			targetID, found := resolveImport(projPath, res.sourcePath, imp, nodes)
 			if found {
@@ -253,38 +311,44 @@ func SyncGraph(db *sql.DB, projectID string, projPath string) error {
 					TargetID:     targetID,
 					RelationType: "imports",
 				})
-			} else {
-				// It's an external library / package
-				if isExternalPkg(imp) {
-					pkgNodeID := "pkg:" + imp
-					if _, exists := nodes[pkgNodeID]; !exists {
-						nodes[pkgNodeID] = &Node{
-							ID:    pkgNodeID,
-							Type:  "package",
-							Label: imp,
-							Path:  imp,
-						}
+			} else if isExternalPkg(imp) {
+				pkgNodeID := "pkg:" + imp
+				if _, exists := nodes[pkgNodeID]; !exists {
+					nodes[pkgNodeID] = &Node{
+						ID:    pkgNodeID,
+						Type:  "package",
+						Label: imp,
+						Path:  imp,
 					}
-					edgeID := fmt.Sprintf("%s-%s-%s", res.sourcePath, pkgNodeID, "imports")
-					edges = append(edges, &Edge{
-						ID:           edgeID,
-						SourceID:     res.sourcePath,
-						TargetID:     pkgNodeID,
-						RelationType: "imports",
-					})
 				}
+				edgeID := fmt.Sprintf("%s-%s-%s", res.sourcePath, pkgNodeID, "imports")
+				edges = append(edges, &Edge{
+					ID:           edgeID,
+					SourceID:     res.sourcePath,
+					TargetID:     pkgNodeID,
+					RelationType: "imports",
+				})
 			}
 		}
 	}
+	return edges
+}
 
-	// 3. Save graph to SQLite database in a transaction
+// syncGraphFull is the original delete-all-plus-rescan implementation.
+func syncGraphFull(db *sql.DB, projectID string, projPath string) error {
+	wr, err := scanFiles(projPath)
+	if err != nil {
+		return err
+	}
+
+	edges := parseFiles(projPath, wr.nodes, wr.fileList)
+
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	// Clear previous graph data for this project
 	_, err = tx.Exec("DELETE FROM graph_edges WHERE project_id = ?", projectID)
 	if err != nil {
 		return fmt.Errorf("failed deleting old edges: %w", err)
@@ -294,49 +358,192 @@ func SyncGraph(db *sql.DB, projectID string, projPath string) error {
 		return fmt.Errorf("failed deleting old nodes: %w", err)
 	}
 
-	// Insert nodes
-	nodeQuery := `
-	INSERT INTO graph_nodes (id, project_id, node_type, label, path, metadata)
-	VALUES (?, ?, ?, ?, ?, ?)
-	`
-	nodeStmt, err := tx.Prepare(nodeQuery)
+	if err := bulkInsertNodes(tx, projectID, wr.nodes); err != nil {
+		return err
+	}
+	if err := bulkInsertEdges(tx, projectID, edges); err != nil {
+		return err
+	}
+
+	// Store fresh file metadata for future incremental runs.
+	updateFileMeta(tx, projectID, wr.fileMeta)
+
+	return tx.Commit()
+}
+
+// trySyncGraphIncremental attempts a partial graph update using file mtime/size
+// comparison. Returns (true, nil) on success, (false, nil) when a full rebuild
+// is recommended (no prior meta or too many changes), or (false, err) on
+// database error.
+func trySyncGraphIncremental(db *sql.DB, projectID string, projPath string) (bool, error) {
+	wr, err := scanFiles(projPath)
+	if err != nil {
+		return false, err
+	}
+
+	// Load existing file metadata from the DB.
+	oldMeta, err := loadFileMeta(db, projectID)
+	if err != nil {
+		return false, err
+	}
+
+	// First run — no prior metadata, do full rebuild.
+	if len(oldMeta) == 0 {
+		return false, nil
+	}
+
+	// Classify files as unchanged, new, changed, or deleted.
+	var unchanged, toParse, deleted []string
+	for _, p := range wr.fileList {
+		cur := wr.fileMeta[p]
+		prev, exists := oldMeta[p]
+		if !exists {
+			toParse = append(toParse, p)
+		} else if cur.mtimeMs != prev.mtimeMs || cur.size != prev.size {
+			toParse = append(toParse, p)
+		} else {
+			unchanged = append(unchanged, p)
+		}
+	}
+	for p := range oldMeta {
+		if _, stillExists := wr.fileMeta[p]; !stillExists {
+			deleted = append(deleted, p)
+		}
+	}
+
+	// If more than 30% of tracked files changed, fall back to full rebuild.
+	totalTracked := len(oldMeta)
+	churn := len(toParse) + len(deleted)
+	if totalTracked > 0 && float64(churn)/float64(totalTracked) > 0.30 {
+		return false, nil
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	// 1. Remove deleted files's nodes and edges.
+	for _, p := range deleted {
+		if _, e := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND (source_id = ? OR target_id = ?)", projectID, p, p); e != nil {
+			return false, fmt.Errorf("failed deleting edges for deleted file %s: %w", p, e)
+		}
+		if _, e := tx.Exec("DELETE FROM graph_nodes WHERE project_id = ? AND id = ?", projectID, p); e != nil {
+			return false, fmt.Errorf("failed deleting node for deleted file %s: %w", p, e)
+		}
+		if _, e := tx.Exec("DELETE FROM graph_files_meta WHERE project_id = ? AND path = ?", projectID, p); e != nil {
+			return false, fmt.Errorf("failed removing file meta for %s: %w", p, e)
+		}
+	}
+
+	// 2. Remove old edges for changed files (their imports may have changed).
+	for _, p := range toParse {
+		if _, e := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND source_id = ?", projectID, p); e != nil {
+			return false, fmt.Errorf("failed deleting edges for changed file %s: %w", p, e)
+		}
+	}
+
+	// 3. Parse new+changed files and insert nodes+edges.
+	edges := parseFiles(projPath, wr.nodes, toParse)
+	for _, p := range toParse {
+		upsertNode(tx, projectID, wr.nodes[p])
+	}
+	if err := bulkInsertEdges(tx, projectID, edges); err != nil {
+		return false, err
+	}
+
+	// 4. Update file metadata for added/changed files.
+	for _, p := range toParse {
+		m := wr.fileMeta[p]
+		if _, e := tx.Exec("INSERT OR REPLACE INTO graph_files_meta (project_id, path, mtime_ms, size) VALUES (?, ?, ?, ?)", projectID, p, m.mtimeMs, m.size); e != nil {
+			return false, fmt.Errorf("failed upserting file meta for %s: %w", p, e)
+		}
+	}
+
+	return true, tx.Commit()
+}
+
+// --- SQL helpers shared by full and incremental paths ---
+
+func bulkInsertNodes(tx *sql.Tx, projectID string, nodes map[string]*Node) error {
+	stmt, err := tx.Prepare("INSERT INTO graph_nodes (id, project_id, node_type, label, path, metadata) VALUES (?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		return err
 	}
-	defer nodeStmt.Close()
-
+	defer stmt.Close()
 	for _, node := range nodes {
 		metaBytes, _ := json.Marshal(node.Metadata)
 		metaStr := string(metaBytes)
 		if metaStr == "null" {
 			metaStr = "{}"
 		}
-		_, err = nodeStmt.Exec(node.ID, projectID, node.Type, node.Label, node.Path, metaStr)
-		if err != nil {
-			return fmt.Errorf("failed inserting node %s: %w", node.ID, err)
+		if _, e := stmt.Exec(node.ID, projectID, node.Type, node.Label, node.Path, metaStr); e != nil {
+			return fmt.Errorf("failed inserting node %s: %w", node.ID, e)
 		}
 	}
+	return nil
+}
 
-	// Insert edges
-	edgeQuery := `
-	INSERT INTO graph_edges (id, project_id, source_id, target_id, relation_type)
-	VALUES (?, ?, ?, ?, ?)
-	ON CONFLICT DO NOTHING
-	`
-	edgeStmt, err := tx.Prepare(edgeQuery)
+func bulkInsertEdges(tx *sql.Tx, projectID string, edges []*Edge) error {
+	if len(edges) == 0 {
+		return nil
+	}
+	stmt, err := tx.Prepare("INSERT INTO graph_edges (id, project_id, source_id, target_id, relation_type) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")
 	if err != nil {
 		return err
 	}
-	defer edgeStmt.Close()
-
+	defer stmt.Close()
 	for _, edge := range edges {
-		_, err = edgeStmt.Exec(edge.ID, projectID, edge.SourceID, edge.TargetID, edge.RelationType)
-		if err != nil {
-			return fmt.Errorf("failed inserting edge %s: %w", edge.ID, err)
+		if _, e := stmt.Exec(edge.ID, projectID, edge.SourceID, edge.TargetID, edge.RelationType); e != nil {
+			return fmt.Errorf("failed inserting edge %s: %w", edge.ID, e)
 		}
 	}
+	return nil
+}
 
-	return tx.Commit()
+func upsertNode(tx *sql.Tx, projectID string, node *Node) error {
+	metaBytes, _ := json.Marshal(node.Metadata)
+	metaStr := string(metaBytes)
+	if metaStr == "null" {
+		metaStr = "{}"
+	}
+	_, err := tx.Exec(`
+		INSERT INTO graph_nodes (id, project_id, node_type, label, path, metadata)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id, project_id) DO UPDATE SET
+			node_type = excluded.node_type,
+			label = excluded.label,
+			path = excluded.path,
+			metadata = excluded.metadata
+	`, node.ID, projectID, node.Type, node.Label, node.Path, metaStr)
+	return err
+}
+
+func loadFileMeta(db *sql.DB, projectID string) (map[string]fileMetaEntry, error) {
+	rows, err := db.Query("SELECT path, mtime_ms, size FROM graph_files_meta WHERE project_id = ?", projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	meta := make(map[string]fileMetaEntry)
+	for rows.Next() {
+		var path string
+		var m fileMetaEntry
+		if err := rows.Scan(&path, &m.mtimeMs, &m.size); err == nil {
+			meta[path] = m
+		}
+	}
+	return meta, rows.Err()
+}
+
+func updateFileMeta(tx *sql.Tx, projectID string, meta map[string]fileMetaEntry) {
+	if len(meta) == 0 {
+		return
+	}
+	for path, m := range meta {
+		tx.Exec("INSERT OR REPLACE INTO graph_files_meta (project_id, path, mtime_ms, size) VALUES (?, ?, ?, ?)", projectID, path, m.mtimeMs, m.size)
+	}
 }
 
 // resolveImport checks if an import maps to an existing file in the project.
