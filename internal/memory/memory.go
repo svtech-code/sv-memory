@@ -927,7 +927,7 @@ func SearchMemories(db *sql.DB, projectID string, searchTerm string, category st
 	for rows.Next() {
 		var mem Memory
 		var createdAtStr string
-		var lastSeenAtStr string
+		var lastSeenAtStr sql.NullString
 		var gitBranch, gitCommit, author, impact, errorsFaced, nextSteps, sessionID, topicKey sql.NullString
 		var revisionCount, duplicateCount sql.NullInt64
 		var normalizedHash sql.NullString
@@ -950,8 +950,8 @@ func SearchMemories(db *sql.DB, projectID string, searchTerm string, category st
 			mem.DuplicateCount = int(duplicateCount.Int64)
 		}
 		mem.NormalizedHash = normalizedHash.String
-		if lastSeenAtStr != "" {
-			if t, err := parseTime(lastSeenAtStr); err == nil {
+		if lastSeenAtStr.Valid && lastSeenAtStr.String != "" {
+			if t, err := parseTime(lastSeenAtStr.String); err == nil {
 				mem.LastSeenAt = t
 			}
 		}
@@ -1736,6 +1736,108 @@ func scanMemories(rows *sql.Rows) ([]*Memory, error) {
 		memories = append(memories, &mem)
 	}
 	return memories, rows.Err()
+}
+
+// ExportJSON exports all non-deleted project memories to a JSON file.
+// Returns the number of memories exported.
+func ExportJSON(db *sql.DB, projectID, filePath string) (int, error) {
+	memories, err := SearchMemories(db, projectID, "", "", 0)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query memories for export: %w", err)
+	}
+
+	data, err := json.MarshalIndent(memories, "", "  ")
+	if err != nil {
+		return 0, fmt.Errorf("failed to marshal memories JSON: %w", err)
+	}
+
+	tmpPath := filePath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		return 0, fmt.Errorf("failed to write export file: %w", err)
+	}
+	if err := os.Rename(tmpPath, filePath); err != nil {
+		os.Remove(tmpPath)
+		return 0, fmt.Errorf("failed to finalize export file: %w", err)
+	}
+
+	return len(memories), nil
+}
+
+// ImportJSON imports memories from a JSON file into the database.
+// Uses upsert semantics: existing IDs are updated, new IDs are inserted.
+// Returns the number of memories imported.
+func ImportJSON(db *sql.DB, projectID, filePath string) (int, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read import file: %w", err)
+	}
+
+	var memories []*Memory
+	if err := json.Unmarshal(data, &memories); err != nil {
+		return 0, fmt.Errorf("failed to parse import JSON: %w", err)
+	}
+
+	if len(memories) == 0 {
+		return 0, nil
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	query := `
+	INSERT INTO memories (id, project_id, category, what, why, where_path, learned, git_branch, git_commit, author, impact, errors_faced, next_steps, session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	ON CONFLICT(id) DO UPDATE SET
+		category = excluded.category,
+		what = excluded.what,
+		why = excluded.why,
+		where_path = excluded.where_path,
+		learned = excluded.learned,
+		git_branch = excluded.git_branch,
+		git_commit = excluded.git_commit,
+		author = excluded.author,
+		impact = excluded.impact,
+		errors_faced = excluded.errors_faced,
+		next_steps = excluded.next_steps,
+		session_id = excluded.session_id,
+		topic_key = excluded.topic_key,
+		revision_count = excluded.revision_count,
+		duplicate_count = excluded.duplicate_count,
+		last_seen_at = excluded.last_seen_at,
+		normalized_hash = excluded.normalized_hash,
+		created_at = excluded.created_at;`
+	stmt, err := tx.Prepare(query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to prepare insert statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, mem := range memories {
+		mem.ProjectID = projectID
+		createdAt := mem.CreatedAt
+		if createdAt.IsZero() {
+			createdAt = time.Now()
+		}
+		_, err := stmt.Exec(
+			mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned,
+			mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact, mem.ErrorsFaced, mem.NextSteps,
+			nullString(mem.SessionID), nullString(mem.TopicKey),
+			mem.RevisionCount, mem.DuplicateCount,
+			nullTime(mem.LastSeenAt), nullString(mem.NormalizedHash),
+			createdAt)
+		if err != nil {
+			return 0, fmt.Errorf("failed to import memory %s: %w", mem.ID, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("failed to commit import: %w", err)
+	}
+
+	return len(memories), nil
 }
 
 // ExportObsidian exports all project memories as Markdown files in Obsidian vault

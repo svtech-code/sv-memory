@@ -69,6 +69,73 @@ func TestRunDiagnostics(t *testing.T) {
 	}
 }
 
+func TestExportImportJSON(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-export-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_storage.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-export"
+	err = db.RegisterProject(database, projectID, "Export Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// Save some memories
+	mem1 := &Memory{ID: "e-1", ProjectID: projectID, Category: "architecture", What: "Arch 1", Why: "why1", Learned: "l1", CreatedAt: time.Now()}
+	mem2 := &Memory{ID: "e-2", ProjectID: projectID, Category: "decision", What: "Dec 2", Why: "why2", Learned: "l2", CreatedAt: time.Now()}
+	if _, err := SaveMemory(database, mem1); err != nil {
+		t.Fatalf("failed saving mem1: %v", err)
+	}
+	if _, err := SaveMemory(database, mem2); err != nil {
+		t.Fatalf("failed saving mem2: %v", err)
+	}
+
+	// Export to JSON
+	exportPath := filepath.Join(tempDir, "export.json")
+	n, err := ExportJSON(database, projectID, exportPath)
+	if err != nil {
+		t.Fatalf("ExportJSON failed: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("expected 2 exported memories, got %d", n)
+	}
+
+	// Delete from DB
+	if _, err := database.Exec("DELETE FROM memories WHERE project_id = ?", projectID); err != nil {
+		t.Fatalf("failed clearing memories: %v", err)
+	}
+
+	var count int
+	database.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ?", projectID).Scan(&count)
+	if count != 0 {
+		t.Fatal("expected empty memories table")
+	}
+
+	// Import from JSON
+	n, err = ImportJSON(database, projectID, exportPath)
+	if err != nil {
+		t.Fatalf("ImportJSON failed: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("expected 2 imported memories, got %d", n)
+	}
+
+	// Verify
+	database.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ?", projectID).Scan(&count)
+	if count != 2 {
+		t.Errorf("expected 2 memories after import, got %d", count)
+	}
+}
+
 func TestMemoryCRUDAndFTS(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-mem-memory-test")
 	if err != nil {
