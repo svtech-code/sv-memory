@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -788,3 +789,118 @@ func TestGetStats(t *testing.T) {
 		t.Errorf("expected 3 recent memories, got %d", s.Recent24h)
 	}
 }
+
+func TestExportObsidian(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-obsidian-export-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_storage.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-export"
+	err = db.RegisterProject(database, projectID, "Export Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// 1. Save a memory
+	mem1 := &Memory{
+		ID:        "mem-1234",
+		ProjectID: projectID,
+		Category:  "architecture",
+		What:      "Use clean architecture in Go",
+		Why:       "Decoupling controllers",
+		WherePath: "main.go",
+		Learned:   "Injecting interface controllers",
+		CreatedAt: time.Now(),
+	}
+	if _, err := SaveMemory(database, mem1); err != nil {
+		t.Fatalf("failed saving memory: %v", err)
+	}
+
+	// 2. Insert mock structural graph nodes
+	_, err = database.Exec(`
+		INSERT INTO graph_nodes (id, project_id, node_type, label, path, metadata) VALUES 
+		('main.go', ?, 'file', 'main.go', 'main.go', '{"language":"go"}'),
+		('main.go:callerFunc', ?, 'function', 'callerFunc', 'main.go', '{"line":3}'),
+		('main.go:helperFunc', ?, 'function', 'helperFunc', 'main.go', '{"line":7}'),
+		('pkg:lodash', ?, 'package', 'lodash', 'lodash', NULL),
+		('mem-1234', ?, 'concept', 'Use clean architecture in Go', 'main.go', NULL)
+	`, projectID, projectID, projectID, projectID, projectID)
+	if err != nil {
+		t.Fatalf("failed to insert graph nodes: %v", err)
+	}
+
+	// 3. Insert mock structural graph edges
+	_, err = database.Exec(`
+		INSERT INTO graph_edges (id, project_id, source_id, target_id, relation_type, confidence, source_location) VALUES 
+		('edge-1', ?, 'main.go', 'pkg:lodash', 'imports', 'EXTRACTED', NULL),
+		('edge-2', ?, 'main.go:callerFunc', 'main.go:helperFunc', 'calls', 'INFERRED', 'L4'),
+		('edge-3', ?, 'mem-1234', 'main.go', 'rationale_for', 'EXTRACTED', NULL)
+	`, projectID, projectID, projectID)
+	if err != nil {
+		t.Fatalf("failed to insert graph edges: %v", err)
+	}
+
+	// 4. Run ExportObsidian
+	outputDir := "my-vault"
+	err = ExportObsidian(database, projectID, tempDir, outputDir)
+	if err != nil {
+		t.Fatalf("ExportObsidian failed: %v", err)
+	}
+
+	vaultPath := filepath.Join(tempDir, outputDir)
+
+	// 5. Verify memory note exists
+	memFilePath := filepath.Join(vaultPath, "mem-1234.md")
+	if _, err := os.Stat(memFilePath); os.IsNotExist(err) {
+		t.Fatalf("expected memory note to exist at %s", memFilePath)
+	}
+	memContent, err := os.ReadFile(memFilePath)
+	if err != nil {
+		t.Fatalf("failed reading memory note: %v", err)
+	}
+	if !strings.Contains(string(memContent), "[[code/main.go|main.go]]") {
+		t.Errorf("expected memory note to contain link to code node, got:\n%s", string(memContent))
+	}
+
+	// 6. Verify code note exists
+	codeFilePath := filepath.Join(vaultPath, "code", "main.go.md")
+	if _, err := os.Stat(codeFilePath); os.IsNotExist(err) {
+		t.Fatalf("expected code note to exist at %s", codeFilePath)
+	}
+	codeContent, err := os.ReadFile(codeFilePath)
+	if err != nil {
+		t.Fatalf("failed reading code note: %v", err)
+	}
+	if !strings.Contains(string(codeContent), "[[../code/packages/pkg_lodash|lodash]]") {
+		t.Errorf("expected code note to contain package link, got:\n%s", string(codeContent))
+	}
+	if !strings.Contains(string(codeContent), "[[../code/main.go#helperFunc|helperFunc]]") {
+		t.Errorf("expected code note to contain symbol call link, got:\n%s", string(codeContent))
+	}
+	if !strings.Contains(string(codeContent), "[[../mem-1234|mem-1234]]") {
+		t.Errorf("expected code note to contain associated memory backlink, got:\n%s", string(codeContent))
+	}
+
+	// 7. Verify package note exists
+	pkgFilePath := filepath.Join(vaultPath, "code", "packages", "pkg_lodash.md")
+	if _, err := os.Stat(pkgFilePath); os.IsNotExist(err) {
+		t.Fatalf("expected package note to exist at %s", pkgFilePath)
+	}
+	pkgContent, err := os.ReadFile(pkgFilePath)
+	if err != nil {
+		t.Fatalf("failed reading package note: %v", err)
+	}
+	if !strings.Contains(string(pkgContent), "[[../../code/main.go|main.go]]") {
+		t.Errorf("expected package note to contain dependents link, got:\n%s", string(pkgContent))
+	}
+}
+

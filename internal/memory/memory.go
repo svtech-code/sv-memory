@@ -2028,9 +2028,7 @@ func ImportJSON(db *sql.DB, projectID, filePath string) (int, error) {
 }
 
 // ExportObsidian exports all project memories as Markdown files in Obsidian vault
-// format. Each memory becomes a .md file with YAML frontmatter and [[wikilinks]]
-// to related memories. The vault is written to <projPath>/<outputDir>/.
-// Tags are derived from the memory category.
+// format, along with codebase structural graph nodes and edges.
 func ExportObsidian(db *sql.DB, projectID, projPath, outputDir string) error {
 	memories, err := SearchMemories(db, projectID, "", "", 0)
 	if err != nil {
@@ -2042,7 +2040,71 @@ func ExportObsidian(db *sql.DB, projectID, projPath, outputDir string) error {
 		return fmt.Errorf("failed to create vault directory: %w", err)
 	}
 
-	// Pre-load all relations for wikilink generation.
+	// 1. Fetch all nodes in the structural graph
+	type graphNode struct {
+		id       string
+		nodeType string
+		label    string
+		path     string
+		metadata string
+	}
+	var fileNodes []graphNode
+	var packageNodes []graphNode
+	symbolNodesByFile := make(map[string][]graphNode)
+	nodesMap := make(map[string]graphNode)
+
+	nodeRows, err := db.Query("SELECT id, node_type, label, path, metadata FROM graph_nodes WHERE project_id = ?", projectID)
+	if err == nil {
+		defer nodeRows.Close()
+		for nodeRows.Next() {
+			var n graphNode
+			var pathVal, metaVal sql.NullString
+			if errScan := nodeRows.Scan(&n.id, &n.nodeType, &n.label, &pathVal, &metaVal); errScan == nil {
+				if pathVal.Valid {
+					n.path = pathVal.String
+				}
+				if metaVal.Valid {
+					n.metadata = metaVal.String
+				}
+				nodesMap[n.id] = n
+				switch n.nodeType {
+				case "file", "document":
+					fileNodes = append(fileNodes, n)
+				case "package":
+					packageNodes = append(packageNodes, n)
+				case "function", "class":
+					symbolNodesByFile[n.path] = append(symbolNodesByFile[n.path], n)
+				}
+			}
+		}
+	}
+
+	// 2. Fetch all edges in the structural graph
+	type graphEdge struct {
+		sourceID   string
+		targetID   string
+		relType    string
+		confidence string
+		sourceLoc  sql.NullString
+	}
+	var edges []graphEdge
+	edgesBySource := make(map[string][]graphEdge)
+	edgesByTarget := make(map[string][]graphEdge)
+
+	edgeRows, err := db.Query("SELECT source_id, target_id, relation_type, confidence, source_location FROM graph_edges WHERE project_id = ?", projectID)
+	if err == nil {
+		defer edgeRows.Close()
+		for edgeRows.Next() {
+			var e graphEdge
+			if errScan := edgeRows.Scan(&e.sourceID, &e.targetID, &e.relType, &e.confidence, &e.sourceLoc); errScan == nil {
+				edges = append(edges, e)
+				edgesBySource[e.sourceID] = append(edgesBySource[e.sourceID], e)
+				edgesByTarget[e.targetID] = append(edgesByTarget[e.targetID], e)
+			}
+		}
+	}
+
+	// Pre-load memory relations for memory-to-memory links
 	type relPair struct{ source, target string }
 	allRels := make(map[string][]relPair)
 	relRows, err := db.Query("SELECT source_id, target_id FROM memory_relations WHERE project_id = ?", projectID)
@@ -2057,8 +2119,8 @@ func ExportObsidian(db *sql.DB, projectID, projPath, outputDir string) error {
 		}
 	}
 
+	// 3. Export memories to root vault dir
 	for _, mem := range memories {
-		// Frontmatter
 		fm := fmt.Sprintf(`---
 id: "%s"
 category: "%s"
@@ -2083,7 +2145,6 @@ revision: %d
 		}
 		fm += "---\n\n"
 
-		// Body
 		body := fmt.Sprintf("# %s\n\n**Category:** `%s`\n\n", mem.What, mem.Category)
 
 		if mem.Why != "" {
@@ -2093,7 +2154,7 @@ revision: %d
 			body += fmt.Sprintf("## Learned\n%s\n\n", mem.Learned)
 		}
 		if mem.WherePath != "" {
-			body += fmt.Sprintf("**Path:** `%s`\n\n", mem.WherePath)
+			body += fmt.Sprintf("**Path:** [[code/%s|%s]]\n\n", mem.WherePath, mem.WherePath)
 		}
 		if mem.Impact != "" {
 			body += fmt.Sprintf("## Impact\n%s\n\n", mem.Impact)
@@ -2105,7 +2166,7 @@ revision: %d
 			body += fmt.Sprintf("## Next Steps\n%s\n\n", mem.NextSteps)
 		}
 
-		// Wikilinks to related memories
+		// Memory relations
 		if rels, ok := allRels[mem.ID]; ok && len(rels) > 0 {
 			body += "## Related Memories\n"
 			for _, r := range rels {
@@ -2118,12 +2179,272 @@ revision: %d
 			body += "\n"
 		}
 
+		// Rationales pointing from this memory to files/symbols
+		if rationaleEdges, ok := edgesBySource[mem.ID]; ok && len(rationaleEdges) > 0 {
+			body += "## Links to Codebase\n"
+			for _, edge := range rationaleEdges {
+				if edge.relType == "rationale_for" {
+					if targetNode, exists := nodesMap[edge.targetID]; exists {
+						if targetNode.nodeType == "function" || targetNode.nodeType == "class" {
+							body += fmt.Sprintf("- [[code/%s#%s|%s (%s)]]\n", targetNode.path, targetNode.label, targetNode.label, targetNode.nodeType)
+						} else {
+							body += fmt.Sprintf("- [[code/%s|%s (%s)]]\n", targetNode.id, targetNode.id, targetNode.nodeType)
+						}
+					}
+				}
+			}
+			body += "\n"
+		}
+
 		body += fmt.Sprintf("---\n*Exported from sv-memory on %s*\n", time.Now().Format("2006-01-02 15:04:05"))
 
 		content := fm + body
 		filePath := filepath.Join(vaultDir, mem.ID+".md")
 		if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-			return fmt.Errorf("failed to write %s: %w", filePath, err)
+			return fmt.Errorf("failed to write memory file %s: %w", filePath, err)
+		}
+	}
+
+	// Helper to calculate relative prefix back to the root of the vault from code/ path
+	relativePrefixToRoot := func(filePath string) string {
+		parts := strings.Split(filePath, "/")
+		if len(parts) <= 1 {
+			return ""
+		}
+		var sb strings.Builder
+		for i := 0; i < len(parts)-1; i++ {
+			sb.WriteString("../")
+		}
+		return sb.String()
+	}
+
+	makeRelativeLink := func(sourceNodePath, targetNodePath, targetSymbol, label, relationType string) string {
+		sourceFilePath := "code/" + sourceNodePath + ".md"
+		prefix := relativePrefixToRoot(sourceFilePath)
+		var targetLink string
+		if relationType == "rationale_for" {
+			targetLink = prefix + targetNodePath
+		} else if strings.HasPrefix(targetNodePath, "pkg:") {
+			pkgName := strings.TrimPrefix(targetNodePath, "pkg:")
+			targetLink = prefix + "code/packages/pkg_" + pkgName
+		} else {
+			targetLink = prefix + "code/" + targetNodePath
+			if targetSymbol != "" {
+				targetLink += "#" + targetSymbol
+			}
+		}
+		return fmt.Sprintf("[[%s|%s]]", targetLink, label)
+	}
+
+	// 4. Export file nodes to vault/code/
+	for _, fn := range fileNodes {
+		exportedFilePath := filepath.Join(vaultDir, "code", fn.id+".md")
+		if err := os.MkdirAll(filepath.Dir(exportedFilePath), 0755); err != nil {
+			return fmt.Errorf("failed to create code subfolders for %s: %w", fn.id, err)
+		}
+
+		fm := fmt.Sprintf(`---
+id: "%s"
+type: "%s"
+label: "%s"
+path: "%s"
+`, fn.id, fn.nodeType, fn.label, fn.path)
+
+		var metaMap map[string]interface{}
+		if fn.metadata != "" {
+			_ = json.Unmarshal([]byte(fn.metadata), &metaMap)
+		}
+		for k, v := range metaMap {
+			if k != "line" && k != "exported" {
+				fm += fmt.Sprintf("%s: %v\n", k, v)
+			}
+		}
+		fm += "---\n\n"
+
+		body := fmt.Sprintf("# %s\n\n**Type:** `%s`\n\n", fn.label, fn.nodeType)
+
+		// Symbols inside this file
+		if symbols, ok := symbolNodesByFile[fn.id]; ok && len(symbols) > 0 {
+			body += "## Defined Symbols\n\n"
+			for _, sym := range symbols {
+				body += fmt.Sprintf("### %s\n", sym.label)
+				body += fmt.Sprintf("- **Type:** `%s`\n", sym.nodeType)
+
+				var symMeta map[string]interface{}
+				if sym.metadata != "" {
+					_ = json.Unmarshal([]byte(sym.metadata), &symMeta)
+				}
+				if lineVal, ok := symMeta["line"]; ok {
+					body += fmt.Sprintf("- **Declared on:** Line %v\n", lineVal)
+				}
+
+				// Symbol calls
+				if symEdges, ok := edgesBySource[sym.id]; ok && len(symEdges) > 0 {
+					callsFound := false
+					for _, edge := range symEdges {
+						if edge.relType == "calls" {
+							if !callsFound {
+								body += "- **Calls:**\n"
+								callsFound = true
+							}
+							targetNode, exists := nodesMap[edge.targetID]
+							var sourceLocText string
+							if edge.sourceLoc.Valid {
+								sourceLocText = fmt.Sprintf(" (at %s)", edge.sourceLoc.String)
+							}
+							if exists {
+								body += fmt.Sprintf("  - %s%s\n", makeRelativeLink(fn.id, targetNode.path, targetNode.label, targetNode.label, "calls"), sourceLocText)
+							} else {
+								body += fmt.Sprintf("  - `%s` (unresolved)%s\n", edge.targetID, sourceLocText)
+							}
+						}
+					}
+				}
+
+				// Symbol callers
+				if symEdges, ok := edgesByTarget[sym.id]; ok && len(symEdges) > 0 {
+					callersFound := false
+					for _, edge := range symEdges {
+						if edge.relType == "calls" {
+							if !callersFound {
+								body += "- **Called by:**\n"
+								callersFound = true
+							}
+							sourceNode, exists := nodesMap[edge.sourceID]
+							var sourceLocText string
+							if edge.sourceLoc.Valid {
+								sourceLocText = fmt.Sprintf(" (at %s)", edge.sourceLoc.String)
+							}
+							if exists {
+								body += fmt.Sprintf("  - %s%s\n", makeRelativeLink(fn.id, sourceNode.path, sourceNode.label, sourceNode.label, "calls"), sourceLocText)
+							} else {
+								body += fmt.Sprintf("  - `%s` (unresolved)%s\n", edge.sourceID, sourceLocText)
+							}
+						}
+					}
+				}
+				body += "\n"
+			}
+		}
+
+		// Imports / Dependencies
+		if fileEdges, ok := edgesBySource[fn.id]; ok && len(fileEdges) > 0 {
+			importsFound := false
+			for _, edge := range fileEdges {
+				if edge.relType == "imports" || edge.relType == "depends_on" || edge.relType == "references" {
+					if !importsFound {
+						body += "## Dependencies\n"
+						importsFound = true
+					}
+					targetNode, exists := nodesMap[edge.targetID]
+					if exists {
+						body += fmt.Sprintf("- **%s**: %s\n", edge.relType, makeRelativeLink(fn.id, targetNode.id, "", targetNode.label, edge.relType))
+					} else {
+						body += fmt.Sprintf("- **%s**: `%s` (unresolved)\n", edge.relType, edge.targetID)
+					}
+				}
+			}
+			if importsFound {
+				body += "\n"
+			}
+		}
+
+		// Dependents (which nodes import this)
+		if fileEdges, ok := edgesByTarget[fn.id]; ok && len(fileEdges) > 0 {
+			dependentsFound := false
+			for _, edge := range fileEdges {
+				if edge.relType == "imports" || edge.relType == "depends_on" || edge.relType == "references" {
+					if !dependentsFound {
+						body += "## Dependents\n"
+						dependentsFound = true
+					}
+					sourceNode, exists := nodesMap[edge.sourceID]
+					if exists {
+						body += fmt.Sprintf("- %s\n", makeRelativeLink(fn.id, sourceNode.id, "", sourceNode.label, edge.relType))
+					} else {
+						body += fmt.Sprintf("- `%s` (unresolved)\n", edge.sourceID)
+					}
+				}
+			}
+			if dependentsFound {
+				body += "\n"
+			}
+		}
+
+		// Decisions/Rationales referencing this file or symbols in it
+		var referencingRationales []graphEdge
+		if rEdges, ok := edgesByTarget[fn.id]; ok {
+			for _, re := range rEdges {
+				if re.relType == "rationale_for" {
+					referencingRationales = append(referencingRationales, re)
+				}
+			}
+		}
+		if symbols, ok := symbolNodesByFile[fn.id]; ok {
+			for _, sym := range symbols {
+				if rEdges, ok := edgesByTarget[sym.id]; ok {
+					for _, re := range rEdges {
+						if re.relType == "rationale_for" {
+							referencingRationales = append(referencingRationales, re)
+						}
+					}
+				}
+			}
+		}
+
+		if len(referencingRationales) > 0 {
+			body += "## Associated Memories / Decisions\n"
+			for _, re := range referencingRationales {
+				body += fmt.Sprintf("- %s\n", makeRelativeLink(fn.id, re.sourceID, "", re.sourceID, "rationale_for"))
+			}
+			body += "\n"
+		}
+
+		body += fmt.Sprintf("---\n*Exported from sv-memory on %s*\n", time.Now().Format("2006-01-02 15:04:05"))
+
+		content := fm + body
+		if err := os.WriteFile(exportedFilePath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("failed to write code file %s: %w", exportedFilePath, err)
+		}
+	}
+
+	// 5. Export package nodes to vault/code/packages/
+	for _, pn := range packageNodes {
+		pkgName := strings.TrimPrefix(pn.id, "pkg:")
+		exportedFilePath := filepath.Join(vaultDir, "code", "packages", "pkg_"+pkgName+".md")
+		if err := os.MkdirAll(filepath.Dir(exportedFilePath), 0755); err != nil {
+			return fmt.Errorf("failed to create packages subfolder: %w", err)
+		}
+
+		fm := fmt.Sprintf(`---
+id: "%s"
+type: "package"
+label: "%s"
+---
+
+`, pn.id, pn.label)
+
+		body := fmt.Sprintf("# Package: %s\n\n", pn.label)
+
+		// List of files that import this package
+		if fileEdges, ok := edgesByTarget[pn.id]; ok && len(fileEdges) > 0 {
+			body += "## Dependents\n"
+			for _, edge := range fileEdges {
+				sourceNode, exists := nodesMap[edge.sourceID]
+				if exists {
+					body += fmt.Sprintf("- %s\n", makeRelativeLink("packages/pkg_"+pkgName, sourceNode.id, "", sourceNode.label, edge.relType))
+				} else {
+					body += fmt.Sprintf("- `%s` (unresolved)\n", edge.sourceID)
+				}
+			}
+			body += "\n"
+		}
+
+		body += fmt.Sprintf("---\n*Exported from sv-memory on %s*\n", time.Now().Format("2006-01-02 15:04:05"))
+
+		content := fm + body
+		if err := os.WriteFile(exportedFilePath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("failed to write package file %s: %w", exportedFilePath, err)
 		}
 	}
 
