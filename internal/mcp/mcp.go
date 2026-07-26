@@ -819,9 +819,24 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 
 		sb.WriteString("### Nodes in Sub-graph:\n")
 		for _, node := range subGraph.Nodes {
-			sb.WriteString(fmt.Sprintf("- **%s** (`%s`): %s\n", node.Label, node.ID, node.Type))
+			sb.WriteString(fmt.Sprintf("- **%s** (`%s`): %s (fan-in: %d, fan-out: %d)\n", node.Label, node.ID, node.Type, g.fanIn[node.ID], g.fanOut[node.ID]))
 		}
 		sb.WriteString("\n")
+
+		// Identify potential God Nodes (arbitrarily defined as > 10 fan-in or fan-out)
+		var godNodes []string
+		for _, node := range subGraph.Nodes {
+			if g.fanIn[node.ID] > 10 || g.fanOut[node.ID] > 10 {
+				godNodes = append(godNodes, node.ID)
+			}
+		}
+		if len(godNodes) > 0 {
+			sb.WriteString("### Potential God Nodes:\n")
+			for _, id := range godNodes {
+				sb.WriteString(fmt.Sprintf("- **%s** (fan-in: %d, fan-out: %d)\n", g.nodes[id].Label, g.fanIn[id], g.fanOut[id]))
+			}
+			sb.WriteString("\n")
+		}
 
 		if len(subGraph.Edges) > 0 {
 			sb.WriteString("### Mermaid Dependency Diagram:\n")
@@ -928,6 +943,8 @@ type inMemoryGraph struct {
 	nodes         map[string]*graph.Node
 	edgesBySource map[string][]*graph.Edge
 	edgesByTarget map[string][]*graph.Edge
+	fanIn         map[string]int
+	fanOut        map[string]int
 }
 
 // loadFullGraph executes two queries to load all nodes and edges for a project
@@ -953,6 +970,9 @@ func loadFullGraph(db *sql.DB, projectID string) (*inMemoryGraph, error) {
 
 	edgesBySrc := make(map[string][]*graph.Edge)
 	edgesByTgt := make(map[string][]*graph.Edge)
+	fanIn := make(map[string]int)
+	fanOut := make(map[string]int)
+
 	eRows, err := db.Query("SELECT id, source_id, target_id, relation_type, confidence, source_location FROM graph_edges WHERE project_id = ?", projectID)
 	if err != nil {
 		return nil, err
@@ -963,6 +983,8 @@ func loadFullGraph(db *sql.DB, projectID string) (*inMemoryGraph, error) {
 		if err := eRows.Scan(&e.ID, &e.SourceID, &e.TargetID, &e.RelationType, &e.Confidence, &e.SourceLocation); err == nil {
 			edgesBySrc[e.SourceID] = append(edgesBySrc[e.SourceID], &e)
 			edgesByTgt[e.TargetID] = append(edgesByTgt[e.TargetID], &e)
+			fanOut[e.SourceID]++
+			fanIn[e.TargetID]++
 		}
 	}
 	if err := eRows.Err(); err != nil {
@@ -973,6 +995,8 @@ func loadFullGraph(db *sql.DB, projectID string) (*inMemoryGraph, error) {
 		nodes:         nodeMap,
 		edgesBySource: edgesBySrc,
 		edgesByTarget: edgesByTgt,
+		fanIn:         fanIn,
+		fanOut:        fanOut,
 	}, nil
 }
 
