@@ -28,6 +28,178 @@ type Edge struct {
 	RelationType string `json:"relation_type"` // 'imports' | 'calls' | 'depends_on'
 }
 
+// Extension to human-readable language mapping.
+var languageFromExt = map[string]string{
+	".go":   "go",
+	".py":   "python",
+	".js":   "javascript",
+	".jsx":  "javascript",
+	".ts":   "typescript",
+	".tsx":  "typescript",
+	".html": "html",
+	".php":  "php",
+	".css":  "css",
+	".astro": "astro",
+	".sh":   "bash",
+	".lua":  "lua",
+}
+
+// Well-known entry point file names.
+var entryPointNames = map[string]bool{
+	"main.go": true, "index.go": true,
+	"index.js": true, "main.js": true, "app.js": true, "cli.js": true, "server.js": true,
+	"index.ts": true, "main.ts": true, "app.ts": true, "cli.ts": true, "server.ts": true,
+	"index.jsx": true, "index.tsx": true,
+	"__main__.py": true, "main.py": true, "cli.py": true, "app.py": true,
+	"index.php": true, "index.html": true, "index.htm": true,
+}
+
+// Symbol detection regexes (heuristic, not AST-based).
+var (
+	jsFuncRegex   = regexp.MustCompile(`(?m)(?:export\s+)?(?:async\s+)?function\s+(\w+)`)
+	jsClassRegex  = regexp.MustCompile(`(?m)(?:export\s+)?class\s+(\w+)`)
+	jsExportRegex = regexp.MustCompile(`(?m)(?:export\s+(?:default\s+)?(?:function|class|const|let|var)\s+\w+|module\.exports\s*=|exports\.\w+)`)
+
+	pyFuncRegex   = regexp.MustCompile(`(?m)^\s*(?:async\s+)?def\s+(\w+)`)
+	pyClassRegex  = regexp.MustCompile(`(?m)^\s*class\s+(\w+)`)
+
+	goFuncRegex   = regexp.MustCompile(`(?m)^\s*func\s+(\w+)`)
+	goStructRegex = regexp.MustCompile(`(?m)^\s*type\s+(\w+)\s+struct`)
+
+	phpFuncRegex  = regexp.MustCompile(`(?m)(?:function\s+(\w+)|class\s+(\w+))`)
+)
+
+// Supported extensions for symbol scanning.
+var symbolScanExts = map[string]bool{
+	".go": true, ".py": true, ".js": true, ".jsx": true, ".ts": true, ".tsx": true,
+	".php": true, ".astro": true, ".lua": true,
+}
+
+// parseSymbols reads file content and returns child nodes (function/class) plus
+// enriched metadata for the parent file node. The caller adds the returned nodes
+// to the global node map.
+func parseSymbols(relPath, ext string, content []byte) ([]*Node, map[string]interface{}) {
+	lines := strings.Split(string(content), "\n")
+	loc := len(lines)
+	lang := languageFromExt[ext]
+
+	meta := map[string]interface{}{
+		"language":      lang,
+		"loc":           loc,
+		"entry_point":   entryPointNames[filepath.Base(relPath)],
+		"exports_count": 0,
+	}
+
+	var symbols []*Node
+	addSymbol := func(name, symType string, exported bool, line int) {
+		id := relPath + ":" + name
+		symbols = append(symbols, &Node{
+			ID:    id,
+			Type:  symType,
+			Label: name,
+			Path:  relPath,
+			Metadata: map[string]interface{}{
+				"line":     line,
+				"exported": exported,
+			},
+		})
+	}
+
+	switch ext {
+	case ".js", ".jsx", ".ts", ".tsx", ".astro":
+		// Functions
+		for _, m := range jsFuncRegex.FindAllSubmatch(content, -1) {
+			if len(m) > 1 {
+				name := string(m[1])
+				exported := strings.HasPrefix(string(m[0]), "export")
+				line := findLineNumber(lines, string(m[0]))
+				addSymbol(name, "function", exported, line)
+			}
+		}
+		// Classes
+		for _, m := range jsClassRegex.FindAllSubmatch(content, -1) {
+			if len(m) > 1 {
+				name := string(m[1])
+				exported := strings.HasPrefix(string(m[0]), "export")
+				line := findLineNumber(lines, string(m[0]))
+				addSymbol(name, "class", exported, line)
+			}
+		}
+		// Export count
+		meta["exports_count"] = countMatches(jsExportRegex, content)
+
+	case ".py":
+		for _, m := range pyFuncRegex.FindAllSubmatch(content, -1) {
+			if len(m) > 1 {
+				name := string(m[1])
+				line := findLineNumber(lines, string(m[0]))
+				addSymbol(name, "function", true, line)
+			}
+		}
+		for _, m := range pyClassRegex.FindAllSubmatch(content, -1) {
+			if len(m) > 1 {
+				name := string(m[1])
+				line := findLineNumber(lines, string(m[0]))
+				addSymbol(name, "class", true, line)
+			}
+		}
+
+	case ".go":
+		for _, m := range goFuncRegex.FindAllSubmatch(content, -1) {
+			if len(m) > 1 {
+				name := string(m[1])
+				if name == "init" || name == "main" {
+					continue // skip built-in Go entry points
+				}
+				isExported := name[0] >= 'A' && name[0] <= 'Z'
+				line := findLineNumber(lines, string(m[0]))
+				addSymbol(name, "function", isExported, line)
+			}
+		}
+		// Treat exported structs as "class" nodes
+		for _, m := range goStructRegex.FindAllSubmatch(content, -1) {
+			if len(m) > 1 {
+				name := string(m[1])
+				isExported := name[0] >= 'A' && name[0] <= 'Z'
+				line := findLineNumber(lines, string(m[0]))
+				addSymbol(name, "class", isExported, line)
+			}
+		}
+
+	case ".php":
+		for _, m := range phpFuncRegex.FindAllSubmatch(content, -1) {
+			if len(m) > 1 {
+				for i := 1; i < len(m); i++ {
+					if len(m[i]) > 0 {
+						symType := "function"
+						if i == 2 {
+							symType = "class"
+						}
+						name := string(m[i])
+						line := findLineNumber(lines, string(m[0]))
+						addSymbol(name, symType, true, line)
+					}
+				}
+			}
+		}
+	}
+
+	return symbols, meta
+}
+
+func findLineNumber(lines []string, substr string) int {
+	for i, line := range lines {
+		if strings.Contains(line, substr) {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+func countMatches(re *regexp.Regexp, content []byte) int {
+	return len(re.FindAll(content, -1))
+}
+
 // Common directories to ignore during code scanning.
 var ignoreDirs = map[string]bool{
 	".git":         true,
@@ -150,15 +322,31 @@ func scanFiles(projPath string) (*walkResult, error) {
 				size = fi.Size()
 			}
 
+			baseMeta := map[string]interface{}{
+				"extension": ext,
+				"size":      size,
+			}
+
+			// Read file content for symbol detection and metadata enrichment.
+			if symbolScanExts[ext] {
+				content, readErr := os.ReadFile(path)
+				if readErr == nil {
+					symbolNodes, symMeta := parseSymbols(relPath, ext, content)
+					for k, v := range symMeta {
+						baseMeta[k] = v
+					}
+					for _, sn := range symbolNodes {
+						nodes[sn.ID] = sn
+					}
+				}
+			}
+
 			nodes[relPath] = &Node{
-				ID:    relPath,
-				Type:  "file",
-				Label: filepath.Base(relPath),
-				Path:  relPath,
-				Metadata: map[string]interface{}{
-					"extension": ext,
-					"size":      size,
-				},
+				ID:       relPath,
+				Type:     "file",
+				Label:    filepath.Base(relPath),
+				Path:     relPath,
+				Metadata: baseMeta,
 			}
 			fileList = append(fileList, relPath)
 			fileMeta[relPath] = fileMetaEntry{mtimeMs: mtimeMs, size: size}
@@ -426,23 +614,28 @@ func trySyncGraphIncremental(db *sql.DB, projectID string, projPath string) (boo
 	}
 	defer tx.Rollback()
 
-	// 1. Remove deleted files's nodes and edges.
+	// 1. Remove deleted files's nodes and edges (including child symbols).
 	for _, p := range deleted {
 		if _, e := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND (source_id = ? OR target_id = ?)", projectID, p, p); e != nil {
 			return false, fmt.Errorf("failed deleting edges for deleted file %s: %w", p, e)
 		}
-		if _, e := tx.Exec("DELETE FROM graph_nodes WHERE project_id = ? AND id = ?", projectID, p); e != nil {
-			return false, fmt.Errorf("failed deleting node for deleted file %s: %w", p, e)
+		if _, e := tx.Exec("DELETE FROM graph_nodes WHERE project_id = ? AND (id = ? OR id LIKE ?)", projectID, p, p+":%"); e != nil {
+			return false, fmt.Errorf("failed deleting nodes for deleted file %s: %w", p, e)
 		}
 		if _, e := tx.Exec("DELETE FROM graph_files_meta WHERE project_id = ? AND path = ?", projectID, p); e != nil {
 			return false, fmt.Errorf("failed removing file meta for %s: %w", p, e)
 		}
 	}
 
-	// 2. Remove old edges for changed files (their imports may have changed).
+	// 2. Remove old edges and child nodes for changed files.
 	for _, p := range toParse {
 		if _, e := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND source_id = ?", projectID, p); e != nil {
 			return false, fmt.Errorf("failed deleting edges for changed file %s: %w", p, e)
+		}
+		// Remove stale child symbols (function/class nodes) that will be
+		// re-created by scanFiles during step 3.
+		if _, e := tx.Exec("DELETE FROM graph_nodes WHERE project_id = ? AND id LIKE ?", projectID, p+":%"); e != nil {
+			return false, fmt.Errorf("failed deleting child nodes for changed file %s: %w", p, e)
 		}
 	}
 
@@ -450,8 +643,18 @@ func trySyncGraphIncremental(db *sql.DB, projectID string, projPath string) (boo
 	edges := parseFiles(projPath, wr.nodes, toParse)
 	for _, p := range toParse {
 		upsertNode(tx, projectID, wr.nodes[p])
+		// Also upsert child symbol nodes (functions/classes) for this file.
+		// IDs follow the pattern "relPath:symbolName".
+		prefix := p + ":"
+		for id, node := range wr.nodes {
+			if strings.HasPrefix(id, prefix) {
+				if err := upsertNode(tx, projectID, node); err != nil {
+					return false, fmt.Errorf("failed upserting child node %s: %w", id, err)
+				}
+			}
+		}
 	}
-	// Also upsert package nodes that parseFiles may have added to wr.nodes.
+	// Also upsert package nodes that parseFiles may have added to wr nodes.
 	// These are external dependencies (e.g. "pkg:react") referenced by edges;
 	// without them the FK constraint on graph_edges would fail.
 	for _, node := range wr.nodes {

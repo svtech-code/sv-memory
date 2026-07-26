@@ -3,6 +3,7 @@ package graph
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/svtech/sv-memory/internal/db"
@@ -283,4 +284,205 @@ func TestSyncGraphIncremental(t *testing.T) {
 	if bEdges != 0 {
 		t.Errorf("expected b.js to have 0 outgoing edges, got %d", bEdges)
 	}
+}
+
+func TestParseSymbols(t *testing.T) {
+	tests := []struct {
+		name       string
+		ext        string
+		content    string
+		wantFuncs  []string
+		wantClasses []string
+		wantMeta   map[string]interface{}
+	}{
+		{
+			name: "js functions and classes",
+			ext:  ".js",
+			content: `
+import React from 'react';
+export function App() { return <App/>; }
+function helper() {}
+export class UserService { }
+class Internal {}
+export default function Root() {}
+`,
+			wantFuncs:   []string{"App", "helper", "Root"},
+			wantClasses: []string{"UserService", "Internal"},
+		},
+		{
+			name: "python functions and classes",
+			ext:  ".py",
+			content: `
+import math
+def hello():
+    pass
+async def async_fn():
+    pass
+class MyClass:
+    pass
+`,
+			wantFuncs:   []string{"hello", "async_fn"},
+			wantClasses: []string{"MyClass"},
+		},
+		{
+			name: "go functions and structs",
+			ext:  ".go",
+			content: `
+package main
+func main() {}
+func Helper() {}
+type User struct {
+    Name string
+}
+type internal struct {}
+`,
+			wantFuncs:   []string{"Helper"},
+			wantClasses: []string{"User", "internal"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := []byte(tt.content)
+			symbols, _ := parseSymbols("test"+tt.ext, tt.ext, content)
+
+			var gotFuncs, gotClasses []string
+			for _, s := range symbols {
+				if s.Type == "function" {
+					gotFuncs = append(gotFuncs, s.Label)
+				} else if s.Type == "class" {
+					gotClasses = append(gotClasses, s.Label)
+				}
+			}
+
+			if !stringSliceEqual(gotFuncs, tt.wantFuncs) {
+				t.Errorf("functions: got %v, want %v", gotFuncs, tt.wantFuncs)
+			}
+			if !stringSliceEqual(gotClasses, tt.wantClasses) {
+				t.Errorf("classes: got %v, want %v", gotClasses, tt.wantClasses)
+			}
+		})
+	}
+}
+
+func TestSyncGraphWithSymbols(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-sym-test")
+	if err != nil {
+		t.Fatalf("failed to create temp workspace: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_sym.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-sym-test"
+	err = db.RegisterProject(database, projectID, "Symbol Test", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// Create a JS file with functions and classes
+	err = os.WriteFile(filepath.Join(tempDir, "app.js"), []byte(`
+import React from 'react';
+export function App() { return <App/>; }
+export class UserService { }
+function helper() {}
+`), 0644)
+	if err != nil {
+		t.Fatalf("failed writing app.js: %v", err)
+	}
+
+	err = SyncGraph(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("SyncGraph failed: %v", err)
+	}
+
+	// Verify file node exists with enriched metadata
+	var metaStr string
+	err = database.QueryRow("SELECT metadata FROM graph_nodes WHERE project_id = ? AND id = 'app.js'", projectID).Scan(&metaStr)
+	if err != nil {
+		t.Fatalf("failed querying app.js metadata: %v", err)
+	}
+	if !strings.Contains(metaStr, `"language":"javascript"`) {
+		t.Errorf("expected metadata to contain language javascript, got %s", metaStr)
+	}
+	if !strings.Contains(metaStr, `"loc":`) {
+		t.Errorf("expected metadata to contain loc, got %s", metaStr)
+	}
+
+	// Verify function child nodes exist
+	var funcCount int
+	err = database.QueryRow("SELECT COUNT(*) FROM graph_nodes WHERE project_id = ? AND node_type = 'function'", projectID).Scan(&funcCount)
+	if err != nil {
+		t.Fatalf("failed counting function nodes: %v", err)
+	}
+	if funcCount < 2 {
+		t.Errorf("expected at least 2 function nodes, got %d", funcCount)
+	}
+
+	// Verify specific child node exists
+	var nodeType string
+	err = database.QueryRow("SELECT node_type FROM graph_nodes WHERE project_id = ? AND id = 'app.js:App'", projectID).Scan(&nodeType)
+	if err != nil {
+		t.Fatalf("expected 'app.js:App' node to exist: %v", err)
+	}
+	if nodeType != "function" {
+		t.Errorf("expected app.js:App type 'function', got %s", nodeType)
+	}
+
+	// ---- INCREMENTAL: add a new function and verify it appears ----
+	err = os.WriteFile(filepath.Join(tempDir, "app.js"), []byte(`
+import React from 'react';
+export function App() { return <App/>; }
+export class UserService { }
+function helper() {}
+function newFunc() {}
+`), 0644)
+	if err != nil {
+		t.Fatalf("failed updating app.js: %v", err)
+	}
+
+	err = SyncGraph(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("incremental SyncGraph failed: %v", err)
+	}
+
+	var newFuncExists int
+	err = database.QueryRow("SELECT COUNT(*) FROM graph_nodes WHERE project_id = ? AND id = 'app.js:newFunc'", projectID).Scan(&newFuncExists)
+	if err != nil {
+		t.Fatalf("failed checking app.js:newFunc: %v", err)
+	}
+	if newFuncExists != 1 {
+		t.Errorf("expected 'app.js:newFunc' child node after incremental rebuild, got %d", newFuncExists)
+	}
+
+	// Verify old symbols still exist
+	err = database.QueryRow("SELECT COUNT(*) FROM graph_nodes WHERE project_id = ? AND id = 'app.js:App'", projectID).Scan(&newFuncExists)
+	if err != nil {
+		t.Fatalf("failed checking app.js:App: %v", err)
+	}
+	if newFuncExists != 1 {
+		t.Errorf("expected 'app.js:App' to survive incremental rebuild, got %d", newFuncExists)
+	}
+}
+
+func stringSliceEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	m := make(map[string]int, len(a))
+	for _, v := range a {
+		m[v]++
+	}
+	for _, v := range b {
+		if m[v] == 0 {
+			return false
+		}
+		m[v]--
+	}
+	return true
 }
