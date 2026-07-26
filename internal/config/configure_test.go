@@ -106,3 +106,64 @@ func TestConfigureClaude(t *testing.T) {
 		t.Error("expected 'sv-memory' configuration to be injected")
 	}
 }
+
+func TestConfigureCodex(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-codex-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	configPath := filepath.Join(tempDir, "config.toml")
+	execPath := "/usr/local/bin/sv-memory"
+
+	// Test 1: File does not exist
+	err = configureCodex(configPath, execPath)
+	if err != nil {
+		t.Fatalf("expected configureCodex to succeed on empty file: %v", err)
+	}
+
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read created config: %v", err)
+	}
+
+	expectedStr := "[mcp_servers.sv-memory]\ncommand = \"/usr/local/bin/sv-memory\"\nargs = [\"mcp\"]\n"
+	if string(content) != "\n"+expectedStr {
+		t.Errorf("expected:\n%q\ngot:\n%q", "\n"+expectedStr, string(content))
+	}
+
+	// Test 2: File exists (should update block)
+	existingContent := `[other_block]
+option = true
+
+[mcp_servers.sv-memory]
+command = "/old/path"
+args = ["mcp"]
+`
+	err = os.WriteFile(configPath, []byte(existingContent), 0644)
+	if err != nil {
+		t.Fatalf("failed writing mockup config: %v", err)
+	}
+
+	err = configureCodex(configPath, execPath)
+	if err != nil {
+		t.Fatalf("expected configureCodex to succeed: %v", err)
+	}
+
+	content, err = os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read config: %v", err)
+	}
+
+	expectedUpdated := `[other_block]
+option = true
+
+[mcp_servers.sv-memory]
+command = "/usr/local/bin/sv-memory"
+args = ["mcp"]
+`
+	if string(content) != expectedUpdated {
+		t.Errorf("expected:\n%q\ngot:\n%q", expectedUpdated, string(content))
+	}
+}

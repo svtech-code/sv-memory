@@ -50,12 +50,13 @@ CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
 END;
 
 CREATE TABLE IF NOT EXISTS graph_nodes (
-    id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
+    id TEXT NOT NULL,
     node_type TEXT NOT NULL, -- 'file' | 'module' | 'component' | 'service' | 'function' | 'class'
     label TEXT NOT NULL,
     path TEXT NOT NULL,
     metadata TEXT, -- JSON payload stored as string
+    PRIMARY KEY(project_id, id),
     FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
@@ -65,8 +66,8 @@ CREATE TABLE IF NOT EXISTS graph_edges (
     source_id TEXT NOT NULL,
     target_id TEXT NOT NULL,
     relation_type TEXT NOT NULL, -- 'imports' | 'calls' | 'depends_on'
-    FOREIGN KEY(source_id) REFERENCES graph_nodes(id) ON DELETE CASCADE,
-    FOREIGN KEY(target_id) REFERENCES graph_nodes(id) ON DELETE CASCADE,
+    FOREIGN KEY(project_id, source_id) REFERENCES graph_nodes(project_id, id) ON DELETE CASCADE,
+    FOREIGN KEY(project_id, target_id) REFERENCES graph_nodes(project_id, id) ON DELETE CASCADE,
     FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
     UNIQUE(project_id, source_id, target_id, relation_type)
 );
@@ -83,6 +84,32 @@ func InitDB(dbPath string) (*sql.DB, error) {
 	if _, err := db.Exec("PRAGMA foreign_keys = ON;"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
+	}
+
+	// Migrate if old single-column primary key schema is detected
+	rows, err := db.Query("PRAGMA table_info(graph_nodes)")
+	if err == nil {
+		defer rows.Close()
+		var countPK int
+		for rows.Next() {
+			var cid int
+			var name string
+			var typeVal string
+			var notnull int
+			var dfltVal interface{}
+			var pk int
+			if errScan := rows.Scan(&cid, &name, &typeVal, &notnull, &dfltVal, &pk); errScan == nil {
+				if pk > 0 {
+					countPK++
+				}
+			}
+		}
+		// If table exists but only has 1 primary key column (id), it's the old schema
+		if countPK == 1 {
+			// Drop old tables to migrate to composite primary keys
+			_, _ = db.Exec("DROP TABLE IF EXISTS graph_edges")
+			_, _ = db.Exec("DROP TABLE IF EXISTS graph_nodes")
+		}
 	}
 
 	// Execute migrations schema
