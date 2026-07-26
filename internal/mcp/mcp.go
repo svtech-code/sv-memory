@@ -5,8 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,14 +17,75 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/svtech/sv-memory/internal/config"
+	"github.com/svtech/sv-memory/internal/db"
 	"github.com/svtech/sv-memory/internal/graph"
 	"github.com/svtech/sv-memory/internal/memory"
 )
 
+// debugEnabled reports whether SV_MEMORY_DEBUG env var is set to a truthy value.
+// Used to emit stderr timing logs without polluting the MCP stdio JSON channel.
+func debugEnabled() bool {
+	v := os.Getenv("SV_MEMORY_DEBUG")
+	if v == "" {
+		return false
+	}
+	if b, err := strconv.ParseBool(v); err == nil {
+		return b
+	}
+	return true
+}
+
+// debugLog writes a timing line to stderr (safe: stderr is a separate channel
+// from MCP JSON-RPC which uses stdout). Skipped entirely on the hot path when
+// SV_MEMORY_DEBUG is unset.
+func debugLog(format string, args ...interface{}) {
+	if !debugEnabled() {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "[sv-memory] "+format+"\n", args...)
+}
+
 // StartServer starts the MCP server using stdio transport.
-func StartServer(db *sql.DB, cfg *config.Config) error {
+// Reads use the pool's Reader so concurrent tool calls scale; writes (save)
+// go through the Writer to keep SQLite serialized under WAL.
+func StartServer(pool *db.Pool, cfg *config.Config) error {
 	// Initialize server
 	s := server.NewMCPServer("sv-memory", "1.0.0")
+
+	// Per-server mtime cache so we skip redundant SyncFromGit round-trips when
+	// .sv-memory/memories.json hasn't changed since the last pull. The MCP
+	// server is long-lived (stdio), so we keep this state on the closure.
+	var (
+		syncMu       sync.Mutex
+		lastSyncMtim time.Time
+	)
+	syncFile := filepath.Join(cfg.ProjPath, ".sv-memory", "memories.json")
+
+	// maybeSyncFromGit imports memories.json only when its mtime advanced since
+	// the last call. Falls back to a full sync the first time (zero mtime) and
+	// when the file does not exist (no Team sync configured).
+	maybeSyncFromGit := func() {
+		syncMu.Lock()
+		defer syncMu.Unlock()
+		info, err := os.Stat(syncFile)
+		if err != nil {
+			// Missing file is benign for solo projects; reset cache so a future
+			// freshly-pulled memories.json still triggers a sync.
+			lastSyncMtim = time.Time{}
+			return
+		}
+		if !info.ModTime().After(lastSyncMtim) {
+			// No change since last pull — skip json parse + SQLite upsert.
+			return
+		}
+		start := time.Now()
+		if err := memory.SyncFromGit(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
+			fmt.Fprintf(os.Stderr, "[sv-memory] syncFromGit failed: %v\n", err)
+			return
+		}
+		lastSyncMtim = info.ModTime()
+		debugLog("syncFromGit pulled in %s", time.Since(start))
+	}
 
 	// 1. Tool: sv_mem_save
 	saveTool := mcp.NewTool("sv_mem_save",
@@ -76,15 +140,28 @@ func StartServer(db *sql.DB, cfg *config.Config) error {
 			CreatedAt:   time.Now(),
 		}
 
-		// Save locally in SQLite
-		if err := memory.SaveMemory(db, mem); err != nil {
+		// Save locally in SQLite (write goes through the pool's Writer to
+		// keep SQLite serialized under WAL — MaxOpenConns=1).
+		startSave := time.Now()
+		if err := memory.SaveMemory(pool.Writer, mem); err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to save memory to SQLite: %v", err)), nil
 		}
+		debugLog("mem_save SQLite write for id=%s took %s", mem.ID, time.Since(startSave))
 
 		// Sync immediately to Git json file
-		if err := memory.SyncToGit(db, cfg.ProjectID, cfg.ProjPath); err != nil {
+		startSync := time.Now()
+		if err := memory.SyncToGit(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
 			return mcp.NewToolResultText(fmt.Sprintf("Saved to local SQLite database (ID: %s) but failed Git Sync: %v", mem.ID, err)), nil
 		}
+		debugLog("mem_save syncToGit for id=%s took %s", mem.ID, time.Since(startSync))
+
+		// Bump our own mtime cache so a subsequent sv_mem_search doesn't re-pull
+		// the file we ourselves just wrote.
+		syncMu.Lock()
+		if info, err := os.Stat(syncFile); err == nil {
+			lastSyncMtim = info.ModTime()
+		}
+		syncMu.Unlock()
 
 		return mcp.NewToolResultText(fmt.Sprintf("Successfully saved decision memory (ID: %s) and synced to Git workspace (.sv-memory/memories.json)", mem.ID)), nil
 	})
@@ -112,10 +189,18 @@ func StartServer(db *sql.DB, cfg *config.Config) error {
 			}
 		}
 
-		// Sync from Git first to load any new teammate memories
-		_ = memory.SyncFromGit(db, cfg.ProjectID, cfg.ProjPath)
+		// Only pull from Git if memories.json's mtime advanced since the last
+		// pull. Cheap os.Stat avoids re-reading+parsing the whole file on every
+		// search query (was the previous behavior — O(n) cost per call).
+		startSync := time.Now()
+		maybeSyncFromGit()
+		debugLog("mem_search maybeSyncFromGit took %s", time.Since(startSync))
 
-		memories, err := memory.SearchMemories(db, cfg.ProjectID, query, category, limit)
+		// Searches are read-only — route to the Reader to scale concurrently
+		// with other MCP tool calls (WAL allows N parallel readers).
+		startSearch := time.Now()
+		memories, err := memory.SearchMemories(pool.Reader, cfg.ProjectID, query, category, limit)
+		debugLog("mem_search query=%q category=%q returned %d rows in %s", query, category, len(memories), time.Since(startSearch))
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed searching memories: %v", err)), nil
 		}
@@ -180,18 +265,24 @@ func StartServer(db *sql.DB, cfg *config.Config) error {
 		}
 
 		// Check if graph is already populated for this project. If not, auto-build/sync it.
+		// Count is a read; route through the Reader. Auto-build (SyncGraph) writes,
+		// so it must go through the Writer to keep SQLite serialized under WAL.
 		var count int
-		err = db.QueryRow("SELECT COUNT(*) FROM graph_nodes WHERE project_id = ?", cfg.ProjectID).Scan(&count)
+		err = pool.Reader.QueryRow("SELECT COUNT(*) FROM graph_nodes WHERE project_id = ?", cfg.ProjectID).Scan(&count)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to check graph status: %v", err)), nil
 		}
 		if count == 0 {
-			if err := graph.SyncGraph(db, cfg.ProjectID, cfg.ProjPath); err != nil {
+			startBuild := time.Now()
+			if err := graph.SyncGraph(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("failed to auto-build dependency graph: %v", err)), nil
 			}
+			debugLog("graph_query auto-built graph in %s", time.Since(startBuild))
 		}
 
-		subGraph, err := querySubGraph(db, cfg.ProjectID, pathOrNode, depth)
+		startQuery := time.Now()
+		subGraph, err := querySubGraph(pool.Reader, cfg.ProjectID, pathOrNode, depth)
+		debugLog("graph_query path=%q depth=%d returned %d nodes / %d edges in %s", pathOrNode, depth, len(subGraph.Nodes), len(subGraph.Edges), time.Since(startQuery))
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to query graph: %v", err)), nil
 		}
@@ -238,7 +329,9 @@ func StartServer(db *sql.DB, cfg *config.Config) error {
 	)
 
 	s.AddTool(graphSyncTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		err := graph.SyncGraph(db, cfg.ProjectID, cfg.ProjPath)
+		startSync := time.Now()
+		err := graph.SyncGraph(pool.Writer, cfg.ProjectID, cfg.ProjPath)
+		debugLog("graph_sync full rebuild in %s", time.Since(startSync))
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to sync graph: %v", err)), nil
 		}
@@ -313,7 +406,6 @@ func querySubGraph(db *sql.DB, projectID string, start string, maxDepth int) (*s
 		if err != nil {
 			return nil, err
 		}
-		defer rows.Close()
 
 		for rows.Next() {
 			var edge graph.Edge
