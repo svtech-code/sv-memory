@@ -290,10 +290,12 @@ func parseFiles(projPath string, nodes map[string]*Node, toParse []string) []*Ed
 		}()
 	}
 
-	for _, sourcePath := range toParse {
-		jobs <- sourcePath
-	}
-	close(jobs)
+	go func() {
+		for _, sourcePath := range toParse {
+			jobs <- sourcePath
+		}
+		close(jobs)
+	}()
 
 	var edges []*Edge
 	for i := 0; i < len(toParse); i++ {
