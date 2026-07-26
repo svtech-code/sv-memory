@@ -497,6 +497,67 @@ func jaccardSimilarity(a, b []string) float64 {
 	return float64(intersection) / float64(union)
 }
 
+// Stats holds aggregate statistics about project memories.
+type Stats struct {
+	TotalMemories    int               `json:"total_memories"`
+	DeletedMemories  int               `json:"deleted_memories"`
+	ByCategory       map[string]int    `json:"by_category"`
+	TotalSessions    int               `json:"total_sessions"`
+	ActiveSessions   int               `json:"active_sessions"`
+	TotalRelations   int               `json:"total_relations"`
+	Recent24h        int               `json:"recent_24h"`
+}
+
+// GetStats returns aggregate statistics for the given project.
+func GetStats(db *sql.DB, projectID string) (*Stats, error) {
+	stats := &Stats{
+		ByCategory: make(map[string]int),
+	}
+
+	if err := db.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ? AND deleted_at IS NULL", projectID).Scan(&stats.TotalMemories); err != nil {
+		return nil, fmt.Errorf("failed to count memories: %w", err)
+	}
+
+	if err := db.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ? AND deleted_at IS NOT NULL", projectID).Scan(&stats.DeletedMemories); err != nil {
+		return nil, fmt.Errorf("failed to count deleted memories: %w", err)
+	}
+
+	catRows, err := db.Query("SELECT category, COUNT(*) FROM memories WHERE project_id = ? AND deleted_at IS NULL GROUP BY category ORDER BY COUNT(*) DESC", projectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query categories: %w", err)
+	}
+	defer catRows.Close()
+	for catRows.Next() {
+		var cat string
+		var count int
+		if err := catRows.Scan(&cat, &count); err != nil {
+			return nil, fmt.Errorf("failed scanning category row: %w", err)
+		}
+		stats.ByCategory[cat] = count
+	}
+	if err := catRows.Err(); err != nil {
+		return nil, err
+	}
+
+	if err := db.QueryRow("SELECT COUNT(*) FROM sessions WHERE project_id = ?", projectID).Scan(&stats.TotalSessions); err != nil {
+		return nil, fmt.Errorf("failed to count sessions: %w", err)
+	}
+
+	if err := db.QueryRow("SELECT COUNT(*) FROM sessions WHERE project_id = ? AND status = 'active'", projectID).Scan(&stats.ActiveSessions); err != nil {
+		return nil, fmt.Errorf("failed to count active sessions: %w", err)
+	}
+
+	if err := db.QueryRow("SELECT COUNT(*) FROM memory_relations WHERE project_id = ?", projectID).Scan(&stats.TotalRelations); err != nil {
+		return nil, fmt.Errorf("failed to count relations: %w", err)
+	}
+
+	if err := db.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ? AND deleted_at IS NULL AND created_at > datetime('now', '-24 hours')", projectID).Scan(&stats.Recent24h); err != nil {
+		return nil, fmt.Errorf("failed to count recent memories: %w", err)
+	}
+
+	return stats, nil
+}
+
 // FindSimilarMemories returns up to `limit` memory candidates whose title
 // tokens overlap significantly with the given title (Jaccard > threshold).
 // Uses FTS5 for initial candidate retrieval, then filters by token similarity.

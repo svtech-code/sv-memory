@@ -356,3 +356,83 @@ func TestJaccardSimilarity(t *testing.T) {
 		}
 	}
 }
+
+func TestGetStats(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-stats-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_storage.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-stats"
+	err = db.RegisterProject(database, projectID, "Stats Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// Empty project stats
+	s, err := GetStats(database, projectID)
+	if err != nil {
+		t.Fatalf("GetStats failed: %v", err)
+	}
+	if s.TotalMemories != 0 {
+		t.Errorf("expected 0 total memories, got %d", s.TotalMemories)
+	}
+	if len(s.ByCategory) != 0 {
+		t.Errorf("expected empty by_category, got %v", s.ByCategory)
+	}
+
+	// Save a few memories
+	mem1 := &Memory{ID: "s-1", ProjectID: projectID, Category: "architecture", What: "Arch 1", Why: "why1", Learned: "l1", CreatedAt: time.Now()}
+	mem2 := &Memory{ID: "s-2", ProjectID: projectID, Category: "architecture", What: "Arch 2", Why: "why2", Learned: "l2", CreatedAt: time.Now()}
+	mem3 := &Memory{ID: "s-3", ProjectID: projectID, Category: "bugfix", What: "Bug 1", Why: "why3", Learned: "l3", CreatedAt: time.Now()}
+
+	if _, err := SaveMemory(database, mem1); err != nil {
+		t.Fatalf("failed saving mem1: %v", err)
+	}
+	if _, err := SaveMemory(database, mem2); err != nil {
+		t.Fatalf("failed saving mem2: %v", err)
+	}
+	if _, err := SaveMemory(database, mem3); err != nil {
+		t.Fatalf("failed saving mem3: %v", err)
+	}
+
+	// Start a session
+	_, err = StartSession(database, projectID, "Test session", tempDir)
+	if err != nil {
+		t.Fatalf("failed starting session: %v", err)
+	}
+
+	s, err = GetStats(database, projectID)
+	if err != nil {
+		t.Fatalf("GetStats failed: %v", err)
+	}
+	if s.TotalMemories != 3 {
+		t.Errorf("expected 3 total memories, got %d", s.TotalMemories)
+	}
+	if s.ByCategory["architecture"] != 2 {
+		t.Errorf("expected 2 architecture, got %d", s.ByCategory["architecture"])
+	}
+	if s.ByCategory["bugfix"] != 1 {
+		t.Errorf("expected 1 bugfix, got %d", s.ByCategory["bugfix"])
+	}
+	if s.TotalSessions != 1 {
+		t.Errorf("expected 1 total session, got %d", s.TotalSessions)
+	}
+	if s.ActiveSessions != 1 {
+		t.Errorf("expected 1 active session, got %d", s.ActiveSessions)
+	}
+	if s.TotalRelations != 0 {
+		t.Errorf("expected 0 relations, got %d", s.TotalRelations)
+	}
+	if s.Recent24h != 3 {
+		t.Errorf("expected 3 recent memories, got %d", s.Recent24h)
+	}
+}
