@@ -378,6 +378,171 @@ type internal struct {}
 	}
 }
 
+func TestParseManifests(t *testing.T) {
+	t.Run("package.json", func(t *testing.T) {
+		content := []byte(`{
+			"dependencies": { "react": "^18.0.0", "lodash": "^4.0.0" },
+			"devDependencies": { "typescript": "^5.0.0" }
+		}`)
+		deps := parsePackageJSON(content)
+		if len(deps) != 3 {
+			t.Errorf("expected 3 deps, got %v", deps)
+		}
+	})
+
+	t.Run("go.mod", func(t *testing.T) {
+		content := []byte("module myapp\ngo 1.21\nrequire (\n\tgithub.com/foo/bar v1.0.0\n\tgithub.com/baz/qux v0.5.0\n)\n")
+		deps := parseGoMod(content)
+		if len(deps) != 2 {
+			t.Errorf("expected 2 deps, got %v", deps)
+		}
+	})
+
+	t.Run("requirements.txt", func(t *testing.T) {
+		content := []byte("flask==2.0.0\nrequests>=2.25.0\n# comment\npytest>=7.0\n")
+		deps := parseRequirementsTXT(content)
+		if len(deps) != 3 {
+			t.Errorf("expected 3 deps, got %v", deps)
+		}
+	})
+}
+
+func TestSyncGraphWithManifests(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-manifest-test")
+	if err != nil {
+		t.Fatalf("failed to create temp workspace: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_manifest.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-manifest-test"
+	err = db.RegisterProject(database, projectID, "Manifest Test", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// Create a package.json with dependencies
+	err = os.WriteFile(filepath.Join(tempDir, "package.json"), []byte(`{
+		"dependencies": { "react": "^18.0.0", "lodash": "^4.0.0" }
+	}`), 0644)
+	if err != nil {
+		t.Fatalf("failed writing package.json: %v", err)
+	}
+
+	// Create a code file that imports one of them (ensures dedup)
+	err = os.WriteFile(filepath.Join(tempDir, "app.js"), []byte(`import React from 'react';`), 0644)
+	if err != nil {
+		t.Fatalf("failed writing app.js: %v", err)
+	}
+
+	err = SyncGraph(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("SyncGraph failed: %v", err)
+	}
+
+	// Verify depends_on edges from manifest
+	var depCount int
+	err = database.QueryRow(`
+		SELECT COUNT(*) FROM graph_edges
+		WHERE project_id = ? AND source_id = 'package.json' AND relation_type = 'depends_on'
+	`, projectID).Scan(&depCount)
+	if err != nil {
+		t.Fatalf("failed counting depends_on: %v", err)
+	}
+	if depCount != 2 {
+		t.Errorf("expected 2 depends_on edges from package.json, got %d", depCount)
+	}
+
+	// Verify confidence is INFERRED for manifest edges
+	var confidence string
+	err = database.QueryRow(`
+		SELECT confidence FROM graph_edges
+		WHERE project_id = ? AND source_id = 'package.json' AND target_id = 'pkg:react' AND relation_type = 'depends_on'
+	`, projectID).Scan(&confidence)
+	if err != nil {
+		t.Fatalf("failed reading confidence: %v", err)
+	}
+	if confidence != "INFERRED" {
+		t.Errorf("expected INFERRED confidence, got %q", confidence)
+	}
+
+	// Verify pkg:react node exists (dedup - should be created by both parseFiles and parseManifests)
+	var nodeCount int
+	err = database.QueryRow("SELECT COUNT(*) FROM graph_nodes WHERE project_id = ? AND id = 'pkg:react'", projectID).Scan(&nodeCount)
+	if err != nil {
+		t.Fatalf("failed counting pkg:react: %v", err)
+	}
+	if nodeCount != 1 {
+		t.Errorf("expected exactly 1 pkg:react node, got %d", nodeCount)
+	}
+
+	// ---- INCREMENTAL: add a new dep to package.json ----
+	err = os.WriteFile(filepath.Join(tempDir, "package.json"), []byte(`{
+		"dependencies": { "react": "^18.0.0", "lodash": "^4.0.0", "vue": "^3.0.0" }
+	}`), 0644)
+	if err != nil {
+		t.Fatalf("failed updating package.json: %v", err)
+	}
+
+	err = SyncGraph(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("incremental SyncGraph failed: %v", err)
+	}
+
+	// Verify new dep edge exists
+	var vueDep int
+	err = database.QueryRow(`
+		SELECT COUNT(*) FROM graph_edges
+		WHERE project_id = ? AND source_id = 'package.json' AND target_id = 'pkg:vue' AND relation_type = 'depends_on'
+	`, projectID).Scan(&vueDep)
+	if err != nil {
+		t.Fatalf("failed checking vue dep: %v", err)
+	}
+	if vueDep != 1 {
+		t.Errorf("expected depends_on edge to pkg:vue after incremental, got %d", vueDep)
+	}
+
+	// Verify total is now 3
+	err = database.QueryRow(`
+		SELECT COUNT(*) FROM graph_edges
+		WHERE project_id = ? AND source_id = 'package.json' AND relation_type = 'depends_on'
+	`, projectID).Scan(&depCount)
+	if err != nil {
+		t.Fatalf("failed counting depends_on after incremental: %v", err)
+	}
+	if depCount != 3 {
+		t.Errorf("expected 3 depends_on edges after incremental, got %d", depCount)
+	}
+
+	// ---- REMOVE package.json ----
+	err = os.Remove(filepath.Join(tempDir, "package.json"))
+	if err != nil {
+		t.Fatalf("failed removing package.json: %v", err)
+	}
+
+	err = SyncGraph(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("SyncGraph after manifest removal failed: %v", err)
+	}
+
+	err = database.QueryRow(`
+		SELECT COUNT(*) FROM graph_edges
+		WHERE project_id = ? AND source_id = 'package.json' AND relation_type = 'depends_on'
+	`, projectID).Scan(&depCount)
+	if err != nil {
+		t.Fatalf("failed counting depends_on after removal: %v", err)
+	}
+	if depCount != 0 {
+		t.Errorf("expected 0 depends_on edges after manifest removal, got %d", depCount)
+	}
+}
+
 func TestSyncGraphWithSymbols(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-mem-sym-test")
 	if err != nil {

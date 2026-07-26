@@ -279,15 +279,19 @@ func syncGraph(db *sql.DB, projectID string, projPath string) error {
 
 // walkResult carries the data collected during a single file scan pass.
 type walkResult struct {
-	nodes    map[string]*Node
-	fileList []string
-	fileMeta map[string]fileMetaEntry // relative path → mtime+size
+	nodes         map[string]*Node
+	fileList      []string
+	fileMeta      map[string]fileMetaEntry // relative path → mtime+size
+	manifestFiles []string
 }
 
 type fileMetaEntry struct {
 	mtimeMs int64
 	size    int64
 }
+
+// Known manifest file names that declare project-level external dependencies.
+var manifestFilenames = []string{"package.json", "go.mod", "requirements.txt", "Cargo.toml", "composer.json", "Gemfile"}
 
 // scanFiles walks projPath and collects code files into a nodes map, a file
 // list for parsing, and a metadata map for change detection. Shared between
@@ -358,7 +362,35 @@ func scanFiles(projPath string) (*walkResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed walking directory: %w", err)
 	}
-	return &walkResult{nodes: nodes, fileList: fileList, fileMeta: fileMeta}, nil
+	// Detect manifest files in the project root and create nodes for them.
+	var manifestFiles []string
+	for _, mf := range manifestFilenames {
+		mfPath := filepath.Join(projPath, mf)
+		if fi, stErr := os.Stat(mfPath); stErr == nil {
+			mtimeMs := fi.ModTime().UnixMilli()
+			size := fi.Size()
+			manifestFiles = append(manifestFiles, mf)
+
+			nodes[mf] = &Node{
+				ID:    mf,
+				Type:  "file",
+				Label: mf,
+				Path:  mf,
+				Metadata: map[string]interface{}{
+					"size":      size,
+					"extension": filepath.Ext(mf),
+				},
+			}
+			fileList = append(fileList, mf)
+			fileMeta[mf] = fileMetaEntry{mtimeMs: mtimeMs, size: size}
+		}
+	}
+	return &walkResult{
+		nodes:         nodes,
+		fileList:      fileList,
+		fileMeta:      fileMeta,
+		manifestFiles: manifestFiles,
+	}, nil
 }
 
 // parseFiles concurrently parses imports for the given file list using a
@@ -528,6 +560,142 @@ func parseFiles(projPath string, nodes map[string]*Node, toParse []string) []*Ed
 	return edges
 }
 
+// parseManifests reads known manifest files (package.json, go.mod, etc.) and
+// returns depends_on edges from the manifest to each declared external package.
+// Packages are added to the nodes map for deduplication.
+func parseManifests(projPath string, nodes map[string]*Node, manifests []string) []*Edge {
+	var edges []*Edge
+	for _, mf := range manifests {
+		absPath := filepath.Join(projPath, mf)
+		content, err := os.ReadFile(absPath)
+		if err != nil {
+			continue
+		}
+		var deps []string
+		switch mf {
+		case "package.json":
+			deps = parsePackageJSON(content)
+		case "go.mod":
+			deps = parseGoMod(content)
+		case "requirements.txt":
+			deps = parseRequirementsTXT(content)
+		case "Cargo.toml":
+			deps = parseCargoToml(content)
+		case "composer.json":
+			deps = parsePackageJSON(content) // same structure
+		case "Gemfile":
+			deps = parseGemfile(content)
+		}
+		for _, dep := range deps {
+			pkgID := "pkg:" + dep
+			if _, exists := nodes[pkgID]; !exists {
+				nodes[pkgID] = &Node{
+					ID:    pkgID,
+					Type:  "package",
+					Label: dep,
+					Path:  dep,
+				}
+			}
+			edgeID := fmt.Sprintf("%s-%s-depends_on", mf, pkgID)
+			edges = append(edges, &Edge{
+				ID:           edgeID,
+				SourceID:     mf,
+				TargetID:     pkgID,
+				RelationType: "depends_on",
+				Confidence:   "INFERRED",
+			})
+		}
+	}
+	return edges
+}
+
+func parsePackageJSON(content []byte) []string {
+	var parsed struct {
+		Dependencies    map[string]string `json:"dependencies"`
+		DevDependencies map[string]string `json:"devDependencies"`
+	}
+	if err := json.Unmarshal(content, &parsed); err != nil {
+		return nil
+	}
+	var deps []string
+	for name := range parsed.Dependencies {
+		deps = append(deps, name)
+	}
+	for name := range parsed.DevDependencies {
+		deps = append(deps, name)
+	}
+	return deps
+}
+
+func parseGoMod(content []byte) []string {
+	var deps []string
+	for _, line := range strings.Split(string(content), "\n") {
+		trimmed := strings.TrimSpace(line)
+		// Lines like: github.com/foo/bar v1.0.0
+		// Skip module, go, require, toolchain lines
+		if trimmed == "" || strings.HasPrefix(trimmed, "module ") || strings.HasPrefix(trimmed, "go ") || strings.HasPrefix(trimmed, "require ") || strings.HasPrefix(trimmed, "toolchain ") || trimmed == ")" || strings.HasPrefix(trimmed, "//") {
+			continue
+		}
+		parts := strings.Fields(trimmed)
+		if len(parts) >= 2 {
+			deps = append(deps, parts[0])
+		}
+	}
+	return deps
+}
+
+func parseRequirementsTXT(content []byte) []string {
+	var deps []string
+	for _, line := range strings.Split(string(content), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "-") {
+			continue
+		}
+		// Handles: flask==2.0, flask>=2.0, flask, flask~=2.0
+		parts := strings.FieldsFunc(trimmed, func(r rune) bool {
+			return r == '=' || r == '>' || r == '<' || r == '~' || r == '!' || r == '@' || r == ';' || r == ' '
+		})
+		if len(parts) > 0 {
+			deps = append(deps, strings.TrimSpace(parts[0]))
+		}
+	}
+	return deps
+}
+
+func parseCargoToml(content []byte) []string {
+	var deps []string
+	inDeps := false
+	for _, line := range strings.Split(string(content), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[dependencies]") {
+			inDeps = true
+			continue
+		}
+		if strings.HasPrefix(trimmed, "[") && inDeps {
+			break // next section
+		}
+		if inDeps && strings.Contains(trimmed, "=") && !strings.HasPrefix(trimmed, "#") {
+			parts := strings.SplitN(trimmed, "=", 2)
+			name := strings.TrimSpace(parts[0])
+			if name != "" && !strings.HasPrefix(name, "#") {
+				deps = append(deps, name)
+			}
+		}
+	}
+	return deps
+}
+
+func parseGemfile(content []byte) []string {
+	var deps []string
+	gemRe := regexp.MustCompile(`(?m)^\s*gem\s+['"]([^'"]+)['"]`)
+	for _, m := range gemRe.FindAllSubmatch(content, -1) {
+		if len(m) > 1 {
+			deps = append(deps, string(m[1]))
+		}
+	}
+	return deps
+}
+
 // syncGraphFull is the original delete-all-plus-rescan implementation.
 func syncGraphFull(db *sql.DB, projectID string, projPath string) error {
 	wr, err := scanFiles(projPath)
@@ -536,6 +704,8 @@ func syncGraphFull(db *sql.DB, projectID string, projPath string) error {
 	}
 
 	edges := parseFiles(projPath, wr.nodes, wr.fileList)
+	manifestEdges := parseManifests(projPath, wr.nodes, wr.manifestFiles)
+	edges = append(edges, manifestEdges...)
 
 	tx, err := db.Begin()
 	if err != nil {
@@ -643,12 +813,26 @@ func trySyncGraphIncremental(db *sql.DB, projectID string, projPath string) (boo
 		}
 	}
 
-	// 3. Parse new+changed files and insert nodes+edges.
-	edges := parseFiles(projPath, wr.nodes, toParse)
+	// Separate manifest files from code files before parsing.
+	isManifest := make(map[string]bool, len(wr.manifestFiles))
+	for _, mf := range wr.manifestFiles {
+		isManifest[mf] = true
+	}
+	var codeToParse []string
+	var manifestToParse []string
 	for _, p := range toParse {
+		if isManifest[p] {
+			manifestToParse = append(manifestToParse, p)
+		} else {
+			codeToParse = append(codeToParse, p)
+		}
+	}
+
+	// 3. Parse new+changed code files and insert nodes+edges.
+	codeEdges := parseFiles(projPath, wr.nodes, codeToParse)
+	for _, p := range codeToParse {
 		upsertNode(tx, projectID, wr.nodes[p])
 		// Also upsert child symbol nodes (functions/classes) for this file.
-		// IDs follow the pattern "relPath:symbolName".
 		prefix := p + ":"
 		for id, node := range wr.nodes {
 			if strings.HasPrefix(id, prefix) {
@@ -658,9 +842,12 @@ func trySyncGraphIncremental(db *sql.DB, projectID string, projPath string) (boo
 			}
 		}
 	}
-	// Also upsert package nodes that parseFiles may have added to wr nodes.
-	// These are external dependencies (e.g. "pkg:react") referenced by edges;
-	// without them the FK constraint on graph_edges would fail.
+	// Also process changed manifests.
+	var edges []*Edge
+	edges = append(edges, codeEdges...)
+	manifestEdges := parseManifests(projPath, wr.nodes, manifestToParse)
+	edges = append(edges, manifestEdges...)
+	// Upsert package nodes (from both code and manifest parsers).
 	for _, node := range wr.nodes {
 		if node.Type == "package" {
 			if err := upsertNode(tx, projectID, node); err != nil {
@@ -672,7 +859,7 @@ func trySyncGraphIncremental(db *sql.DB, projectID string, projPath string) (boo
 		return false, err
 	}
 
-	// 4. Update file metadata for added/changed files.
+	// 4. Update file metadata for added/changed files (code + manifests).
 	for _, p := range toParse {
 		m := wr.fileMeta[p]
 		if _, e := tx.Exec("INSERT OR REPLACE INTO graph_files_meta (project_id, path, mtime_ms, size) VALUES (?, ?, ?, ?)", projectID, p, m.mtimeMs, m.size); e != nil {
