@@ -141,6 +141,19 @@ from utils import helper
 	if edgeExists != 1 {
 		t.Error("expected dependency edge from index.js to pkg:path to exist")
 	}
+
+	// Verify confidence column
+	var confidence string
+	err = database.QueryRow(`
+		SELECT confidence FROM graph_edges
+		WHERE project_id = ? AND source_id = 'index.js' AND target_id = 'utils.js' AND relation_type = 'imports'
+	`, projectID).Scan(&confidence)
+	if err != nil {
+		t.Fatalf("failed reading confidence: %v", err)
+	}
+	if confidence != "EXTRACTED" {
+		t.Errorf("expected confidence 'EXTRACTED', got %q", confidence)
+	}
 }
 
 func TestSyncGraphIncremental(t *testing.T) {

@@ -88,6 +88,8 @@ CREATE TABLE IF NOT EXISTS graph_edges (
     source_id TEXT NOT NULL,
     target_id TEXT NOT NULL,
     relation_type TEXT NOT NULL, -- 'imports' | 'calls' | 'depends_on'
+    confidence TEXT NOT NULL DEFAULT 'EXTRACTED', -- 'EXTRACTED' | 'INFERRED' | 'AMBIGUOUS'
+    source_location TEXT,
     FOREIGN KEY(project_id, source_id) REFERENCES graph_nodes(project_id, id) ON DELETE CASCADE,
     FOREIGN KEY(project_id, target_id) REFERENCES graph_nodes(project_id, id) ON DELETE CASCADE,
     FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
@@ -334,6 +336,40 @@ func applyMigrations(db *sql.DB) error {
 		if !exists {
 			if _, errAlter := db.Exec(alterStmt); errAlter != nil {
 				fmt.Printf("Warning: failed to add column %s to memories: %v\n", col, errAlter)
+			}
+		}
+	}
+
+	// Migrate graph_edges schema if missing columns (Fase 3 — confidence tags).
+	for _, col := range []string{"confidence", "source_location"} {
+		var exists bool
+		rows, err := db.Query("PRAGMA table_info(graph_edges)")
+		if err == nil {
+			for rows.Next() {
+				var cid int
+				var name string
+				var typeVal string
+				var notnull int
+				var dfltVal interface{}
+				var pk int
+				if errScan := rows.Scan(&cid, &name, &typeVal, &notnull, &dfltVal, &pk); errScan == nil {
+					if name == col {
+						exists = true
+						break
+					}
+				}
+			}
+			rows.Close()
+		}
+		if !exists {
+			var alterStmt string
+			if col == "confidence" {
+				alterStmt = "ALTER TABLE graph_edges ADD COLUMN confidence TEXT NOT NULL DEFAULT 'EXTRACTED';"
+			} else {
+				alterStmt = "ALTER TABLE graph_edges ADD COLUMN source_location TEXT;"
+			}
+			if _, errAlter := db.Exec(alterStmt); errAlter != nil {
+				fmt.Printf("Warning: failed to add column %s to graph_edges: %v\n", col, errAlter)
 			}
 		}
 	}

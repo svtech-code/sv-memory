@@ -22,10 +22,12 @@ type Node struct {
 
 // Edge represents a directed relationship between two nodes.
 type Edge struct {
-	ID           string `json:"id"`
-	SourceID     string `json:"source_id"`
-	TargetID     string `json:"target_id"`
-	RelationType string `json:"relation_type"` // 'imports' | 'calls' | 'depends_on'
+	ID             string `json:"id"`
+	SourceID       string `json:"source_id"`
+	TargetID       string `json:"target_id"`
+	RelationType   string `json:"relation_type"`   // 'imports' | 'calls' | 'depends_on'
+	Confidence     string `json:"confidence"`       // 'EXTRACTED' | 'INFERRED' | 'AMBIGUOUS'
+	SourceLocation string `json:"source_location,omitempty"` // line number or empty
 }
 
 // Extension to human-readable language mapping.
@@ -500,6 +502,7 @@ func parseFiles(projPath string, nodes map[string]*Node, toParse []string) []*Ed
 					SourceID:     res.sourcePath,
 					TargetID:     targetID,
 					RelationType: "imports",
+					Confidence:   "EXTRACTED",
 				})
 			} else if isExternalPkg(imp) {
 				pkgNodeID := "pkg:" + imp
@@ -517,6 +520,7 @@ func parseFiles(projPath string, nodes map[string]*Node, toParse []string) []*Ed
 					SourceID:     res.sourcePath,
 					TargetID:     pkgNodeID,
 					RelationType: "imports",
+					Confidence:   "EXTRACTED",
 				})
 			}
 		}
@@ -704,13 +708,17 @@ func bulkInsertEdges(tx *sql.Tx, projectID string, edges []*Edge) error {
 	if len(edges) == 0 {
 		return nil
 	}
-	stmt, err := tx.Prepare("INSERT INTO graph_edges (id, project_id, source_id, target_id, relation_type) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")
+	stmt, err := tx.Prepare("INSERT INTO graph_edges (id, project_id, source_id, target_id, relation_type, confidence, source_location) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 	for _, edge := range edges {
-		if _, e := stmt.Exec(edge.ID, projectID, edge.SourceID, edge.TargetID, edge.RelationType); e != nil {
+		confidence := edge.Confidence
+		if confidence == "" {
+			confidence = "EXTRACTED"
+		}
+		if _, e := stmt.Exec(edge.ID, projectID, edge.SourceID, edge.TargetID, edge.RelationType, confidence, edge.SourceLocation); e != nil {
 			return fmt.Errorf("failed inserting edge %s: %w", edge.ID, e)
 		}
 	}
