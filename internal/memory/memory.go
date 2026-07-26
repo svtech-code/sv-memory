@@ -686,6 +686,111 @@ func GetStats(db *sql.DB, projectID string) (*Stats, error) {
 	return stats, nil
 }
 
+// ProjectInfo holds summary data for a registered project.
+type ProjectInfo struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Path         string `json:"path"`
+	MemoryCount  int    `json:"memory_count"`
+	SessionCount int    `json:"session_count"`
+}
+
+// ListProjects returns all registered projects with their memory and session counts.
+func ListProjects(db *sql.DB) ([]*ProjectInfo, error) {
+	rows, err := db.Query(`
+		SELECT p.id, p.name, p.path,
+			(SELECT COUNT(*) FROM memories m WHERE m.project_id = p.id AND m.deleted_at IS NULL) as mem_count,
+			(SELECT COUNT(*) FROM sessions s WHERE s.project_id = p.id) as sess_count
+		FROM projects p
+		ORDER BY p.name ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list projects: %w", err)
+	}
+	defer rows.Close()
+
+	var projects []*ProjectInfo
+	for rows.Next() {
+		var p ProjectInfo
+		if err := rows.Scan(&p.ID, &p.Name, &p.Path, &p.MemoryCount, &p.SessionCount); err != nil {
+			return nil, fmt.Errorf("failed scanning project row: %w", err)
+		}
+		projects = append(projects, &p)
+	}
+	return projects, rows.Err()
+}
+
+// PruneProjects removes projects that have zero memories.
+// Returns the IDs of pruned projects.
+func PruneProjects(db *sql.DB) ([]string, error) {
+	projects, err := ListProjects(db)
+	if err != nil {
+		return nil, err
+	}
+
+	var pruned []string
+	for _, p := range projects {
+		if p.MemoryCount == 0 && p.SessionCount == 0 {
+			if _, err := db.Exec("DELETE FROM projects WHERE id=?", p.ID); err != nil {
+				return pruned, fmt.Errorf("failed to prune project %s: %w", p.ID, err)
+			}
+			pruned = append(pruned, p.ID)
+		}
+	}
+	return pruned, nil
+}
+
+// ConsolidateProjects moves all memories and sessions from sourceProjectID
+// to targetProjectID, then removes the source project. Returns counts of
+// moved memories and sessions.
+func ConsolidateProjects(db *sql.DB, sourceID, targetID string) (movedMemories int, movedSessions int, err error) {
+	// Verify both projects exist
+	var srcName, tgtName string
+	if err := db.QueryRow("SELECT name FROM projects WHERE id=?", sourceID).Scan(&srcName); err != nil {
+		return 0, 0, fmt.Errorf("source project %s not found", sourceID)
+	}
+	if err := db.QueryRow("SELECT name FROM projects WHERE id=?", targetID).Scan(&tgtName); err != nil {
+		return 0, 0, fmt.Errorf("target project %s not found", targetID)
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, 0, err
+	}
+	defer tx.Rollback()
+
+	// Move memories
+	res, err := tx.Exec("UPDATE memories SET project_id=? WHERE project_id=?", targetID, sourceID)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to move memories: %w", err)
+	}
+	memN, _ := res.RowsAffected()
+	movedMemories = int(memN)
+
+	// Move sessions
+	res, err = tx.Exec("UPDATE sessions SET project_id=? WHERE project_id=?", targetID, sourceID)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to move sessions: %w", err)
+	}
+	sessN, _ := res.RowsAffected()
+	movedSessions = int(sessN)
+
+	// Move relations
+	if _, err := tx.Exec("UPDATE memory_relations SET project_id=? WHERE project_id=?", targetID, sourceID); err != nil {
+		return 0, 0, fmt.Errorf("failed to move relations: %w", err)
+	}
+
+	// Delete source project
+	if _, err := tx.Exec("DELETE FROM projects WHERE id=?", sourceID); err != nil {
+		return 0, 0, fmt.Errorf("failed to delete source project: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, 0, err
+	}
+
+	return movedMemories, movedSessions, nil
+}
+
 // FindSimilarMemories returns up to `limit` memory candidates whose title
 // tokens overlap significantly with the given title (Jaccard > threshold).
 // Uses FTS5 for initial candidate retrieval, then filters by token similarity.

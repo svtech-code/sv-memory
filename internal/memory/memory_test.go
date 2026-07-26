@@ -10,6 +10,134 @@ import (
 	"github.com/svtech/sv-memory/internal/db"
 )
 
+func TestListPruneConsolidateProjects(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-projects-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_storage.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	// Register two projects
+	err = db.RegisterProject(database, "proj-a", "Project A", filepath.Join(tempDir, "a"))
+	if err != nil {
+		t.Fatalf("failed to register proj-a: %v", err)
+	}
+	err = db.RegisterProject(database, "proj-b", "Project B", filepath.Join(tempDir, "b"))
+	if err != nil {
+		t.Fatalf("failed to register proj-b: %v", err)
+	}
+	err = db.RegisterProject(database, "proj-c", "Project C", filepath.Join(tempDir, "c"))
+	if err != nil {
+		t.Fatalf("failed to register proj-c: %v", err)
+	}
+
+	// Save a memory in proj-a
+	_, err = SaveMemory(database, &Memory{
+		ID: "pa-1", ProjectID: "proj-a", Category: "decision",
+		What: "Test", Why: "why", Learned: "learned", CreatedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("failed saving memory: %v", err)
+	}
+
+	// Test ListProjects
+	projects, err := ListProjects(database)
+	if err != nil {
+		t.Fatalf("ListProjects failed: %v", err)
+	}
+	if len(projects) != 3 {
+		t.Fatalf("expected 3 projects, got %d", len(projects))
+	}
+
+	// Check counts
+	for _, p := range projects {
+		switch p.ID {
+		case "proj-a":
+			if p.MemoryCount != 1 {
+				t.Errorf("proj-a expected 1 memory, got %d", p.MemoryCount)
+			}
+		case "proj-b":
+			if p.MemoryCount != 0 {
+				t.Errorf("proj-b expected 0 memories, got %d", p.MemoryCount)
+			}
+		case "proj-c":
+			if p.MemoryCount != 0 {
+				t.Errorf("proj-c expected 0 memories, got %d", p.MemoryCount)
+			}
+		}
+	}
+
+	// Test PruneProjects (should remove proj-b and proj-c but not proj-a)
+	pruned, err := PruneProjects(database)
+	if err != nil {
+		t.Fatalf("PruneProjects failed: %v", err)
+	}
+	if len(pruned) != 2 {
+		t.Errorf("expected 2 pruned projects, got %d: %v", len(pruned), pruned)
+	}
+
+	// Verify proj-a still exists
+	projects, err = ListProjects(database)
+	if err != nil {
+		t.Fatalf("ListProjects failed: %v", err)
+	}
+	if len(projects) != 1 {
+		t.Fatalf("expected 1 project after prune, got %d", len(projects))
+	}
+	if projects[0].ID != "proj-a" {
+		t.Errorf("expected proj-a to remain, got %s", projects[0].ID)
+	}
+
+	// Create two more projects for consolidate test
+	err = db.RegisterProject(database, "proj-x", "Project X", filepath.Join(tempDir, "x"))
+	if err != nil {
+		t.Fatalf("failed to register proj-x: %v", err)
+	}
+	err = db.RegisterProject(database, "proj-y", "Project Y", filepath.Join(tempDir, "y"))
+	if err != nil {
+		t.Fatalf("failed to register proj-y: %v", err)
+	}
+
+	// Save a memory in proj-x
+	_, err = SaveMemory(database, &Memory{
+		ID: "px-1", ProjectID: "proj-x", Category: "decision",
+		What: "From X", Why: "why", Learned: "l", CreatedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("failed saving memory in proj-x: %v", err)
+	}
+
+	// Test ConsolidateProjects: move from proj-x to proj-a
+	mems, sess, err := ConsolidateProjects(database, "proj-x", "proj-a")
+	if err != nil {
+		t.Fatalf("ConsolidateProjects failed: %v", err)
+	}
+	if mems != 1 {
+		t.Errorf("expected 1 memory moved, got %d", mems)
+	}
+	if sess != 0 {
+		t.Errorf("expected 0 sessions moved, got %d", sess)
+	}
+
+	// Verify proj-x is gone and proj-a now has 2 memories
+	var count int
+	database.QueryRow("SELECT COUNT(*) FROM projects WHERE id='proj-x'").Scan(&count)
+	if count != 0 {
+		t.Error("expected proj-x to be deleted after consolidation")
+	}
+	database.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id='proj-a' AND deleted_at IS NULL").Scan(&count)
+	if count != 2 {
+		t.Errorf("expected proj-a to have 2 memories, got %d", count)
+	}
+}
+
 func TestRunDiagnostics(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-mem-diagnose-test")
 	if err != nil {
