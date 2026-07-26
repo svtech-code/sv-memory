@@ -781,6 +781,8 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		mcp.WithDescription("Retrieve project code structure, connections, imports, and dependencies for a given module, file, or package."),
 		mcp.WithString("path_or_node", mcp.Required(), mcp.Description("The file path, package name, or module to inspect")),
 		mcp.WithString("depth", mcp.Description("Hop distance depth in the dependency graph (default is '1')")),
+		mcp.WithString("relation_type", mcp.Description("Filter by relation type ('imports', 'calls', 'depends_on')")),
+		mcp.WithString("direction", mcp.Description("Filter by direction ('in', 'out', 'all')")),
 	)
 
 	s.AddTool(graphQueryTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -789,7 +791,6 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 			return mcp.NewToolResultError("missing required field: path_or_node"), nil
 		}
 		depthStr := req.GetString("depth", "1")
-
 		depth := 1
 		if depthStr != "" {
 			if d, err := strconv.Atoi(depthStr); err == nil {
@@ -797,16 +798,16 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 			}
 		}
 
-		// Load or retrieve the in-memory graph cache. First call triggers a
-		// full load from SQLite (two bulk queries); subsequent calls hit
-		// cached Go maps until sv_graph_sync invalidates them.
-		startQuery := time.Now()
+		relationType := req.GetString("relation_type", "")
+		direction := req.GetString("direction", "out")
+
+		// Load or retrieve the in-memory graph cache.
 		g, err := getOrLoadGraph()
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
 		}
 
-		subGraph := g.query(pathOrNode, depth)
+		subGraph := g.Query(pathOrNode, depth, relationType, direction)
 		debugLog("graph_query path=%q depth=%d returned %d nodes / %d edges in %s", pathOrNode, depth, len(subGraph.Nodes), len(subGraph.Edges), time.Since(startQuery))
 
 		if len(subGraph.Nodes) == 0 {
