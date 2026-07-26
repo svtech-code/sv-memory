@@ -247,6 +247,43 @@ func (r *RegexExtractor) Extract(content []byte, relPath, ext string) ([]Symbol,
 		}
 	}
 
+	// 3. Global comment rationale extraction pass for legacy/fallback matching
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		var cleanText string
+		hasComment := false
+		if strings.HasPrefix(trimmed, "//") {
+			cleanText = strings.TrimPrefix(trimmed, "//")
+			hasComment = true
+		} else if strings.HasPrefix(trimmed, "#") {
+			cleanText = strings.TrimPrefix(trimmed, "#")
+			hasComment = true
+		} else if strings.HasPrefix(trimmed, "/*") {
+			cleanText = strings.TrimPrefix(trimmed, "/*")
+			cleanText = strings.TrimSuffix(cleanText, "*/")
+			hasComment = true
+		} else if strings.HasPrefix(trimmed, "*") && (ext == ".js" || ext == ".ts" || ext == ".jsx" || ext == ".tsx" || ext == ".go" || ext == ".java") {
+			cleanText = strings.TrimPrefix(trimmed, "*")
+			hasComment = true
+		}
+
+		if hasComment {
+			cleanText = strings.TrimSpace(cleanText)
+			upperClean := strings.ToUpper(cleanText)
+			prefixes := []string{"NOTE:", "WHY:", "HACK:", "TODO:", "FIXME:"}
+			hasPrefix := false
+			for _, p := range prefixes {
+				if strings.HasPrefix(upperClean, p) {
+					hasPrefix = true
+					break
+				}
+			}
+			if hasPrefix {
+				addSymbol(cleanText, "rationale", false, i+1)
+			}
+		}
+	}
+
 	return symbols, imports, nil
 }
 

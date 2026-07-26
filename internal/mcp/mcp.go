@@ -1224,13 +1224,36 @@ var (
 
 		// Neighbors
 		sb.WriteString("\n### 🔗 Immediate Neighbors:\n")
-		if len(g.EdgesByTarget[nID]) > 0 {
-			sb.WriteString("**Dependents (Who imports/calls this):**\n")
-			for _, e := range g.EdgesByTarget[nID] {
+		var dependents []string
+		var rationales []string
+		for _, e := range g.EdgesByTarget[nID] {
+			if e.RelationType == "rationale_for" {
 				srcNode := g.Nodes[e.SourceID]
 				if srcNode != nil {
-					sb.WriteString(fmt.Sprintf("- `%s` (relation: `%s`)\n", srcNode.Label, e.RelationType))
+					lineVal := 0
+					if srcNode.Metadata != nil {
+						if l, ok := srcNode.Metadata["line"]; ok {
+							if lf, ok := l.(float64); ok {
+								lineVal = int(lf)
+							} else if li, ok := l.(int); ok {
+								lineVal = li
+							}
+						}
+					}
+					rationales = append(rationales, fmt.Sprintf("- **Line %d:** `%s`", lineVal, srcNode.Label))
 				}
+			} else {
+				srcNode := g.Nodes[e.SourceID]
+				if srcNode != nil {
+					dependents = append(dependents, fmt.Sprintf("- `%s` (relation: `%s`)", srcNode.Label, e.RelationType))
+				}
+			}
+		}
+
+		if len(dependents) > 0 {
+			sb.WriteString("**Dependents (Who imports/calls this):**\n")
+			for _, dep := range dependents {
+				sb.WriteString(dep + "\n")
 			}
 		} else {
 			sb.WriteString("**Dependents:** None.\n")
@@ -1246,6 +1269,13 @@ var (
 			}
 		} else {
 			sb.WriteString("\n**Dependencies:** None.\n")
+		}
+
+		if len(rationales) > 0 {
+			sb.WriteString("\n### 💡 Code Rationales (Empirical Decisions in Comments):\n")
+			for _, r := range rationales {
+				sb.WriteString(r + "\n")
+			}
 		}
 
 		// Suggested Questions

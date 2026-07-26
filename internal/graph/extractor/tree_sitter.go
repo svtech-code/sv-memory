@@ -60,6 +60,35 @@ func (t *TreeSitterExtractor) Extract(content []byte, relPath, ext string) ([]Sy
 		return t.regexFallback.Extract(content, relPath, ext)
 	}
 
+	// Global rationale comment extraction pass
+	traverse(root, func(n *gotreesitter.Node) {
+		nodeType := n.Type(lang)
+		if strings.Contains(nodeType, "comment") {
+			text := n.Text(content)
+			cleanText := strings.TrimLeft(text, "/#* \t")
+			cleanText = strings.TrimRight(cleanText, "*/ \t\r\n")
+
+			upperClean := strings.ToUpper(cleanText)
+			prefixes := []string{"NOTE:", "WHY:", "HACK:", "TODO:", "FIXME:"}
+			hasPrefix := false
+			for _, p := range prefixes {
+				if strings.HasPrefix(upperClean, p) {
+					hasPrefix = true
+					break
+				}
+			}
+
+			if hasPrefix {
+				symbols = append(symbols, Symbol{
+					Name:     cleanText,
+					Type:     "rationale",
+					Line:     int(n.StartPoint().Row) + 1,
+					Exported: false,
+				})
+			}
+		}
+	})
+
 	return symbols, imports, nil
 }
 

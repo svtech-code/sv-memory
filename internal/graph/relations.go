@@ -451,3 +451,85 @@ func resolveMarkdownLink(projPath, sourcePath, target string, nodes map[string]*
 
 	return "", false
 }
+
+// extractRationaleEdges maps each rationale node to its containing function, class, or file.
+func extractRationaleEdges(nodes map[string]*Node) []*Edge {
+	var edges []*Edge
+
+	fileSymbols := make(map[string][]*Node)
+	for _, node := range nodes {
+		if node.Type == "function" || node.Type == "class" {
+			fileSymbols[node.Path] = append(fileSymbols[node.Path], node)
+		}
+	}
+
+	for filePath := range fileSymbols {
+		sortSymbolsByLine(fileSymbols[filePath])
+	}
+
+	for _, node := range nodes {
+		if node.Type != "rationale" {
+			continue
+		}
+
+		lineVal, _ := node.Metadata["line"]
+		var line int
+		switch v := lineVal.(type) {
+		case float64:
+			line = int(v)
+		case int:
+			line = v
+		case int64:
+			line = int(v)
+		}
+
+		targetID := node.Path
+		symbols := fileSymbols[node.Path]
+		var bestTarget *Node
+		for i, sym := range symbols {
+			symLineVal, _ := sym.Metadata["line"]
+			var symLine int
+			switch v := symLineVal.(type) {
+			case float64:
+				symLine = int(v)
+			case int:
+				symLine = v
+			case int64:
+				symLine = int(v)
+			}
+
+			if symLine <= line {
+				if i == len(symbols)-1 {
+					bestTarget = sym
+				} else {
+					nextSymLineVal, _ := symbols[i+1].Metadata["line"]
+					var nextSymLine int
+					switch v := nextSymLineVal.(type) {
+					case float64:
+						nextSymLine = int(v)
+					case int:
+						nextSymLine = v
+					case int64:
+						nextSymLine = int(v)
+					}
+					if line < nextSymLine {
+						bestTarget = sym
+					}
+				}
+			}
+		}
+
+		if bestTarget != nil {
+			targetID = bestTarget.ID
+		}
+
+		edges = append(edges, &Edge{
+			ID:           node.ID + "->rationale_for->" + targetID,
+			SourceID:     node.ID,
+			TargetID:     targetID,
+			RelationType: "rationale_for",
+		})
+	}
+
+	return edges
+}

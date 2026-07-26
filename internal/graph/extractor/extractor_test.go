@@ -216,3 +216,46 @@ func TestTreeSitterExtractor_Css(t *testing.T) {
 	}
 }
 
+func TestTreeSitterExtractor_Rationale(t *testing.T) {
+	ext := NewTreeSitterExtractor()
+	src := []byte(`package main
+
+// NOTE: this is a special note rationale
+// why: to test why rationales work
+// HACK: dynamic bypass logic
+// TODO: clean up code
+// regular comment that should be ignored
+func main() {}
+`)
+
+	symbols, _, err := ext.Extract(src, "main.go", ".go")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expectedPrefixes := map[string]bool{
+		"NOTE: this is a special note rationale": true,
+		"why: to test why rationales work":       true,
+		"HACK: dynamic bypass logic":             true,
+		"TODO: clean up code":                    true,
+	}
+
+	foundRationales := make(map[string]bool)
+	for _, sym := range symbols {
+		if sym.Type == "rationale" {
+			foundRationales[sym.Name] = true
+		}
+	}
+
+	for exp := range expectedPrefixes {
+		if !foundRationales[exp] {
+			t.Errorf("expected rationale %q not found", exp)
+		}
+	}
+
+	if foundRationales["regular comment that should be ignored"] {
+		t.Error("unexpected regular comment extracted as rationale")
+	}
+}
+
+

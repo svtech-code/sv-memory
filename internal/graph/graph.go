@@ -88,6 +88,9 @@ func parseSymbols(relPath, ext string, content []byte) ([]*Node, map[string]inte
 	var symbolNodes []*Node
 	for _, sym := range symbols {
 		id := relPath + ":" + sym.Name
+		if sym.Type == "rationale" {
+			id = fmt.Sprintf("%s:rationale:%d", relPath, sym.Line)
+		}
 		symbolNodes = append(symbolNodes, &schema.Node{
 			ID:    id,
 			Type:  sym.Type,

@@ -869,7 +869,70 @@ See also the [specifications link](specs/specification.md).
 	}
 }
 
+func TestSyncGraphWithRationales(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-graph-rationales-test")
+	if err != nil {
+		t.Fatalf("failed to create temp workspace: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
 
+	dbPath := filepath.Join(tempDir, "test_rationales.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-rationales-test"
+	err = db.RegisterProject(database, projectID, "Rationales Test Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	goCode := `package main
+
+func processData() {
+	// WHY: this algorithm requires linear time complexity
+	println("processing")
+}
+`
+	err = os.WriteFile(filepath.Join(tempDir, "main.go"), []byte(goCode), 0644)
+	if err != nil {
+		t.Fatalf("failed writing main.go: %v", err)
+	}
+
+	// Run SyncGraph
+	err = SyncGraph(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("SyncGraph failed: %v", err)
+	}
+
+	// Verify rationale node exists
+	var count int
+	err = database.QueryRow(`
+		SELECT COUNT(*) FROM graph_nodes 
+		WHERE project_id = ? AND node_type = 'rationale' AND label LIKE '%WHY: this algorithm%'
+	`, projectID).Scan(&count)
+	if err != nil {
+		t.Fatalf("failed checking rationale node: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1 rationale node, got %d", count)
+	}
+
+	// Verify rationale_for edge exists pointing to main.go:processData
+	var targetID string
+	err = database.QueryRow(`
+		SELECT target_id FROM graph_edges 
+		WHERE project_id = ? AND relation_type = 'rationale_for' AND source_id LIKE 'main.go:rationale:%'
+	`, projectID).Scan(&targetID)
+	if err != nil {
+		t.Fatalf("failed querying rationale_for edge: %v", err)
+	}
+	if targetID != "main.go:processData" {
+		t.Errorf("expected edge target to be 'main.go:processData', got %q", targetID)
+	}
+}
 
 func stringSliceEqual(a, b []string) bool {
 	if len(a) != len(b) {

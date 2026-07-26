@@ -612,13 +612,36 @@ var graphExplainCmd = &cobra.Command{
 			fmt.Println("🟢 Isolated Node")
 		}
 
-		if len(g.EdgesByTarget[nodeID]) > 0 {
-			fmt.Println("\nDependents (Who imports/calls this):")
-			for _, e := range g.EdgesByTarget[nodeID] {
+		var dependents []string
+		var rationales []string
+		for _, e := range g.EdgesByTarget[nodeID] {
+			if e.RelationType == "rationale_for" {
 				src := g.Nodes[e.SourceID]
 				if src != nil {
-					fmt.Printf("  - %s (%s)\n", src.Label, e.RelationType)
+					lineVal := 0
+					if src.Metadata != nil {
+						if l, ok := src.Metadata["line"]; ok {
+							if lf, ok := l.(float64); ok {
+								lineVal = int(lf)
+							} else if li, ok := l.(int); ok {
+								lineVal = li
+							}
+						}
+					}
+					rationales = append(rationales, fmt.Sprintf("  - Line %d: %s", lineVal, src.Label))
 				}
+			} else {
+				src := g.Nodes[e.SourceID]
+				if src != nil {
+					dependents = append(dependents, fmt.Sprintf("  - %s (%s)", src.Label, e.RelationType))
+				}
+			}
+		}
+
+		if len(dependents) > 0 {
+			fmt.Println("\nDependents (Who imports/calls this):")
+			for _, dep := range dependents {
+				fmt.Println(dep)
 			}
 		}
 		if len(g.EdgesBySource[nodeID]) > 0 {
@@ -628,6 +651,13 @@ var graphExplainCmd = &cobra.Command{
 				if tgt != nil {
 					fmt.Printf("  - %s (%s)\n", tgt.Label, e.RelationType)
 				}
+			}
+		}
+
+		if len(rationales) > 0 {
+			fmt.Println("\n💡 Code Rationales (Empirical Decisions in Comments):")
+			for _, r := range rationales {
+				fmt.Println(r)
 			}
 		}
 		return nil
