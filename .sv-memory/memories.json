@@ -187,5 +187,24 @@
     "normalized_hash": "debfe6a154f811eef4a4ff784d01168210ef66153b2ce44400896dfdbad3715a",
     "deleted_at": "0001-01-01T00:00:00Z",
     "created_at": "2026-07-26T05:11:07.754722-04:00"
+  },
+  {
+    "id": "6ec1e523",
+    "project_id": "ce22c23ac33d7a36",
+    "category": "journal",
+    "what": "Engram parity: 7 fases completadas — 18 MCP tools, 9 nuevos CLI commands",
+    "why": "Se completaron las 7 fases planificadas para alcanzar paridad de features con Engram (excluyendo TUI y cloud). Esto incluye conflict surfacing on save, stats, diagnose, export/import JSON, current_project tool, projects management, y delete con cascade.",
+    "learned": "sv-memory alcanzo 18 MCP tools y 9 CLI commands adicionales. El conflict surfacing usa FTS5 + Jaccard similarity (\u003e0.85) para detectar duplicados en sv_mem_save. El bug de last_seen_at NULL en SearchMemories quedo corregido. La FK cascade en soft-delete de proyecto requiere mantener el project row como shell.",
+    "git_branch": "main",
+    "git_commit": "a7a6c78",
+    "author": "Mario Sandoval (Sv Tech)",
+    "impact": "Paridad casi total con Engram en funcionalidad core: 18 MCP tools, CLI stats, diagnose (17 checks), export/import JSON, current_project, projects list/prune/consolidate, delete session/project con cascade soft/hard. Build clean, todos los tests pasan.",
+    "next_steps": "Opcional: cloud sync, TUI, semantic LLM-judge para conflictos, HTTP API con token auth. Sin prisa — el core funcional ya cubre todas las necesidades basicas.",
+    "topic_key": "journal/engram-parity-7-fases-completadas",
+    "revision_count": 1,
+    "last_seen_at": "0001-01-01T00:00:00Z",
+    "normalized_hash": "f384c697ae388655c74e054fd4046d7d589bb7dbe43f89c94b05ddca7c614501",
+    "deleted_at": "0001-01-01T00:00:00Z",
+    "created_at": "2026-07-26T11:33:45.277639-04:00"
   }
 ]

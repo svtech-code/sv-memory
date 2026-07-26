@@ -264,6 +264,104 @@ func TestExportImportJSON(t *testing.T) {
 	}
 }
 
+func TestDeleteSessionAndProject(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-delete-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_storage.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-delete"
+	err = db.RegisterProject(database, projectID, "Delete Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// Start a session
+	session, err := StartSession(database, projectID, "test", tempDir)
+	if err != nil {
+		t.Fatalf("failed starting session: %v", err)
+	}
+
+	// Save a memory associated with the session
+	_, err = SaveMemory(database, &Memory{
+		ID: "d-1", ProjectID: projectID, Category: "decision",
+		What: "Test", Why: "why", Learned: "l",
+		SessionID: session.ID, CreatedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("failed saving memory: %v", err)
+	}
+
+	// Test DeleteSession: should fail because memories are associated
+	err = DeleteSession(database, session.ID)
+	if err == nil {
+		t.Error("expected error deleting session with memories, got nil")
+	}
+
+	// Test DeleteProject soft
+	err = DeleteProject(database, projectID, false)
+	if err != nil {
+		t.Fatalf("DeleteProject soft failed: %v", err)
+	}
+
+	// Verify project still exists as shell
+	var count int
+	database.QueryRow("SELECT COUNT(*) FROM projects WHERE id=?", projectID).Scan(&count)
+	if count != 1 {
+		t.Error("expected project to remain as shell after soft delete")
+	}
+
+	// Verify memories are soft-deleted
+	database.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id=? AND deleted_at IS NULL", projectID).Scan(&count)
+	if count != 0 {
+		t.Errorf("expected 0 active memories, got %d", count)
+	}
+
+	// Check soft-deleted memories exist
+	database.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id=? AND deleted_at IS NOT NULL", projectID).Scan(&count)
+	if count != 1 {
+		t.Errorf("expected 1 soft-deleted memory, got %d", count)
+	}
+
+	// Verify sessions are deleted
+	database.QueryRow("SELECT COUNT(*) FROM sessions WHERE project_id=?", projectID).Scan(&count)
+	if count != 0 {
+		t.Errorf("expected 0 sessions after soft delete, got %d", count)
+	}
+
+	// Test hard delete with a new project
+	err = db.RegisterProject(database, "proj-hard", "Hard Delete Proj", filepath.Join(tempDir, "hard-path"))
+	if err != nil {
+		t.Fatalf("failed to register proj-hard: %v", err)
+	}
+
+	_, err = SaveMemory(database, &Memory{
+		ID: "hd-1", ProjectID: "proj-hard", Category: "decision",
+		What: "Hard", Why: "why", Learned: "l", CreatedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("failed saving memory in proj-hard: %v", err)
+	}
+
+	err = DeleteProject(database, "proj-hard", true)
+	if err != nil {
+		t.Fatalf("DeleteProject hard failed: %v", err)
+	}
+
+	database.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id='proj-hard'").Scan(&count)
+	if count != 0 {
+		t.Errorf("expected 0 memories after hard delete, got %d", count)
+	}
+}
+
 func TestMemoryCRUDAndFTS(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-mem-memory-test")
 	if err != nil {

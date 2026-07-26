@@ -1753,6 +1753,88 @@ func ReviewMemories(db *sql.DB, projectID string) ([]*MemoryReviewItem, error) {
 	return items, rows.Err()
 }
 
+// DeleteSession deletes a session by ID. It must have no associated memories.
+func DeleteSession(db *sql.DB, id string) error {
+	var memCount int
+	if err := db.QueryRow("SELECT COUNT(*) FROM memories WHERE session_id=?", id).Scan(&memCount); err != nil {
+		return fmt.Errorf("failed to check session memories: %w", err)
+	}
+	if memCount > 0 {
+		return fmt.Errorf("session %s has %d associated memories — delete them first", id, memCount)
+	}
+
+	result, err := db.Exec("DELETE FROM sessions WHERE id=?", id)
+	if err != nil {
+		return fmt.Errorf("failed to delete session: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("session %s not found", id)
+	}
+	return nil
+}
+
+// DeleteProject cascade-deletes a project. When hard=true, all associated
+// memories, sessions, relations, and graph data are permanently removed.
+// When hard=false, memories are soft-deleted (deleted_at set) and the
+// project row is removed — sessions and relations are cascade-deleted
+// by foreign key.
+func DeleteProject(db *sql.DB, id string, hard bool) error {
+	if hard {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+
+		if _, err := tx.Exec("DELETE FROM memory_relations WHERE project_id=?", id); err != nil {
+			return fmt.Errorf("failed to delete relations: %w", err)
+		}
+		if _, err := tx.Exec("DELETE FROM graph_edges WHERE project_id=?", id); err != nil {
+			return fmt.Errorf("failed to delete graph edges: %w", err)
+		}
+		if _, err := tx.Exec("DELETE FROM graph_nodes WHERE project_id=?", id); err != nil {
+			return fmt.Errorf("failed to delete graph nodes: %w", err)
+		}
+		if _, err := tx.Exec("DELETE FROM graph_files_meta WHERE project_id=?", id); err != nil {
+			return fmt.Errorf("failed to delete file meta: %w", err)
+		}
+		if _, err := tx.Exec("DELETE FROM sessions WHERE project_id=?", id); err != nil {
+			return fmt.Errorf("failed to delete sessions: %w", err)
+		}
+		if _, err := tx.Exec("DELETE FROM memories WHERE project_id=?", id); err != nil {
+			return fmt.Errorf("failed to delete memories: %w", err)
+		}
+		if _, err := tx.Exec("DELETE FROM projects WHERE id=?", id); err != nil {
+			return fmt.Errorf("failed to delete project: %w", err)
+		}
+
+		return tx.Commit()
+	}
+
+	// Soft: mark all non-deleted memories as deleted, remove sessions and
+	// relations, but keep the project row (shell) so foreign key references
+	// from graph data remain valid.
+	if _, err := db.Exec("UPDATE memories SET deleted_at=? WHERE project_id=? AND deleted_at IS NULL", time.Now(), id); err != nil {
+		return fmt.Errorf("failed to soft-delete memories: %w", err)
+	}
+	if _, err := db.Exec("DELETE FROM sessions WHERE project_id=?", id); err != nil {
+		return fmt.Errorf("failed to delete sessions: %w", err)
+	}
+	if _, err := db.Exec("DELETE FROM memory_relations WHERE project_id=?", id); err != nil {
+		return fmt.Errorf("failed to delete relations: %w", err)
+	}
+	// Verify project exists
+	var n int
+	if err := db.QueryRow("SELECT COUNT(*) FROM projects WHERE id=?", id).Scan(&n); err != nil {
+		return fmt.Errorf("failed to check project: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("project %s not found", id)
+	}
+	return nil
+}
+
 // DeleteMemory performs a soft or hard delete of a memory.
 // Soft: sets deleted_at to NOW, excluded from search results but recoverable.
 // Hard: removes the row permanently.
