@@ -55,6 +55,224 @@ type Memory struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
+// Session represents a coding session that groups multiple memories together.
+// Sessions enable context recovery after compaction via sv_mem_context.
+type Session struct {
+	ID        string    `json:"id"`
+	ProjectID string    `json:"project_id"`
+	Goal      string    `json:"goal,omitempty"`
+	Directory string    `json:"directory,omitempty"`
+	StartedAt time.Time `json:"started_at"`
+	EndedAt   time.Time `json:"ended_at,omitempty"`
+	Summary   string    `json:"summary,omitempty"`
+	Status    string    `json:"status"` // 'active' | 'completed'
+}
+
+// StartSession creates a new active session for the given project.
+func StartSession(db *sql.DB, projectID, goal, directory string) (*Session, error) {
+	id := uuid.New().String()[:8]
+	now := time.Now()
+	_, err := db.Exec(
+		"INSERT INTO sessions (id, project_id, goal, directory, started_at, status) VALUES (?, ?, ?, ?, ?, 'active')",
+		id, projectID, goal, directory, now)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start session: %w", err)
+	}
+	return &Session{
+		ID:        id,
+		ProjectID: projectID,
+		Goal:      goal,
+		Directory: directory,
+		StartedAt: now,
+		Status:    "active",
+	}, nil
+}
+
+// EndSession marks a session as completed with an optional summary.
+func EndSession(db *sql.DB, id, summary string) error {
+	result, err := db.Exec(
+		"UPDATE sessions SET ended_at = ?, summary = ?, status = 'completed' WHERE id = ? AND status = 'active'",
+		time.Now(), summary, id)
+	if err != nil {
+		return fmt.Errorf("failed to end session: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("session %s not found or already completed", id)
+	}
+	return nil
+}
+
+// SaveSessionSummary updates the goal and summary fields of a session.
+func SaveSessionSummary(db *sql.DB, id, goal, discoveries, accomplished, nextSteps, files string) error {
+	summary := fmt.Sprintf("Goal: %s\nDiscoveries: %s\nAccomplished: %s\nNext Steps: %s\nFiles: %s",
+		goal, discoveries, accomplished, nextSteps, files)
+	result, err := db.Exec("UPDATE sessions SET goal = ?, summary = ? WHERE id = ?", goal, summary, id)
+	if err != nil {
+		return fmt.Errorf("failed to save session summary: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("session %s not found", id)
+	}
+	return nil
+}
+
+// GetSession retrieves a single session by ID.
+func GetSession(db *sql.DB, id string) (*Session, error) {
+	row := db.QueryRow("SELECT id, project_id, goal, directory, started_at, ended_at, summary, status FROM sessions WHERE id = ?", id)
+	var s Session
+	var startedAtStr, endedAtStr string
+	var goal, directory, summary sql.NullString
+	err := row.Scan(&s.ID, &s.ProjectID, &goal, &directory, &startedAtStr, &endedAtStr, &summary, &s.Status)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get session: %w", err)
+	}
+	s.Goal = goal.String
+	s.Directory = directory.String
+	s.Summary = summary.String
+	if t, err := parseTime(startedAtStr); err == nil {
+		s.StartedAt = t
+	}
+	if endedAtStr != "" {
+		if t, err := parseTime(endedAtStr); err == nil {
+			s.EndedAt = t
+		}
+	}
+	return &s, nil
+}
+
+// GetActiveSession returns the currently active session (status='active') for a
+// project, or nil if none exists. There should be at most one active session.
+func GetActiveSession(db *sql.DB, projectID string) (*Session, error) {
+	row := db.QueryRow("SELECT id, project_id, goal, directory, started_at, ended_at, summary, status FROM sessions WHERE project_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1", projectID)
+	var s Session
+	var startedAtStr, endedAtStr string
+	var goal, directory, summary sql.NullString
+	err := row.Scan(&s.ID, &s.ProjectID, &goal, &directory, &startedAtStr, &endedAtStr, &summary, &s.Status)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get active session: %w", err)
+	}
+	s.Goal = goal.String
+	s.Directory = directory.String
+	s.Summary = summary.String
+	if t, err := parseTime(startedAtStr); err == nil {
+		s.StartedAt = t
+	}
+	return &s, nil
+}
+
+// GetLastSession returns the most recently completed session for the project.
+func GetLastSession(db *sql.DB, projectID string) (*Session, error) {
+	row := db.QueryRow("SELECT id, project_id, goal, directory, started_at, ended_at, summary, status FROM sessions WHERE project_id = ? AND status = 'completed' ORDER BY ended_at DESC LIMIT 1", projectID)
+	var s Session
+	var startedAtStr, endedAtStr string
+	var goal, directory, summary sql.NullString
+	err := row.Scan(&s.ID, &s.ProjectID, &goal, &directory, &startedAtStr, &endedAtStr, &summary, &s.Status)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get last session: %w", err)
+	}
+	s.Goal = goal.String
+	s.Directory = directory.String
+	s.Summary = summary.String
+	if t, err := parseTime(startedAtStr); err == nil {
+		s.StartedAt = t
+	}
+	if endedAtStr != "" {
+		if t, err := parseTime(endedAtStr); err == nil {
+			s.EndedAt = t
+		}
+	}
+	return &s, nil
+}
+
+// GetSessionContext returns a formatted Markdown summary of the last completed
+// session and its associated memories. This is designed for post-compaction
+// context recovery: the agent calls sv_mem_context to quickly resume work.
+func GetSessionContext(db *sql.DB, projectID string) (string, error) {
+	session, err := GetLastSession(db, projectID)
+	if err != nil {
+		return "", err
+	}
+	if session == nil {
+		// Fall back to most recent memories if no session exists
+		mems, err := SearchMemories(db, projectID, "", "", 5)
+		if err != nil {
+			return "", err
+		}
+		if len(mems) == 0 {
+			return "No previous session context found for this project.", nil
+		}
+		var sb strings.Builder
+		sb.WriteString("No recorded sessions. Most recent memories:\n\n")
+		for _, m := range mems {
+			sb.WriteString(fmt.Sprintf("- [%s] **%s** (ID: %s, %s)\n",
+				strings.ToUpper(m.Category), m.What, m.ID, m.CreatedAt.Format("2006-01-02")))
+		}
+		return sb.String(), nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("## Previous Session Context\n\n"))
+	sb.WriteString(fmt.Sprintf("**Session ID:** %s\n", session.ID))
+	sb.WriteString(fmt.Sprintf("**Started:** %s\n", session.StartedAt.Format("2006-01-02 15:04")))
+	if !session.EndedAt.IsZero() {
+		sb.WriteString(fmt.Sprintf("**Ended:** %s\n", session.EndedAt.Format("2006-01-02 15:04")))
+	}
+	if session.Goal != "" {
+		sb.WriteString(fmt.Sprintf("**Goal:** %s\n", session.Goal))
+	}
+	if session.Summary != "" {
+		sb.WriteString(fmt.Sprintf("**Summary:** %s\n", session.Summary))
+	}
+
+	// Fetch memories from that session
+	mems, err := SearchMemoriesBySession(db, projectID, session.ID, 10)
+	if err != nil {
+		return "", err
+	}
+	if len(mems) > 0 {
+		sb.WriteString(fmt.Sprintf("\n**Memories saved (%d):**\n", len(mems)))
+		for _, m := range mems {
+			sb.WriteString(fmt.Sprintf("- [%s] **%s** (ID: %s)\n",
+				strings.ToUpper(m.Category), m.What, m.ID))
+		}
+	}
+
+	return sb.String(), nil
+}
+
+// SearchMemoriesBySession returns memories associated with a specific session.
+func SearchMemoriesBySession(db *sql.DB, projectID, sessionID string, limit int) ([]*Memory, error) {
+	query := `
+	SELECT id, project_id, category, what, why, where_path, learned,
+		git_branch, git_commit, author, impact, errors_faced, next_steps,
+		session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at
+	FROM memories WHERE project_id = ? AND session_id = ?
+	ORDER BY created_at ASC`
+	var args []interface{}
+	args = append(args, projectID, sessionID)
+	if limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, limit)
+	}
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search memories by session: %w", err)
+	}
+	defer rows.Close()
+	return scanMemories(rows)
+}
+
 // computeHash returns a SHA256 hex digest of the concatenated what/why/learned fields.
 func computeHash(what, why, learned string) string {
 	data := what + "\x00" + why + "\x00" + learned

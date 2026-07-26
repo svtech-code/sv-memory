@@ -105,6 +105,18 @@ CREATE TABLE IF NOT EXISTS graph_files_meta (
     FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    goal TEXT,
+    directory TEXT,
+    started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    ended_at DATETIME,
+    summary TEXT,
+    status TEXT DEFAULT 'active',
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
 -- Performance indexes:
 -- graph_edges are queried by (project_id, source_id) and (project_id, target_id)
 -- during BFS in querySubGraph. Without these, SQLite does a full table scan per hop.
@@ -316,6 +328,7 @@ func applyMigrations(db *sql.DB) error {
 	postIndexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_memories_topic ON memories(project_id, topic_key);",
 		"CREATE INDEX IF NOT EXISTS idx_memories_hash ON memories(project_id, normalized_hash);",
+		"CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id, started_at DESC);",
 	}
 	for _, idx := range postIndexes {
 		if _, err := db.Exec(idx); err != nil {

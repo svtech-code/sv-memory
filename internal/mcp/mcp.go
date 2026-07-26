@@ -156,6 +156,13 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		topicKey := req.GetString("topic_key", "")
 		sessionID := req.GetString("session_id", "")
 
+		// Auto-associate with active session if no explicit session_id provided
+		if sessionID == "" {
+			if active, err := memory.GetActiveSession(pool.Writer, cfg.ProjectID); err == nil && active != nil {
+				sessionID = active.ID
+			}
+		}
+
 		mem := &memory.Memory{
 			ProjectID:   cfg.ProjectID,
 			Category:    category,
@@ -224,7 +231,89 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		return mcp.NewToolResultText(fmt.Sprintf("Suggested topic_key: `%s`\nUse this key with sv_mem_save(topic_key=\"%s\") to enable upsert semantics.", key, key)), nil
 	})
 
-	// 3. Tool: sv_mem_search
+	// 3. Tool: sv_mem_session_start
+	sessionStartTool := mcp.NewTool("sv_mem_session_start",
+		mcp.WithDescription("Register the start of a new coding session. Call this at the beginning of a work session to enable session grouping and post-compaction context recovery."),
+		mcp.WithString("goal", mcp.Description("Optional goal or objective for this session")),
+		mcp.WithString("directory", mcp.Description("Optional working directory (auto-detected from repo if omitted)")),
+	)
+
+	s.AddTool(sessionStartTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		goal := req.GetString("goal", "")
+		dir := req.GetString("directory", "")
+		if dir == "" {
+			dir = cfg.ProjPath
+		}
+		session, err := memory.StartSession(pool.Writer, cfg.ProjectID, goal, dir)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to start session: %v", err)), nil
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("Session started (ID: %s). Use sv_mem_save with session_id=\"%s\" to associate memories, then sv_mem_session_end to close.", session.ID, session.ID)), nil
+	})
+
+	// 4. Tool: sv_mem_session_end
+	sessionEndTool := mcp.NewTool("sv_mem_session_end",
+		mcp.WithDescription("End an active coding session with a summary. Call this before finishing a work session to enable context recovery via sv_mem_context."),
+		mcp.WithString("session_id", mcp.Required(), mcp.Description("The session ID to end")),
+		mcp.WithString("summary", mcp.Description("Optional summary of what was accomplished")),
+	)
+
+	s.AddTool(sessionEndTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		sessionID, err := req.RequireString("session_id")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: session_id"), nil
+		}
+		summary := req.GetString("summary", "")
+		if err := memory.EndSession(pool.Writer, sessionID, summary); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to end session: %v", err)), nil
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("Session %s ended successfully.", sessionID)), nil
+	})
+
+	// 5. Tool: sv_mem_session_summary
+	sessionSummaryTool := mcp.NewTool("sv_mem_session_summary",
+		mcp.WithDescription("Save a structured summary for a session. Call before sv_mem_session_end to record goal, discoveries, accomplished work, next steps, and relevant files."),
+		mcp.WithString("session_id", mcp.Required(), mcp.Description("Session ID to associate the summary with")),
+		mcp.WithString("goal", mcp.Description("Original goal or objective of the session")),
+		mcp.WithString("discoveries", mcp.Description("Key discoveries or findings during the session")),
+		mcp.WithString("accomplished", mcp.Description("What was accomplished during the session")),
+		mcp.WithString("next_steps", mcp.Description("Next steps or pending items")),
+		mcp.WithString("files", mcp.Description("Relevant files modified or created")),
+	)
+
+	s.AddTool(sessionSummaryTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		sessionID, err := req.RequireString("session_id")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: session_id"), nil
+		}
+		goal := req.GetString("goal", "")
+		discoveries := req.GetString("discoveries", "")
+		accomplished := req.GetString("accomplished", "")
+		nextSteps := req.GetString("next_steps", "")
+		files := req.GetString("files", "")
+		if err := memory.SaveSessionSummary(pool.Writer, sessionID, goal, discoveries, accomplished, nextSteps, files); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to save session summary: %v", err)), nil
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("Session summary saved for session %s.", sessionID)), nil
+	})
+
+	// 6. Tool: sv_mem_context
+	contextTool := mcp.NewTool("sv_mem_context",
+		mcp.WithDescription("Recover context from the last completed session. Call this after a compaction or context reset to resume work. Returns the last session's goal, summary, and associated memories."),
+		mcp.WithString("limit", mcp.Description("Optional limit of memories to include (default '10')")),
+	)
+
+	s.AddTool(contextTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		startQuery := time.Now()
+		contextStr, err := memory.GetSessionContext(pool.Reader, cfg.ProjectID)
+		debugLog("mem_context took %s", time.Since(startQuery))
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to get session context: %v", err)), nil
+		}
+		return mcp.NewToolResultText(contextStr), nil
+	})
+
+	// 7. Tool: sv_mem_search
 	searchTool := mcp.NewTool("sv_mem_search",
 		mcp.WithDescription("Query the historical project decisions, architectural rules, and past bugfixes using keyword/FTS search."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("The keyword or phrase to search for")),
