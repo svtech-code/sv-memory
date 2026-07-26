@@ -196,6 +196,7 @@ func parseSymbols(relPath, ext string, content []byte) ([]*Node, map[string]inte
 }
 
 func findLineNumber(lines []string, substr string) int {
+	substr = strings.TrimSpace(substr)
 	for i, line := range lines {
 		if strings.Contains(line, substr) {
 			return i + 1
@@ -772,6 +773,12 @@ func syncGraphFull(db *sql.DB, projectID string, projPath string) error {
 		return err
 	}
 
+	// Phase 2: Extract function and class calls
+	callEdges := extractCallEdges(projPath, wr.nodes)
+	if err := bulkInsertEdges(tx, projectID, callEdges); err != nil {
+		return err
+	}
+
 	// Phase 1: Unify code graph with memories
 	if err := syncMemoriesToGraph(tx, projectID); err != nil {
 		return fmt.Errorf("failed syncing memories to graph: %w", err)
@@ -838,7 +845,7 @@ func trySyncGraphIncremental(db *sql.DB, projectID string, projPath string) (boo
 
 	// 1. Remove deleted files's nodes and edges (including child symbols).
 	for _, p := range deleted {
-		if _, e := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND (source_id = ? OR target_id = ?)", projectID, p, p); e != nil {
+		if _, e := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND (source_id = ? OR source_id LIKE ? OR target_id = ? OR target_id LIKE ?)", projectID, p, p+":%", p, p+":%"); e != nil {
 			return false, fmt.Errorf("failed deleting edges for deleted file %s: %w", p, e)
 		}
 		if _, e := tx.Exec("DELETE FROM graph_nodes WHERE project_id = ? AND (id = ? OR id LIKE ?)", projectID, p, p+":%"); e != nil {
@@ -851,7 +858,7 @@ func trySyncGraphIncremental(db *sql.DB, projectID string, projPath string) (boo
 
 	// 2. Remove old edges and child nodes for changed files.
 	for _, p := range toParse {
-		if _, e := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND source_id = ?", projectID, p); e != nil {
+		if _, e := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND (source_id = ? OR source_id LIKE ?)", projectID, p, p+":%"); e != nil {
 			return false, fmt.Errorf("failed deleting edges for changed file %s: %w", p, e)
 		}
 		// Remove stale child symbols (function/class nodes) that will be
@@ -921,6 +928,15 @@ func trySyncGraphIncremental(db *sql.DB, projectID string, projPath string) (boo
 	}
 	if err := syncMemoriesToGraph(tx, projectID); err != nil {
 		return false, fmt.Errorf("failed syncing memories to graph: %w", err)
+	}
+
+	// Phase 2: Extract and sync function and class calls (re-create all calls edges)
+	if _, err := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND relation_type = 'calls'", projectID); err != nil {
+		return false, fmt.Errorf("failed deleting old call edges: %w", err)
+	}
+	callEdges := extractCallEdges(projPath, wr.nodes)
+	if err := bulkInsertEdges(tx, projectID, callEdges); err != nil {
+		return false, err
 	}
 
 	return true, tx.Commit()
@@ -1215,4 +1231,183 @@ func syncMemoriesToGraph(tx *sql.Tx, projectID string) error {
 	}
 
 	return nil
+}
+
+// extractCallEdges identifies call relationships (functions calling other functions/classes)
+// within the project by scanning function body source code.
+func extractCallEdges(projPath string, nodes map[string]*Node) []*Edge {
+	var edges []*Edge
+
+	langSymbols := make(map[string][]*Node)
+	for _, node := range nodes {
+		if node.Type == "function" || node.Type == "class" {
+			ext := strings.ToLower(filepath.Ext(node.Path))
+			lang := getLanguageGroup(ext)
+			if lang != "" {
+				langSymbols[lang] = append(langSymbols[lang], node)
+			}
+		}
+	}
+
+	fileSymbols := make(map[string][]*Node)
+	for _, node := range nodes {
+		if node.Type == "function" || node.Type == "class" {
+			fileSymbols[node.Path] = append(fileSymbols[node.Path], node)
+		}
+	}
+
+	for filePath, symbols := range fileSymbols {
+		absPath := filepath.Join(projPath, filePath)
+		content, err := os.ReadFile(absPath)
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(string(content), "\n")
+		if len(lines) == 0 {
+			continue
+		}
+
+		sortSymbolsByLine(symbols)
+
+		ext := strings.ToLower(filepath.Ext(filePath))
+		lang := getLanguageGroup(ext)
+		if lang == "" {
+			continue
+		}
+		candidates := langSymbols[lang]
+
+		for idx, caller := range symbols {
+			startLine := getSymbolLine(caller)
+			if startLine <= 0 {
+				startLine = 1
+			}
+
+			endLine := len(lines)
+			if idx+1 < len(symbols) {
+				nextLine := getSymbolLine(symbols[idx+1])
+				if nextLine > startLine {
+					endLine = nextLine - 1
+				}
+			}
+
+			if startLine > len(lines) {
+				continue
+			}
+			if endLine > len(lines) {
+				endLine = len(lines)
+			}
+
+			bodyLines := lines[startLine-1 : endLine]
+			bodyText := strings.Join(bodyLines, "\n")
+
+			words := tokenizeText(bodyText)
+
+			for _, callee := range candidates {
+				if callee.ID == caller.ID {
+					continue
+				}
+
+				if relLine, exists := words[callee.Label]; exists {
+					absoluteLine := startLine + relLine - 1
+					sourceLoc := fmt.Sprintf("L%d", absoluteLine)
+
+					edgeID := fmt.Sprintf("%s-%s-calls", caller.ID, callee.ID)
+					edges = append(edges, &Edge{
+						ID:             edgeID,
+						SourceID:       caller.ID,
+						TargetID:       callee.ID,
+						RelationType:   "calls",
+						Confidence:     "INFERRED",
+						SourceLocation: sourceLoc,
+					})
+				}
+			}
+		}
+	}
+
+	return edges
+}
+
+func getLanguageGroup(ext string) string {
+	switch ext {
+	case ".go":
+		return "go"
+	case ".py":
+		return "python"
+	case ".js", ".jsx", ".ts", ".tsx", ".astro", ".vue", ".svelte":
+		return "js"
+	case ".php":
+		return "php"
+	case ".css":
+		return "css"
+	case ".sh":
+		return "bash"
+	case ".lua":
+		return "lua"
+	case ".rb":
+		return "ruby"
+	case ".rs":
+		return "rust"
+	case ".java":
+		return "java"
+	}
+	return ""
+}
+
+func sortSymbolsByLine(symbols []*Node) {
+	for i := 0; i < len(symbols); i++ {
+		for j := i + 1; j < len(symbols); j++ {
+			lineI := getSymbolLine(symbols[i])
+			lineJ := getSymbolLine(symbols[j])
+			if lineI > lineJ {
+				symbols[i], symbols[j] = symbols[j], symbols[i]
+			}
+		}
+	}
+}
+
+func getSymbolLine(n *Node) int {
+	if n.Metadata == nil {
+		return 0
+	}
+	if val, ok := n.Metadata["line"]; ok {
+		switch v := val.(type) {
+		case int:
+			return v
+		case float64:
+			return int(v)
+		case int64:
+			return int(v)
+		}
+	}
+	return 0
+}
+
+func tokenizeText(text string) map[string]int {
+	words := make(map[string]int)
+	var current strings.Builder
+	lines := strings.Split(text, "\n")
+	for lineIdx, line := range lines {
+		for _, r := range line {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+				current.WriteRune(r)
+			} else {
+				if current.Len() > 0 {
+					w := current.String()
+					if _, exists := words[w]; !exists {
+						words[w] = lineIdx + 1
+					}
+					current.Reset()
+				}
+			}
+		}
+		if current.Len() > 0 {
+			w := current.String()
+			if _, exists := words[w]; !exists {
+				words[w] = lineIdx + 1
+			}
+			current.Reset()
+		}
+	}
+	return words
 }

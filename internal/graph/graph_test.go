@@ -719,6 +719,76 @@ func TestSyncGraphWithMemories(t *testing.T) {
 	}
 }
 
+func TestSyncGraphWithCalls(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-graph-calls-test")
+	if err != nil {
+		t.Fatalf("failed to create temp workspace: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_calls.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-calls-test"
+	err = db.RegisterProject(database, projectID, "Calls Test Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// Create a mock Go file where one function calls another
+	goCode := `package main
+
+func callerFunc() {
+	helperFunc()
+}
+
+func helperFunc() {
+	println("hello")
+}
+`
+	err = os.WriteFile(filepath.Join(tempDir, "main.go"), []byte(goCode), 0644)
+	if err != nil {
+		t.Fatalf("failed writing main.go: %v", err)
+	}
+
+	// Run SyncGraph
+	err = SyncGraph(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("SyncGraph failed: %v", err)
+	}
+
+	// Verify that a calls edge exists from 'main.go:callerFunc' to 'main.go:helperFunc'
+	var sourceID, targetID, relType, sourceLoc string
+	err = database.QueryRow(`
+		SELECT source_id, target_id, relation_type, source_location 
+		FROM graph_edges 
+		WHERE project_id = ? AND relation_type = 'calls'
+	`, projectID).Scan(&sourceID, &targetID, &relType, &sourceLoc)
+	if err != nil {
+		t.Fatalf("failed to query calls edge: %v", err)
+	}
+
+	if sourceID != "main.go:callerFunc" {
+		t.Errorf("expected source_id to be 'main.go:callerFunc', got: %q", sourceID)
+	}
+	if targetID != "main.go:helperFunc" {
+		t.Errorf("expected target_id to be 'main.go:helperFunc', got: %q", targetID)
+	}
+	if relType != "calls" {
+		t.Errorf("expected relation_type to be 'calls', got: %q", relType)
+	}
+	// The call is on line 4 of main.go (relative to 1-based index)
+	if sourceLoc != "L4" {
+		t.Errorf("expected source_location to be 'L4', got: %q", sourceLoc)
+	}
+}
+
+
+
 func stringSliceEqual(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
