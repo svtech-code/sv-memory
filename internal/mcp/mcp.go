@@ -17,6 +17,7 @@ import (
 	"github.com/svtech/sv-memory/internal/db"
 	"github.com/svtech/sv-memory/internal/graph"
 	"github.com/svtech/sv-memory/internal/memory"
+	"github.com/spf13/viper"
 )
 
 // debugEnabled reports whether SV_MEMORY_DEBUG env var is set to a truthy value.
@@ -118,6 +119,9 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 			syncTimer.Stop()
 		}
 		syncTimer = time.AfterFunc(500*time.Millisecond, func() {
+			if !viper.GetBool("git_sync_enabled") {
+				return
+			}
 			startSync := time.Now()
 			if err := memory.SyncToGit(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
 				fmt.Fprintf(os.Stderr, "[sv-memory] syncToGit (debounced) failed: %v\n", err)
@@ -650,6 +654,11 @@ var (
 			return mcp.NewToolResultError(fmt.Sprintf("failed to review memories: %v", err)), nil
 		}
 
+		reviewLimit := viper.GetInt("default_review_limit")
+		if reviewLimit > 0 && len(items) > reviewLimit {
+			items = items[:reviewLimit]
+		}
+
 		stats, errStats := memory.ConflictStats(pool.Reader, cfg.ProjectID)
 		pendingConflicts := 0
 		if errStats == nil {
@@ -983,10 +992,12 @@ var (
 		case "scan":
 			applyStr := req.GetString("apply", "false")
 			apply := applyStr == "true"
-			thresholdStr := req.GetString("threshold", "0.45")
-			threshold := 0.45
-			if f, err := strconv.ParseFloat(thresholdStr, 64); err == nil {
-				threshold = f
+			thresholdStr := req.GetString("threshold", "")
+			threshold := viper.GetFloat64("conflict_threshold")
+			if thresholdStr != "" {
+				if f, err := strconv.ParseFloat(thresholdStr, 64); err == nil {
+					threshold = f
+				}
 			}
 			found, err := memory.ScanConflicts(pool.Writer, cfg.ProjectID, apply, 100, threshold)
 			if err != nil {

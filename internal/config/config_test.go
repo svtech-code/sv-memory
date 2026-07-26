@@ -80,3 +80,35 @@ func TestLoadConfig(t *testing.T) {
 		t.Error("expected DBPath to be populated")
 	}
 }
+
+func TestViperConfig(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-viper-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Clean up config file created during test
+	defer func() {
+		os.RemoveAll(filepath.Join(tempDir, ".sv-memory"))
+	}()
+
+	customDBPath := filepath.Join(tempDir, "custom_storage.db")
+
+	// Write config key to local path
+	err = WriteConfigKey(tempDir, "default_db_path", customDBPath, true)
+	if err != nil {
+		t.Fatalf("failed to write config key: %v", err)
+	}
+
+	// Load configuration
+	cfg, err := LoadConfig(tempDir)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	if cfg.DBPath != customDBPath {
+		t.Errorf("expected DBPath to be %s, got %s", customDBPath, cfg.DBPath)
+	}
+}
+

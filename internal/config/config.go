@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/spf13/viper"
 )
 
 // Config holds configuration parameters for sv-memory.
@@ -16,6 +18,87 @@ type Config struct {
 	ProjectID string
 	ProjName  string
 	ProjPath  string
+}
+
+// LoadGlobalAndLocalConfig loads default, global (~/.sv-memory/config.yaml),
+// and local (.sv-memory/config.yaml) configuration settings.
+func LoadGlobalAndLocalConfig(projPath string) {
+	viper.SetConfigType("yaml")
+
+	// Set default configuration values
+	viper.SetDefault("default_db_path", "")
+	viper.SetDefault("git_sync_enabled", true)
+	viper.SetDefault("conflict_threshold", 0.45)
+	viper.SetDefault("default_review_limit", 10)
+
+	// 1. Load global config: ~/.sv-memory/config.yaml
+	home, err := os.UserHomeDir()
+	if err == nil {
+		globalDir := filepath.Join(home, ".sv-memory")
+		_ = os.MkdirAll(globalDir, 0755)
+		globalPath := filepath.Join(globalDir, "config.yaml")
+
+		if _, errExists := os.Stat(globalPath); errExists == nil {
+			viper.SetConfigFile(globalPath)
+			_ = viper.ReadInConfig()
+		}
+	}
+
+	// 2. Merge local config if exists: <projPath>/.sv-memory/config.yaml
+	if projPath != "" {
+		localPath := filepath.Join(projPath, ".sv-memory", "config.yaml")
+		if _, errExists := os.Stat(localPath); errExists == nil {
+			localViper := viper.New()
+			localViper.SetConfigFile(localPath)
+			localViper.SetConfigType("yaml")
+			if errRead := localViper.ReadInConfig(); errRead == nil {
+				for _, key := range localViper.AllKeys() {
+					viper.Set(key, localViper.Get(key))
+				}
+			}
+		}
+	}
+}
+
+// WriteConfigKey sets and saves a configuration parameter in either the global
+// config file or the project-local config file.
+func WriteConfigKey(projPath string, key string, val interface{}, local bool) error {
+	var configPath string
+	if local {
+		if projPath == "" {
+			return fmt.Errorf("local configuration requires an active project path")
+		}
+		localDir := filepath.Join(projPath, ".sv-memory")
+		_ = os.MkdirAll(localDir, 0755)
+		configPath = filepath.Join(localDir, "config.yaml")
+	} else {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("could not resolve home directory: %w", err)
+		}
+		globalDir := filepath.Join(home, ".sv-memory")
+		_ = os.MkdirAll(globalDir, 0755)
+		configPath = filepath.Join(globalDir, "config.yaml")
+	}
+
+	// Read existing keys to avoid overwriting unrelated settings
+	v := viper.New()
+	v.SetConfigFile(configPath)
+	v.SetConfigType("yaml")
+	if _, err := os.Stat(configPath); err == nil {
+		_ = v.ReadInConfig()
+	}
+
+	v.Set(key, val)
+	
+	// WriteConfig might fail if the file is new, fallback to WriteConfigAs
+	if err := v.WriteConfig(); err != nil {
+		if errWrite := v.WriteConfigAs(configPath); errWrite != nil {
+			return fmt.Errorf("failed to save config to %s: %w", configPath, errWrite)
+		}
+	}
+
+	return nil
 }
 
 // GetDBPath returns the default global SQLite database path.
@@ -55,14 +138,28 @@ func GenerateProjectID(projPath string) string {
 
 // LoadConfig initializes the configuration for the current project.
 func LoadConfig(cwd string) (*Config, error) {
-	dbPath, err := GetDBPath()
+	gitRoot, err := GetGitRoot(cwd)
 	if err != nil {
 		return nil, err
 	}
 
-	gitRoot, err := GetGitRoot(cwd)
-	if err != nil {
-		return nil, err
+	// Load configuration file hierarchy using Viper
+	LoadGlobalAndLocalConfig(gitRoot)
+
+	dbPath := viper.GetString("default_db_path")
+	if dbPath == "" {
+		dbPath, err = GetDBPath()
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// Expand home directory if it starts with ~
+		if strings.HasPrefix(dbPath, "~") {
+			home, errHome := os.UserHomeDir()
+			if errHome == nil {
+				dbPath = filepath.Join(home, dbPath[1:])
+			}
+		}
 	}
 
 	projName := filepath.Base(gitRoot)
@@ -114,4 +211,3 @@ func GetGitAuthor(projPath string) string {
 	}
 	return strings.TrimSpace(string(out))
 }
-
