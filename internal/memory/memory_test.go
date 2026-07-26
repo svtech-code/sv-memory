@@ -10,6 +10,65 @@ import (
 	"github.com/svtech/sv-memory/internal/db"
 )
 
+func TestRunDiagnostics(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-diagnose-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_storage.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-diagnose"
+	err = db.RegisterProject(database, projectID, "Diagnose Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// Run diagnostics on a healthy setup
+	results := RunDiagnostics(database, projectID, tempDir, dbPath)
+	if len(results) == 0 {
+		t.Fatal("expected at least one diagnostic result")
+	}
+
+	var passCount, failCount int
+	for _, r := range results {
+		switch r.Status {
+		case "pass":
+			passCount++
+		case "fail":
+			failCount++
+			t.Errorf("unexpected failure: [%s] %s — %s", r.Check, r.Message, r.Status)
+		}
+	}
+	if passCount == 0 {
+		t.Error("expected at least one pass result")
+	}
+
+	// Ensure key checks pass
+	checkMap := make(map[string]string)
+	for _, r := range results {
+		checkMap[r.Check] = r.Status
+	}
+	expectedPass := []string{
+		"database_file", "database_connection",
+		"table_projects", "table_memories",
+		"table_sessions", "table_memory_relations",
+		"trigger_memories_ai", "trigger_memories_ad", "trigger_memories_au",
+		"project_registered", "fts5_healthy",
+	}
+	for _, chk := range expectedPass {
+		if checkMap[chk] != "pass" {
+			t.Errorf("expected check %s to pass, got %s", chk, checkMap[chk])
+		}
+	}
+}
+
 func TestMemoryCRUDAndFTS(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-mem-memory-test")
 	if err != nil {
