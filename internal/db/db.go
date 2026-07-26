@@ -117,6 +117,19 @@ CREATE TABLE IF NOT EXISTS sessions (
     FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
+-- Memory relations (conflict surfacing)
+CREATE TABLE IF NOT EXISTS memory_relations (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    relation_type TEXT NOT NULL, -- 'supersedes' | 'conflicts_with' | 'relates_to'
+    reason TEXT,
+    judged_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
 -- Performance indexes:
 -- graph_edges are queried by (project_id, source_id) and (project_id, target_id)
 -- during BFS in querySubGraph. Without these, SQLite does a full table scan per hop.
@@ -296,6 +309,7 @@ func applyMigrations(db *sql.DB) error {
 		"duplicate_count":  "ALTER TABLE memories ADD COLUMN duplicate_count INTEGER DEFAULT 0;",
 		"last_seen_at":     "ALTER TABLE memories ADD COLUMN last_seen_at DATETIME;",
 		"normalized_hash":  "ALTER TABLE memories ADD COLUMN normalized_hash TEXT;",
+		"deleted_at":       "ALTER TABLE memories ADD COLUMN deleted_at DATETIME;",
 	}
 	for col, alterStmt := range columnChecks {
 		var exists bool
@@ -329,6 +343,8 @@ func applyMigrations(db *sql.DB) error {
 		"CREATE INDEX IF NOT EXISTS idx_memories_topic ON memories(project_id, topic_key);",
 		"CREATE INDEX IF NOT EXISTS idx_memories_hash ON memories(project_id, normalized_hash);",
 		"CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id, started_at DESC);",
+		"CREATE INDEX IF NOT EXISTS idx_memory_relations_source ON memory_relations(project_id, source_id);",
+		"CREATE INDEX IF NOT EXISTS idx_memory_relations_target ON memory_relations(project_id, target_id);",
 	}
 	for _, idx := range postIndexes {
 		if _, err := db.Exec(idx); err != nil {

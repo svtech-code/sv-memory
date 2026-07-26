@@ -52,26 +52,39 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 	s := server.NewMCPServer("sv-memory", "1.0.0")
 
 	// Per-server mtime cache so we skip redundant SyncFromGit round-trips when
-	// .sv-memory/memories.json hasn't changed since the last pull. The MCP
-	// server is long-lived (stdio), so we keep this state on the closure.
+	// .sv-memory/chunks/ hasn't changed since the last pull. Uses the chunks
+	// directory mtime (or legacy memories.json as fallback). The MCP server is
+	// long-lived (stdio), so we keep this state on the closure.
 	var (
 		syncMu       sync.Mutex
 		lastSyncMtim time.Time
 	)
 	syncFile := filepath.Join(cfg.ProjPath, ".sv-memory", "memories.json")
+	chunkDir := filepath.Join(cfg.ProjPath, ".sv-memory", "chunks")
 
-	// maybeSyncFromGit imports memories.json only when its mtime advanced since
-	// the last call. Falls back to a full sync the first time (zero mtime) and
-	// when the file does not exist (no Team sync configured).
+	// syncPathStat returns the path + mtime of the signal file/dir to watch:
+	// the chunks dir if it exists, otherwise the legacy memories.json.
+	syncPathStat := func() (string, time.Time) {
+		if fi, err := os.Stat(chunkDir); err == nil {
+			return chunkDir, fi.ModTime()
+		}
+		if fi, err := os.Stat(syncFile); err == nil {
+			return syncFile, fi.ModTime()
+		}
+		return "", time.Time{}
+	}
+
+	// maybeSyncFromGit imports shared memories only when their mtime advanced
+	// since the last call. Falls back to a full sync the first time (zero mtime).
 	maybeSyncFromGit := func() {
 		syncMu.Lock()
 		defer syncMu.Unlock()
-		info, err := os.Stat(syncFile)
-		if err != nil {
+		_, mtim := syncPathStat()
+		if mtim.IsZero() {
 			lastSyncMtim = time.Time{}
 			return
 		}
-		if !info.ModTime().After(lastSyncMtim) {
+		if !mtim.After(lastSyncMtim) {
 			return
 		}
 		start := time.Now()
@@ -79,8 +92,40 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 			fmt.Fprintf(os.Stderr, "[sv-memory] syncFromGit failed: %v\n", err)
 			return
 		}
-		lastSyncMtim = info.ModTime()
+		lastSyncMtim = mtim
 		debugLog("syncFromGit pulled in %s", time.Since(start))
+	}
+
+	// Debounced Git sync: coalesces multiple rapid sv_mem_save calls into a
+	// single .sv-memory/memories.json write. The timer fires 500ms after the
+	// last save, so a burst of 5 saves triggers only one write.
+	var (
+		debounceMu sync.Mutex
+		syncTimer  *time.Timer
+	)
+
+	// scheduleSync resets the debounce timer. Each call to sv_mem_save invokes
+	// this instead of writing to disk immediately.
+	scheduleSync := func() {
+		debounceMu.Lock()
+		defer debounceMu.Unlock()
+		if syncTimer != nil {
+			syncTimer.Stop()
+		}
+		syncTimer = time.AfterFunc(500*time.Millisecond, func() {
+			startSync := time.Now()
+			if err := memory.SyncToGit(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
+				fmt.Fprintf(os.Stderr, "[sv-memory] syncToGit (debounced) failed: %v\n", err)
+				return
+			}
+			debugLog("syncToGit (debounced) took %s", time.Since(startSync))
+			syncMu.Lock()
+			_, mtim := syncPathStat()
+			if !mtim.IsZero() {
+				lastSyncMtim = mtim
+			}
+			syncMu.Unlock()
+		})
 	}
 
 	// In-memory graph cache: loads the full project's nodes+edges with two
@@ -187,17 +232,10 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		}
 		debugLog("mem_save SQLite write for id=%s took %s", saved.ID, time.Since(startSave))
 
-		startSync := time.Now()
-		if err := memory.SyncToGit(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
-			return mcp.NewToolResultText(fmt.Sprintf("Saved to local SQLite database (ID: %s) but failed Git Sync: %v", saved.ID, err)), nil
-		}
-		debugLog("mem_save syncToGit for id=%s took %s", saved.ID, time.Since(startSync))
-
-		syncMu.Lock()
-		if info, err := os.Stat(syncFile); err == nil {
-			lastSyncMtim = info.ModTime()
-		}
-		syncMu.Unlock()
+		// Schedule a debounced Git sync (500ms coalescing window).
+		// The actual write happens asynchronously; errors go to stderr.
+		// SQLite write has already succeeded at this point.
+		scheduleSync()
 
 		// Build contextual response based on what SaveMemory did
 		var action string
@@ -319,6 +357,7 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		mcp.WithString("query", mcp.Required(), mcp.Description("The keyword or phrase to search for")),
 		mcp.WithString("category", mcp.Description("Optional category to filter results: 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem' | 'discussion' | 'idea' | 'qa'")),
 		mcp.WithString("limit", mcp.Description("Optional limit of results to return (default is '10')")),
+		mcp.WithString("offset", mcp.Description("Optional offset for pagination (default is '0')")),
 	)
 
 	s.AddTool(searchTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -328,11 +367,18 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		}
 		category := req.GetString("category", "")
 		limitStr := req.GetString("limit", "10")
+		offsetStr := req.GetString("offset", "0")
 
 		limit := 10
 		if limitStr != "" {
 			if l, err := strconv.Atoi(limitStr); err == nil {
 				limit = l
+			}
+		}
+		offset := 0
+		if offsetStr != "" {
+			if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
+				offset = o
 			}
 		}
 
@@ -341,38 +387,57 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		debugLog("mem_search maybeSyncFromGit took %s", time.Since(startSync))
 
 		startSearch := time.Now()
-		memories, err := memory.SearchMemories(pool.Reader, cfg.ProjectID, query, category, limit)
-		debugLog("mem_search query=%q category=%q returned %d rows in %s", query, category, len(memories), time.Since(startSearch))
+		results, err := memory.SearchMemoriesCompact(pool.Reader, cfg.ProjectID, query, category, limit, offset)
+		debugLog("mem_search query=%q category=%q offset=%d returned %d rows in %s", query, category, offset, len(results), time.Since(startSearch))
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed searching memories: %v", err)), nil
 		}
 
-		if len(memories) == 0 {
+		if len(results) == 0 {
 			return mcp.NewToolResultText("No relevant project memories found matching the query."), nil
 		}
 
 		// Compact output — progressive disclosure: just IDs, titles, and metadata.
 		// Agent drills down with sv_mem_get for full content.
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("Found %d relevant project memories (use `sv_mem_get` for full content, `sv_mem_timeline` for context):\n\n", len(memories)))
-		for _, m := range memories {
-			sb.WriteString(fmt.Sprintf("### [%s] %s (ID: %s)\n", strings.ToUpper(m.Category), m.What, m.ID))
-			if m.TopicKey != "" {
-				sb.WriteString(fmt.Sprintf("* **Topic:** `%s` (revision %d)\n", m.TopicKey, m.RevisionCount))
+		sb.WriteString(fmt.Sprintf("Found %d relevant project memories (use `sv_mem_get` for full content, `sv_mem_timeline` for context):\n\n", len(results)))
+		for _, r := range results {
+			sb.WriteString(fmt.Sprintf("### [%s] %s (ID: %s)\n", strings.ToUpper(r.Category), r.What, r.ID))
+			if r.TopicKey != "" {
+				sb.WriteString(fmt.Sprintf("* **Topic:** `%s` (revision %d)\n", r.TopicKey, r.RevisionCount))
 			}
-			if m.DuplicateCount > 0 {
-				sb.WriteString(fmt.Sprintf("* **Duplicates:** %d\n", m.DuplicateCount))
+			if r.DuplicateCount > 0 {
+				sb.WriteString(fmt.Sprintf("* **Duplicates:** %d\n", r.DuplicateCount))
 			}
-			sb.WriteString(fmt.Sprintf("* **Date:** %s\n\n", m.CreatedAt.Format("2006-01-02")))
+			sb.WriteString(fmt.Sprintf("* **Date:** %s\n", r.CreatedAt.Format("2006-01-02")))
 		}
+		// Token estimate for the response
+		responseText := sb.String()
+		estTokens := len(responseText) / 4
+		sb.WriteString(fmt.Sprintf("\n*Response: ~%d tokens*", estTokens))
 
 		return mcp.NewToolResultText(sb.String()), nil
 	})
 
+	// maxFieldChars is the default maximum character count per text field in
+	// sv_mem_get responses. When a field exceeds this limit it is truncated
+	// with a "[truncated N chars]" suffix to keep token consumption bounded.
+	const maxFieldChars = 2000
+
+	// truncateField shortens a string to maxChars and appends a truncation
+	// notice when the original length exceeds the limit.
+	truncateField := func(s string, maxChars int) string {
+		if maxChars <= 0 || len(s) <= maxChars {
+			return s
+		}
+		return s[:maxChars] + fmt.Sprintf("... [truncated %d chars]", len(s)-maxChars)
+	}
+
 	// 8. Tool: sv_mem_get
 	getTool := mcp.NewTool("sv_mem_get",
-		mcp.WithDescription("Retrieve the full content of a specific memory by its ID. This is the third layer of progressive disclosure: use after sv_mem_search to inspect a memory in detail."),
+		mcp.WithDescription("Retrieve the full content of a specific memory by its ID. This is the third layer of progressive disclosure: use after sv_mem_search to inspect a memory in detail. Long text fields are truncated beyond max_chars to limit tokens."),
 		mcp.WithString("id", mcp.Required(), mcp.Description("The memory ID to retrieve")),
+		mcp.WithString("max_chars", mcp.Description("Optional max characters per text field (default '2000', '0' = unlimited)")),
 	)
 
 	s.AddTool(getTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -380,6 +445,14 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		if err != nil {
 			return mcp.NewToolResultError("missing required field: id"), nil
 		}
+		maxChars := maxFieldChars
+		maxCharsStr := req.GetString("max_chars", "")
+		if maxCharsStr != "" {
+			if m, err := strconv.Atoi(maxCharsStr); err == nil && m >= 0 {
+				maxChars = m
+			}
+		}
+
 		mem, err := memory.GetMemory(pool.Reader, cfg.ProjectID, id)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to get memory: %v", err)), nil
@@ -390,8 +463,8 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("### [%s] %s (ID: %s)\n", strings.ToUpper(mem.Category), mem.What, mem.ID))
-		sb.WriteString(fmt.Sprintf("* **Why:** %s\n", mem.Why))
-		sb.WriteString(fmt.Sprintf("* **Rule / Learned:** %s\n", mem.Learned))
+		sb.WriteString(fmt.Sprintf("* **Why:** %s\n", truncateField(mem.Why, maxChars)))
+		sb.WriteString(fmt.Sprintf("* **Rule / Learned:** %s\n", truncateField(mem.Learned, maxChars)))
 		if mem.WherePath != "" {
 			sb.WriteString(fmt.Sprintf("* **Path:** `%s`\n", mem.WherePath))
 		}
@@ -411,15 +484,19 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 			sb.WriteString(fmt.Sprintf("* **Author:** `%s`\n", mem.Author))
 		}
 		if mem.Impact != "" {
-			sb.WriteString(fmt.Sprintf("* **What went well / Impact:** %s\n", mem.Impact))
+			sb.WriteString(fmt.Sprintf("* **What went well / Impact:** %s\n", truncateField(mem.Impact, maxChars)))
 		}
 		if mem.ErrorsFaced != "" {
-			sb.WriteString(fmt.Sprintf("* **Roadblocks / Errors faced:** %s\n", mem.ErrorsFaced))
+			sb.WriteString(fmt.Sprintf("* **Roadblocks / Errors faced:** %s\n", truncateField(mem.ErrorsFaced, maxChars)))
 		}
 		if mem.NextSteps != "" {
-			sb.WriteString(fmt.Sprintf("* **Next steps / Pending:** %s\n", mem.NextSteps))
+			sb.WriteString(fmt.Sprintf("* **Next steps / Pending:** %s\n", truncateField(mem.NextSteps, maxChars)))
 		}
 		sb.WriteString(fmt.Sprintf("* **Date:** %s\n", mem.CreatedAt.Format("2006-01-02")))
+		// Token estimate
+		responseText := sb.String()
+		estTokens := len(responseText) / 4
+		sb.WriteString(fmt.Sprintf("* **Estimated tokens:** ~%d\n", estTokens))
 		return mcp.NewToolResultText(sb.String()), nil
 	})
 
@@ -479,7 +556,170 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 		return mcp.NewToolResultText(sb.String()), nil
 	})
 
-	// 4. Tool: sv_graph_query
+	// 10. Tool: sv_mem_judge
+	judgeTool := mcp.NewTool("sv_mem_judge",
+		mcp.WithDescription("Create a relation/judgment between two memories. Use this when a new decision supersedes, conflicts with, or relates to a previous one. Helps maintain coherence over time."),
+		mcp.WithString("source_id", mcp.Required(), mcp.Description("The ID of the first (newer/source) memory")),
+		mcp.WithString("target_id", mcp.Required(), mcp.Description("The ID of the second (older/target) memory")),
+		mcp.WithString("relation_type", mcp.Required(), mcp.Description("Type of relation: 'supersedes' | 'conflicts_with' | 'relates_to'")),
+		mcp.WithString("reason", mcp.Description("Optional explanation for the judgment")),
+		mcp.WithString("judged_by", mcp.Description("Optional identifier of who judged (default: 'agent')")),
+	)
+
+	s.AddTool(judgeTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		sourceID, err := req.RequireString("source_id")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: source_id"), nil
+		}
+		targetID, err := req.RequireString("target_id")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: target_id"), nil
+		}
+		relType, err := req.RequireString("relation_type")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: relation_type"), nil
+		}
+		reason := req.GetString("reason", "")
+		judgedBy := req.GetString("judged_by", "agent")
+
+		validTypes := map[string]bool{"supersedes": true, "conflicts_with": true, "relates_to": true}
+		if !validTypes[relType] {
+			return mcp.NewToolResultError("invalid relation_type: must be 'supersedes', 'conflicts_with', or 'relates_to'"), nil
+		}
+
+		rel, err := memory.SaveJudgment(pool.Writer, cfg.ProjectID, sourceID, targetID, relType, reason, judgedBy)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to save judgment: %v", err)), nil
+		}
+		scheduleSync()
+		return mcp.NewToolResultText(fmt.Sprintf("Judgment created: `%s` %s → `%s` (ID: %s)\nReason: %s", sourceID, relType, targetID, rel.ID, rel.Reason)), nil
+	})
+
+	// 11. Tool: sv_mem_compare
+	compareTool := mcp.NewTool("sv_mem_compare",
+		mcp.WithDescription("Compare two memories side by side in a Markdown table. Use to quickly spot contradictions or similarities before judging."),
+		mcp.WithString("id1", mcp.Required(), mcp.Description("The ID of the first memory")),
+		mcp.WithString("id2", mcp.Required(), mcp.Description("The ID of the second memory")),
+	)
+
+	s.AddTool(compareTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		id1, err := req.RequireString("id1")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: id1"), nil
+		}
+		id2, err := req.RequireString("id2")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: id2"), nil
+		}
+		comparison, err := memory.CompareMemories(pool.Reader, cfg.ProjectID, id1, id2)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to compare memories: %v", err)), nil
+		}
+		return mcp.NewToolResultText(comparison), nil
+	})
+
+	// 12. Tool: sv_mem_review
+	reviewTool := mcp.NewTool("sv_mem_review",
+		mcp.WithDescription("List memories that may need attention: old, stale, high duplicates, or candidates for consolidation. Useful for high-level maintenance."),
+	)
+
+	s.AddTool(reviewTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		items, err := memory.ReviewMemories(pool.Reader, cfg.ProjectID)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to review memories: %v", err)), nil
+		}
+		if len(items) == 0 {
+			return mcp.NewToolResultText("No memories found for review."), nil
+		}
+
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("## Memory Review — %d memories\n\n", len(items)))
+		for _, item := range items {
+			sb.WriteString(fmt.Sprintf("### [%s] %s (ID: %s)\n", strings.ToUpper(item.Memory.Category), item.Memory.What, item.Memory.ID))
+			sb.WriteString(fmt.Sprintf("* **Status:** %s\n", item.Reason))
+			sb.WriteString(fmt.Sprintf("* **Age:** %d days", item.AgeDays))
+			if item.LastSeenDays > 0 {
+				sb.WriteString(fmt.Sprintf(", last seen %d days ago", item.LastSeenDays))
+			}
+			sb.WriteString("\n")
+			if item.DuplicateCount > 0 {
+				sb.WriteString(fmt.Sprintf("* **Duplicates:** %d\n", item.DuplicateCount))
+			}
+			if item.RevisionCount > 0 {
+				sb.WriteString(fmt.Sprintf("* **Revisions:** %d\n", item.RevisionCount))
+			}
+			if item.RelationCount > 0 {
+				sb.WriteString(fmt.Sprintf("* **Relations:** %d\n", item.RelationCount))
+			}
+			if item.NeedsConsolidation {
+				sb.WriteString("* **⚠ Needs consolidation** (many revisions)\n")
+			}
+			sb.WriteString("\n")
+		}
+		estTokens := sb.Len() / 4
+		sb.WriteString(fmt.Sprintf("*Response: ~%d tokens*\n", estTokens))
+		return mcp.NewToolResultText(sb.String()), nil
+	})
+
+	// 13. Tool: sv_mem_delete
+	deleteTool := mcp.NewTool("sv_mem_delete",
+		mcp.WithDescription("Delete a memory. Soft delete (default) marks it as deleted but preserves it in the database for potential recovery. Hard delete removes it permanently."),
+		mcp.WithString("id", mcp.Required(), mcp.Description("The memory ID to delete")),
+		mcp.WithString("hard", mcp.Description("Set to 'true' for permanent hard delete (default: 'false' = soft delete)")),
+	)
+
+	s.AddTool(deleteTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		id, err := req.RequireString("id")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: id"), nil
+		}
+		hardStr := req.GetString("hard", "false")
+		hard := hardStr == "true" || hardStr == "1"
+
+		if err := memory.DeleteMemory(pool.Writer, cfg.ProjectID, id, hard); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to delete memory: %v", err)), nil
+		}
+		scheduleSync()
+
+		mode := "soft"
+		if hard {
+			mode = "hard"
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("Memory %s %s-deleted successfully.", id, mode)), nil
+	})
+
+	// 14. Tool: sv_mem_capture_passive
+	captureTool := mcp.NewTool("sv_mem_capture_passive",
+		mcp.WithDescription("Save a lightweight passive observation (e.g. 'modified file X', 'test Y failed'). Unlike sv_mem_save, this requires no explicit decision — it logs context automatically. Category is set to 'journal'."),
+		mcp.WithString("what", mcp.Required(), mcp.Description("Brief description of what happened")),
+		mcp.WithString("why", mcp.Required(), mcp.Description("Context or reason for the observation")),
+	)
+
+	s.AddTool(captureTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		what, err := req.RequireString("what")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: what"), nil
+		}
+		why, err := req.RequireString("why")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: why"), nil
+		}
+
+		// Auto-associate with active session
+		sessionID := ""
+		if active, err := memory.GetActiveSession(pool.Writer, cfg.ProjectID); err == nil && active != nil {
+			sessionID = active.ID
+		}
+
+		mem, err := memory.CapturePassive(pool.Writer, cfg.ProjectID, what, why, sessionID)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to capture passive observation: %v", err)), nil
+		}
+		scheduleSync()
+		return mcp.NewToolResultText(fmt.Sprintf("Passive observation captured (ID: %s, category: journal). Use sv_mem_get(id=\"%s\") for details.", mem.ID, mem.ID)), nil
+	})
+
+	// 10. Tool: sv_graph_query
 	graphQueryTool := mcp.NewTool("sv_graph_query",
 		mcp.WithDescription("Retrieve project code structure, connections, imports, and dependencies for a given module, file, or package."),
 		mcp.WithString("path_or_node", mcp.Required(), mcp.Description("The file path, package name, or module to inspect")),
