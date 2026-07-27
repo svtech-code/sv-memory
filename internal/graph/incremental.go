@@ -70,6 +70,12 @@ func syncGraphFull(db *sql.DB, projectID string, projPath string) error {
 		return err
 	}
 
+	// Phase 1b: "contains" edges for documents and SQL schemas
+	containEdges := extractContainsEdges(wr.nodes)
+	if err := bulkInsertEdges(tx, projectID, containEdges); err != nil {
+		return err
+	}
+
 	// Phase 2: Extract function and class calls
 	callEdges := extractCallEdges(projPath, wr.nodes, wr.fileContents)
 	if err := bulkInsertEdges(tx, projectID, callEdges); err != nil {
@@ -207,6 +213,12 @@ func trySyncGraphIncremental(db *sql.DB, projectID string, projPath string) (boo
 		}
 	}
 	if err := bulkInsertEdges(tx, projectID, edges); err != nil {
+		return false, err
+	}
+
+	// 3b. "contains" edges for documents and SQL schemas
+	containEdges := extractContainsEdges(wr.nodes)
+	if err := bulkInsertEdges(tx, projectID, containEdges); err != nil {
 		return false, err
 	}
 

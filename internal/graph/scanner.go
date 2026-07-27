@@ -196,7 +196,7 @@ var fallbackIgnoreDirs = map[string]bool{
 var symbolScanExts = map[string]bool{
 	".go": true, ".py": true, ".js": true, ".jsx": true, ".ts": true, ".tsx": true,
 	".php": true, ".astro": true, ".lua": true, ".rb": true, ".rs": true, ".java": true,
-	".vue": true, ".svelte": true,
+	".vue": true, ".svelte": true, ".md": true, ".sql": true,
 }
 
 var manifestFilenames = []string{"package.json", "go.mod", "requirements.txt", "Cargo.toml", "composer.json", "Gemfile"}
@@ -251,7 +251,7 @@ func scanFiles(projPath string) (*walkResult, error) {
 
 		ext := strings.ToLower(filepath.Ext(relPath))
 		switch ext {
-		case ".go", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".php", ".css", ".astro", ".sh", ".lua", ".rb", ".rs", ".java", ".vue", ".svelte", ".md":
+		case ".go", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".php", ".css", ".astro", ".sh", ".lua", ".rb", ".rs", ".java", ".vue", ".svelte", ".md", ".sql":
 			fi, fiErr := os.Stat(path)
 			mtimeMs := int64(0)
 			size := int64(0)
@@ -280,8 +280,11 @@ func scanFiles(projPath string) (*walkResult, error) {
 			}
 
 			nodeType := "file"
-			if ext == ".md" {
+			switch ext {
+			case ".md":
 				nodeType = "document"
+			case ".sql":
+				nodeType = "sql"
 			}
 			nodes[relPath] = &Node{
 				ID:       relPath,

@@ -380,5 +380,26 @@ func resolveMarkdownLink(projPath, sourcePath, target string, nodes map[string]*
 
 // extractRationaleEdges maps each rationale node to its containing function, class, or file.
 
-
-
+// extractContainsEdges creates "contains" edges from parent documents/schemas to
+// their child symbol nodes (sections, code blocks, tables, views, indexes, types).
+func extractContainsEdges(nodes map[string]*Node) []*Edge {
+	var edges []*Edge
+	for id, node := range nodes {
+		if node.Type == "document" || node.Type == "sql" {
+			prefix := id + ":"
+			for childID := range nodes {
+				if strings.HasPrefix(childID, prefix) && childID != id {
+					edgeID := fmt.Sprintf("%s-%s-contains", id, childID)
+					edges = append(edges, &Edge{
+						ID:           edgeID,
+						SourceID:     id,
+						TargetID:     childID,
+						RelationType: "contains",
+						Confidence:   "INFERRED",
+					})
+				}
+			}
+		}
+	}
+	return edges
+}

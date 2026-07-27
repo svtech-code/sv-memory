@@ -38,6 +38,8 @@ var languageFromExt = map[string]string{
 	".java":   "java",
 	".vue":    "vue",
 	".svelte": "svelte",
+	".md":     "markdown",
+	".sql":    "sql",
 }
 
 // Well-known entry point file names.
@@ -95,18 +97,30 @@ func parseSymbols(relPath, ext string, content []byte) ([]*Node, map[string]inte
 			}
 			continue
 		}
-		if !isValidSymbolName(sym.Name) {
+		// Section headings, code blocks, and diagrams can have spaces in their names
+		isStructural := sym.Type == "section" || sym.Type == "code_block" || sym.Type == "diagram"
+		if !isStructural && !isValidSymbolName(sym.Name) {
 			continue
 		}
+		meta := map[string]interface{}{
+			"line":     sym.Line,
+			"exported": sym.Exported,
+		}
+		// Carry over any extra metadata from the extractor
+		for k, v := range sym.Metadata {
+			meta[k] = v
+		}
+		// For code_blocks without explicit name, use line-based identifier
+		nodeID := relPath + ":" + sym.Name
+		if sym.Name == "" {
+			nodeID = relPath + ":L" + fmt.Sprint(sym.Line)
+		}
 		symbolNodes = append(symbolNodes, &schema.Node{
-			ID:    relPath + ":" + sym.Name,
-			Type:  sym.Type,
-			Label: sym.Name,
-			Path:  relPath,
-			Metadata: map[string]interface{}{
-				"line":     sym.Line,
-				"exported": sym.Exported,
-			},
+			ID:       nodeID,
+			Type:     sym.Type,
+			Label:    sym.Name,
+			Path:     relPath,
+			Metadata: meta,
 		})
 	}
 	if len(rationales) > 0 {
