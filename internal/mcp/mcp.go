@@ -1718,6 +1718,54 @@ var (
 		return mcp.NewToolResultText(fmt.Sprintf("Graph visualization exported to %s (%d bytes)", output, buf.Len())), nil
 	})
 
+	// 25. Tool: sv_graph_merge
+	mergeTool := mcp.NewTool("sv_graph_merge",
+		mcp.WithDescription("Merge two project graphs into one (union-merge by node ID)"),
+		mcp.WithString("project_a", mcp.Required(), mcp.Description("First project ID")),
+		mcp.WithString("project_b", mcp.Required(), mcp.Description("Second project ID")),
+		mcp.WithString("output", mcp.Description("Output JSON file path")),
+	)
+
+	s.AddTool(mergeTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		projA, err := req.RequireString("project_a")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: project_a"), nil
+		}
+		projB, err := req.RequireString("project_b")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: project_b"), nil
+		}
+		output := req.GetString("output", "")
+
+		mergeDB, err := db.InitDB(cfg.DBPath)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to open DB: %v", err)), nil
+		}
+		defer mergeDB.Close()
+
+		ga, err := graph.LoadFullGraph(mergeDB, projA)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to load project %s: %v", projA, err)), nil
+		}
+		gb, err := graph.LoadFullGraph(mergeDB, projB)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to load project %s: %v", projB, err)), nil
+		}
+
+		merged := ga.Merge(gb)
+		jsonStr := merged.MergeToJSON(gb)
+
+		if output != "" {
+			if err := os.WriteFile(output, []byte(jsonStr), 0644); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("failed to write %s: %v", output, err)), nil
+			}
+			return mcp.NewToolResultText(fmt.Sprintf("Merged graph exported to %s (%d nodes, %d edges)", output, len(merged.Nodes), len(merged.EdgesBySource))), nil
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Merged graph: %d nodes, %d edges\n\n```json\n%s\n```",
+			len(merged.Nodes), len(merged.EdgesBySource), jsonStr)), nil
+	})
+
 	return s
 }
 

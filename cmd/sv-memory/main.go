@@ -807,6 +807,52 @@ var graphWikiCmd = &cobra.Command{
 	},
 }
 
+var graphMergeCmd = &cobra.Command{
+	Use:   "merge <project-id-a> <project-id-b>",
+	Short: "Merge two project graphs (union-merge by node ID)",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		cfg, err := config.LoadConfig(cwd)
+		if err != nil {
+			return err
+		}
+		database, err := db.InitDB(cfg.DBPath)
+		if err != nil {
+			return err
+		}
+		defer database.Close()
+
+		ga, err := graph.LoadFullGraph(database, args[0])
+		if err != nil {
+			return fmt.Errorf("failed to load graph A: %w", err)
+		}
+
+		gb, err := graph.LoadFullGraph(database, args[1])
+		if err != nil {
+			return fmt.Errorf("failed to load graph B: %w", err)
+		}
+
+		merged := ga.Merge(gb)
+		jsonStr := merged.MergeToJSON(gb)
+
+		output, _ := cmd.Flags().GetString("output")
+		if output == "" {
+			output = fmt.Sprintf("merged-%s-%s.json", args[0], args[1])
+		}
+
+		if err := os.WriteFile(output, []byte(jsonStr), 0644); err != nil {
+			return err
+		}
+		fmt.Printf("Merged graph: %d nodes, %d edges -> %s\n",
+			len(merged.Nodes), len(merged.EdgesBySource), output)
+		return nil
+	},
+}
+
 var graphVizCmd = &cobra.Command{
 	Use:   "viz",
 	Short: "Export an interactive HTML visualization of the dependency graph",
@@ -1301,6 +1347,8 @@ func init() {
 	graphCmd.AddCommand(graphCommunitiesCmd)
 	graphCmd.AddCommand(graphWikiCmd)
 	graphWikiCmd.Flags().StringP("output", "o", "graph-wiki", "Output directory for wiki pages")
+	graphCmd.AddCommand(graphMergeCmd)
+	graphMergeCmd.Flags().StringP("output", "o", "", "Output JSON file path")
 	graphCmd.AddCommand(graphVizCmd)
 	graphVizCmd.Flags().StringP("output", "o", "graph.html", "Output HTML file path")
 	rootCmd.AddCommand(initCmd)
