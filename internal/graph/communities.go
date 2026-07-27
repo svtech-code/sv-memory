@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // DetectCommunities runs a label propagation community detection algorithm on the graph.
@@ -224,34 +225,61 @@ func (g *InMemoryGraph) ExtractCommunities() map[string]int {
 }
 
 func (g *InMemoryGraph) DetectCommunityLabels(communities map[string]int, centrality map[string]float64) map[int]string {
-	commBest := make(map[int]struct {
-		nodeID string
-		bc     float64
-	})
+	commBest := make(map[int]string)
+	commFallback := make(map[int]string)
+
 	for id, cID := range communities {
-		bc := centrality[id]
-		if best, ok := commBest[cID]; !ok || bc > best.bc {
-			commBest[cID] = struct {
-				nodeID string
-				bc     float64
-			}{nodeID: id, bc: bc}
+		node, ok := g.Nodes[id]
+		if !ok {
+			continue
+		}
+		label := cleanLabel(node, 50)
+		if node.Type == "file" && label != "" {
+			if existing, has := commBest[cID]; !has || centrality[id] > centrality[existing] {
+				commBest[cID] = id
+			}
+		} else if label != "" {
+			if existing, has := commFallback[cID]; !has || centrality[id] > centrality[existing] {
+				commFallback[cID] = id
+			}
 		}
 	}
 
 	commLabels := make(map[int]string)
-	for cID, best := range commBest {
-		if node, ok := g.Nodes[best.nodeID]; ok {
-			label := node.Label
-			if len(label) > 40 {
-				label = label[:40]
-			}
-			commLabels[cID] = label
-		} else {
+	for cID, id := range commBest {
+		commLabels[cID] = cleanLabel(g.Nodes[id], 50)
+	}
+	for cID, id := range commFallback {
+		if _, has := commLabels[cID]; !has {
+			commLabels[cID] = cleanLabel(g.Nodes[id], 50)
+		}
+	}
+	for _, cID := range communities {
+		if _, has := commLabels[cID]; !has {
 			commLabels[cID] = fmt.Sprintf("community_%d", cID)
 		}
 	}
 
 	return commLabels
+}
+
+func cleanLabel(node *Node, maxLen int) string {
+	label := strings.TrimSpace(node.Label)
+	if label == "" {
+		return ""
+	}
+	if len(label) > maxLen {
+		label = label[:maxLen]
+	}
+	if node.Type == "file" {
+		return label
+	}
+	firstLine := strings.SplitN(label, "\n", 2)
+	label = strings.TrimSpace(firstLine[0])
+	if len(label) > maxLen {
+		label = label[:maxLen]
+	}
+	return label
 }
 
 // SurprisingConnection represents a cross-community edge with a surprise score.

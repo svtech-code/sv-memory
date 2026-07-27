@@ -185,7 +185,14 @@ func (g *InMemoryGraph) ExportHTML(w io.Writer, commLabels map[int]string) error
   <h2 id="detail-title"></h2>
   <div id="detail-body"></div>
 </div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.6/vis-network.min.js"></script>
+<!-- Try multiple CDNs for vis-network -->
+<script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.6/dist/vis-network.min.js"
+  onerror="this.onerror=null; this.src='https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.6/vis-network.min.js';
+    this.onerror=function(){ document.getElementById('network').innerHTML=
+      '<div style=\\"padding:40px;text-align:center;color:#e94560;\\">Failed to load vis-network library. ' +
+      'Download it from <a href=\\"https://unpkg.com/vis-network@9.1.6/dist/vis-network.min.js\\" style=\\"color:#3498db;\\">unpkg</a> ' +
+      'and place it next to this file, or check your internet connection.</div>'; }">
+</script>
 <script>
 const PALETTE = [
   '#e94560','#0f3460','#16a085','#f39c12','#9b59b6','#2ecc71',

@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -703,25 +705,33 @@ var graphCommunitiesCmd = &cobra.Command{
 		}
 
 		for cID, members := range commGroups {
-			// Auto-label: find the primary extension or keyword from member names
+			// Auto-label: find the most common extension or content type
 			extCounts := make(map[string]int)
+			extCounts["other"] = 0
 			for _, m := range members {
-				parts := strings.Split(m, ".")
-				if len(parts) > 1 {
+				if strings.Contains(m, ".") && !strings.Contains(m, " ") && !strings.Contains(m, "/") {
+					parts := strings.Split(m, ".")
 					ext := parts[len(parts)-1]
-					extCounts[ext]++
+					if len(ext) <= 8 && ext != "" {
+						extCounts[ext]++
+						continue
+					}
 				}
+				extCounts["other"]++
 			}
-			topExt := "generic"
+			topLabel := "mixed"
 			maxCount := 0
-			for ext, count := range extCounts {
+			for label, count := range extCounts {
 				if count > maxCount {
 					maxCount = count
-					topExt = ext
+					topLabel = label
 				}
 			}
+			if topLabel == "other" {
+				topLabel = "generic"
+			}
 
-			fmt.Printf("Community #%d (Auto-label: %s, size: %d):\n", cID, topExt, len(members))
+			fmt.Printf("Community #%d (Auto-label: %s, size: %d):\n", cID, topLabel, len(members))
 			limit := 8
 			for i, m := range members {
 				if i >= limit {
@@ -895,6 +905,26 @@ var graphVizCmd = &cobra.Command{
 			return err
 		}
 		fmt.Printf("Graph visualization exported to %s\n", output)
+
+		open, _ := cmd.Flags().GetBool("open")
+		if open {
+			var openCmd string
+			switch runtime.GOOS {
+			case "darwin":
+				openCmd = "open"
+			case "linux":
+				openCmd = "xdg-open"
+			case "windows":
+				openCmd = "start"
+			default:
+				return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+			}
+			absPath, _ := filepath.Abs(output)
+			execCmd := exec.Command(openCmd, absPath)
+			if err := execCmd.Start(); err != nil {
+				return fmt.Errorf("failed to open browser: %w", err)
+			}
+		}
 		return nil
 	},
 }
@@ -1351,6 +1381,7 @@ func init() {
 	graphMergeCmd.Flags().StringP("output", "o", "", "Output JSON file path")
 	graphCmd.AddCommand(graphVizCmd)
 	graphVizCmd.Flags().StringP("output", "o", "graph.html", "Output HTML file path")
+	graphVizCmd.Flags().Bool("open", false, "Open the visualization in the default browser automatically")
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(diagnoseCmd)
