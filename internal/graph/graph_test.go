@@ -781,33 +781,14 @@ func TestSyncGraphWithMemories(t *testing.T) {
 		t.Fatalf("SyncGraph failed: %v", err)
 	}
 
-	// Verify memory node exists in graph_nodes
-	var nodeType, label, path string
-	err = database.QueryRow("SELECT node_type, label, path FROM graph_nodes WHERE project_id = ? AND id = 'mem-1234'", projectID).Scan(&nodeType, &label, &path)
+	// Verify memory node does NOT exist in graph_nodes (memory is not part of the code graph)
+	var memCount int
+	err = database.QueryRow("SELECT COUNT(*) FROM graph_nodes WHERE project_id = ? AND id = 'mem-1234'", projectID).Scan(&memCount)
 	if err != nil {
-		t.Fatalf("failed to query memory node: %v", err)
+		t.Fatalf("failed to query memory node count: %v", err)
 	}
-	if nodeType != "concept" {
-		t.Errorf("expected node_type to be 'concept', got: %q", nodeType)
-	}
-	if label != "Use WAL in SQLite" {
-		t.Errorf("expected label to be 'Use WAL in SQLite', got: %q", label)
-	}
-	if path != "main.go" {
-		t.Errorf("expected path to be 'main.go', got: %q", path)
-	}
-
-	// Verify edge exists in graph_edges
-	var sourceID, targetID, relType string
-	err = database.QueryRow("SELECT source_id, target_id, relation_type FROM graph_edges WHERE project_id = ? AND source_id = 'mem-1234'", projectID).Scan(&sourceID, &targetID, &relType)
-	if err != nil {
-		t.Fatalf("failed to query edge: %v", err)
-	}
-	if targetID != "main.go" {
-		t.Errorf("expected target_id to be 'main.go', got: %q", targetID)
-	}
-	if relType != "rationale_for" {
-		t.Errorf("expected relation_type to be 'rationale_for', got: %q", relType)
+	if memCount != 0 {
+		t.Errorf("expected 0 memory nodes in graph, got %d", memCount)
 	}
 }
 
@@ -999,30 +980,30 @@ func processData() {
 		t.Fatalf("SyncGraph failed: %v", err)
 	}
 
-	// Verify rationale node exists
-	var count int
+	// Verify rationale is stored in file node metadata, not as a separate node
+	var metaStr string
 	err = database.QueryRow(`
-		SELECT COUNT(*) FROM graph_nodes 
-		WHERE project_id = ? AND node_type = 'rationale' AND label LIKE '%WHY: this algorithm%'
-	`, projectID).Scan(&count)
+		SELECT metadata FROM graph_nodes 
+		WHERE project_id = ? AND id = 'main.go'
+	`, projectID).Scan(&metaStr)
 	if err != nil {
-		t.Fatalf("failed checking rationale node: %v", err)
+		t.Fatalf("failed querying file node metadata: %v", err)
 	}
-	if count != 1 {
-		t.Errorf("expected 1 rationale node, got %d", count)
+	if !strings.Contains(metaStr, "WHY: this algorithm requires linear time complexity") {
+		t.Errorf("expected rationale in file metadata, got: %s", metaStr)
 	}
 
-	// Verify rationale_for edge exists pointing to main.go:processData
-	var targetID string
+	// Verify no separate rationale node was created
+	var rationalCount int
 	err = database.QueryRow(`
-		SELECT target_id FROM graph_edges 
-		WHERE project_id = ? AND relation_type = 'rationale_for' AND source_id LIKE 'main.go:rationale:%'
-	`, projectID).Scan(&targetID)
+		SELECT COUNT(*) FROM graph_nodes 
+		WHERE project_id = ? AND node_type = 'rationale'
+	`, projectID).Scan(&rationalCount)
 	if err != nil {
-		t.Fatalf("failed querying rationale_for edge: %v", err)
+		t.Fatalf("failed checking rationale node count: %v", err)
 	}
-	if targetID != "main.go:processData" {
-		t.Errorf("expected edge target to be 'main.go:processData', got %q", targetID)
+	if rationalCount != 0 {
+		t.Errorf("expected 0 rationale nodes, got %d", rationalCount)
 	}
 }
 

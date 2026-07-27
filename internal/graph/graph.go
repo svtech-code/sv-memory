@@ -87,32 +87,30 @@ func parseSymbols(relPath, ext string, content []byte) ([]*Node, map[string]inte
 	}
 
 	var symbolNodes []*Node
+	var rationales []string
 	for _, sym := range symbols {
 		if sym.Type == "rationale" {
-			if len(sym.Name) > 200 || sym.Name == "" {
-				continue
+			if sym.Name != "" {
+				rationales = append(rationales, sym.Name)
 			}
-		} else if !isValidSymbolName(sym.Name) {
 			continue
 		}
-		id := relPath + ":" + sym.Name
-		label := sym.Name
-		if sym.Type == "rationale" {
-			id = fmt.Sprintf("%s:rationale:%d", relPath, sym.Line)
-			if len(label) > 80 {
-				label = label[:80]
-			}
+		if !isValidSymbolName(sym.Name) {
+			continue
 		}
 		symbolNodes = append(symbolNodes, &schema.Node{
-			ID:    id,
+			ID:    relPath + ":" + sym.Name,
 			Type:  sym.Type,
-			Label: label,
+			Label: sym.Name,
 			Path:  relPath,
 			Metadata: map[string]interface{}{
 				"line":     sym.Line,
 				"exported": sym.Exported,
 			},
 		})
+	}
+	if len(rationales) > 0 {
+		meta["rationales"] = rationales
 	}
 
 	return symbolNodes, meta

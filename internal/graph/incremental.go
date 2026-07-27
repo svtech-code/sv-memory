@@ -76,17 +76,6 @@ func syncGraphFull(db *sql.DB, projectID string, projPath string) error {
 		return err
 	}
 
-	// Phase 3: Extract rationale comments
-	rationaleEdges := extractRationaleEdges(wr.nodes)
-	if err := bulkInsertEdges(tx, projectID, rationaleEdges); err != nil {
-		return err
-	}
-
-	// Phase 1: Unify code graph with memories
-	if err := syncMemoriesToGraph(tx, projectID); err != nil {
-		return fmt.Errorf("failed syncing memories to graph: %w", err)
-	}
-
 	// Store fresh file metadata for future incremental runs.
 	updateFileMeta(tx, projectID, wr.fileMeta)
 
@@ -229,29 +218,12 @@ func trySyncGraphIncremental(db *sql.DB, projectID string, projPath string) (boo
 		}
 	}
 
-	// Phase 1: Unify code graph with memories (re-create all memory nodes/edges)
-	if _, err := tx.Exec("DELETE FROM graph_nodes WHERE project_id = ? AND node_type = 'concept'", projectID); err != nil {
-		return false, fmt.Errorf("failed deleting old memory nodes: %w", err)
-	}
-	if err := syncMemoriesToGraph(tx, projectID); err != nil {
-		return false, fmt.Errorf("failed syncing memories to graph: %w", err)
-	}
-
 	// Phase 2: Extract and sync function and class calls (re-create all calls edges)
 	if _, err := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND relation_type = 'calls'", projectID); err != nil {
 		return false, fmt.Errorf("failed deleting old call edges: %w", err)
 	}
 	callEdges := extractCallEdges(projPath, wr.nodes, wr.fileContents)
 	if err := bulkInsertEdges(tx, projectID, callEdges); err != nil {
-		return false, err
-	}
-
-	// Phase 3: Extract and sync rationale comments (re-create all rationale_for edges)
-	if _, err := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND relation_type = 'rationale_for'", projectID); err != nil {
-		return false, fmt.Errorf("failed deleting old rationale edges: %w", err)
-	}
-	rationaleEdges := extractRationaleEdges(wr.nodes)
-	if err := bulkInsertEdges(tx, projectID, rationaleEdges); err != nil {
 		return false, err
 	}
 

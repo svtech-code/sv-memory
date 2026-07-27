@@ -1,8 +1,6 @@
 package graph
 
 import (
-	"database/sql"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -135,83 +133,6 @@ func getFileSize(path string) int64 {
 		return 0
 	}
 	return stat.Size()
-}
-
-// syncMemoriesToGraph queries all memories for the project and creates 'concept' nodes
-// and 'rationale_for' edges linking them to files in the structural codebase graph.
-func syncMemoriesToGraph(tx *sql.Tx, projectID string) error {
-	rows, err := tx.Query("SELECT id, category, what, where_path, why, learned FROM memories WHERE project_id = ? AND deleted_at IS NULL", projectID)
-	if err != nil {
-		return fmt.Errorf("failed to query memories for graph sync: %w", err)
-	}
-	defer rows.Close()
-
-	type memoryNode struct {
-		id        string
-		category  string
-		what      string
-		wherePath string
-		why       string
-		learned   string
-	}
-	var memories []memoryNode
-	for rows.Next() {
-		var m memoryNode
-		var wherePath sql.NullString
-		if errScan := rows.Scan(&m.id, &m.category, &m.what, &wherePath, &m.why, &m.learned); errScan == nil {
-			if wherePath.Valid {
-				m.wherePath = wherePath.String
-			}
-			memories = append(memories, m)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-
-	nodeStmt, err := tx.Prepare("INSERT INTO graph_nodes (id, project_id, node_type, label, path, metadata) VALUES (?, ?, ?, ?, ?, ?)")
-	if err != nil {
-		return err
-	}
-	defer nodeStmt.Close()
-
-	edgeStmt, err := tx.Prepare("INSERT INTO graph_edges (id, project_id, source_id, target_id, relation_type, confidence, source_location) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")
-	if err != nil {
-		return err
-	}
-	defer edgeStmt.Close()
-
-	for _, m := range memories {
-		metaMap := map[string]interface{}{
-			"category": m.category,
-			"why":      m.why,
-			"learned":  m.learned,
-		}
-		metaBytes, _ := json.Marshal(metaMap)
-
-		_, err = nodeStmt.Exec(m.id, projectID, "concept", m.what, m.wherePath, string(metaBytes))
-		if err != nil {
-			return fmt.Errorf("failed to insert memory node %s: %w", m.id, err)
-		}
-
-		if m.wherePath != "" {
-			cleanedPath := filepath.Clean(m.wherePath)
-			cleanedPath = strings.ReplaceAll(cleanedPath, "\\", "/")
-			cleanedPath = strings.TrimPrefix(cleanedPath, "./")
-
-			var count int
-			errRow := tx.QueryRow("SELECT COUNT(*) FROM graph_nodes WHERE project_id = ? AND id = ?", projectID, cleanedPath).Scan(&count)
-			if errRow == nil && count > 0 {
-				edgeID := fmt.Sprintf("%s-%s-rationale_for", m.id, cleanedPath)
-				_, errEdge := edgeStmt.Exec(edgeID, projectID, m.id, cleanedPath, "rationale_for", "EXTRACTED", nil)
-				if errEdge != nil {
-					return fmt.Errorf("failed to insert rationale edge for memory %s: %w", m.id, errEdge)
-				}
-			}
-		}
-	}
-
-	return nil
 }
 
 // extractCallEdges identifies call relationships (functions calling other functions/classes)
@@ -454,83 +375,6 @@ func resolveMarkdownLink(projPath, sourcePath, target string, nodes map[string]*
 }
 
 // extractRationaleEdges maps each rationale node to its containing function, class, or file.
-func extractRationaleEdges(nodes map[string]*Node) []*Edge {
-	var edges []*Edge
 
-	fileSymbols := make(map[string][]*Node)
-	for _, node := range nodes {
-		if node.Type == "function" || node.Type == "class" {
-			fileSymbols[node.Path] = append(fileSymbols[node.Path], node)
-		}
-	}
 
-	for filePath := range fileSymbols {
-		sortSymbolsByLine(fileSymbols[filePath])
-	}
 
-	for _, node := range nodes {
-		if node.Type != "rationale" {
-			continue
-		}
-
-		lineVal, _ := node.Metadata["line"]
-		var line int
-		switch v := lineVal.(type) {
-		case float64:
-			line = int(v)
-		case int:
-			line = v
-		case int64:
-			line = int(v)
-		}
-
-		targetID := node.Path
-		symbols := fileSymbols[node.Path]
-		var bestTarget *Node
-		for i, sym := range symbols {
-			symLineVal, _ := sym.Metadata["line"]
-			var symLine int
-			switch v := symLineVal.(type) {
-			case float64:
-				symLine = int(v)
-			case int:
-				symLine = v
-			case int64:
-				symLine = int(v)
-			}
-
-			if symLine <= line {
-				if i == len(symbols)-1 {
-					bestTarget = sym
-				} else {
-					nextSymLineVal, _ := symbols[i+1].Metadata["line"]
-					var nextSymLine int
-					switch v := nextSymLineVal.(type) {
-					case float64:
-						nextSymLine = int(v)
-					case int:
-						nextSymLine = v
-					case int64:
-						nextSymLine = int(v)
-					}
-					if line < nextSymLine {
-						bestTarget = sym
-					}
-				}
-			}
-		}
-
-		if bestTarget != nil {
-			targetID = bestTarget.ID
-		}
-
-		edges = append(edges, &Edge{
-			ID:           node.ID + "->rationale_for->" + targetID,
-			SourceID:     node.ID,
-			TargetID:     targetID,
-			RelationType: "rationale_for",
-		})
-	}
-
-	return edges
-}
