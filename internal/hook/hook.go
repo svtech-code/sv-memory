@@ -22,9 +22,10 @@ const (
 	PlatformClaudeCode  Platform = "claude-code"
 	PlatformCodex       Platform = "codex"
 	PlatformAntigravity Platform = "antigravity"
+	PlatformOpenCode    Platform = "opencode"
 )
 
-var supportedPlatforms = []Platform{PlatformClaudeCode, PlatformCodex, PlatformAntigravity}
+var supportedPlatforms = []Platform{PlatformClaudeCode, PlatformCodex, PlatformAntigravity, PlatformOpenCode}
 
 // HookEngine manages PreToolUse hook installation for AI assistants.
 type HookEngine struct {
@@ -64,6 +65,8 @@ func (e *HookEngine) Install(platforms []Platform) []InstallResult {
 			r.Files, r.Err = e.installCodex()
 		case PlatformAntigravity:
 			r.Files, r.Err = e.installAntigravity()
+		case PlatformOpenCode:
+			r.Files, r.Err = e.installOpenCodeSkill()
 		default:
 			r.Err = fmt.Errorf("unsupported platform: %s", p)
 		}
@@ -88,6 +91,8 @@ func (e *HookEngine) Uninstall(platforms []Platform) []InstallResult {
 			r.Files, r.Err = e.uninstallCodex()
 		case PlatformAntigravity:
 			r.Files, r.Err = e.uninstallAntigravity()
+		case PlatformOpenCode:
+			r.Files, r.Err = e.uninstallOpenCodeSkill()
 		default:
 			r.Err = fmt.Errorf("unsupported platform: %s", p)
 		}
@@ -111,6 +116,8 @@ func (e *HookEngine) Status(platforms []Platform) map[Platform]bool {
 			status[p] = e.codexInstalled()
 		case PlatformAntigravity:
 			status[p] = e.antigravityInstalled()
+		case PlatformOpenCode:
+			status[p] = e.openCodeSkillInstalled()
 		default:
 			status[p] = false
 		}
@@ -483,6 +490,51 @@ func (e *HookEngine) antigravityInstalled() bool {
 	}
 	_, hasEntry := data["sv-memory"]
 	return hasEntry
+}
+
+// --- OpenCode Skill ---
+// OpenCode does not support PreToolUse hooks natively. Instead, it uses
+// a Skills system (SKILL.md) loaded via the `skill` tool. We install a
+// skill that mirrors the nudge instructions from hook scripts.
+
+func (e *HookEngine) openCodeSkillDir() string {
+	return filepath.Join(e.projPath, ".opencode", "skills", "sv-memory")
+}
+
+func (e *HookEngine) openCodeSkillPath() string {
+	return filepath.Join(e.openCodeSkillDir(), "SKILL.md")
+}
+
+func (e *HookEngine) installOpenCodeSkill() ([]string, error) {
+	var created []string
+	skillDir := e.openCodeSkillDir()
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		return created, fmt.Errorf("failed to create .opencode/skills/sv-memory dir: %w", err)
+	}
+	skillPath := e.openCodeSkillPath()
+	content := hookScript(PlatformOpenCode, e.mode)
+	if err := os.WriteFile(skillPath, []byte(content), 0644); err != nil {
+		return created, fmt.Errorf("failed to write opencode skill: %w", err)
+	}
+	created = append(created, skillPath)
+	return created, nil
+}
+
+func (e *HookEngine) uninstallOpenCodeSkill() ([]string, error) {
+	var removed []string
+	skillDir := e.openCodeSkillDir()
+	if err := os.RemoveAll(skillDir); err != nil && !os.IsNotExist(err) {
+		return removed, fmt.Errorf("failed to remove opencode skill dir: %w", err)
+	}
+	if _, err := os.Stat(skillDir); os.IsNotExist(err) {
+		removed = append(removed, skillDir)
+	}
+	return removed, nil
+}
+
+func (e *HookEngine) openCodeSkillInstalled() bool {
+	_, err := os.Stat(e.openCodeSkillPath())
+	return err == nil
 }
 
 // SupportedPlatforms returns the list of all supported platforms.

@@ -290,6 +290,69 @@ func TestUninstallAntigravity(t *testing.T) {
 	}
 }
 
+func TestHookScriptContentOpenCode(t *testing.T) {
+	content, err := HookScriptContent(PlatformOpenCode, ModeSoft)
+	if err != nil {
+		t.Fatalf("failed to get opencode skill: %v", err)
+	}
+	if !strings.Contains(content, "sv_mem_search") {
+		t.Error("opencode skill should contain sv_mem_search instructions")
+	}
+}
+
+func TestInstallOpenCodeSkill(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-hook-oc-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	eng := New(tempDir, ModeSoft)
+	results := eng.Install([]Platform{PlatformOpenCode})
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Err != nil {
+		t.Fatalf("install failed: %v", results[0].Err)
+	}
+
+	skillPath := filepath.Join(tempDir, ".opencode", "skills", "sv-memory", "SKILL.md")
+	if _, err := os.Stat(skillPath); os.IsNotExist(err) {
+		t.Fatalf("SKILL.md not created at %s", skillPath)
+	}
+
+	status := eng.Status([]Platform{PlatformOpenCode})
+	if !status[PlatformOpenCode] {
+		t.Error("expected opencode status to be installed")
+	}
+}
+
+func TestUninstallOpenCodeSkill(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-hook-oc-uninstall")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	eng := New(tempDir, ModeSoft)
+
+	installResults := eng.Install([]Platform{PlatformOpenCode})
+	if installResults[0].Err != nil {
+		t.Fatalf("install failed: %v", installResults[0].Err)
+	}
+
+	uninstallResults := eng.Uninstall([]Platform{PlatformOpenCode})
+	if uninstallResults[0].Err != nil {
+		t.Fatalf("uninstall failed: %v", uninstallResults[0].Err)
+	}
+
+	skillDir := filepath.Join(tempDir, ".opencode", "skills", "sv-memory")
+	if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
+		t.Error("skill dir should have been removed")
+	}
+}
+
 func TestStatusNotInstalled(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-hook-status-test")
 	if err != nil {
@@ -308,6 +371,9 @@ func TestStatusNotInstalled(t *testing.T) {
 	}
 	if status[PlatformAntigravity] {
 		t.Error("expected antigravity to not be installed in empty dir")
+	}
+	if status[PlatformOpenCode] {
+		t.Error("expected opencode to not be installed in empty dir")
 	}
 }
 

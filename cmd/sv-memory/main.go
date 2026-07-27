@@ -1288,12 +1288,12 @@ var conflictsIgnoreCmd = &cobra.Command{
 
 var hooksCmd = &cobra.Command{
 	Use:   "hooks",
-	Short: "Manage PreToolUse hooks for AI assistants (Claude Code, Codex, Antigravity CLI)",
+	Short: "Manage PreToolUse hooks / skills for AI assistants (Claude Code, Codex, Antigravity CLI, OpenCode)",
 }
 
 var hooksInstallCmd = &cobra.Command{
 	Use:   "install",
-	Short: "Install PreToolUse hooks for sv-memory",
+	Short: "Install PreToolUse hooks or skills for sv-memory",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -1334,8 +1334,8 @@ var hooksInstallCmd = &cobra.Command{
 			if strict {
 				modeLabel = "strict (blocks first raw read)"
 			}
-			fmt.Printf("\nHooks installed successfully (%s mode).\n", modeLabel)
-			fmt.Println("Restart your AI assistant to activate the hooks.")
+			fmt.Printf("\nHooks/skills installed successfully (%s mode).\n", modeLabel)
+			fmt.Println("Restart your AI assistant to activate.")
 		}
 		return nil
 	},
@@ -1343,7 +1343,7 @@ var hooksInstallCmd = &cobra.Command{
 
 var hooksUninstallCmd = &cobra.Command{
 	Use:   "uninstall",
-	Short: "Remove PreToolUse hooks for sv-memory",
+	Short: "Remove PreToolUse hooks or skills for sv-memory",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -1532,8 +1532,8 @@ func init() {
 	conflictsScanCmd.Flags().Float64("threshold", 0.45, "Jaccard similarity threshold for descriptions")
 
 	hooksInstallCmd.Flags().Bool("strict", false, "Enable strict mode (blocks the first raw source read)")
-	hooksInstallCmd.Flags().String("platform", "", "Target platform (claude-code, codex, antigravity). Default: all")
-	hooksUninstallCmd.Flags().String("platform", "", "Target platform (claude-code, codex, antigravity). Default: all")
+	hooksInstallCmd.Flags().String("platform", "", "Target platform (claude-code, codex, antigravity, opencode). Default: all")
+	hooksUninstallCmd.Flags().String("platform", "", "Target platform (claude-code, codex, antigravity, opencode). Default: all")
 
 	hooksCmd.AddCommand(hooksInstallCmd)
 	hooksCmd.AddCommand(hooksUninstallCmd)

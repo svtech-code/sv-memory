@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-//go:embed scripts/claude-code-soft.sh scripts/claude-code-strict.sh scripts/codex-noop.sh scripts/antigravity-soft.sh scripts/antigravity-strict.sh
+//go:embed scripts/claude-code-soft.sh scripts/claude-code-strict.sh scripts/codex-noop.sh scripts/antigravity-soft.sh scripts/antigravity-strict.sh scripts/opencode-skill.md
 var hookScriptsFS embed.FS
 
 func hookScript(platform Platform, mode Mode) string {
@@ -25,6 +25,8 @@ func hookScript(platform Platform, mode Mode) string {
 		} else {
 			filename = "scripts/antigravity-soft.sh"
 		}
+	case PlatformOpenCode:
+		filename = "scripts/opencode-skill.md"
 	default:
 		return ""
 	}
