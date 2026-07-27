@@ -1,0 +1,86 @@
+package db
+
+import (
+	"database/sql"
+	"fmt"
+	"time"
+
+	_ "modernc.org/sqlite"
+)
+
+type Pool struct {
+	Writer *sql.DB
+	Reader *sql.DB
+}
+
+func (p *Pool) Close() error {
+	var wErr, rErr error
+	if p.Writer != nil {
+		wErr = p.Writer.Close()
+	}
+	if p.Reader != nil {
+		rErr = p.Reader.Close()
+	}
+	if wErr != nil {
+		return wErr
+	}
+	return rErr
+}
+
+func NewDBPool(dbPath string) (*Pool, error) {
+	w, err := openDBWithTuning(dbPath, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open writer at %s: %w", dbPath, err)
+	}
+	if err := applyMigrations(w); err != nil {
+		w.Close()
+		return nil, err
+	}
+
+	r, rerr := openDBWithTuning(dbPath, false)
+	if rerr != nil {
+		return &Pool{Writer: w, Reader: w}, nil
+	}
+	return &Pool{Writer: w, Reader: r}, nil
+}
+
+func openDBWithTuning(dbPath string, isWriter bool) (*sql.DB, error) {
+	dsn := dbPath
+	if !isWriter {
+		dsn = "file:" + dbPath + "?mode=ro&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+	}
+
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	if isWriter {
+		db.SetMaxOpenConns(1)
+		db.SetMaxIdleConns(1)
+	} else {
+		maxReaders := 8
+		db.SetMaxOpenConns(maxReaders)
+		db.SetMaxIdleConns(maxReaders)
+	}
+	db.SetConnMaxIdleTime(30 * time.Minute)
+	db.SetConnMaxLifetime(1 * time.Hour)
+
+	pragmas := []string{
+		"PRAGMA foreign_keys = ON;",
+		"PRAGMA journal_mode = WAL;",
+		"PRAGMA synchronous = NORMAL;",
+		"PRAGMA temp_store = MEMORY;",
+		"PRAGMA cache_size = -20000;",
+		"PRAGMA mmap_size = 268435456;",
+		"PRAGMA busy_timeout = 5000;",
+	}
+	for _, p := range pragmas {
+		if _, err := db.Exec(p); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("failed to apply pragma %q: %w", p, err)
+		}
+	}
+
+	return db, nil
+}
