@@ -1,6 +1,7 @@
 package extractor
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/odvcencio/gotreesitter"
@@ -28,8 +29,17 @@ func (t *TreeSitterExtractor) Extract(content []byte, relPath, ext string) ([]Sy
 	}
 
 	parser := gotreesitter.NewParser(lang)
-	tree, err := parser.Parse(content)
-	if err != nil || tree == nil || tree.RootNode() == nil {
+	var tree *gotreesitter.Tree
+	var parseErr error
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				parseErr = fmt.Errorf("tree-sitter panic: %v", r)
+			}
+		}()
+		tree, parseErr = parser.Parse(content)
+	}()
+	if parseErr != nil || tree == nil || tree.RootNode() == nil {
 		return t.regexFallback.Extract(content, relPath, ext)
 	}
 
