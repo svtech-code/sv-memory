@@ -1,0 +1,16 @@
+{
+  "id": "091f6e12",
+  "project_id": "ce22c23ac33d7a36",
+  "category": "qa",
+  "what": "Added database SetConnMaxLifetime to connection pool and created protocol_test.go unit tests",
+  "why": "The user suggested adding SetConnMaxLifetime for long-lived sessions and covering protocol.go with tests.",
+  "learned": "SetConnMaxLifetime prevents stale connection leakage in SQLite pools for long-lived MCP processes. Maintain 100% test coverage on utility layers such as protocol.go by creating isolated temp-workspace tests.",
+  "git_branch": "main",
+  "git_commit": "4125abc",
+  "author": "Mario Sandoval (Sv Tech)",
+  "session_id": "db63cbee",
+  "last_seen_at": "0001-01-01T00:00:00Z",
+  "normalized_hash": "e0864f335e1c0571d8de22c608876e187a215bd81ff833066b732b26eb3bbbca",
+  "deleted_at": "0001-01-01T00:00:00Z",
+  "created_at": "2026-07-26T21:26:31.751064-04:00"
+}

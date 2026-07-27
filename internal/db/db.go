@@ -241,6 +241,7 @@ func openDBWithTuning(dbPath string, isWriter bool) (*sql.DB, error) {
 		db.SetMaxIdleConns(maxReaders)
 	}
 	db.SetConnMaxIdleTime(30 * time.Minute)
+	db.SetConnMaxLifetime(1 * time.Hour)
 
 	// Common PRAGMAs applied per-connection (SQLite PRAGMAs are per-connection).
 	pragmas := []string{
