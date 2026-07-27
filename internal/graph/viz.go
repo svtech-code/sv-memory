@@ -201,7 +201,7 @@ func (g *InMemoryGraph) ExportHTML(w io.Writer, commLabels map[int]string) error
           'and place next to this file.</div>';
       }
     };
-    s.onload = initGraph;
+    s.onload = function() { initGraph(); };
     document.head.appendChild(s);
   };
   loadVis('https://cdn.jsdelivr.net/npm/vis-network@9.1.6/dist/vis-network.min.js');
