@@ -1059,6 +1059,11 @@ var (
 			sb.WriteString("*No connections/edges found in this range.*\n")
 		}
 
+		benchmark := tokenBenchmark(subGraph.Nodes, sb.Len()/4)
+		if benchmark != "" {
+			sb.WriteString("\n" + benchmark + "\n")
+		}
+
 		responseText := sb.String()
 		if tokenBudget > 0 && len(responseText) > tokenBudget*4 {
 			totalNodes := len(subGraph.Nodes)
@@ -1457,7 +1462,23 @@ var (
 			}
 		}
 
-		// Suggested Questions
+		// Token benchmark
+		allNodes := []*graph.Node{node}
+		for _, e := range g.EdgesBySource[nID] {
+			if n, ok := g.Nodes[e.TargetID]; ok {
+				allNodes = append(allNodes, n)
+			}
+		}
+		for _, e := range g.EdgesByTarget[nID] {
+			if n, ok := g.Nodes[e.SourceID]; ok {
+				allNodes = append(allNodes, n)
+			}
+		}
+		benchmark := tokenBenchmark(allNodes, sb.Len()/4)
+		if benchmark != "" {
+			sb.WriteString("\n" + benchmark + "\n")
+		}
+
 		sb.WriteString("\n### ❓ Suggested Questions to ask Antigravity about this node:\n")
 		sb.WriteString(fmt.Sprintf("1. \"What is the primary responsibility of `%s`?\"\n", node.Label))
 		sb.WriteString(fmt.Sprintf("2. \"Are there any architectural patterns or guidelines used inside `%s`?\"\n", node.Label))
@@ -1592,6 +1613,16 @@ var (
 				i+1, r.node.Label, r.node.Type, r.degree, g.FanIn[r.id], g.FanOut[r.id], r.bc, commStr))
 		}
 		sb.WriteString("\n*Use `sv_graph_explain` on any node for deeper analysis.*\n")
+
+		var allNodes []*graph.Node
+		for _, r := range ranked {
+			allNodes = append(allNodes, r.node)
+		}
+		benchmark := tokenBenchmark(allNodes, sb.Len()/4)
+		if benchmark != "" {
+			sb.WriteString("\n" + benchmark + "\n")
+		}
+
 		sb.WriteString(fmt.Sprintf("\n*Response: ~%d tokens*", sb.Len()/4))
 
 		return mcp.NewToolResultText(sb.String()), nil
@@ -1712,6 +1743,39 @@ func computeCommLabels(g *graph.InMemoryGraph, centrality ...map[string]float64)
 		bc = g.BetweennessCentrality()
 	}
 	return g.DetectCommunityLabels(communities, bc)
+}
+
+// tokenBenchmark estimates token savings vs reading raw files.
+func tokenBenchmark(nodes []*graph.Node, responseTokens int) string {
+	totalLOC := 0
+	for _, n := range nodes {
+		if n.Metadata == nil {
+			totalLOC += 50
+			continue
+		}
+		loc, ok := n.Metadata["loc"]
+		if !ok {
+			totalLOC += 50
+			continue
+		}
+		switch v := loc.(type) {
+		case float64:
+			totalLOC += int(v)
+		case int:
+			totalLOC += v
+		case int64:
+			totalLOC += int(v)
+		default:
+			totalLOC += 50
+		}
+	}
+	rawTokens := totalLOC * 4
+	if rawTokens <= 0 || responseTokens <= 0 {
+		return ""
+	}
+	savings := float64(rawTokens) / float64(responseTokens)
+	return fmt.Sprintf("*Token savings: ~%.0fx vs reading raw files (%d tokens vs %d tokens)*",
+		savings, rawTokens, responseTokens)
 }
 
 // commLabelStr returns a formatted community string: "Label (ID N)" or "none".

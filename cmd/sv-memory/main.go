@@ -767,6 +767,46 @@ var rebuildCmd = &cobra.Command{
 	},
 }
 
+var graphWikiCmd = &cobra.Command{
+	Use:   "wiki",
+	Short: "Export the dependency graph as a markdown wiki (per-community pages)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		cfg, err := config.LoadConfig(cwd)
+		if err != nil {
+			return err
+		}
+		database, err := db.InitDB(cfg.DBPath)
+		if err != nil {
+			return err
+		}
+		defer database.Close()
+
+		g, err := graph.LoadFullGraph(database, cfg.ProjectID)
+		if err != nil {
+			return err
+		}
+
+		output, _ := cmd.Flags().GetString("output")
+		if output == "" {
+			output = "graph-wiki"
+		}
+
+		comms := g.LeidenDetectCommunities()
+		centrality := g.BetweennessCentrality()
+		commLabels := g.DetectCommunityLabels(comms, centrality)
+
+		if err := g.ExportWiki(output, commLabels, comms, centrality); err != nil {
+			return err
+		}
+		fmt.Printf("Wiki exported to %s/\n", output)
+		return nil
+	},
+}
+
 var graphVizCmd = &cobra.Command{
 	Use:   "viz",
 	Short: "Export an interactive HTML visualization of the dependency graph",
@@ -1259,6 +1299,8 @@ func init() {
 	graphCmd.AddCommand(graphPathCmd)
 	graphCmd.AddCommand(graphExplainCmd)
 	graphCmd.AddCommand(graphCommunitiesCmd)
+	graphCmd.AddCommand(graphWikiCmd)
+	graphWikiCmd.Flags().StringP("output", "o", "graph-wiki", "Output directory for wiki pages")
 	graphCmd.AddCommand(graphVizCmd)
 	graphVizCmd.Flags().StringP("output", "o", "graph.html", "Output HTML file path")
 	rootCmd.AddCommand(initCmd)
