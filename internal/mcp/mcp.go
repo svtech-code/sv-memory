@@ -1707,7 +1707,7 @@ var (
 		commLabels := g.DetectCommunityLabels(comms, centrality)
 
 		var buf strings.Builder
-		if err := g.ExportHTML(&buf, commLabels); err != nil {
+		if err := g.ExportHTML(&buf, comms, commLabels); err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to generate HTML: %v", err)), nil
 		}
 

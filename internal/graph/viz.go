@@ -25,9 +25,8 @@ type vizEdge struct {
 	Arrows string `json:"arrows"`
 }
 
-func (g *InMemoryGraph) ExportHTML(w io.Writer, commLabels map[int]string) error {
+func (g *InMemoryGraph) ExportHTML(w io.Writer, comms map[string]int, commLabels map[int]string) error {
 	centrality := g.BetweennessCentrality()
-	communities := g.ExtractCommunities()
 
 	minBC, maxBC := 1.0, 1.0
 	first := true
@@ -75,7 +74,7 @@ func (g *InMemoryGraph) ExportHTML(w io.Writer, commLabels map[int]string) error
 	for _, id := range nodeIDs {
 		n := g.Nodes[id]
 		bc := centrality[id]
-		comm := communities[id]
+		comm := comms[id]
 		deg := nodeDegree[id]
 
 		size := 10 + (deg * 30 / maxDegree)
@@ -305,6 +304,10 @@ function hideDetail() {
   document.getElementById('detail').style.display = 'none';
   currentDetail = null;
 }
+
+window.focusCommunity = focusCommunity;
+window.hideDetail = hideDetail;
+window.filterNodes = filterNodes;
 
 } // initGraph
 </script>

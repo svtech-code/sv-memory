@@ -901,7 +901,7 @@ var graphVizCmd = &cobra.Command{
 		centrality := g.BetweennessCentrality()
 		commLabels := g.DetectCommunityLabels(comms, centrality)
 
-		if err := g.ExportHTML(f, commLabels); err != nil {
+		if err := g.ExportHTML(f, comms, commLabels); err != nil {
 			return err
 		}
 		fmt.Printf("Graph visualization exported to %s\n", output)
