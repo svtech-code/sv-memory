@@ -168,10 +168,13 @@ func (r *RegexExtractor) Extract(content []byte, relPath, ext string) ([]Symbol,
 			if len(m) > 1 && len(m[1]) > 0 {
 				imports = append(imports, string(m[1]))
 			}
-		}
-		for _, m := range goImportBlockRegex.FindAllSubmatch(content, -1) {
-			if len(m) > 1 && len(m[1]) > 0 {
-				imports = append(imports, string(m[1]))
+			if len(m) > 2 && len(m[2]) > 0 {
+				blockMatches := goImportBlockRegex.FindAllSubmatch(m[2], -1)
+				for _, bm := range blockMatches {
+					if len(bm) > 1 && len(bm[1]) > 0 {
+						imports = append(imports, string(bm[1]))
+					}
+				}
 			}
 		}
 	case ".php":

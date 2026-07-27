@@ -115,14 +115,18 @@ func isStdlib(imp, ext string) bool {
 
 // isExternalPkg returns true if the import path represents a external library.
 func isExternalPkg(imp string) bool {
-	// Simple rule: if it doesn't start with "." and doesn't contain a path separator
-	// (or contains a path separator but is a standard package layout like github.com/...)
 	if strings.HasPrefix(imp, ".") || strings.HasPrefix(imp, "/") {
 		return false
 	}
-	// Ignore empty imports
 	if strings.TrimSpace(imp) == "" {
 		return false
+	}
+	// Reject strings with whitespace or newlines — those are code fragments
+	// captured by over-eager regex, not valid package paths.
+	for _, r := range imp {
+		if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
+			return false
+		}
 	}
 	return true
 }
