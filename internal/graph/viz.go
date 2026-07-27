@@ -224,7 +224,7 @@ const communities = %s;
 const container = document.getElementById('network');
 const data = { nodes, edges };
 const options = {
-  physics: { stabilization: { iterations: 50 }, solver: 'barnesHut', barnesHut: { gravitationalConstant: -3000, centralGravity: 0.3, springLength: 120, springConstant: 0.04, damping: 0.3 } },
+  physics: { stabilization: { iterations: 25 }, solver: 'barnesHut', barnesHut: { gravitationalConstant: -3000, centralGravity: 0.3, springLength: 120, springConstant: 0.04, damping: 0.3 } },
   edges: { smooth: { type: 'continuous' }, font: { size: 10, color: '#888' }, color: { inherit: 'to', opacity: 0.5 } },
   nodes: { font: { size: 12, color: '#eee' }, borderWidth: 1, borderWidthSelected: 2 },
   interaction: { hover: true, tooltipDelay: 200, navigationButtons: true, keyboard: true },
@@ -238,6 +238,23 @@ commIds.forEach(function(id) {
 });
 
 const network = new vis.Network(container, data, options);
+
+// Cluster package nodes by community for performance.
+commIds.forEach(function(id) {
+  network.clustering.cluster({
+    joinCondition: function(node) {
+      return node.group === id && String(node.id).indexOf('pkg:') === 0;
+    },
+    clusterNodeProperties: {
+      label: communities[id] + ' (pkg)',
+      shape: 'dot',
+      size: 15,
+      color: { background: PALETTE[id %% PALETTE.length], border: '#fff' },
+      borderWidth: 1,
+      font: { size: 10, color: '#ccc' }
+    }
+  });
+});
 
 document.getElementById('stats').textContent = nodes.length + ' nodes, ' + edges.length + ' edges';
 

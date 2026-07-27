@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"bufio"
 	"fmt"
 	"io/fs"
 	"os"
@@ -8,8 +9,174 @@ import (
 	"strings"
 )
 
-// Common directories to ignore during code scanning.
-var ignoreDirs = map[string]bool{
+// gitignoreMatcher evaluates file paths against .gitignore-style patterns.
+// Supports #comments, empty lines, !negation, trailing / for dirs, *, **, and
+// leading / anchoring. Reads both .gitignore and .sv-memoryignore files.
+type gitignoreMatcher struct {
+	patterns []gitignorePattern
+}
+
+type gitignorePattern struct {
+	raw     string
+	negate  bool
+	dirOnly bool
+	rooted  bool
+	parts   []string // split on /, with ** preserved
+}
+
+func loadGitignore(projPath string) (*gitignoreMatcher, error) {
+	m := &gitignoreMatcher{}
+
+	// Load .sv-memoryignore first (higher precedence)
+	m.loadFile(filepath.Join(projPath, ".sv-memoryignore"))
+	// Then .gitignore
+	m.loadFile(filepath.Join(projPath, ".gitignore"))
+
+	return m, nil
+}
+
+func (m *gitignoreMatcher) loadFile(path string) {
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		m.addPattern(line)
+	}
+}
+
+func (m *gitignoreMatcher) addPattern(line string) {
+	p := gitignorePattern{raw: line}
+
+	if strings.HasPrefix(line, "\\!") {
+		line = line[1:] // escaped leading !
+	} else if strings.HasPrefix(line, "!") {
+		p.negate = true
+		line = line[1:]
+	}
+
+	if strings.HasSuffix(line, "/") {
+		p.dirOnly = true
+		line = strings.TrimSuffix(line, "/")
+	}
+
+	if strings.HasPrefix(line, "/") {
+		p.rooted = true
+		line = line[1:]
+	}
+
+	// Split into parts for matching
+	p.parts = strings.Split(line, "/")
+
+	m.patterns = append(m.patterns, p)
+}
+
+// match returns true if the given relative path should be IGNORED.
+// A negated pattern returns false (not ignored).
+func (m *gitignoreMatcher) match(relPath string, isDir bool) bool {
+	ignored := false
+	for _, p := range m.patterns {
+		if p.dirOnly && !isDir {
+			continue
+		}
+		if p.matchPath(relPath) {
+			ignored = !p.negate
+		}
+	}
+	return ignored
+}
+
+func (p *gitignorePattern) matchPath(relPath string) bool {
+	// Normalize path
+	relPath = filepath.ToSlash(relPath)
+	parts := strings.Split(relPath, "/")
+
+	if p.rooted {
+		return p.matchParts(parts, 0, 0)
+	}
+	// For non-rooted patterns, try matching at any position
+	for start := 0; start <= len(parts); start++ {
+		if p.matchParts(parts, start, 0) {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *gitignorePattern) matchParts(pathParts []string, pi, si int) bool {
+	if si >= len(p.parts) {
+		return pi >= len(pathParts)
+	}
+	if pi >= len(pathParts) {
+		// Only match trailing **
+		for i := si; i < len(p.parts); i++ {
+			if p.parts[i] != "**" {
+				return false
+			}
+		}
+		return true
+	}
+
+	part := p.parts[si]
+	if part == "**" {
+		// ** matches zero or more path components
+		if p.matchParts(pathParts, pi, si+1) {
+			return true
+		}
+		return p.matchParts(pathParts, pi+1, si)
+	}
+
+	if matchGlob(part, pathParts[pi]) {
+		return p.matchParts(pathParts, pi+1, si+1)
+	}
+	return false
+}
+
+func matchGlob(pattern, s string) bool {
+	// * matches anything except /
+	if pattern == "*" {
+		return true
+	}
+	// Simple glob matching: supports * and ?
+	pi, si := 0, 0
+	for si < len(pattern) {
+		if pi >= len(s) {
+			break
+		}
+		c := pattern[si]
+		switch c {
+		case '*':
+			// Try matching zero or more characters
+			for i := pi; i <= len(s); i++ {
+				if matchGlob(pattern[si+1:], s[i:]) {
+					return true
+				}
+			}
+			return false
+		case '?':
+			pi++
+			si++
+		default:
+			if pattern[si] != s[pi] {
+				return false
+			}
+			pi++
+			si++
+		}
+	}
+	return si == len(pattern) && pi == len(s)
+}
+
+// Common directories to ignore during code scanning (fallback when
+// .gitignore is not available).
+var fallbackIgnoreDirs = map[string]bool{
 	".git":         true,
 	"node_modules": true,
 	"vendor":       true,
@@ -53,19 +220,32 @@ func scanFiles(projPath string) (*walkResult, error) {
 	fileMeta := make(map[string]fileMetaEntry)
 	fileContents := make(map[string][]byte)
 
+	gi, _ := loadGitignore(projPath)
+
 	err := filepath.WalkDir(projPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
+
+		relPath, relErr := filepath.Rel(projPath, path)
+		if relErr != nil {
+			return nil
+		}
+
 		if d.IsDir() {
-			if ignoreDirs[d.Name()] {
+			// Skip if this directory name is in the fallback list or
+			// matches any gitignore/sv-memoryignore pattern.
+			if fallbackIgnoreDirs[d.Name()] {
+				return filepath.SkipDir
+			}
+			if gi != nil && gi.match(relPath+"/", true) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
-		relPath, relErr := filepath.Rel(projPath, path)
-		if relErr != nil {
+		// Skip ignored files (not just directories).
+		if gi != nil && gi.match(relPath, false) {
 			return nil
 		}
 
@@ -85,7 +265,6 @@ func scanFiles(projPath string) (*walkResult, error) {
 				"size":      size,
 			}
 
-			// Read file content for symbol detection and metadata enrichment.
 			if symbolScanExts[ext] {
 				content, readErr := os.ReadFile(path)
 				if readErr == nil {
@@ -120,7 +299,6 @@ func scanFiles(projPath string) (*walkResult, error) {
 		return nil, fmt.Errorf("failed walking directory: %w", err)
 	}
 
-	// Detect manifest files in the project root and create nodes for them.
 	var manifestFiles []string
 	for _, mf := range manifestFilenames {
 		mfPath := filepath.Join(projPath, mf)
