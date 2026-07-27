@@ -1,0 +1,16 @@
+{
+  "id": "e07717d9",
+  "project_id": "ce22c23ac33d7a36",
+  "category": "decision",
+  "what": "Reorganization of README files and definition of GitHub Free distribution strategy",
+  "why": "The user wanted to translate the README to English, set Spanish as secondary, and requested distribution options for Windows, macOS, and Linux using a free GitHub organization account.",
+  "learned": "Moved Spanish README to README_ES.md and created a new English README.md as the main entry point to make the project accessible globally. Created a distribution plan using GitHub Free features: compiling cross-platform binaries using GoReleaser triggered by Git tags.",
+  "git_branch": "main",
+  "git_commit": "f3d8d43",
+  "author": "Mario Sandoval (Sv Tech)",
+  "session_id": "662ec784",
+  "last_seen_at": "0001-01-01T00:00:00Z",
+  "normalized_hash": "78813e06fb8352abc21556d55b1afc2b5e3820321f305833af7f75f9d02b5f7b",
+  "deleted_at": "0001-01-01T00:00:00Z",
+  "created_at": "2026-07-26T20:57:27.263846-04:00"
+}

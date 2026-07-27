@@ -1,139 +1,137 @@
 # sv-memory 🧠
 
-**sv-memory** es una herramienta CLI de alto rendimiento en un solo binario y un servidor del Protocolo de Contexto de Modelos (Model Context Protocol - MCP) escrito en **Go**. Su propósito es eliminar la amnesia de contexto de los agentes de IA combinando memorias locales persistentes sobre decisiones y estándares de desarrollo con un grafo estructural de dependencias del código.
+**sv-memory** is a high-performance, single-binary CLI tool and Model Context Protocol (MCP) server written in **Go**. Its goal is to eliminate context amnesia for AI agents by combining persistent local memories about decisions and development standards with a structural code dependency graph.
 
-Desarrollado bajo el ecosistema de **SVTech** como una herramienta libre y de código abierto para la comunidad de desarrolladores.
-
----
-
-## 🚀 Características Clave
-
-1. **Memoria de Decisiones Persistente:** Captura correcciones de bugs complejos, decisiones arquitectónicas y estándares de codificación utilizando SQLite + FTS5 (Full-Text Search) para búsquedas de texto completo ultra rápidas por parte del agente.
-2. **Sincronización en Equipo (Git Sync):** Sincroniza automáticamente las memorias locales en el archivo `.sv-memory/memories.json` dentro del repositorio. Los miembros del equipo que clonen o actualicen el repositorio integrarán automáticamente estas memorias en sus bases de datos SQLite locales al inicializar el proyecto.
-3. **Grafo de Código en Go Puro:** Analiza el árbol de directorios del proyecto, detecta archivos, extrae imports/dependencias (Go, Python, TypeScript, JavaScript, Astro, PHP, HTML, CSS, Bash, Lua), resuelve rutas relativas y construye un grafo de dependencias interno guardado en SQLite.
-4. **Orquestación de Agentes (Reglas de Protocolo):** Inyecta automáticamente directrices en los archivos `AGENTS.md`, `.cursorrules` o `.windsurfrules` en la raíz del repositorio para guiar a los agentes de IA a consultar y escribir en la memoria de manera proactiva.
-5. **Portabilidad sin Dependencias:** Compilado en Go puro sin requerir CGO gracias al uso de `modernc.org/sqlite`. El binario compilado funciona directamente en macOS, Linux y Windows.
+Developed under the **SVTech** ecosystem as a free and open-source tool for the developer community.
 
 ---
 
-## 🛠️ Arquitectura
+## 🚀 Key Features
+
+1. **Persistent Decision Memory:** Captures complex bugfixes, architectural decisions, and coding standards using SQLite + FTS5 (Full-Text Search) for ultra-fast searches by the AI agent.
+2. **Team Synchronization (Git Sync):** Automatically syncs local memories into the `.sv-memory/memories.json` file inside the repository. Team members cloning or updating the repository will automatically integrate these memories into their local SQLite databases upon initialization.
+3. **Pure Go Code Graph:** Analyzes the project directory tree, detects files, extracts imports/dependencies (Go, Python, TypeScript, JavaScript, Astro, PHP, HTML, CSS, Bash, Lua), resolves relative paths, and builds an internal dependency graph stored in SQLite.
+4. **Agent Orchestration (Protocol Rules):** Automatically injects agent guidelines into `AGENTS.md`, `.cursorrules`, or `.windsurfrules` files in the repository root to guide AI agents to query and write memory proactively.
+5. **Dependency-Free Portability:** Compiled in pure Go without requiring CGO, thanks to `modernc.org/sqlite`. The compiled binary runs directly on macOS, Linux, and Windows.
+
+---
+
+## 🛠️ Architecture
 
 ```text
-       ┌────────────────────────────────────────────────────────┐
-       │    Agente de IA (Antigravity CLI, Claude, Cursor, etc) │
-       └───────────────────────────┬────────────────────────────┘
-                                   │  Protocolo MCP via Stdio
-       ┌───────────────────────────▼────────────────────────────┐
-       │                   Binario sv-memory                    │
-       │                                                        │
-       │  ┌──────────────────┐ ┌──────────────┐ ┌────────────┐  │
-       │  │ Motor de Memoria │ │ Motor de     │ │ Config/Env │  │
-       │  │                  │ │ Grafo        │ │            │  │
-       │  └────────┬─────────┘ └──────┬───────┘ └─────┬──────┘  │
-       └───────────┼──────────────────┼───────────────┼─────────┘
-                   │                  │               │
-       ┌───────────▼──────────────────▼───────────────▼─────────┐
-       │      SQLite Global (+ Disparadores FTS5 Sincronizados) │
-       │           (~/.config/sv-memory/storage.db)             │
-       └───────────────────────────┬────────────────────────────┘
-                                   │  Importación / Exportación Sync
-       ┌───────────────────────────▼────────────────────────────┐
-       │             Repositorio Git (JSON Versionado)          │
-       │             (.sv-memory/memories.json)                 │
-       └────────────────────────────────────────────────────────┘
+        ┌────────────────────────────────────────────────────────┐
+        │     AI Agent (Antigravity CLI, Claude, Cursor, etc)    │
+        └───────────────────────────┬────────────────────────────┘
+                                    │  MCP Protocol via Stdio
+        ┌───────────────────────────▼────────────────────────────┐
+        │                   sv-memory Binary                     │
+        │                                                        │
+        │  ┌──────────────────┐ ┌──────────────┐ ┌────────────┐  │
+        │  │  Memory Engine   │ │  Graph       │ │ Config/Env │  │
+        │  │                  │ │  Engine      │ │            │  │
+        │  └────────┬─────────┘ └──────┬───────┘ └─────┬──────┘  │
+        └───────────┼──────────────────┼───────────────┼─────────┘
+                    │                  │               │
+        ┌───────────▼──────────────────▼───────────────▼─────────┐
+        │      Global SQLite (+ Synchronized FTS5 Triggers)      │
+        │           (~/.config/sv-memory/storage.db)             │
+        └───────────────────────────┬────────────────────────────┘
+                                    │  Import / Export Sync
+        ┌───────────────────────────▼────────────────────────────┐
+        │             Git Repository (Versioned JSON)            │
+        │             (.sv-memory/memories.json)                 │
+        └────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📋 Requerimientos Mínimos
+## 📋 Minimum Requirements
 
-### Para Usuarios Finales (Uso del Servidor MCP / CLI)
+### For End Users (Using MCP Server / CLI)
 
-Si solo deseas utilizar `sv-memory` en tus proyectos de desarrollo:
+If you only want to use `sv-memory` in your development projects:
 
-- **Dependencias:** **Ninguna.** El binario es totalmente autocontenido. No requiere que tengas instalado Go, Node.js ni Python en tu máquina.
-- **Compatibilidad:** macOS (Intel/Apple Silicon), Linux o Windows.
-- **Clientes de IA:** Cualquier editor o cliente que soporte el protocolo MCP (como **Cursor**, **Windsurf** o **Claude Desktop**).
+- **Dependencies:** **None.** The binary is completely self-contained. It does not require Go, Node.js, or Python on your system.
+- **Compatibility:** macOS (Intel/Apple Silicon), Linux, or Windows.
+- **AI Clients:** Any editor or client supporting the MCP protocol (such as **Cursor**, **Windsurf**, or **Claude Desktop**).
 
-### Para Desarrolladores (Compilación desde Código Fuente)
+### For Developers (Compiling from Source)
 
-Si deseas modificar el código o compilar el binario tú mismo:
+If you want to modify the code or build the binary yourself:
 
-- **Lenguaje:** **Go 1.22+** instalado en tu sistema.
-- **Control de Versiones:** **Git** instalado.
-
----
-
-## 📦 Instalación y Uso
-
-Para empezar a utilizar `sv-memory`, debes completar **dos fases** obligatorias:
-
-1. **Fase Global:** Instalar el binario en tu sistema y registrar el servidor MCP en tu editor o CLI de IA.
-2. **Fase Local:** Inicializar la memoria en cada proyecto de desarrollo en el que desees trabajar.
+- **Language:** **Go 1.22+** installed on your system.
+- **Version Control:** **Git** installed.
 
 ---
 
-### Paso 1: Obtener e Instalar el Binario (Fase Global)
+## 📦 Installation and Setup
 
-#### Opción A: Instalación Rápida Global (Próximamente — Requiere Releases en GitHub)
-Una vez que la primera versión estable sea publicada en GitHub Releases, podrás descargar e instalar la herramienta globalmente en tu sistema (macOS/Linux) con un solo comando:
+To start using `sv-memory`, you must complete **two mandatory phases**:
+
+1. **Global Phase:** Install the binary on your system and register the MCP server in your AI editor or CLI.
+2. **Local Phase:** Initialize the memory in each development project directory you want to work on.
+
+---
+
+### Step 1: Install the Binary (Global Phase)
+
+#### Option A: Quick Global Installation (Coming Soon — Requires GitHub Releases)
+Once the first stable version is published to GitHub Releases, you will be able to download and install the tool globally on your system (macOS/Linux) with a single command:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/svtech/sv-memory/main/install.sh | bash
 ```
-_Este script detectará tu sistema operativo y arquitectura, descargará el binario adecuado desde GitHub Releases y lo instalará de forma automática en `/usr/local/bin/sv-memory`._
+_This script will automatically detect your OS and architecture, download the appropriate binary from GitHub Releases, and install it to `/usr/local/bin/sv-memory`._
 
-#### Opción B: Compilación desde Código Fuente (Desarrolladores)
-Si prefieres clonar el repositorio y generar el binario manualmente:
-1. Clona el repositorio y entra al directorio:
+#### Option B: Compile from Source (Developers)
+If you prefer to clone the repository and build the binary manually:
+1. Clone the repository and enter the directory:
    ```bash
    git clone https://github.com/svtech/sv-memory.git
    cd sv-memory
    ```
-2. Compila el ejecutable optimizado:
+2. Build the optimized executable:
    ```bash
    go build -o sv-memory ./cmd/sv-memory
    ```
-3. Copia el ejecutable resultante a tu carpeta global para que esté disponible en cualquier terminal:
+3. Copy the resulting binary to a directory in your system PATH so it is available globally:
    ```bash
    sudo cp sv-memory /usr/local/bin/
    ```
 
 ---
 
-### Paso 2: Registrar el Servidor MCP en tu Editor / CLI (Fase Global)
+### Step 2: Register the MCP Server in your AI Client (Global Phase)
 > [!IMPORTANT]
-> **Este paso es obligatorio.** Inicializar el proyecto con `init` no es suficiente. Si no registras el servidor en tu cliente de IA (como Cursor o Claude Desktop), el agente de IA no sabrá dónde encontrar `sv-memory` ni cómo comunicarse con él.
+> **This step is mandatory.** Initializing the project with `init` is not enough. If you do not register the server in your AI client (like Cursor or Claude Desktop), the AI agent will not know where to find `sv-memory` or how to communicate with it.
 
-Dirígete a la sección de **[Configuración en Clientes de IA](#%EF%B8%8F-configuraci%C3%B3n-en-clientes-de-ia)** al final de este documento y añade la configuración correspondiente. Esto le enseñará a tu editor o CLI de IA a arrancar el servidor `sv-memory mcp` en segundo plano de manera automática.
+Go to the **[AI Clients Configuration](#%EF%B8%8F-ai-clients-configuration)** section at the end of this document and add the corresponding configuration. This instructs your editor or AI CLI to launch the `sv-memory mcp` server in the background automatically.
 
 ---
 
-### Paso 3: Inicializar tu Proyecto (Fase Local)
+### Step 3: Initialize Your Project (Local Phase)
 > [!IMPORTANT]
-> **Este paso es obligatorio para cada proyecto.** Debes indicarle a `sv-memory` qué carpeta indexar y dónde inyectar el protocolo de instrucciones para el agente de IA.
+> **This step is mandatory for each project.** You must tell `sv-memory` which folder to index and where to inject the AI agent instruction protocol.
 
-1. Abre tu terminal y navega a la raíz del proyecto de desarrollo en el que quieres trabajar (ej: `cd ~/mi-proyecto-web`).
-2. Ejecuta el comando de inicialización:
+1. Open your terminal and navigate to the root of the project you want to work on (e.g., `cd ~/my-web-project`).
+2. Run the initialization command:
    ```bash
    sv-memory init
    ```
-   *(Este comando creará el archivo `AGENTS.md` local en la raíz de ese proyecto y guardará el grafo de dependencias inicial en la base de datos SQLite global de tu usuario).*
-
-Una vez completados estos pasos, ¡tu agente de IA ya tendrá memoria persistente y conocimiento del grafo de código activo de forma completamente automática!
+   *(This command computes a unique project ID based on the Git repository root, registers the project in the global SQLite database, scans files to build the initial dependency graph, and creates the `AGENTS.md` file).*
 
 ---
 
-## 💻 Comandos del CLI
+## 💻 CLI Commands
 
 ### 1. `sv-memory init`
 
-Inicializa `sv-memory` en el proyecto actual:
+Initializes `sv-memory` in the current project:
 
-- Calcula un ID de proyecto único basado en la raíz del repositorio Git.
-- Registra el proyecto en la base de datos global SQLite.
-- Escanea los archivos y construye el grafo de dependencias inicial.
-- Importa memorias compartidas desde `.sv-memory/memories.json` si ya existen.
-- Inyecta las reglas de protocolo del agente en `AGENTS.md`, `.cursorrules` o `.windsurfrules`.
+- Computes a unique project ID based on the Git repository root.
+- Registers the project in the global SQLite database.
+- Scans files and builds the initial dependency graph.
+- Imports shared memories from `.sv-memory/memories.json` if they exist.
+- Injects agent protocol guidelines into `AGENTS.md`, `.cursorrules`, or `.windsurfrules`.
 
 ```bash
 sv-memory init
@@ -141,7 +139,7 @@ sv-memory init
 
 ### 2. `sv-memory mcp`
 
-Inicia el servidor Model Context Protocol (MCP) a través de la entrada/salida estándar (`stdio`). Este es el comando que utilizan los clientes de IA para interactuar con la herramienta.
+Starts the Model Context Protocol (MCP) server over standard input/output (`stdio`). This is the command used by AI clients to interact with the tool.
 
 ```bash
 sv-memory mcp
@@ -149,7 +147,7 @@ sv-memory mcp
 
 ### 3. `sv-memory graph rebuild`
 
-Fuerza un re-escaneo del árbol de archivos del proyecto y actualiza los nodos del grafo de código junto con sus aristas de relación.
+Forces a full re-scan of the project directory tree and updates the code graph nodes along with their relationships.
 
 ```bash
 sv-memory graph rebuild
@@ -157,7 +155,7 @@ sv-memory graph rebuild
 
 ### 4. `sv-memory sync`
 
-Ejecuta la sincronización de manera manual. Importa nuevas memorias del archivo JSON de Git hacia SQLite y exporta todas las memorias locales de la base de datos al archivo `.sv-memory/memories.json`.
+Manually triggers synchronization. Imports new memories from the Git JSON file to SQLite, and exports all local SQLite memories of the project to `.sv-memory/memories.json`.
 
 ```bash
 sv-memory sync
@@ -165,10 +163,10 @@ sv-memory sync
 
 ### 5. `sv-memory configure`
 
-Inicia un asistente interactivo por fases en la terminal para configurar tus entornos de desarrollo.
-* **Fase 1 (Editores):** Te permite seleccionar qué editores configurar (`Cursor`, `VS Code`, `Zed`, `Windsurf`).
-* **Fase 2 (CLIs):** Te permite seleccionar qué herramientas de terminal configurar (`Claude Code`, `OpenCode`, `Codex`, `Antigravity CLI (agy)`).
-* **Fase 3 (Aplicación):** Genera un resumen, solicita confirmación y realiza de manera segura la inyección de configuraciones automáticas (para herramientas como Zed, OpenCode, Antigravity y Claude Code) y muestra instrucciones de copiado paso a paso para el resto.
+Launches an interactive setup wizard in the terminal to configure your editors and CLIs.
+* **Phase 1 (Editors):** Select which editors to configure (`Cursor`, `VS Code`, `Zed`, `Windsurf`).
+* **Phase 2 (CLIs):** Select which terminal tools to configure (`Claude Code`, `OpenCode`, `Codex`, `Antigravity CLI (agy)`).
+* **Phase 3 (Application):** Generates a summary, requests confirmation, performs configuration injection safely for supported tools, and displays manual step-by-step instructions for the rest.
 
 ```bash
 sv-memory configure
@@ -176,54 +174,54 @@ sv-memory configure
 
 ---
 
-## 🧩 Herramientas del Model Context Protocol (MCP)
+## 🧩 Model Context Protocol (MCP) Tools
 
-Una vez conectado, `sv-memory` expone 4 herramientas para los agentes de IA:
+Once connected, `sv-memory` exposes several tools to AI agents:
 
-1. **`sv_mem_save`**: Guarda decisiones arquitectónicas, corrección de fallos o guías de desarrollo. Automatiza la exportación inmediata a `.sv-memory/memories.json`.
-2. **`sv_mem_search`**: Realiza búsquedas de texto completo (FTS) sobre las memorias guardadas. Permite filtrar por categorías.
-3. **`sv_graph_query`**: Consulta el subgrafo de dependencias de un archivo, módulo o paquete con un nivel de profundidad configurable. Retorna los nodos conectados y genera un diagrama en formato **Mermaid** de Markdown.
-4. **`sv_graph_sync`**: Actualiza y vuelve a sincronizar el grafo de dependencias estructurales en SQLite.
+1. **`sv_mem_save`**: Saves architectural decisions, bugfixes, or development guides. Automatically triggers immediate export to `.sv-memory/memories.json`.
+2. **`sv_mem_search`**: Performs Full-Text Search (FTS) queries on saved memories. Supports category filters.
+3. **`sv_graph_query`**: Queries the dependency subgraph of a file, module, or package with a configurable search depth. Returns connected nodes and generates a **Mermaid** diagram.
+4. **`sv_graph_sync`**: Updates and resynchronizes the structural dependency graph in SQLite.
 
 ---
 
-## ⚙️ Configuración en Clientes de IA
+## ⚙️ AI Clients Configuration
 
-Para utilizar `sv-memory` como servidor MCP, debes configurarlo en tu cliente de IA preferido utilizando la ruta absoluta a tu binario compilado (o simplemente `sv-memory` si lo instalaste globalmente en el PATH).
+To use `sv-memory` as an MCP server, configure it in your preferred AI client using the absolute path to your compiled binary (or simply `sv-memory` if installed globally in your PATH).
 
 ### 1. Claude Desktop
-Añade la siguiente configuración en tu archivo `claude_desktop_config.json` (Ruta en Mac: `~/Library/Application Support/Claude/claude_desktop_config.json` o en Linux: `~/.config/Claude/claude_desktop_config.json`):
+Add the following configuration in your `claude_desktop_config.json` (Path on macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`, on Linux: `~/.config/Claude/claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "sv-memory": {
-      "command": "/ruta/a/tu/binario/sv-memory",
+      "command": "/path/to/your/binary/sv-memory",
       "args": ["mcp"]
     }
   }
 }
 ```
 
-### 2. Claude Code (CLI de Terminal)
-Para agregar el servidor de forma global a la herramienta CLI de Anthropic:
+### 2. Claude Code (Terminal CLI)
+Add the server globally to Anthropic's CLI tool:
 ```bash
-claude mcp add sv-memory -- /ruta/a/tu/binario/sv-memory mcp
+claude mcp add sv-memory -- /path/to/your/binary/sv-memory mcp
 ```
 
 ### 3. Cursor / Windsurf
-Ve a los Ajustes de Cursor -> Features -> MCP, añade un nuevo servidor:
+Go to Cursor Settings -> Features -> MCP, and add a new server:
 * **Name:** `sv-memory`
 * **Type:** `command`
-* **Command:** `/ruta/a/tu/binario/sv-memory mcp`
+* **Command:** `/path/to/your/binary/sv-memory mcp`
 
 ### 4. Zed Editor
-Añade lo siguiente en tu archivo de configuración `~/.config/zed/settings.json`:
+Add the following to your `~/.config/zed/settings.json`:
 ```json
 {
   "mcp_servers": {
     "sv-memory": {
-      "command": "/ruta/a/tu/binario/sv-memory",
+      "command": "/path/to/your/binary/sv-memory",
       "args": ["mcp"]
     }
   }
@@ -231,12 +229,12 @@ Añade lo siguiente en tu archivo de configuración `~/.config/zed/settings.json
 ```
 
 ### 5. Antigravity CLI / OpenCode / Codex
-Si usas un entorno de desarrollo compatible con MCP, agrega el servidor en el archivo de configuración global `mcp_config.json` o configúralo localmente:
+If you use a compatible development environment, add the server to the global `mcp_config.json` file or configure it locally:
 ```json
 {
   "mcpServers": {
     "sv-memory": {
-      "command": "/ruta/a/tu/binario/sv-memory",
+      "command": "/path/to/your/binary/sv-memory",
       "args": ["mcp"]
     }
   }
@@ -245,27 +243,27 @@ Si usas un entorno de desarrollo compatible con MCP, agrega el servidor en el ar
 
 ---
 
-## 💡 Ejemplo de Interacción y Flujo de Trabajo
+## 💡 Example Interaction and Workflow
 
-Una vez configurado, el flujo de trabajo autónomo con tu agente de IA (como Claude, Gemini o Cursor) es el siguiente:
+Once configured, the autonomous workflow with your AI agent (such as Claude, Gemini, or Cursor) is as follows:
 
-1. **Al iniciar en el proyecto:**
-   El agente lee el archivo `AGENTS.md` y de inmediato realiza una búsqueda automática:
-   > *Agente ejecuta internamente:* `sv_mem_search(query="bugfix")` o `sv_mem_search(query="architecture")`
+1. **Upon Starting in the Project:**
+   The agent reads the `AGENTS.md` file and immediately performs an automatic search:
+   > *Agent runs internally:* `sv_mem_search(query="bugfix")` or `sv_mem_search(query="architecture")`
    
-2. **Al proponer cambios de código:**
-   Antes de refactorizar o borrar código, el agente verifica dependencias:
-   > *Agente ejecuta internamente:* `sv_graph_query(path_or_node="internal/db/db.go", depth=1)`
-   > *Resultado:* El agente recibe las relaciones del archivo y visualiza un diagrama Mermaid de las dependencias, evitando romper módulos externos.
+2. **Before Proposing Code Changes:**
+   Before refactoring or deleting code, the agent verifies dependencies:
+   > *Agent runs internally:* `sv_graph_query(path_or_node="internal/db/db.go", depth=1)`
+   > *Result:* The agent receives file relationships and visualizes a Mermaid diagram, preventing it from breaking external modules.
 
-3. **Al finalizar una tarea (ej: solucionar un bug complejo):**
-   El agente registra la decisión:
-   > *Agente ejecuta internamente:*
-   > `sv_mem_save(category="bugfix", what="Uso de modernc.org/sqlite", why="Evitar depender de CGO para permitir compilación cruzada limpia", learned="Utilizar siempre modernc.org/sqlite para bases de datos SQLite portables en Go", where_path="internal/db/db.go")`
-   > *Resultado:* La decisión se guarda en SQLite y se sincroniza automáticamente en `.sv-memory/memories.json` para que todo tu equipo la obtenga al hacer `git pull`.
+3. **Upon Completing a Task (e.g., Fixing a Complex Bug):**
+   The agent records the decision:
+   > *Agent runs internally:*
+   > `sv_mem_save(category="bugfix", what="Usage of modernc.org/sqlite", why="Avoid CGO dependency to enable clean cross-compilation", learned="Always use modernc.org/sqlite for portable SQLite databases in Go", where_path="internal/db/db.go")`
+   > *Result:* The decision is saved in SQLite and immediately synchronized to `.sv-memory/memories.json` so your team receives it on their next `git pull`.
 
 ---
 
-## 📄 Licencia
+## 📄 License
 
-Este proyecto está bajo la Licencia MIT. Consulta el archivo LICENSE para obtener más detalles.
+This project is licensed under the MIT License. See the LICENSE file for details.
