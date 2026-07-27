@@ -15,6 +15,7 @@ import (
 	"github.com/svtech/sv-memory/internal/config"
 	"github.com/svtech/sv-memory/internal/db"
 	"github.com/svtech/sv-memory/internal/graph"
+	"github.com/svtech/sv-memory/internal/hook"
 	"github.com/svtech/sv-memory/internal/mcp"
 	"github.com/svtech/sv-memory/internal/memory"
 	"github.com/svtech/sv-memory/internal/protocol"
@@ -1285,6 +1286,119 @@ var conflictsIgnoreCmd = &cobra.Command{
 	},
 }
 
+var hooksCmd = &cobra.Command{
+	Use:   "hooks",
+	Short: "Manage PreToolUse hooks for AI assistants (Claude Code, Codex)",
+}
+
+var hooksInstallCmd = &cobra.Command{
+	Use:   "install",
+	Short: "Install PreToolUse hooks for sv-memory",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+
+		strict, _ := cmd.Flags().GetBool("strict")
+		mode := hook.ModeSoft
+		if strict {
+			mode = hook.ModeStrict
+		}
+
+		platformFilter, _ := cmd.Flags().GetString("platform")
+		var platforms []hook.Platform
+		if platformFilter != "" {
+			p := hook.Platform(platformFilter)
+			platforms = []hook.Platform{p}
+		}
+
+		eng := hook.New(cwd, mode)
+		results := eng.Install(platforms)
+
+		success := 0
+		for _, r := range results {
+			if r.Err != nil {
+				fmt.Printf("❌ %s: %v\n", r.Platform, r.Err)
+				continue
+			}
+			success++
+			fmt.Printf("✅ %s:\n", r.Platform)
+			for _, f := range r.Files {
+				fmt.Printf("   Created/Updated: %s\n", f)
+			}
+		}
+
+		if success > 0 {
+			modeLabel := "soft (nudge)"
+			if strict {
+				modeLabel = "strict (blocks first raw read)"
+			}
+			fmt.Printf("\nHooks installed successfully (%s mode).\n", modeLabel)
+			fmt.Println("Restart your AI assistant to activate the hooks.")
+		}
+		return nil
+	},
+}
+
+var hooksUninstallCmd = &cobra.Command{
+	Use:   "uninstall",
+	Short: "Remove PreToolUse hooks for sv-memory",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+
+		platformFilter, _ := cmd.Flags().GetString("platform")
+		var platforms []hook.Platform
+		if platformFilter != "" {
+			p := hook.Platform(platformFilter)
+			platforms = []hook.Platform{p}
+		}
+
+		eng := hook.New(cwd, hook.ModeSoft)
+		results := eng.Uninstall(platforms)
+
+		for _, r := range results {
+			if r.Err != nil {
+				fmt.Printf("❌ %s: %v\n", r.Platform, r.Err)
+				continue
+			}
+			fmt.Printf("✅ %s: removed %d file(s)\n", r.Platform, len(r.Files))
+			for _, f := range r.Files {
+				fmt.Printf("   Removed: %s\n", f)
+			}
+		}
+		return nil
+	},
+}
+
+var hooksStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show hook installation status for each platform",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+
+		eng := hook.New(cwd, hook.ModeSoft)
+		status := eng.Status(nil)
+
+		fmt.Println("=== Hook Installation Status ===")
+		fmt.Println()
+		for _, p := range hook.SupportedPlatforms() {
+			if status[p] {
+				fmt.Printf("  ✅ %s: installed\n", p)
+			} else {
+				fmt.Printf("  ❌ %s: not installed\n", p)
+			}
+		}
+		return nil
+	},
+}
+
 var configGetCmd = &cobra.Command{
 	Use:   "get <key>",
 	Short: "Get a configuration parameter value",
@@ -1416,6 +1530,15 @@ func init() {
 	conflictsScanCmd.Flags().Bool("dry-run", false, "Do not save scanned potential conflicts to database (default)")
 	conflictsScanCmd.Flags().Int("max-insert", 100, "Maximum number of conflicts to save")
 	conflictsScanCmd.Flags().Float64("threshold", 0.45, "Jaccard similarity threshold for descriptions")
+
+	hooksInstallCmd.Flags().Bool("strict", false, "Enable strict mode (blocks the first raw source read)")
+	hooksInstallCmd.Flags().String("platform", "", "Target platform (claude-code, codex). Default: all")
+	hooksUninstallCmd.Flags().String("platform", "", "Target platform (claude-code, codex). Default: all")
+
+	hooksCmd.AddCommand(hooksInstallCmd)
+	hooksCmd.AddCommand(hooksUninstallCmd)
+	hooksCmd.AddCommand(hooksStatusCmd)
+	rootCmd.AddCommand(hooksCmd)
 
 	configureCmd.AddCommand(configGetCmd)
 	configureCmd.AddCommand(configSetCmd)

@@ -1,0 +1,349 @@
+package hook
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
+// Mode controls hook strictness.
+type Mode string
+
+const (
+	ModeSoft   Mode = "soft"
+	ModeStrict Mode = "strict"
+)
+
+// Platform identifies an AI coding assistant platform.
+type Platform string
+
+const (
+	PlatformClaudeCode Platform = "claude-code"
+	PlatformCodex      Platform = "codex"
+)
+
+var supportedPlatforms = []Platform{PlatformClaudeCode, PlatformCodex}
+
+// HookEngine manages PreToolUse hook installation for AI assistants.
+type HookEngine struct {
+	projPath string
+	mode     Mode
+}
+
+// New creates a HookEngine for the given project directory and mode.
+func New(projPath string, mode Mode) *HookEngine {
+	if mode == "" {
+		mode = ModeSoft
+	}
+	return &HookEngine{projPath: projPath, mode: mode}
+}
+
+// InstallResult describes what was installed for a single platform.
+type InstallResult struct {
+	Platform Platform `json:"platform"`
+	Files    []string `json:"files"`
+	Err      error    `json:"-"`
+}
+
+// Install installs PreToolUse hooks for the given platforms.
+// If platforms is empty, it installs for all supported platforms.
+func (e *HookEngine) Install(platforms []Platform) []InstallResult {
+	if len(platforms) == 0 {
+		platforms = supportedPlatforms
+	}
+
+	var results []InstallResult
+	for _, p := range platforms {
+		r := InstallResult{Platform: p}
+		switch p {
+		case PlatformClaudeCode:
+			r.Files, r.Err = e.installClaudeCode()
+		case PlatformCodex:
+			r.Files, r.Err = e.installCodex()
+		default:
+			r.Err = fmt.Errorf("unsupported platform: %s", p)
+		}
+		results = append(results, r)
+	}
+	return results
+}
+
+// Uninstall removes PreToolUse hooks for the given platforms.
+func (e *HookEngine) Uninstall(platforms []Platform) []InstallResult {
+	if len(platforms) == 0 {
+		platforms = supportedPlatforms
+	}
+
+	var results []InstallResult
+	for _, p := range platforms {
+		r := InstallResult{Platform: p}
+		switch p {
+		case PlatformClaudeCode:
+			r.Files, r.Err = e.uninstallClaudeCode()
+		case PlatformCodex:
+			r.Files, r.Err = e.uninstallCodex()
+		default:
+			r.Err = fmt.Errorf("unsupported platform: %s", p)
+		}
+		results = append(results, r)
+	}
+	return results
+}
+
+// Status returns a map of platform -> installed (true/false).
+func (e *HookEngine) Status(platforms []Platform) map[Platform]bool {
+	if len(platforms) == 0 {
+		platforms = supportedPlatforms
+	}
+
+	status := make(map[Platform]bool)
+	for _, p := range platforms {
+		switch p {
+		case PlatformClaudeCode:
+			status[p] = e.claudeCodeInstalled()
+		case PlatformCodex:
+			status[p] = e.codexInstalled()
+		default:
+			status[p] = false
+		}
+	}
+	return status
+}
+
+// --- Claude Code ---
+
+func (e *HookEngine) claudeHookDir() string {
+	return filepath.Join(e.projPath, ".claude", "hooks", "pre_tool_use")
+}
+
+func (e *HookEngine) claudeSettingsPath() string {
+	return filepath.Join(e.projPath, ".claude", "settings.json")
+}
+
+func (e *HookEngine) claudeHookScriptPath() string {
+	return filepath.Join(e.claudeHookDir(), "sv-memory.sh")
+}
+
+func (e *HookEngine) installClaudeCode() ([]string, error) {
+	var created []string
+
+	// 1. Write hook script
+	hookDir := e.claudeHookDir()
+	if err := os.MkdirAll(hookDir, 0755); err != nil {
+		return created, fmt.Errorf("failed to create hook dir %s: %w", hookDir, err)
+	}
+
+	scriptPath := e.claudeHookScriptPath()
+	scriptContent := hookScript(PlatformClaudeCode, e.mode)
+	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
+		return created, fmt.Errorf("failed to write hook script %s: %w", scriptPath, err)
+	}
+	created = append(created, scriptPath)
+
+	// 2. Update .claude/settings.json
+	settingsPath := e.claudeSettingsPath()
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
+		return created, fmt.Errorf("failed to create settings dir: %w", err)
+	}
+
+	settings := make(map[string]interface{})
+	if existing, err := os.ReadFile(settingsPath); err == nil {
+		_ = json.Unmarshal(existing, &settings)
+	}
+
+	hooksRaw, _ := settings["hooks"]
+	hooks, _ := hooksRaw.(map[string]interface{})
+	if hooks == nil {
+		hooks = make(map[string]interface{})
+	}
+
+	preToolUseRaw, _ := hooks["preToolUse"]
+	preToolUse, _ := preToolUseRaw.(map[string]interface{})
+	if preToolUse == nil {
+		preToolUse = make(map[string]interface{})
+	}
+
+	preToolUse["script"] = scriptPath
+	hooks["preToolUse"] = preToolUse
+	settings["hooks"] = hooks
+
+	data, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return created, fmt.Errorf("failed to marshal settings: %w", err)
+	}
+	if err := os.WriteFile(settingsPath, data, 0644); err != nil {
+		return created, fmt.Errorf("failed to write settings %s: %w", settingsPath, err)
+	}
+	created = append(created, settingsPath)
+
+	return created, nil
+}
+
+func (e *HookEngine) uninstallClaudeCode() ([]string, error) {
+	var removed []string
+
+	// 1. Remove hook script
+	scriptPath := e.claudeHookScriptPath()
+	if err := os.Remove(scriptPath); err != nil && !os.IsNotExist(err) {
+		return removed, fmt.Errorf("failed to remove hook script %s: %w", scriptPath, err)
+	}
+	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+		removed = append(removed, scriptPath)
+	}
+
+	// 2. Remove hook reference from settings
+	settingsPath := e.claudeSettingsPath()
+	if existing, err := os.ReadFile(settingsPath); err == nil {
+		settings := make(map[string]interface{})
+		_ = json.Unmarshal(existing, &settings)
+
+		hooksRaw, _ := settings["hooks"]
+		hooks, _ := hooksRaw.(map[string]interface{})
+		if hooks != nil {
+			delete(hooks, "preToolUse")
+			if len(hooks) == 0 {
+				delete(settings, "hooks")
+			} else {
+				settings["hooks"] = hooks
+			}
+		} else {
+			delete(settings, "hooks")
+		}
+
+		data, _ := json.MarshalIndent(settings, "", "  ")
+		_ = os.WriteFile(settingsPath, data, 0644)
+		removed = append(removed, settingsPath+" (preToolUse entry removed)")
+	}
+
+	return removed, nil
+}
+
+func (e *HookEngine) claudeCodeInstalled() bool {
+	if _, err := os.Stat(e.claudeHookScriptPath()); os.IsNotExist(err) {
+		return false
+	}
+
+	settingsPath := e.claudeSettingsPath()
+	existing, err := os.ReadFile(settingsPath)
+	if err != nil {
+		return false
+	}
+
+	settings := make(map[string]interface{})
+	if err := json.Unmarshal(existing, &settings); err != nil {
+		return false
+	}
+
+	hooksRaw, _ := settings["hooks"]
+	hooks, _ := hooksRaw.(map[string]interface{})
+	if hooks == nil {
+		return false
+	}
+
+	preToolUseRaw, _ := hooks["preToolUse"]
+	preToolUse, _ := preToolUseRaw.(map[string]interface{})
+	if preToolUse == nil {
+		return false
+	}
+
+	script, _ := preToolUse["script"].(string)
+	return script != "" && filepath.Base(script) == "sv-memory.sh"
+}
+
+// --- Codex ---
+
+func (e *HookEngine) codexHooksPath() string {
+	return filepath.Join(e.projPath, ".codex", "hooks.json")
+}
+
+func (e *HookEngine) installCodex() ([]string, error) {
+	var created []string
+
+	hooksPath := e.codexHooksPath()
+	hooksDir := filepath.Dir(hooksPath)
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		return created, fmt.Errorf("failed to create .codex dir: %w", err)
+	}
+
+	// Write a no-op hook config for Codex.
+	// On Codex Desktop, PreToolUse with additionalContext breaks Bash calls,
+	// so the hook script intentionally does nothing. The real mechanism is AGENTS.md.
+	hookConfig := map[string]interface{}{
+		"preToolUse": map[string]interface{}{
+			"script": filepath.Join(e.projPath, ".codex", "hooks", "sv-memory.sh"),
+		},
+	}
+
+	// Merge with existing hooks.json if it exists
+	var existingData map[string]interface{}
+	if b, err := os.ReadFile(hooksPath); err == nil {
+		_ = json.Unmarshal(b, &existingData)
+	}
+	if existingData == nil {
+		existingData = hookConfig
+	} else {
+		for k, v := range hookConfig {
+			existingData[k] = v
+		}
+	}
+
+	data, err := json.MarshalIndent(existingData, "", "  ")
+	if err != nil {
+		return created, fmt.Errorf("failed to marshal hooks.json: %w", err)
+	}
+	if err := os.WriteFile(hooksPath, data, 0644); err != nil {
+		return created, fmt.Errorf("failed to write hooks.json: %w", err)
+	}
+	created = append(created, hooksPath)
+
+	// Write the no-op script
+	scriptDir := filepath.Join(e.projPath, ".codex", "hooks")
+	if err := os.MkdirAll(scriptDir, 0755); err != nil {
+		return created, fmt.Errorf("failed to create .codex/hooks dir: %w", err)
+	}
+	scriptPath := filepath.Join(scriptDir, "sv-memory.sh")
+	if err := os.WriteFile(scriptPath, []byte(hookScript(PlatformCodex, e.mode)), 0755); err != nil {
+		return created, fmt.Errorf("failed to write codex hook script: %w", err)
+	}
+	created = append(created, scriptPath)
+
+	return created, nil
+}
+
+func (e *HookEngine) uninstallCodex() ([]string, error) {
+	var removed []string
+
+	// Remove hooks.json
+	hooksPath := e.codexHooksPath()
+	if err := os.Remove(hooksPath); err != nil && !os.IsNotExist(err) {
+		return removed, fmt.Errorf("failed to remove %s: %w", hooksPath, err)
+	}
+	if _, err := os.Stat(hooksPath); os.IsNotExist(err) {
+		removed = append(removed, hooksPath)
+	}
+
+	// Remove the no-op script
+	scriptPath := filepath.Join(e.projPath, ".codex", "hooks", "sv-memory.sh")
+	if err := os.Remove(scriptPath); err != nil && !os.IsNotExist(err) {
+		return removed, fmt.Errorf("failed to remove %s: %w", scriptPath, err)
+	}
+	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+		removed = append(removed, scriptPath)
+	}
+
+	return removed, nil
+}
+
+func (e *HookEngine) codexInstalled() bool {
+	hooksPath := e.codexHooksPath()
+	if _, err := os.Stat(hooksPath); os.IsNotExist(err) {
+		return false
+	}
+	return true
+}
+
+// SupportedPlatforms returns the list of all supported platforms.
+func SupportedPlatforms() []Platform {
+	return supportedPlatforms
+}
