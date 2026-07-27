@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -46,9 +48,37 @@ func debugLog(format string, args ...interface{}) {
 // StartServer starts the MCP server using stdio transport.
 // Reads use the pool's Reader so concurrent tool calls scale; writes (save)
 // go through the Writer to keep SQLite serialized under WAL.
+var (
+	shutdownCleanup func()
+	cleanupMu       sync.Mutex
+)
+
 func StartServer(pool *db.Pool, cfg *config.Config) error {
 	s := NewServer(pool, cfg)
-	return server.ServeStdio(s)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		<-ctx.Done()
+		debugLog("Shutdown signal received. Running cleanup...")
+		cleanupMu.Lock()
+		if shutdownCleanup != nil {
+			shutdownCleanup()
+		}
+		cleanupMu.Unlock()
+		os.Exit(0)
+	}()
+
+	err := server.ServeStdio(s)
+
+	cleanupMu.Lock()
+	if shutdownCleanup != nil {
+		shutdownCleanup()
+	}
+	cleanupMu.Unlock()
+
+	return err
 }
 
 // NewServer initializes the MCP server, registers all 19 tools, and returns it.
@@ -136,6 +166,22 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 			syncMu.Unlock()
 		})
 	}
+
+	cleanupMu.Lock()
+	shutdownCleanup = func() {
+		debounceMu.Lock()
+		defer debounceMu.Unlock()
+		if syncTimer != nil {
+			syncTimer.Stop()
+			if viper.GetBool("git_sync_enabled") {
+				fmt.Fprintf(os.Stderr, "[sv-memory] Flushing pending Git sync...\n")
+				if err := memory.SyncToGit(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
+					fmt.Fprintf(os.Stderr, "[sv-memory] Final syncToGit failed: %v\n", err)
+				}
+			}
+		}
+	}
+	cleanupMu.Unlock()
 
 	// In-memory graph cache: loads the full project's nodes+edges with two
 	// SQL queries then runs BFS in Go-land, avoiding N+1 round-trips per
@@ -1033,6 +1079,9 @@ var (
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to sync graph: %v", err)), nil
 		}
+		// Pre-calculate communities and centrality during manual sync
+		_ = graph.UpdateCommunitiesAndCentrality(pool.Writer, cfg.ProjectID)
+
 		// Invalidate in-memory cache so the next sv_graph_query reloads fresh
 		// data from the rebuilt graph tables.
 		graphMu.Lock()
@@ -1144,6 +1193,23 @@ var (
 		}
 
 		node := g.Nodes[nID]
+
+		// Lazy-calculate communities and centrality if missing
+		var hasBC bool
+		if node.Metadata != nil {
+			_, hasBC = node.Metadata["betweenness_centrality"]
+		}
+		if !hasBC {
+			debugLog("betweenness_centrality missing, calculating communities and centrality dynamically...")
+			if err := graph.UpdateCommunitiesAndCentrality(pool.Writer, cfg.ProjectID); err == nil {
+				// Invalidate cache and reload
+				graphMu.Lock()
+				cachedGraph = nil
+				graphMu.Unlock()
+				g, _ = getOrLoadGraph()
+				node = g.Nodes[nID]
+			}
+		}
 
 		getBC := func(node *graph.Node) float64 {
 			if node.Metadata == nil {

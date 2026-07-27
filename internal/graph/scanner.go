@@ -39,6 +39,7 @@ type walkResult struct {
 	fileList      []string
 	fileMeta      map[string]fileMetaEntry
 	manifestFiles []string
+	fileContents  map[string][]byte
 }
 
 type fileMetaEntry struct {
@@ -50,6 +51,7 @@ func scanFiles(projPath string) (*walkResult, error) {
 	nodes := make(map[string]*Node)
 	fileList := []string{}
 	fileMeta := make(map[string]fileMetaEntry)
+	fileContents := make(map[string][]byte)
 
 	err := filepath.WalkDir(projPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -87,6 +89,7 @@ func scanFiles(projPath string) (*walkResult, error) {
 			if symbolScanExts[ext] {
 				content, readErr := os.ReadFile(path)
 				if readErr == nil {
+					fileContents[relPath] = content
 					symbolNodes, symMeta := parseSymbols(relPath, ext, content)
 					for k, v := range symMeta {
 						baseMeta[k] = v
@@ -145,5 +148,6 @@ func scanFiles(projPath string) (*walkResult, error) {
 		fileList:      fileList,
 		fileMeta:      fileMeta,
 		manifestFiles: manifestFiles,
+		fileContents:  fileContents,
 	}, nil
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -215,7 +216,7 @@ func syncMemoriesToGraph(tx *sql.Tx, projectID string) error {
 
 // extractCallEdges identifies call relationships (functions calling other functions/classes)
 // within the project by scanning function body source code.
-func extractCallEdges(projPath string, nodes map[string]*Node) []*Edge {
+func extractCallEdges(projPath string, nodes map[string]*Node, fileContents map[string][]byte) []*Edge {
 	var edges []*Edge
 
 	langSymbols := make(map[string][]*Node)
@@ -237,8 +238,14 @@ func extractCallEdges(projPath string, nodes map[string]*Node) []*Edge {
 	}
 
 	for filePath, symbols := range fileSymbols {
-		absPath := filepath.Join(projPath, filePath)
-		content, err := os.ReadFile(absPath)
+		var content []byte
+		var err error
+		if cached, ok := fileContents[filePath]; ok {
+			content = cached
+		} else {
+			absPath := filepath.Join(projPath, filePath)
+			content, err = os.ReadFile(absPath)
+		}
 		if err != nil {
 			continue
 		}
@@ -335,15 +342,9 @@ func getLanguageGroup(ext string) string {
 }
 
 func sortSymbolsByLine(symbols []*Node) {
-	for i := 0; i < len(symbols); i++ {
-		for j := i + 1; j < len(symbols); j++ {
-			lineI := getSymbolLine(symbols[i])
-			lineJ := getSymbolLine(symbols[j])
-			if lineI > lineJ {
-				symbols[i], symbols[j] = symbols[j], symbols[i]
-			}
-		}
-	}
+	sort.Slice(symbols, func(i, j int) bool {
+		return getSymbolLine(symbols[i]) < getSymbolLine(symbols[j])
+	})
 }
 
 func getSymbolLine(n *Node) int {

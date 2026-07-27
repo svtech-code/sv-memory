@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/svtech/sv-memory/internal/graph/extractor"
@@ -108,12 +109,15 @@ func parseSymbols(relPath, ext string, content []byte) ([]*Node, map[string]inte
 
 // parseFiles concurrently parses imports for the given file list using a
 // bounded worker pool. Returns edges for all files.
-func parseFiles(projPath string, nodes map[string]*Node, toParse []string) []*Edge {
+func parseFiles(projPath string, nodes map[string]*Node, toParse []string, fileContents map[string][]byte) []*Edge {
 	if len(toParse) == 0 {
 		return nil
 	}
 
-	numWorkers := 8
+	numWorkers := runtime.NumCPU()
+	if numWorkers < 1 {
+		numWorkers = 1
+	}
 	if len(toParse) < numWorkers {
 		numWorkers = len(toParse)
 	}
@@ -135,9 +139,15 @@ func parseFiles(projPath string, nodes map[string]*Node, toParse []string) []*Ed
 	for w := 0; w < numWorkers; w++ {
 		go func() {
 			for sourcePath := range jobs {
-				absPath := filepath.Join(projPath, sourcePath)
-				content, err := os.ReadFile(absPath)
 				ext := strings.ToLower(filepath.Ext(sourcePath))
+				var content []byte
+				var err error
+				if cached, ok := fileContents[sourcePath]; ok {
+					content = cached
+				} else {
+					absPath := filepath.Join(projPath, sourcePath)
+					content, err = os.ReadFile(absPath)
+				}
 				if err != nil {
 					results <- parseResult{sourcePath: sourcePath, ext: ext, err: err}
 					continue

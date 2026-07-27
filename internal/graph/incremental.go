@@ -44,7 +44,7 @@ func syncGraphFull(db *sql.DB, projectID string, projPath string) error {
 		return err
 	}
 
-	edges := parseFiles(projPath, wr.nodes, wr.fileList)
+	edges := parseFiles(projPath, wr.nodes, wr.fileList, wr.fileContents)
 	manifestEdges := parseManifests(projPath, wr.nodes, wr.manifestFiles)
 	edges = append(edges, manifestEdges...)
 
@@ -71,7 +71,7 @@ func syncGraphFull(db *sql.DB, projectID string, projPath string) error {
 	}
 
 	// Phase 2: Extract function and class calls
-	callEdges := extractCallEdges(projPath, wr.nodes)
+	callEdges := extractCallEdges(projPath, wr.nodes, wr.fileContents)
 	if err := bulkInsertEdges(tx, projectID, callEdges); err != nil {
 		return err
 	}
@@ -94,7 +94,7 @@ func syncGraphFull(db *sql.DB, projectID string, projPath string) error {
 		return err
 	}
 
-	return UpdateCommunitiesAndCentrality(db, projectID)
+	return nil
 }
 
 // trySyncGraphIncremental attempts a partial graph update using file mtime/size
@@ -191,7 +191,7 @@ func trySyncGraphIncremental(db *sql.DB, projectID string, projPath string) (boo
 	}
 
 	// 3. Parse new+changed code files and insert nodes+edges.
-	codeEdges := parseFiles(projPath, wr.nodes, codeToParse)
+	codeEdges := parseFiles(projPath, wr.nodes, codeToParse, wr.fileContents)
 	for _, p := range codeToParse {
 		upsertNode(tx, projectID, wr.nodes[p])
 		// Also upsert child symbol nodes (functions/classes) for this file.
@@ -241,7 +241,7 @@ func trySyncGraphIncremental(db *sql.DB, projectID string, projPath string) (boo
 	if _, err := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND relation_type = 'calls'", projectID); err != nil {
 		return false, fmt.Errorf("failed deleting old call edges: %w", err)
 	}
-	callEdges := extractCallEdges(projPath, wr.nodes)
+	callEdges := extractCallEdges(projPath, wr.nodes, wr.fileContents)
 	if err := bulkInsertEdges(tx, projectID, callEdges); err != nil {
 		return false, err
 	}
@@ -256,10 +256,6 @@ func trySyncGraphIncremental(db *sql.DB, projectID string, projPath string) (boo
 	}
 
 	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-
-	if err := UpdateCommunitiesAndCentrality(db, projectID); err != nil {
 		return false, err
 	}
 
