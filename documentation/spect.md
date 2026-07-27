@@ -63,7 +63,7 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 
 ## 4. CLI Commands & Workflow
 
-`sv-memory` provides **17 CLI commands** organized under Cobra's root and sub-commands:
+`sv-memory` provides **22 CLI commands** organized under Cobra's root and sub-commands:
 
 ### Core Commands
 
@@ -78,7 +78,7 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 
 #### 2. `sv-memory mcp`
 - Starts the JSON-RPC MCP server over `stdio` for agent consumption.
-- Registers all 19 MCP tools.
+- Registers all 25 MCP tools.
 - Maintains an in-memory graph cache for zero-SQL BFS traversals.
 - Debounces Git sync writes (500ms coalescing).
 
@@ -132,6 +132,23 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 
 #### 17. `sv-memory graph explain <node>`
 - Outputs detailed information for a specific node: type, label, path, metadata JSON, and fan-in/fan-out metrics.
+
+#### 18. `sv-memory graph communities`
+- Runs Leiden community detection on the graph. Lists community clusters, their member nodes, centrality scores, and god nodes.
+
+#### 19. `sv-memory graph wiki [--output dir]`
+- Exports Markdown wiki pages for each detected community, listing member files, centrality scores, and inter-community dependencies. Default output directory: `graph-wiki`.
+
+#### 20. `sv-memory graph viz [--output file]`
+- Generates an interactive HTML visualization using vis.js with community-colored physics simulation, node filtering, and tooltips. Default output: `graph.html`.
+
+#### 21. `sv-memory graph merge <json-file>`
+- Merges a JSON graph snapshot into the current project graph, upserting nodes and edges by ID.
+
+### 7. Conflict Management
+
+#### 22. `sv-memory conflicts`
+- Displays conflicting memories and detected semantic overlaps across the project.
 
 ---
 
@@ -306,7 +323,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_relations_target ON memory_relations(proje
 
 ## 6. MCP Tools Definition
 
-`sv-memory` registers **19 MCP tools** for AI agents:
+`sv-memory` registers **25 MCP tools** for AI agents:
 
 ### 1. `sv_mem_save`
 Persist a key architectural decision, bug fix, progress journal, or standard guideline.
@@ -435,6 +452,34 @@ Finds the shortest dependency route between two graph nodes.
 Triggers an incremental scan of modified files to sync nodes/edges. Invalidates cache.
 - **Parameters:** None.
 
+### 20. `sv_mem_conflicts`
+Detects and surfaces conflicting memories with semantic overlap analysis.
+- **Parameters:** None.
+
+### 21. `sv_graph_explain`
+Outputs detailed information for a specific graph node: type, label, path, metadata, and fan-in/fan-out metrics.
+- **Parameters:**
+  - `path_or_node` (string, required): File path or node ID.
+
+### 22. `sv_graph_god_nodes`
+Identifies the most connected nodes in the graph based on betweenness centrality and degree. Returns a ranked list of god nodes with metrics.
+- **Parameters:**
+  - `limit` (string, optional): Max results to return (default `10`).
+
+### 23. `sv_graph_surprising_connections`
+Finds non-obvious or unexpected dependency paths in the graph. Highlights structural anomalies that may indicate architectural concerns.
+- **Parameters:** None.
+
+### 24. `sv_graph_viz`
+Generates an interactive HTML visualization of the graph using vis.js with community coloring, physics simulation, node filtering, and tooltips.
+- **Parameters:**
+  - `output` (string, optional): Output file path (default `graph.html`).
+
+### 25. `sv_graph_merge`
+Merges a JSON graph snapshot into the current project graph, upserting nodes and edges by ID.
+- **Parameters:**
+  - `json` (string, required): JSON string containing nodes and edges arrays.
+
 ---
 
 ## 7. Memory Save Strategies (Detail)
@@ -539,8 +584,10 @@ sv-memory/
 ├── internal/
 │   ├── config/                  # App paths, settings parsing, viper config & configure cmd
 │   ├── db/                      # DB initialization, composite migrations, WAL pools & PRAGMAs
-│   ├── graph/                   # Code scanner, BFS query, path routing & regex parser
-│   ├── mcp/                     # Server start, 19 handlers registration, in-memory graph cache
+│   ├── graph/                   # Code scanner, BFS query, community detection (Leiden),
+│   │                            # betweenness centrality, god nodes, HTML viz, wiki export,
+│   │                            # graph merge, surprising connections, incremental updates
+│   ├── mcp/                     # Server start, 25 handlers registration, in-memory graph cache
 │   ├── memory/                  # CRUD, sessions storage, dedup checks, Obsidian export
 │   ├── protocol/                # AGENTS.md / editor rules injection
 │   └── security/                # Regex secrets sanitizer
@@ -590,6 +637,7 @@ sv-memory/
 | Topic key upsert | Update in-place instead of accumulating revisions | 50% fewer redundant search results |
 | Rolling-window dedup | Suppress identical saves within 24h | Prevents duplicate bloat |
 | Compact search SQL | SELECT only 7 needed columns instead of all 20 | ~60% less I/O per search |
+| Token budget benchmark (`BenchmarkToolResult`) | Measures and reports `tokens_used` / `total_budget` ratio in MCP response metadata for `sv_graph_query`, `sv_graph_god_nodes`, and `sv_graph_surprising_connections` | Agent-aware token consumption (visible in MCP response metadata) |
 
 ---
 
@@ -604,7 +652,7 @@ To maintain coherence across long-term agent interactions, `sv-memory` includes 
   - `relates_to`: Loose association between memories (e.g. standard relates to bugfix).
 - **Conflict Lifecycle:**
   1. **Detection:** When a save is triggered without a topic key, a background heuristic scanner runs `sv_mem_compare` and computes a Jaccard/FTS overlap. If high semantic overlap exists with different rules, a `conflicts_with` relation is registered.
-  2. **Surfacing:** In subsequent sessions, calling `sv_mem_review` highlights pending conflicts.
+  2. **Surfacing:** Use `sv_mem_conflicts` (MCP tool) or `sv-memory conflicts` (CLI) to display detected semantic overlaps and conflicting memories across the project. Calling `sv_mem_review` also highlights pending conflicts.
 
 ---
 

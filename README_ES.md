@@ -10,9 +10,10 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta libre y de c�
 
 1. **Memoria de Decisiones Persistente:** Captura correcciones de bugs complejos, decisiones arquitectónicas y estándares de codificación utilizando SQLite + FTS5 (Full-Text Search) para búsquedas de texto completo ultra rápidas por parte del agente.
 2. **Sincronización en Equipo (Git Sync):** Sincroniza automáticamente las memorias locales en el archivo `.sv-memory/memories.json` dentro del repositorio. Los miembros del equipo que clonen o actualicen el repositorio integrarán automáticamente estas memorias en sus bases de datos SQLite locales al inicializar el proyecto.
-3. **Grafo de Código en Go Puro:** Analiza el árbol de directorios del proyecto, detecta archivos, extrae imports/dependencias (Go, Python, TypeScript, JavaScript, Astro, PHP, HTML, CSS, Bash, Lua), resuelve rutas relativas y construye un grafo de dependencias interno guardado en SQLite.
-4. **Orquestación de Agentes (Reglas de Protocolo):** Inyecta automáticamente directrices en los archivos `AGENTS.md`, `.cursorrules` o `.windsurfrules` en la raíz del repositorio para guiar a los agentes de IA a consultar y escribir en la memoria de manera proactiva.
-5. **Portabilidad sin Dependencias:** Compilado en Go puro sin requerir CGO gracias al uso de `modernc.org/sqlite`. El binario compilado funciona directamente en macOS, Linux y Windows.
+3. **Grafo de Código Estructural:** Analiza proyectos en más de 15 lenguajes, detecta imports y dependencias, calcula **centralidad betweenness**, detecta **nodos god** y encuentra **conexiones sorprendentes**. Usa el algoritmo **Leiden** para detección de comunidades.
+4. **Visualización y Exportación del Grafo:** Exporta **visualizaciones HTML interactivas** (vis.js), **páginas wiki por comunidad** (Markdown) y **fusiona** múltiples instantáneas del grafo.
+5. **Orquestación de Agentes (Reglas de Protocolo):** Inyecta automáticamente directrices en los archivos `AGENTS.md`, `.cursorrules` o `.windsurfrules` en la raíz del repositorio para guiar a los agentes de IA a consultar y escribir en la memoria de manera proactiva.
+6. **Portabilidad sin Dependencias:** Compilado en Go puro sin requerir CGO gracias al uso de `modernc.org/sqlite`. El binario compilado funciona directamente en macOS, Linux y Windows.
 
 ---
 
@@ -147,15 +148,7 @@ Inicia el servidor Model Context Protocol (MCP) a través de la entrada/salida e
 sv-memory mcp
 ```
 
-### 3. `sv-memory graph rebuild`
-
-Fuerza un re-escaneo del árbol de archivos del proyecto y actualiza los nodos del grafo de código junto con sus aristas de relación.
-
-```bash
-sv-memory graph rebuild
-```
-
-### 4. `sv-memory sync`
+### 3. `sv-memory sync`
 
 Ejecuta la sincronización de manera manual. Importa nuevas memorias del archivo JSON de Git hacia SQLite y exporta todas las memorias locales de la base de datos al archivo `.sv-memory/memories.json`.
 
@@ -163,7 +156,7 @@ Ejecuta la sincronización de manera manual. Importa nuevas memorias del archivo
 sv-memory sync
 ```
 
-### 5. `sv-memory configure`
+### 4. `sv-memory configure`
 
 Inicia un asistente interactivo por fases en la terminal para configurar tus entornos de desarrollo.
 * **Fase 1 (Editores):** Te permite seleccionar qué editores configurar (`Cursor`, `VS Code`, `Zed`, `Windsurf`).
@@ -174,16 +167,178 @@ Inicia un asistente interactivo por fases en la terminal para configurar tus ent
 sv-memory configure
 ```
 
+### 5. `sv-memory diagnose`
+
+Ejecuta verificaciones de salud: conexión a base de datos, esquemas, permisos de escritura y configuración activa.
+
+```bash
+sv-memory diagnose
+```
+
+### 6. `sv-memory stats`
+
+Muestra estadísticas del proyecto: memorias totales, eliminadas, guardadas en las últimas 24h, sesiones y relaciones.
+
+```bash
+sv-memory stats
+```
+
+### 7. `sv-memory graph rebuild`
+
+Fuerza un re-escaneo completo del árbol de directorios y reconstruye los nodos y aristas del grafo.
+
+```bash
+sv-memory graph rebuild
+```
+
+### 8. `sv-memory graph path <source> <target>`
+
+Encuentra la ruta de dependencia más corta entre dos nodos del grafo (hasta 10 saltos).
+
+```bash
+sv-memory graph path utils/helpers.ts services/api.ts
+```
+
+### 9. `sv-memory graph explain <node>`
+
+Muestra información detallada de un nodo: tipo, etiqueta, ruta, metadatos y métricas fan-in/fan-out.
+
+```bash
+sv-memory graph explain internal/db/db.go
+```
+
+### 10. `sv-memory graph communities`
+
+Detecta y lista clústeres comunitarios usando el algoritmo Leiden, mostrando miembros, centralidad y nodos god.
+
+```bash
+sv-memory graph communities
+```
+
+### 11. `sv-memory graph wiki [--output dir]`
+
+Exporta páginas wiki en Markdown por cada comunidad, con archivos miembros, centralidad y dependencias entre comunidades.
+
+```bash
+sv-memory graph wiki --output graph-wiki
+```
+
+### 12. `sv-memory graph viz [--output file]`
+
+Genera una visualización HTML interactiva del grafo usando vis.js con colores por comunidad, simulación física y filtros.
+
+```bash
+sv-memory graph viz --output graph.html
+```
+
+### 13. `sv-memory graph merge <json-file>`
+
+Fusiona una instantánea JSON del grafo en el proyecto actual, combinando nodos y aristas.
+
+```bash
+sv-memory graph merge backup.json
+```
+
+### 14. `sv-memory export [output-file]`
+
+Exporta todas las memorias no eliminadas del proyecto a un archivo JSON portátil.
+
+```bash
+sv-memory export memories-backup.json
+```
+
+### 15. `sv-memory import <input-file>`
+
+Importa memorias desde un archivo JSON usando upsert por ID.
+
+```bash
+sv-memory import memories-backup.json
+```
+
+### 16. `sv-memory obsidian-export [-o output-dir]`
+
+Exporta todas las memorias del proyecto como archivos Markdown estructurados como un vault de Obsidian.
+
+```bash
+sv-memory obsidian-export -o my-obsidian-vault
+```
+
+### 17. `sv-memory sync`
+
+Ejecuta la sincronización de manera manual. Importa nuevas memorias del archivo JSON de Git hacia SQLite y exporta todas las memorias locales de la base de datos al archivo `.sv-memory/memories.json`.
+
+```bash
+sv-memory sync
+```
+
+### 18. `sv-memory delete session <session-id>`
+
+Elimina una sesión vacía (falla si la sesión tiene memorias asociadas).
+
+```bash
+sv-memory delete session abc12345
+```
+
+### 19. `sv-memory delete project <project-id> [--hard]`
+
+Elimina en cascada todos los datos de un proyecto. Soft-delete por defecto; `--hard` elimina permanentemente.
+
+```bash
+sv-memory delete project proj1234 --hard
+```
+
+### 20. `sv-memory projects list`
+
+Lista todos los proyectos registrados con su ID, nombre, ruta, conteo de memorias y sesiones.
+
+```bash
+sv-memory projects list
+```
+
+### 21. `sv-memory conflicts`
+
+Muestra memorias conflictivas y superposiciones semánticas detectadas en el proyecto.
+
+```bash
+sv-memory conflicts
+```
+
 ---
 
 ## 🧩 Herramientas del Model Context Protocol (MCP)
 
-Una vez conectado, `sv-memory` expone 4 herramientas para los agentes de IA:
+Una vez conectado, `sv-memory` expone **25 herramientas MCP** para los agentes de IA:
 
-1. **`sv_mem_save`**: Guarda decisiones arquitectónicas, corrección de fallos o guías de desarrollo. Automatiza la exportación inmediata a `.sv-memory/memories.json`.
-2. **`sv_mem_search`**: Realiza búsquedas de texto completo (FTS) sobre las memorias guardadas. Permite filtrar por categorías.
-3. **`sv_graph_query`**: Consulta el subgrafo de dependencias de un archivo, módulo o paquete con un nivel de profundidad configurable. Retorna los nodos conectados y genera un diagrama en formato **Mermaid** de Markdown.
-4. **`sv_graph_sync`**: Actualiza y vuelve a sincronizar el grafo de dependencias estructurales en SQLite.
+### Herramientas de Memoria
+1. **`sv_mem_save`**: Guarda decisiones arquitectónicas, corrección de fallos o guías de desarrollo con sincronización Git automática.
+2. **`sv_mem_search`**: Búsqueda de texto completo (FTS5) con filtros por categoría.
+3. **`sv_mem_get`**: Recupera el contenido completo de una memoria específica con truncamiento opcional.
+4. **`sv_mem_timeline`**: Contexto cronológico alrededor de una memoria (Capa 2 de divulgación progresiva).
+5. **`sv_mem_suggest_topic_key`**: Genera un topic_key estable en formato category/kebab-case para upsert.
+6. **`sv_mem_judge`**: Crea relaciones entre memorias (supersedes, conflicts_with, relates_to).
+7. **`sv_mem_compare`**: Comparación lado a lado de dos memorias.
+8. **`sv_mem_review`**: Encuentra memorias que necesitan mantenimiento (obsoletas, duplicadas, candidatas a consolidación).
+9. **`sv_mem_stats`**: Estadísticas agregadas de memorias y desglose por categoría.
+10. **`sv_mem_current_project`**: Recupera el ID, nombre y ruta del proyecto activo.
+11. **`sv_mem_delete`**: Soft-delete (o hard-delete) de una memoria.
+12. **`sv_mem_capture_passive`**: Registra entradas de diario ligeras automáticamente.
+13. **`sv_mem_conflicts`**: Detecta y muestra memorias conflictivas con análisis de superposición semántica.
+
+### Herramientas de Sesión
+14. **`sv_mem_session_start`**: Registra una nueva sesión de codificación.
+15. **`sv_mem_session_end`**: Cierra una sesión activa con resumen.
+16. **`sv_mem_session_summary`**: Actualiza objetivo, descubrimientos y siguientes pasos.
+17. **`sv_mem_context`**: Recupera contexto de la última sesión completada (recuperación post-compactación).
+
+### Herramientas de Grafo
+18. **`sv_graph_query`**: Consulta BFS de dependencias con profundidad configurable. Devuelve diagrama Mermaid.
+19. **`sv_graph_path`**: Ruta de dependencia más corta entre dos nodos.
+20. **`sv_graph_sync`**: Sincronización incremental del grafo desde cambios de archivos.
+21. **`sv_graph_explain`**: Información detallada de un nodo con métricas fan-in/fan-out.
+22. **`sv_graph_god_nodes`**: Identifica nodos altamente conectados (análisis de centralidad).
+23. **`sv_graph_surprising_connections`**: Encuentra dependencias inesperadas o no obvias.
+24. **`sv_graph_viz`**: Genera visualización HTML interactiva con colores por comunidad.
+25. **`sv_graph_merge`**: Fusiona una instantánea JSON del grafo en el grafo actual.
 
 ---
 
