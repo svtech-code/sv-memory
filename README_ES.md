@@ -9,7 +9,7 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta libre y de c�
 ## 🚀 Características Clave
 
 1. **Memoria de Decisiones Persistente:** Captura correcciones de bugs complejos, decisiones arquitectónicas y estándares de codificación utilizando SQLite + FTS5 (Full-Text Search) para búsquedas de texto completo ultra rápidas por parte del agente.
-2. **Sincronización en Equipo (Git Sync):** Sincroniza automáticamente las memorias locales en el archivo `.sv-memory/memories.json` dentro del repositorio. Los miembros del equipo que clonen o actualicen el repositorio integrarán automáticamente estas memorias en sus bases de datos SQLite locales al inicializar el proyecto.
+2. **Sincronización en Equipo (Git Sync):** Sincroniza automáticamente las memorias locales en archivos individuales (`.sv-memory/chunks/{id}.json`) dentro del repositorio — un archivo JSON por memoria — evitando conflictos de fusión (merge conflicts) cuando diferentes ramas guardan memorias en paralelo. Los miembros del equipo que clonen o actualicen el repositorio integrarán automáticamente estas memorias en sus bases de datos SQLite locales al inicializar el proyecto.
 3. **Grafo de Código Estructural:** Analiza proyectos en más de 15 lenguajes, detecta imports y dependencias, calcula **centralidad betweenness**, detecta **nodos god** y encuentra **conexiones sorprendentes**. Usa el algoritmo **Leiden** para detección de comunidades.
 4. **Visualización y Exportación del Grafo:** Exporta **visualizaciones HTML interactivas** (vis.js), **páginas wiki por comunidad** (Markdown) y **fusiona** múltiples instantáneas del grafo.
 5. **Orquestación de Agentes (Reglas de Protocolo):** Inyecta automáticamente directrices en los archivos `AGENTS.md`, `.cursorrules` o `.windsurfrules` en la raíz del repositorio para guiar a los agentes de IA a consultar y escribir en la memoria de manera proactiva.
@@ -40,7 +40,7 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta libre y de c�
                                    │  Importación / Exportación Sync
        ┌───────────────────────────▼────────────────────────────┐
        │             Repositorio Git (JSON Versionado)          │
-       │             (.sv-memory/memories.json)                 │
+       │             (.sv-memory/chunks/*.json)                 │
        └────────────────────────────────────────────────────────┘
 ```
 
@@ -133,7 +133,7 @@ Inicializa `sv-memory` en el proyecto actual:
 - Calcula un ID de proyecto único basado en la raíz del repositorio Git.
 - Registra el proyecto en la base de datos global SQLite.
 - Escanea los archivos y construye el grafo de dependencias inicial.
-- Importa memorias compartidas desde `.sv-memory/memories.json` si ya existen.
+- Importa memorias compartidas desde `.sv-memory/chunks/{id}.json` (o el archivo heredado `memories.json`) si ya existen.
 - Inyecta las reglas de protocolo del agente en `AGENTS.md`, `.cursorrules` o `.windsurfrules`.
 
 ```bash
@@ -150,7 +150,7 @@ sv-memory mcp
 
 ### 3. `sv-memory sync`
 
-Ejecuta la sincronización de manera manual. Importa nuevas memorias del archivo JSON de Git hacia SQLite y exporta todas las memorias locales de la base de datos al archivo `.sv-memory/memories.json`.
+Ejecuta la sincronización de manera manual. Importa nuevas memorias de los archivos fragmentados de Git (`chunks/*.json` o el archivo heredado `memories.json`) hacia SQLite, y exporta todas las memorias locales de la base de datos a archivos individuales en `.sv-memory/chunks/`.
 
 ```bash
 sv-memory sync
@@ -265,7 +265,7 @@ sv-memory obsidian-export -o my-obsidian-vault
 
 ### 17. `sv-memory sync`
 
-Ejecuta la sincronización de manera manual. Importa nuevas memorias del archivo JSON de Git hacia SQLite y exporta todas las memorias locales de la base de datos al archivo `.sv-memory/memories.json`.
+Ejecuta la sincronización de manera manual. Importa nuevas memorias de los archivos fragmentados de Git (`chunks/*.json` o el archivo heredado `memories.json`) hacia SQLite, y exporta todas las memorias locales de la base de datos a archivos individuales en `.sv-memory/chunks/`.
 
 ```bash
 sv-memory sync
@@ -417,7 +417,7 @@ Una vez configurado, el flujo de trabajo autónomo con tu agente de IA (como Cla
    El agente registra la decisión:
    > *Agente ejecuta internamente:*
    > `sv_mem_save(category="bugfix", what="Uso de modernc.org/sqlite", why="Evitar depender de CGO para permitir compilación cruzada limpia", learned="Utilizar siempre modernc.org/sqlite para bases de datos SQLite portables en Go", where_path="internal/db/db.go")`
-   > *Resultado:* La decisión se guarda en SQLite y se sincroniza automáticamente en `.sv-memory/memories.json` para que todo tu equipo la obtenga al hacer `git pull`.
+   > *Resultado:* La decisión se guarda en SQLite y se sincroniza automáticamente en `.sv-memory/chunks/{id}.json` (un archivo por memoria, evitando conflictos de fusión) para que todo tu equipo la obtenga al hacer `git pull`.
 
 ---
 

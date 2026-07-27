@@ -82,7 +82,7 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 	return err
 }
 
-// NewServer initializes the MCP server, registers all 19 tools, and returns it.
+// NewServer initializes the MCP server, registers all 25 tools, and returns it.
 // Split from StartServer for programmatic unit testing.
 func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	// Initialize server

@@ -9,7 +9,7 @@ Developed under the **SVTech** ecosystem as a free and open-source tool for the 
 ## 🚀 Key Features
 
 1. **Persistent Decision Memory:** Captures complex bugfixes, architectural decisions, and coding standards using SQLite + FTS5 (Full-Text Search) for ultra-fast searches by the AI agent.
-2. **Team Synchronization (Git Sync):** Automatically syncs local memories into the `.sv-memory/memories.json` file inside the repository. Team members cloning or updating the repository will automatically integrate these memories into their local SQLite databases upon initialization.
+2. **Team Synchronization (Git Sync):** Automatically syncs local memories into individual chunk files (`.sv-memory/chunks/{id}.json`) inside the repository — one JSON file per memory — so parallel saves on different branches never produce merge conflicts. Team members cloning or updating the repository will automatically integrate these memories into their local SQLite databases upon initialization.
 3. **Structural Code Graph:** Analyzes projects across 15+ languages, detects imports and dependencies, computes **betweenness centrality**, detects **god nodes**, and finds **surprising connections**. Uses **Leiden community detection** to cluster related modules.
 4. **Graph Visualization & Export:** Export interactive **HTML visualizations** (vis.js), **per-community wiki pages** (Markdown), and **merge** multiple graph snapshots.
 5. **Agent Orchestration (Protocol Rules):** Automatically injects agent guidelines into `AGENTS.md`, `.cursorrules`, or `.windsurfrules` files in the repository root to guide AI agents to query and write memory proactively.
@@ -40,7 +40,7 @@ Developed under the **SVTech** ecosystem as a free and open-source tool for the 
                                     │  Import / Export Sync
         ┌───────────────────────────▼────────────────────────────┐
         │             Git Repository (Versioned JSON)            │
-        │             (.sv-memory/memories.json)                 │
+        │             (.sv-memory/chunks/*.json)                 │
         └────────────────────────────────────────────────────────┘
 ```
 
@@ -131,7 +131,7 @@ Initializes `sv-memory` in the current project:
 - Computes a unique project ID based on the Git repository root.
 - Registers the project in the global SQLite database.
 - Scans files and builds the initial dependency graph.
-- Imports shared memories from `.sv-memory/memories.json` if they exist.
+- Imports shared memories from `.sv-memory/chunks/{id}.json` (or legacy `memories.json`) if they exist.
 - Injects agent protocol guidelines into `AGENTS.md`, `.cursorrules`, or `.windsurfrules`.
 
 ```bash
@@ -148,7 +148,7 @@ sv-memory mcp
 
 ### 3. `sv-memory sync`
 
-Manually triggers synchronization. Imports new memories from the Git JSON file to SQLite, and exports all local SQLite memories of the project to `.sv-memory/memories.json`.
+Manually triggers synchronization. Imports new memories from the Git chunk files (`chunks/*.json` or legacy `memories.json`) to SQLite, and exports all local SQLite memories of the project to individual chunk files in `.sv-memory/chunks/`.
 
 ```bash
 sv-memory sync
@@ -263,7 +263,7 @@ sv-memory obsidian-export -o my-obsidian-vault
 
 ### 17. `sv-memory sync`
 
-Manually triggers synchronization. Imports new memories from the Git JSON file to SQLite, and exports all local SQLite memories of the project to `.sv-memory/memories.json`.
+Manually triggers synchronization. Imports new memories from the Git chunk files (`chunks/*.json` or legacy `memories.json`) to SQLite, and exports all local SQLite memories of the project to individual chunk files in `.sv-memory/chunks/`.
 
 ```bash
 sv-memory sync
@@ -420,7 +420,7 @@ Once configured, the autonomous workflow with your AI agent (such as Claude, Gem
    The agent records the decision:
    > *Agent runs internally:*
    > `sv_mem_save(category="bugfix", what="Usage of modernc.org/sqlite", why="Avoid CGO dependency to enable clean cross-compilation", learned="Always use modernc.org/sqlite for portable SQLite databases in Go", where_path="internal/db/db.go")`
-   > *Result:* The decision is saved in SQLite and immediately synchronized to `.sv-memory/memories.json` so your team receives it on their next `git pull`.
+   > *Result:* The decision is saved in SQLite and immediately synchronized to `.sv-memory/chunks/{id}.json` (one file per memory, avoiding merge conflicts) so your team receives it on their next `git pull`.
 
 ---
 
