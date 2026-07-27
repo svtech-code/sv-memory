@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/svtech/sv-memory/internal/protocol"
 )
 
 // Mode controls hook strictness.
@@ -517,6 +519,17 @@ func (e *HookEngine) installOpenCodeSkill() ([]string, error) {
 		return created, fmt.Errorf("failed to write opencode skill: %w", err)
 	}
 	created = append(created, skillPath)
+
+	// Also inject sv-memory protocol rules into AGENTS.md so that OpenCode
+	// always has the instructions in context without requiring @skill.
+	injected, err := protocol.InjectProtocol(e.projPath)
+	if err != nil {
+		return created, fmt.Errorf("failed to inject protocol rules into AGENTS.md: %w", err)
+	}
+	for _, f := range injected {
+		created = append(created, f+" (protocol rules injected)")
+	}
+
 	return created, nil
 }
 

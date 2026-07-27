@@ -14,6 +14,9 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta libre y de c�
 4. **Visualización y Exportación del Grafo:** Exporta **visualizaciones HTML interactivas** (vis.js), **páginas wiki por comunidad** (Markdown) y **fusiona** múltiples instantáneas del grafo.
 5. **Orquestación de Agentes (Reglas de Protocolo):** Inyecta automáticamente directrices en los archivos `AGENTS.md`, `.cursorrules` o `.windsurfrules` en la raíz del repositorio para guiar a los agentes de IA a consultar y escribir en la memoria de manera proactiva.
 6. **Portabilidad sin Dependencias:** Compilado en Go puro sin requerir CGO gracias al uso de `modernc.org/sqlite`. El binario compilado funciona directamente en macOS, Linux y Windows.
+7. **Hooks PreToolUse y Skills:** Instala hooks PreToolUse para Claude Code (soft nudge o strict block) y Antigravity CLI (agy), y un Skill para OpenCode. Los hooks interceptan las llamadas de lectura de archivos y redirigen al agente a consultar el grafo y la memoria primero.
+8. **Parseo Profundo de Markdown:** Escanea archivos `.md` para encabezados (→ nodos "section" con metadato de nivel), bloques de código (→ nodos "code_block" con metadato de lenguaje) y diagramas Mermaid (→ nodos "diagram"). Crea aristas "contains" desde los documentos a sus elementos estructurales.
+9. **Extracción de Esquemas SQL:** Analiza archivos `.sql` para sentencias DDL: CREATE TABLE (→ nodos "table" con metadatos de columnas), CREATE VIEW, CREATE INDEX y CREATE TYPE...AS ENUM. Detecta referencias ALTER TABLE...FOREIGN KEY.
 
 ---
 
@@ -301,6 +304,56 @@ Muestra memorias conflictivas y superposiciones semánticas detectadas en el pro
 
 ```bash
 sv-memory conflicts
+```
+
+### 22. `sv-memory hooks install [--platform P] [--strict]`
+
+Instala hooks PreToolUse (o Skills) para asistentes de IA en el proyecto actual. Cuando un agente intenta leer un archivo, el hook lo intercepta y sugiere consultar el grafo y la memoria de sv-memory primero.
+
+```bash
+# Instalar para todas las plataformas soportadas (modo soft)
+sv-memory hooks install
+
+# Modo strict: bloquea la primera lectura de archivo por sesión
+sv-memory hooks install --strict
+
+# Instalar para una plataforma específica
+sv-memory hooks install --platform claude-code
+sv-memory hooks install --platform antigravity
+sv-memory hooks install --platform opencode
+```
+
+**Plataformas soportadas:**
+
+| Plataforma | Tipo | Mecanismo |
+|-----------|------|-----------|
+| **Claude Code** | Hook PreToolUse | Script shell en `.claude/hooks/pre_tool_use/`, configurado via `.claude/settings.json` |
+| **Antigravity CLI (agy)** | Hook PreToolUse | Script shell + configuración JSON en `.agents/hooks.json` |
+| **Codex** | No-op (AGENTS.md) | Hook placeholder (Codex Desktop rechaza scripts PreToolUse); el nudge es via AGENTS.md |
+| **OpenCode** | Skill + AGENTS.md | Skill en `.opencode/skills/sv-memory/SKILL.md` + inyección de reglas de protocolo en AGENTS.md |
+
+**Modos:**
+
+| Modo | Comportamiento |
+|------|---------------|
+| **Soft** (default) | Siempre permite la herramienta; el nudge se transmite como contexto adicional (Claude Code) o via AGENTS.md (agy, Codex, OpenCode) |
+| **Strict** (`--strict`) | Bloquea la primera llamada de lectura de archivo por sesión con un mensaje dirigiendo al agente a usar sv-memory primero. Llamadas subsiguientes son permitidas. |
+
+### 23. `sv-memory hooks status`
+
+Muestra el estado de instalación de hooks para cada plataforma:
+
+```bash
+sv-memory hooks status
+```
+
+### 24. `sv-memory hooks uninstall [--platform P]`
+
+Elimina hooks / skills instalados por `sv-memory hooks install`:
+
+```bash
+sv-memory hooks uninstall
+sv-memory hooks uninstall --platform claude-code
 ```
 
 ---
