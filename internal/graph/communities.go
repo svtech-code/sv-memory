@@ -3,18 +3,20 @@ package graph
 import (
 	"database/sql"
 	"encoding/json"
+	"sort"
 )
 
 // DetectCommunities runs a label propagation community detection algorithm on the graph.
 func (g *InMemoryGraph) DetectCommunities() map[string]int {
 	nodeList := make([]string, 0, len(g.Nodes))
-	nodeIndex := make(map[string]int)
-
-	idx := 0
 	for id := range g.Nodes {
 		nodeList = append(nodeList, id)
+	}
+	sort.Strings(nodeList)
+
+	nodeIndex := make(map[string]int)
+	for idx, id := range nodeList {
 		nodeIndex[id] = idx
-		idx++
 	}
 
 	labels := make([]int, len(nodeList))

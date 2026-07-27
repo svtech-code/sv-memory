@@ -336,10 +336,12 @@ func applyMigrations(db *sql.DB) error {
 				}
 			}
 			rows.Close()
+		} else {
+			return fmt.Errorf("failed to query table info for memories: %w", err)
 		}
 		if !exists {
 			if _, errAlter := db.Exec(alterStmt); errAlter != nil {
-				fmt.Printf("Warning: failed to add column %s to memories: %v\n", col, errAlter)
+				return fmt.Errorf("failed to add column %s to memories: %w", col, errAlter)
 			}
 		}
 	}
@@ -364,6 +366,8 @@ func applyMigrations(db *sql.DB) error {
 				}
 			}
 			rows.Close()
+		} else {
+			return fmt.Errorf("failed to query table info for graph_edges: %w", err)
 		}
 		if !exists {
 			var alterStmt string
@@ -373,7 +377,7 @@ func applyMigrations(db *sql.DB) error {
 				alterStmt = "ALTER TABLE graph_edges ADD COLUMN source_location TEXT;"
 			}
 			if _, errAlter := db.Exec(alterStmt); errAlter != nil {
-				fmt.Printf("Warning: failed to add column %s to graph_edges: %v\n", col, errAlter)
+				return fmt.Errorf("failed to add column %s to graph_edges: %w", col, errAlter)
 			}
 		}
 	}
@@ -398,6 +402,8 @@ func applyMigrations(db *sql.DB) error {
 				}
 			}
 			rows.Close()
+		} else {
+			return fmt.Errorf("failed to query table info for memory_relations: %w", err)
 		}
 		if !exists {
 			var alterStmt string
@@ -407,7 +413,7 @@ func applyMigrations(db *sql.DB) error {
 				alterStmt = "ALTER TABLE memory_relations ADD COLUMN score REAL;"
 			}
 			if _, errAlter := db.Exec(alterStmt); errAlter != nil {
-				fmt.Printf("Warning: failed to add column %s to memory_relations: %v\n", col, errAlter)
+				return fmt.Errorf("failed to add column %s to memory_relations: %w", col, errAlter)
 			}
 		}
 	}
@@ -422,7 +428,7 @@ func applyMigrations(db *sql.DB) error {
 	}
 	for _, idx := range postIndexes {
 		if _, err := db.Exec(idx); err != nil {
-			fmt.Printf("Warning: failed to create index: %v\n", err)
+			return fmt.Errorf("failed to create index %s: %w", idx, err)
 		}
 	}
 

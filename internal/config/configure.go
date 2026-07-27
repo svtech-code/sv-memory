@@ -260,11 +260,73 @@ func configureZed(configPath string, execPath string) error {
 }
 
 func stripComments(input string) string {
-	reLine := regexp.MustCompile(`//.*`)
-	input = reLine.ReplaceAllString(input, "")
-	reBlock := regexp.MustCompile(`/\*.*?\*/`)
-	input = reBlock.ReplaceAllString(input, "")
-	return input
+	var sb strings.Builder
+	inString := false
+	inLineComment := false
+	inBlockComment := false
+
+	runes := []rune(input)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+
+		if inLineComment {
+			if r == '\n' {
+				inLineComment = false
+				sb.WriteRune(r)
+			}
+			continue
+		}
+
+		if inBlockComment {
+			if r == '*' && i+1 < len(runes) && runes[i+1] == '/' {
+				inBlockComment = false
+				i++ // skip '/'
+			}
+			continue
+		}
+
+		if inString {
+			if r == '"' {
+				// check if escaped
+				escaped := false
+				for j := sb.Len() - 1; j >= 0; j-- {
+					if sb.String()[j] == '\\' {
+						escaped = !escaped
+					} else {
+						break
+					}
+				}
+				if !escaped {
+					inString = false
+				}
+			}
+			sb.WriteRune(r)
+			continue
+		}
+
+		if r == '"' {
+			inString = true
+			sb.WriteRune(r)
+			continue
+		}
+
+		if r == '/' && i+1 < len(runes) {
+			next := runes[i+1]
+			if next == '/' {
+				inLineComment = true
+				i++
+				continue
+			} else if next == '*' {
+				inBlockComment = true
+				i++
+				continue
+			}
+		}
+
+		sb.WriteRune(r)
+	}
+
+	return sb.String()
 }
 
 func configureOpenCode(configPath string, execPath string) error {

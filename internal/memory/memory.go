@@ -848,9 +848,9 @@ func FindSimilarMemories(db *sql.DB, projectID, title string, limit int, thresho
 	return candidates, nil
 }
 
-// computeHash returns a SHA256 hex digest of the concatenated what/why/learned fields.
-func computeHash(what, why, learned string) string {
-	data := what + "\x00" + why + "\x00" + learned
+// computeHash returns a SHA256 hex digest of the concatenated what/why/learned/where_path fields.
+func computeHash(what, why, learned, wherePath string) string {
+	data := what + "\x00" + why + "\x00" + learned + "\x00" + wherePath
 	h := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(h[:])
 }
@@ -910,7 +910,7 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 	mem.NextSteps = security.SanitizeText(mem.NextSteps)
 
 	now := time.Now()
-	mem.NormalizedHash = computeHash(mem.What, mem.Why, mem.Learned)
+	mem.NormalizedHash = computeHash(mem.What, mem.Why, mem.Learned, mem.WherePath)
 
 	// Strategy 1 — topic_key upsert: update existing record if same project + topic
 	if mem.TopicKey != "" {

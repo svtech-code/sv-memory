@@ -136,8 +136,9 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	// single .sv-memory/memories.json write. The timer fires 500ms after the
 	// last save, so a burst of 5 saves triggers only one write.
 	var (
-		debounceMu sync.Mutex
-		syncTimer  *time.Timer
+		debounceMu  sync.Mutex
+		syncTimer   *time.Timer
+		syncVersion int
 	)
 
 	// scheduleSync resets the debounce timer. Each call to sv_mem_save invokes
@@ -148,7 +149,16 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		if syncTimer != nil {
 			syncTimer.Stop()
 		}
+		syncVersion++
+		currentVersion := syncVersion
 		syncTimer = time.AfterFunc(500*time.Millisecond, func() {
+			debounceMu.Lock()
+			if currentVersion != syncVersion {
+				debounceMu.Unlock()
+				return
+			}
+			debounceMu.Unlock()
+
 			if !viper.GetBool("git_sync_enabled") {
 				return
 			}
