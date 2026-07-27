@@ -975,7 +975,8 @@ var (
 			"#F0FFFF", // azure
 		}
 
-		// Build a markdown response containing node details and a Mermaid diagram representation
+		commLabels := computeCommLabels(g)
+
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("## Code Sub-Graph for '%s' (Depth: %d)\n\n", pathOrNode, depth))
 
@@ -983,10 +984,7 @@ var (
 		for _, node := range subGraph.Nodes {
 			cID := getCommID(node)
 			bc := getBC(node)
-			commStr := "none"
-			if cID > 0 {
-				commStr = strconv.Itoa(cID)
-			}
+			commStr := commLabelStr(cID, commLabels)
 			sb.WriteString(fmt.Sprintf("- **%s** (`%s`): %s (fan-in: %d, fan-out: %d, community: %s, BC: %.2f)\n",
 				node.Label, node.ID, node.Type, g.FanIn[node.ID], g.FanOut[node.ID], commStr, bc))
 		}
@@ -1333,6 +1331,7 @@ var (
 			return 0
 		}
 
+		commLabels := computeCommLabels(g)
 		cID := getCommID(node)
 		bc := getBC(node)
 		fanIn := g.FanIn[nID]
@@ -1356,7 +1355,7 @@ var (
 		}
 
 		sb.WriteString("\n### 📊 Network Metrics:\n")
-		sb.WriteString(fmt.Sprintf("- **Community ID:** `%d`\n", cID))
+		sb.WriteString(fmt.Sprintf("- **Community:** `%s`\n", commLabelStr(cID, commLabels)))
 		sb.WriteString(fmt.Sprintf("- **Betweenness Centrality (BC):** `%.2f`\n", bc))
 		sb.WriteString(fmt.Sprintf("- **Fan-In (Dependents):** `%d`\n", fanIn))
 		sb.WriteString(fmt.Sprintf("- **Fan-Out (Dependencies):** `%d`\n", fanOut))
@@ -1575,6 +1574,8 @@ var (
 		}
 		ranked = ranked[:topN]
 
+		commLabels := computeCommLabels(g)
+
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("## Top %d God Nodes (Most Connected)\n\n", topN))
 		sb.WriteString("Ranked by total degree (fan-in + fan-out). High-degree nodes are architectural hubs.\n\n")
@@ -1584,11 +1585,73 @@ var (
 			commStr := strconv.Itoa(r.comm)
 			if r.comm == 0 {
 				commStr = "none"
+			} else if label, ok := commLabels[r.comm]; ok {
+				commStr = fmt.Sprintf("%s (%d)", label, r.comm)
 			}
 			sb.WriteString(fmt.Sprintf("| %d | **%s** | `%s` | %d | %d | %d | %.2f | %s |\n",
 				i+1, r.node.Label, r.node.Type, r.degree, g.FanIn[r.id], g.FanOut[r.id], r.bc, commStr))
 		}
 		sb.WriteString("\n*Use `sv_graph_explain` on any node for deeper analysis.*\n")
+		sb.WriteString(fmt.Sprintf("\n*Response: ~%d tokens*", sb.Len()/4))
+
+		return mcp.NewToolResultText(sb.String()), nil
+	})
+
+	// 23. Tool: sv_graph_surprising_connections
+	surprisingTool := mcp.NewTool("sv_graph_surprising_connections",
+		mcp.WithDescription("Find surprising/interesting cross-community connections (bridges between different parts of the codebase)"),
+		mcp.WithString("limit", mcp.Description("Maximum number of connections to return (default '10')")),
+	)
+
+	s.AddTool(surprisingTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		startLoad := time.Now()
+		g, err := getOrLoadGraph()
+		debugLog("graph_load took %s", time.Since(startLoad))
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
+		}
+
+		limitStr := req.GetString("limit", "10")
+		limit := 10
+		if d, err := strconv.Atoi(limitStr); err == nil && d > 0 {
+			limit = d
+		}
+		if limit > 50 {
+			limit = 50
+		}
+
+		if g.BetweennessCentrality() == nil {
+			return mcp.NewToolResultError("centrality data not available"), nil
+		}
+
+		centrality := g.BetweennessCentrality()
+		communities := g.ExtractCommunities()
+		if len(communities) == 0 {
+			return mcp.NewToolResultText("No community data found. Run community detection first."), nil
+		}
+
+		conns := g.FindSurprisingConnections(communities, centrality, limit)
+
+		if len(conns) == 0 {
+			return mcp.NewToolResultText("No surprising cross-community connections found."), nil
+		}
+
+		commLabels := computeCommLabels(g, centrality)
+
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("## Surprising Connections (Top %d)\n\n", len(conns)))
+		sb.WriteString("Cross-community bridges that link otherwise separate parts of the codebase.\n\n")
+
+		sb.WriteString("| Rank | Source | Target | Edge Type | Surprise Score | Communities |\n")
+		sb.WriteString("|------|--------|--------|-----------|----------------|-------------|\n")
+		for i, c := range conns {
+			srcComm := commLabelStr(c.SrcCommunity, commLabels)
+			dstComm := commLabelStr(c.DstCommunity, commLabels)
+			sb.WriteString(fmt.Sprintf("| %d | **%s** | **%s** | `%s` | %.2f | %s ↔ %s |\n",
+				i+1, c.SourceLabel, c.TargetLabel, c.EdgeType, c.SurpriseScore, srcComm, dstComm))
+		}
+
+		sb.WriteString("\n*Higher surprise score means a more unexpected bridge between communities.*\n")
 		sb.WriteString(fmt.Sprintf("\n*Response: ~%d tokens*", sb.Len()/4))
 
 		return mcp.NewToolResultText(sb.String()), nil
@@ -1600,7 +1663,34 @@ var (
 
 
 func escapeMermaid(s string) string {
-	// Replaces path slash/special chars with underscores or quotes for Mermaid
 	s = strings.ReplaceAll(s, "\\", "/")
 	return fmt.Sprintf(`"%s"`, s)
+}
+
+// computeCommLabels extracts community labels from the graph by finding the
+// most central node in each community and using its label as the community name.
+// Pass a pre-computed centrality map if available to avoid re-computation.
+func computeCommLabels(g *graph.InMemoryGraph, centrality ...map[string]float64) map[int]string {
+	communities := g.ExtractCommunities()
+	if len(communities) == 0 {
+		return nil
+	}
+	var bc map[string]float64
+	if len(centrality) > 0 && centrality[0] != nil {
+		bc = centrality[0]
+	} else {
+		bc = g.BetweennessCentrality()
+	}
+	return g.DetectCommunityLabels(communities, bc)
+}
+
+// commLabelStr returns a formatted community string: "Label (ID N)" or "none".
+func commLabelStr(commID int, labels map[int]string) string {
+	if commID == 0 {
+		return "none"
+	}
+	if label, ok := labels[commID]; ok {
+		return fmt.Sprintf("%s (ID %d)", label, commID)
+	}
+	return fmt.Sprintf("community_%d", commID)
 }

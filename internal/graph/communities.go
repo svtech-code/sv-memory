@@ -3,6 +3,7 @@ package graph
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"sort"
 )
 
@@ -188,4 +189,197 @@ func UpdateCommunitiesAndCentrality(db *sql.DB, projectID string) error {
 	}
 
 	return tx.Commit()
+}
+
+type CommunityInfo struct {
+	ID          int
+	Label       string
+	NodeCount   int
+	TopNodeID   string
+	TopNodeLabel string
+	AvgCentrality float64
+}
+
+// ExtractCommunities reads community_id from node metadata and returns a community map.
+func (g *InMemoryGraph) ExtractCommunities() map[string]int {
+	communities := make(map[string]int)
+	for id, node := range g.Nodes {
+		if node.Metadata == nil {
+			continue
+		}
+		val, ok := node.Metadata["community_id"]
+		if !ok {
+			continue
+		}
+		switch v := val.(type) {
+		case float64:
+			communities[id] = int(v)
+		case int:
+			communities[id] = v
+		case int64:
+			communities[id] = int(v)
+		}
+	}
+	return communities
+}
+
+func (g *InMemoryGraph) DetectCommunityLabels(communities map[string]int, centrality map[string]float64) map[int]string {
+	commBest := make(map[int]struct {
+		nodeID string
+		bc     float64
+	})
+	for id, cID := range communities {
+		bc := centrality[id]
+		if best, ok := commBest[cID]; !ok || bc > best.bc {
+			commBest[cID] = struct {
+				nodeID string
+				bc     float64
+			}{nodeID: id, bc: bc}
+		}
+	}
+
+	commLabels := make(map[int]string)
+	for cID, best := range commBest {
+		if node, ok := g.Nodes[best.nodeID]; ok {
+			label := node.Label
+			if len(label) > 40 {
+				label = label[:40]
+			}
+			commLabels[cID] = label
+		} else {
+			commLabels[cID] = fmt.Sprintf("community_%d", cID)
+		}
+	}
+
+	return commLabels
+}
+
+// SurprisingConnection represents a cross-community edge with a surprise score.
+type SurprisingConnection struct {
+	SourceID      string  `json:"source_id"`
+	SourceLabel   string  `json:"source_label"`
+	TargetID      string  `json:"target_id"`
+	TargetLabel   string  `json:"target_label"`
+	EdgeType      string  `json:"edge_type"`
+	SrcCommunity  int     `json:"src_community"`
+	DstCommunity  int     `json:"dst_community"`
+	SurpriseScore float64 `json:"surprise_score"`
+}
+
+// FindSurprisingConnections finds cross-community edges that bridge different
+// parts of the codebase. A connection is "surprising" when it links two different
+// communities via endpoints that are individually low-degree (not obvious hubs).
+func (g *InMemoryGraph) FindSurprisingConnections(communities map[string]int, centrality map[string]float64, limit int) []SurprisingConnection {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	var candidates []SurprisingConnection
+	seen := make(map[string]bool)
+
+	for srcID, edges := range g.EdgesBySource {
+		srcComm, srcOk := communities[srcID]
+		if !srcOk {
+			continue
+		}
+		for _, edge := range edges {
+			dstComm, dstOk := communities[edge.TargetID]
+			if !dstOk {
+				continue
+			}
+
+			key := srcID + "->" + edge.TargetID
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+
+			sDegree := g.FanIn[srcID] + g.FanOut[srcID]
+			dDegree := g.FanIn[edge.TargetID] + g.FanOut[edge.TargetID]
+			sBC := centrality[srcID]
+			dBC := centrality[edge.TargetID]
+
+			var score float64
+			if srcComm != dstComm {
+				avgBC := (sBC + dBC) / 2.0
+				totalDegree := sDegree + dDegree
+				if totalDegree == 0 {
+					totalDegree = 1
+				}
+				score = avgBC * 2.0 / float64(totalDegree)
+			}
+
+			if score > 0 {
+				srcLabel := srcID
+				if n, ok := g.Nodes[srcID]; ok {
+					srcLabel = n.Label
+				}
+				dstLabel := edge.TargetID
+				if n, ok := g.Nodes[edge.TargetID]; ok {
+					dstLabel = n.Label
+				}
+
+				candidates = append(candidates, SurprisingConnection{
+					SourceID:      srcID,
+					SourceLabel:   srcLabel,
+					TargetID:      edge.TargetID,
+					TargetLabel:   dstLabel,
+					EdgeType:      edge.RelationType,
+					SrcCommunity:  srcComm,
+					DstCommunity:  dstComm,
+					SurpriseScore: score,
+				})
+			}
+		}
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].SurpriseScore > candidates[j].SurpriseScore
+	})
+
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+
+	return candidates
+}
+
+func (g *InMemoryGraph) GetCommunityInfo(communities map[string]int, centrality map[string]float64) map[int]*CommunityInfo {
+	commInfo := make(map[int]*CommunityInfo)
+	commNodes := make(map[int][]string)
+	for id, cID := range communities {
+		commNodes[cID] = append(commNodes[cID], id)
+	}
+
+	labels := g.DetectCommunityLabels(communities, centrality)
+
+	for cID, nodes := range commNodes {
+		info := &CommunityInfo{
+			ID:        cID,
+			Label:     labels[cID],
+			NodeCount: len(nodes),
+		}
+		var totalBC float64
+		var bestNode, bestLabel string
+		var bestBC float64
+		for _, nid := range nodes {
+			bc := centrality[nid]
+			totalBC += bc
+			if bc > bestBC {
+				bestBC = bc
+				bestNode = nid
+				if n, ok := g.Nodes[nid]; ok {
+					bestLabel = n.Label
+				}
+			}
+		}
+		info.TopNodeID = bestNode
+		info.TopNodeLabel = bestLabel
+		if len(nodes) > 0 {
+			info.AvgCentrality = totalBC / float64(len(nodes))
+		}
+		commInfo[cID] = info
+	}
+
+	return commInfo
 }

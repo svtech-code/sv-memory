@@ -540,5 +540,25 @@
     "normalized_hash": "eed943db59a939396e8412622ea07dc26978fcf220626b607399f690b8c0d9dc",
     "deleted_at": "0001-01-01T00:00:00Z",
     "created_at": "2026-07-26T21:57:08.707021-04:00"
+  },
+  {
+    "id": "b7fb3268",
+    "project_id": "ce22c23ac33d7a36",
+    "category": "journal",
+    "what": "Phase 2 complete: community labels and surprising connections",
+    "why": "P5 labels each community by its most central node; P8 surfaces cross-community bridges ranked by surprise score",
+    "learned": "Community labels reduce cognitive load for AI agents by replacing numeric IDs with meaningful names. Surprising connections help identify unexpected architectural bridges.",
+    "git_branch": "main",
+    "git_commit": "0316ce6",
+    "author": "Mario Sandoval (Sv Tech)",
+    "impact": "All 36 tests pass. Three existing MCP tools now show community labels; one new tool (sv_graph_surprising_connections) added. Fixed a double-computation bug in DetectCommunityLabels.",
+    "next_steps": "Review and commit Phase 2 changes. Consider: exporting labels to graph sync, adding relation judgment between memories, and Phase 3 (confidence rules / P9-P10).",
+    "session_id": "5c56a616",
+    "topic_key": "journal/phase2-graph-enhancements",
+    "revision_count": 1,
+    "last_seen_at": "0001-01-01T00:00:00Z",
+    "normalized_hash": "97b1b6aa9d257a01e865dfb50fa00a971d40a6f17999ad1e0f6dcba4cbe9d46b",
+    "deleted_at": "0001-01-01T00:00:00Z",
+    "created_at": "2026-07-26T22:06:24.296315-04:00"
   }
 ]
