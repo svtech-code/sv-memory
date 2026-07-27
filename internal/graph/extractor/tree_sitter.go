@@ -1,7 +1,6 @@
 package extractor
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/odvcencio/gotreesitter"
@@ -23,23 +22,20 @@ func NewTreeSitterExtractor() *TreeSitterExtractor {
 // Extract parses the file content using gotreesitter for supported languages,
 // falling back to RegexExtractor for others or if syntax tree parsing fails.
 func (t *TreeSitterExtractor) Extract(content []byte, relPath, ext string) ([]Symbol, []string, error) {
+	// Go tree-sitter parser has a stack overflow bug with complex new/make type
+	// arguments. Use the regex extractor for Go files until the library is fixed.
+	if ext == ".go" {
+		return t.regexFallback.Extract(content, relPath, ext)
+	}
+
 	lang := t.GetLanguage(ext)
 	if lang == nil {
 		return t.regexFallback.Extract(content, relPath, ext)
 	}
 
 	parser := gotreesitter.NewParser(lang)
-	var tree *gotreesitter.Tree
-	var parseErr error
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				parseErr = fmt.Errorf("tree-sitter panic: %v", r)
-			}
-		}()
-		tree, parseErr = parser.Parse(content)
-	}()
-	if parseErr != nil || tree == nil || tree.RootNode() == nil {
+	tree, err := parser.Parse(content)
+	if err != nil || tree == nil || tree.RootNode() == nil {
 		return t.regexFallback.Extract(content, relPath, ext)
 	}
 
