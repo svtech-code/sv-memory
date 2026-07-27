@@ -60,7 +60,7 @@ If you only want to use `sv-memory` in your development projects:
 
 If you want to modify the code or build the binary yourself:
 
-- **Language:** **Go 1.22+** installed on your system.
+- **Language:** **Go 1.26+** installed on your system.
 - **Version Control:** **Git** installed.
 
 ---

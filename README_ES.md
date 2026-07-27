@@ -60,7 +60,7 @@ Si solo deseas utilizar `sv-memory` en tus proyectos de desarrollo:
 
 Si deseas modificar el código o compilar el binario tú mismo:
 
-- **Lenguaje:** **Go 1.22+** instalado en tu sistema.
+- **Lenguaje:** **Go 1.26+** instalado en tu sistema.
 - **Control de Versiones:** **Git** instalado.
 
 ---
