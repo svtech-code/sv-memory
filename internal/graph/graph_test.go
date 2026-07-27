@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -296,6 +297,97 @@ func TestSyncGraphIncremental(t *testing.T) {
 	}
 	if bEdges != 0 {
 		t.Errorf("expected b.js to have 0 outgoing edges, got %d", bEdges)
+	}
+}
+
+func TestSyncGraphChurnFallback(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-churn-test")
+	if err != nil {
+		t.Fatalf("failed to create temp workspace: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_churn.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-churn-test"
+	err = db.RegisterProject(database, projectID, "Churn Test Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// 1. Create 10 files
+	for i := 1; i <= 10; i++ {
+		filename := fmt.Sprintf("file_%d.js", i)
+		err = os.WriteFile(filepath.Join(tempDir, filename), []byte("export const a = 1;"), 0644)
+		if err != nil {
+			t.Fatalf("failed writing file: %v", err)
+		}
+	}
+
+	// First build (full)
+	err = SyncGraph(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("first SyncGraph failed: %v", err)
+	}
+
+	// Test case A: Low churn (1 file modified of 10 = 10% churn)
+	// This should successfully run incremental sync
+	err = os.WriteFile(filepath.Join(tempDir, "file_1.js"), []byte("export const a = 2;"), 0644)
+	if err != nil {
+		t.Fatalf("failed updating file_1: %v", err)
+	}
+
+	ok, err := trySyncGraphIncremental(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("trySyncGraphIncremental failed: %v", err)
+	}
+	if !ok {
+		t.Error("expected trySyncGraphIncremental to return true for 10% churn (low churn)")
+	}
+
+	// Sync again to update metadata
+	err = SyncGraph(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("SyncGraph failed: %v", err)
+	}
+
+	// Test case B: High churn (4 files modified/deleted of 10 = 40% churn)
+	// This should exceed the 30% threshold and trigger full rebuild (return false)
+	err = os.WriteFile(filepath.Join(tempDir, "file_2.js"), []byte("export const a = 3;"), 0644)
+	if err != nil {
+		t.Fatalf("failed updating file_2: %v", err)
+	}
+	err = os.WriteFile(filepath.Join(tempDir, "file_3.js"), []byte("export const a = 3;"), 0644)
+	if err != nil {
+		t.Fatalf("failed updating file_3: %v", err)
+	}
+	// Delete file_4.js and file_5.js
+	err = os.Remove(filepath.Join(tempDir, "file_4.js"))
+	if err != nil {
+		t.Fatalf("failed deleting file_4: %v", err)
+	}
+	err = os.Remove(filepath.Join(tempDir, "file_5.js"))
+	if err != nil {
+		t.Fatalf("failed deleting file_5: %v", err)
+	}
+
+	ok, err = trySyncGraphIncremental(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("trySyncGraphIncremental failed: %v", err)
+	}
+	if ok {
+		t.Error("expected trySyncGraphIncremental to return false (fallback to full sync) for 40% churn")
+	}
+
+	// Final verification: running full sync should succeed
+	err = SyncGraph(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("final SyncGraph failed: %v", err)
 	}
 }
 
