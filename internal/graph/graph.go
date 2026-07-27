@@ -88,14 +88,25 @@ func parseSymbols(relPath, ext string, content []byte) ([]*Node, map[string]inte
 
 	var symbolNodes []*Node
 	for _, sym := range symbols {
+		if sym.Type == "rationale" {
+			if len(sym.Name) > 200 || sym.Name == "" {
+				continue
+			}
+		} else if !isValidSymbolName(sym.Name) {
+			continue
+		}
 		id := relPath + ":" + sym.Name
+		label := sym.Name
 		if sym.Type == "rationale" {
 			id = fmt.Sprintf("%s:rationale:%d", relPath, sym.Line)
+			if len(label) > 80 {
+				label = label[:80]
+			}
 		}
 		symbolNodes = append(symbolNodes, &schema.Node{
 			ID:    id,
 			Type:  sym.Type,
-			Label: sym.Name,
+			Label: label,
 			Path:  relPath,
 			Metadata: map[string]interface{}{
 				"line":     sym.Line,
@@ -105,6 +116,37 @@ func parseSymbols(relPath, ext string, content []byte) ([]*Node, map[string]inte
 	}
 
 	return symbolNodes, meta
+}
+
+func isValidSymbolName(name string) bool {
+	if name == "" {
+		return false
+	}
+	// Reject names with whitespace, braces, brackets, or operators — those are
+	// code fragments or malformed extractions, not valid symbols.
+	for _, r := range name {
+		if r == '{' || r == '}' || r == '(' || r == ')' || r == '[' || r == ']' {
+			return false
+		}
+		if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
+			return false
+		}
+		if r == '=' || r == '+' || r == '*' || r == '/' || r == '%' {
+			return false
+		}
+		if r == '<' || r == '>' || r == '&' || r == '|' || r == '!' || r == '^' || r == '~' {
+			return false
+		}
+	}
+	// Reject names that are just punctuation
+	hasLetter := false
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+			hasLetter = true
+			break
+		}
+	}
+	return hasLetter
 }
 
 // parseFiles concurrently parses imports for the given file list using a
