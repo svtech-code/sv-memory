@@ -19,11 +19,12 @@ const (
 type Platform string
 
 const (
-	PlatformClaudeCode Platform = "claude-code"
-	PlatformCodex      Platform = "codex"
+	PlatformClaudeCode  Platform = "claude-code"
+	PlatformCodex       Platform = "codex"
+	PlatformAntigravity Platform = "antigravity"
 )
 
-var supportedPlatforms = []Platform{PlatformClaudeCode, PlatformCodex}
+var supportedPlatforms = []Platform{PlatformClaudeCode, PlatformCodex, PlatformAntigravity}
 
 // HookEngine manages PreToolUse hook installation for AI assistants.
 type HookEngine struct {
@@ -61,6 +62,8 @@ func (e *HookEngine) Install(platforms []Platform) []InstallResult {
 			r.Files, r.Err = e.installClaudeCode()
 		case PlatformCodex:
 			r.Files, r.Err = e.installCodex()
+		case PlatformAntigravity:
+			r.Files, r.Err = e.installAntigravity()
 		default:
 			r.Err = fmt.Errorf("unsupported platform: %s", p)
 		}
@@ -83,6 +86,8 @@ func (e *HookEngine) Uninstall(platforms []Platform) []InstallResult {
 			r.Files, r.Err = e.uninstallClaudeCode()
 		case PlatformCodex:
 			r.Files, r.Err = e.uninstallCodex()
+		case PlatformAntigravity:
+			r.Files, r.Err = e.uninstallAntigravity()
 		default:
 			r.Err = fmt.Errorf("unsupported platform: %s", p)
 		}
@@ -104,6 +109,8 @@ func (e *HookEngine) Status(platforms []Platform) map[Platform]bool {
 			status[p] = e.claudeCodeInstalled()
 		case PlatformCodex:
 			status[p] = e.codexInstalled()
+		case PlatformAntigravity:
+			status[p] = e.antigravityInstalled()
 		default:
 			status[p] = false
 		}
@@ -341,6 +348,141 @@ func (e *HookEngine) codexInstalled() bool {
 		return false
 	}
 	return true
+}
+
+// --- Antigravity CLI (agy) ---
+
+func (e *HookEngine) antigravityHooksPath() string {
+	return filepath.Join(e.projPath, ".agents", "hooks.json")
+}
+
+func (e *HookEngine) antigravityHookScriptPath() string {
+	return filepath.Join(e.projPath, ".agents", "hooks", "sv-memory.sh")
+}
+
+func (e *HookEngine) installAntigravity() ([]string, error) {
+	var created []string
+
+	// 1. Write hook script
+	scriptPath := e.antigravityHookScriptPath()
+	scriptDir := filepath.Dir(scriptPath)
+	if err := os.MkdirAll(scriptDir, 0755); err != nil {
+		return created, fmt.Errorf("failed to create .agents/hooks dir: %w", err)
+	}
+	scriptContent := hookScript(PlatformAntigravity, e.mode)
+	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
+		return created, fmt.Errorf("failed to write agy hook script: %w", err)
+	}
+	created = append(created, scriptPath)
+
+	// 2. Build hooks.json config
+	// agy hooks.json shape: named hook groups with event keys.
+	// PreToolUse uses [{matcher, hooks: [{type, command, timeout}]}]
+	hooksEntry := map[string]interface{}{
+		"sv-memory": map[string]interface{}{
+			"enabled": true,
+			"PreToolUse": []map[string]interface{}{
+				{
+					"matcher": "view_file|grep_search|list_dir",
+					"hooks": []map[string]interface{}{
+						{
+							"type":    "command",
+							"command": scriptPath,
+							"timeout": 5,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	hooksPath := e.antigravityHooksPath()
+	hooksDir := filepath.Dir(hooksPath)
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		return created, fmt.Errorf("failed to create .agents dir: %w", err)
+	}
+
+	// Merge with existing hooks.json if it exists (preserve other named hooks)
+	var existingData map[string]interface{}
+	if b, err := os.ReadFile(hooksPath); err == nil {
+		_ = json.Unmarshal(b, &existingData)
+	}
+	if existingData == nil {
+		existingData = hooksEntry
+	} else {
+		for k, v := range hooksEntry {
+			existingData[k] = v
+		}
+	}
+
+	data, err := json.MarshalIndent(existingData, "", "  ")
+	if err != nil {
+		return created, fmt.Errorf("failed to marshal agy hooks.json: %w", err)
+	}
+	if err := os.WriteFile(hooksPath, data, 0644); err != nil {
+		return created, fmt.Errorf("failed to write agy hooks.json: %w", err)
+	}
+	created = append(created, hooksPath)
+
+	return created, nil
+}
+
+func (e *HookEngine) uninstallAntigravity() ([]string, error) {
+	var removed []string
+
+	// 1. Remove hook script
+	scriptPath := e.antigravityHookScriptPath()
+	if err := os.Remove(scriptPath); err != nil && !os.IsNotExist(err) {
+		return removed, fmt.Errorf("failed to remove agy hook script: %w", err)
+	}
+	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+		removed = append(removed, scriptPath)
+	}
+
+	// 2. Remove our entry from hooks.json (preserve other named hooks)
+	hooksPath := e.antigravityHooksPath()
+	if existing, err := os.ReadFile(hooksPath); err == nil {
+		data := make(map[string]interface{})
+		_ = json.Unmarshal(existing, &data)
+
+		delete(data, "sv-memory")
+
+		if len(data) == 0 {
+			if err := os.Remove(hooksPath); err != nil && !os.IsNotExist(err) {
+				return removed, fmt.Errorf("failed to remove agy hooks.json: %w", err)
+			}
+			if _, err := os.Stat(hooksPath); os.IsNotExist(err) {
+				removed = append(removed, hooksPath)
+			}
+		} else {
+			out, _ := json.MarshalIndent(data, "", "  ")
+			_ = os.WriteFile(hooksPath, out, 0644)
+			removed = append(removed, hooksPath+" (sv-memory entry removed)")
+		}
+	}
+
+	return removed, nil
+}
+
+func (e *HookEngine) antigravityInstalled() bool {
+	hooksPath := e.antigravityHooksPath()
+	if _, err := os.Stat(hooksPath); os.IsNotExist(err) {
+		return false
+	}
+	scriptPath := e.antigravityHookScriptPath()
+	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+		return false
+	}
+	existing, err := os.ReadFile(hooksPath)
+	if err != nil {
+		return false
+	}
+	data := make(map[string]interface{})
+	if err := json.Unmarshal(existing, &data); err != nil {
+		return false
+	}
+	_, hasEntry := data["sv-memory"]
+	return hasEntry
 }
 
 // SupportedPlatforms returns the list of all supported platforms.

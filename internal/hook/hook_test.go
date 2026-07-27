@@ -204,6 +204,92 @@ func TestUninstallCodex(t *testing.T) {
 	}
 }
 
+func TestHookScriptContentAntigravity(t *testing.T) {
+	content, err := HookScriptContent(PlatformAntigravity, ModeSoft)
+	if err != nil {
+		t.Fatalf("failed to get antigravity soft script: %v", err)
+	}
+	if !strings.Contains(content, "allow") {
+		t.Error("antigravity soft script should contain 'allow' decision")
+	}
+}
+
+func TestHookScriptContentAntigravityStrict(t *testing.T) {
+	content, err := HookScriptContent(PlatformAntigravity, ModeStrict)
+	if err != nil {
+		t.Fatalf("failed to get antigravity strict script: %v", err)
+	}
+	if !strings.Contains(content, "FLAG_FILE") {
+		t.Error("antigravity strict script should have FLAG_FILE session tracking")
+	}
+	if !strings.Contains(content, "exit 2") {
+		t.Error("antigravity strict script should have exit 2 for blocked tools")
+	}
+}
+
+func TestInstallAntigravity(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-hook-agy-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	eng := New(tempDir, ModeSoft)
+	results := eng.Install([]Platform{PlatformAntigravity})
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Err != nil {
+		t.Fatalf("install failed: %v", results[0].Err)
+	}
+
+	hooksPath := filepath.Join(tempDir, ".agents", "hooks.json")
+	if _, err := os.Stat(hooksPath); os.IsNotExist(err) {
+		t.Fatalf("hooks.json not created at %s", hooksPath)
+	}
+
+	scriptPath := filepath.Join(tempDir, ".agents", "hooks", "sv-memory.sh")
+	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+		t.Fatalf("hook script not created at %s", scriptPath)
+	}
+
+	status := eng.Status([]Platform{PlatformAntigravity})
+	if !status[PlatformAntigravity] {
+		t.Error("expected antigravity status to be installed")
+	}
+}
+
+func TestUninstallAntigravity(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-hook-agy-uninstall")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	eng := New(tempDir, ModeSoft)
+
+	installResults := eng.Install([]Platform{PlatformAntigravity})
+	if installResults[0].Err != nil {
+		t.Fatalf("install failed: %v", installResults[0].Err)
+	}
+
+	uninstallResults := eng.Uninstall([]Platform{PlatformAntigravity})
+	if uninstallResults[0].Err != nil {
+		t.Fatalf("uninstall failed: %v", uninstallResults[0].Err)
+	}
+
+	hooksPath := filepath.Join(tempDir, ".agents", "hooks.json")
+	if _, err := os.Stat(hooksPath); !os.IsNotExist(err) {
+		t.Error("hooks.json should have been removed")
+	}
+
+	scriptPath := filepath.Join(tempDir, ".agents", "hooks", "sv-memory.sh")
+	if _, err := os.Stat(scriptPath); !os.IsNotExist(err) {
+		t.Error("hook script should have been removed")
+	}
+}
+
 func TestStatusNotInstalled(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-hook-status-test")
 	if err != nil {
@@ -219,6 +305,9 @@ func TestStatusNotInstalled(t *testing.T) {
 	}
 	if status[PlatformCodex] {
 		t.Error("expected codex to not be installed in empty dir")
+	}
+	if status[PlatformAntigravity] {
+		t.Error("expected antigravity to not be installed in empty dir")
 	}
 }
 

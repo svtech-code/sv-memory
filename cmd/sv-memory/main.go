@@ -1288,7 +1288,7 @@ var conflictsIgnoreCmd = &cobra.Command{
 
 var hooksCmd = &cobra.Command{
 	Use:   "hooks",
-	Short: "Manage PreToolUse hooks for AI assistants (Claude Code, Codex)",
+	Short: "Manage PreToolUse hooks for AI assistants (Claude Code, Codex, Antigravity CLI)",
 }
 
 var hooksInstallCmd = &cobra.Command{
@@ -1532,8 +1532,8 @@ func init() {
 	conflictsScanCmd.Flags().Float64("threshold", 0.45, "Jaccard similarity threshold for descriptions")
 
 	hooksInstallCmd.Flags().Bool("strict", false, "Enable strict mode (blocks the first raw source read)")
-	hooksInstallCmd.Flags().String("platform", "", "Target platform (claude-code, codex). Default: all")
-	hooksUninstallCmd.Flags().String("platform", "", "Target platform (claude-code, codex). Default: all")
+	hooksInstallCmd.Flags().String("platform", "", "Target platform (claude-code, codex, antigravity). Default: all")
+	hooksUninstallCmd.Flags().String("platform", "", "Target platform (claude-code, codex, antigravity). Default: all")
 
 	hooksCmd.AddCommand(hooksInstallCmd)
 	hooksCmd.AddCommand(hooksUninstallCmd)
