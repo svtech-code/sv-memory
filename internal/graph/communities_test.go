@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestDetectCommunitiesAndCentrality(t *testing.T) {
+func TestDetectCommunities(t *testing.T) {
 	// Create a simple test graph:
 	// A -> B -> C
 	// D -> E -> F
@@ -44,22 +44,42 @@ func TestDetectCommunitiesAndCentrality(t *testing.T) {
 		},
 	}
 
-	comms := g.DetectCommunities()
-	if len(comms) != 6 {
-		t.Errorf("expected 6 community assignments, got %d", len(comms))
-	}
+	t.Run("DetectCommunities", func(t *testing.T) {
+		comms := g.DetectCommunities()
+		if len(comms) != 6 {
+			t.Errorf("expected 6 community assignments, got %d", len(comms))
+		}
+	})
 
-	// Betweenness centrality check
-	bc := g.BetweennessCentrality()
-	if len(bc) != 6 {
-		t.Errorf("expected 6 centrality scores, got %d", len(bc))
-	}
+	t.Run("LeidenDetectCommunities", func(t *testing.T) {
+		comms := g.LeidenDetectCommunities()
+		if len(comms) != 6 {
+			t.Errorf("expected 6 community assignments, got %d", len(comms))
+		}
+		// Leiden should group A-B-C together and D-E-F together
+		if comms["A"] != comms["B"] || comms["B"] != comms["C"] {
+			t.Errorf("expected A-B-C in same community with Leiden, got A=%d B=%d C=%d", comms["A"], comms["B"], comms["C"])
+		}
+		if comms["D"] != comms["E"] || comms["E"] != comms["F"] {
+			t.Errorf("expected D-E-F in same community with Leiden, got D=%d E=%d F=%d", comms["D"], comms["E"], comms["F"])
+		}
+		// A and D should be in different communities (bridge only through B-E)
+		if comms["A"] == comms["D"] {
+			t.Errorf("expected A and D in different communities with Leiden")
+		}
+	})
 
-	// B and E are bridge nodes, so their BC should be higher than leaf nodes like A, C, D, F
-	if bc["B"] <= bc["A"] {
-		t.Errorf("expected node B (bridge) to have higher centrality than A, got B=%f, A=%f", bc["B"], bc["A"])
-	}
-	if bc["E"] <= bc["F"] {
-		t.Errorf("expected node E (bridge) to have higher centrality than F, got E=%f, F=%f", bc["E"], bc["F"])
-	}
+	t.Run("BetweennessCentrality", func(t *testing.T) {
+		bc := g.BetweennessCentrality()
+		if len(bc) != 6 {
+			t.Errorf("expected 6 centrality scores, got %d", len(bc))
+		}
+
+		if bc["B"] <= bc["A"] {
+			t.Errorf("expected node B (bridge) to have higher centrality than A, got B=%f, A=%f", bc["B"], bc["A"])
+		}
+		if bc["E"] <= bc["F"] {
+			t.Errorf("expected node E (bridge) to have higher centrality than F, got E=%f, F=%f", bc["E"], bc["F"])
+		}
+	})
 }

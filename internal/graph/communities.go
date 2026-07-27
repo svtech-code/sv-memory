@@ -155,7 +155,7 @@ func UpdateCommunitiesAndCentrality(db *sql.DB, projectID string) error {
 		return err
 	}
 
-	comms := g.DetectCommunities()
+	comms := g.LeidenDetectCommunities()
 	centrality := g.BetweennessCentrality()
 
 	tx, err := db.Begin()

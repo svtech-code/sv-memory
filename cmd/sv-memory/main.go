@@ -687,7 +687,7 @@ var graphCommunitiesCmd = &cobra.Command{
 			return err
 		}
 
-		comms := g.DetectCommunities()
+		comms := g.LeidenDetectCommunities()
 
 		// Group nodes by community ID
 		commGroups := make(map[int][]string)
