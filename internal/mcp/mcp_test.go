@@ -330,8 +330,8 @@ func TestGraphPathHandler(t *testing.T) {
 		t.Fatalf("sv_graph_path failed: %v", err)
 	}
 	textResult := textContent(resPath.Content[0])
-	if !strings.Contains(textResult, "Path found: index.js -> components/Button.tsx") {
-		t.Errorf("expected shortest path index.js -> components/Button.tsx, got: %s", textResult)
+	if !strings.Contains(textResult, "imports EXTRACTED") || !strings.Contains(textResult, "index.js") || !strings.Contains(textResult, "Button.tsx") {
+		t.Errorf("expected path with confidence details, got: %s", textResult)
 	}
 }
 

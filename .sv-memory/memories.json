@@ -504,5 +504,41 @@
     "normalized_hash": "d7bba930039249e9bb1dd273366bfd3eec1c142c5bf3d799a8ba458159cba1aa",
     "deleted_at": "0001-01-01T00:00:00Z",
     "created_at": "2026-07-26T21:30:35.193397-04:00"
+  },
+  {
+    "id": "aa668e63",
+    "project_id": "ce22c23ac33d7a36",
+    "category": "architecture",
+    "what": "Refactor internal/db into cohesive files with versioned migrations",
+    "why": "internal/db/db.go had 453 lines mixing 4 responsibilities (connection pool, schema DDL, ad-hoc migrations, project CRUD). Split into db.go (public API), pool.go (Pool/NewDBPool), and migrations.go (schema + schema_migrations versioned system). This improves maintainability without external dependencies or API changes.",
+    "learned": "For Go database layers without CGO, use a schema_migrations table + in-code migration functions + columnExists helper instead of ad-hoc PRAGMA table_info checks. Keep zero external migration dependencies by using versioned migration functions in Go code.",
+    "git_branch": "main",
+    "git_commit": "294a017",
+    "author": "Mario Sandoval (Sv Tech)",
+    "topic_key": "architecture/refactor-internaldb-into-cohesive-files-with-versioned-migrations",
+    "revision_count": 1,
+    "last_seen_at": "0001-01-01T00:00:00Z",
+    "normalized_hash": "bbea247e343d9793f79920f047d69a9a54a16f1720f0425588e8026c72ca684d",
+    "deleted_at": "0001-01-01T00:00:00Z",
+    "created_at": "2026-07-26T21:45:49.336502-04:00"
+  },
+  {
+    "id": "523b1bf4",
+    "project_id": "ce22c23ac33d7a36",
+    "category": "architecture",
+    "what": "Phase 1 plan: P2 sv_graph_god_nodes, P4 expose confidence, P3 token budget + hub suppression",
+    "why": "After analyzing Graphify's approach to token reduction, we identified 10 improvements. Phase 1 enriches the existing graph with god nodes, confidence exposure, and token budget control — all leveraging data already stored in SQLite.",
+    "learned": "sv-memory already has confidence, communities, and centrality data stored but not exposed. The highest-impact improvements are: (1) exposing god nodes as a standalone tool, (2) showing confidence tags on edges, (3) adding token budget + hub suppression to prevent graph query explosion. These are all low-effort because the data already exists.",
+    "git_branch": "main",
+    "git_commit": "294a017",
+    "author": "Mario Sandoval (Sv Tech)",
+    "next_steps": "P2: Create sv_graph_god_nodes MCP tool. P4: Add confidence tags to sv_graph_query, sv_graph_explain, sv_graph_path outputs. P3: Add token_budget parameter + hub suppression to sv_graph_query.",
+    "session_id": "d6eccf32",
+    "topic_key": "architecture/phase-1-graph-enrichment-plan",
+    "revision_count": 1,
+    "last_seen_at": "0001-01-01T00:00:00Z",
+    "normalized_hash": "eed943db59a939396e8412622ea07dc26978fcf220626b607399f690b8c0d9dc",
+    "deleted_at": "0001-01-01T00:00:00Z",
+    "created_at": "2026-07-26T21:57:08.707021-04:00"
   }
 ]

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -881,6 +882,7 @@ var (
 		mcp.WithString("depth", mcp.Description("Hop distance depth in the dependency graph (default is '1')")),
 		mcp.WithString("relation_type", mcp.Description("Filter by relation type ('imports', 'calls', 'depends_on')")),
 		mcp.WithString("direction", mcp.Description("Filter by direction ('in', 'out', 'all')")),
+		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response. Response is truncated with a notice when exceeded. Default '0' (unlimited).")),
 	)
 
 	s.AddTool(graphQueryTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -903,6 +905,13 @@ var (
 
 		relationType := req.GetString("relation_type", "")
 		direction := req.GetString("direction", "out")
+		tokenBudgetStr := req.GetString("token_budget", "0")
+		tokenBudget := 0
+		if tokenBudgetStr != "" {
+			if t, err := strconv.Atoi(tokenBudgetStr); err == nil && t > 0 {
+				tokenBudget = t
+			}
+		}
 
 		// Load or retrieve the in-memory graph cache.
 		startQuery := time.Now()
@@ -911,8 +920,9 @@ var (
 			return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
 		}
 
-		subGraph := g.Query(pathOrNode, depth, relationType, direction)
-		debugLog("graph_query path=%q depth=%d returned %d nodes / %d edges in %s", pathOrNode, depth, len(subGraph.Nodes), len(subGraph.Edges), time.Since(startQuery))
+		hubThreshold := g.ComputeHubThreshold()
+		subGraph := g.Query(pathOrNode, depth, relationType, direction, hubThreshold)
+		debugLog("graph_query path=%q depth=%d hubThresh=%d returned %d nodes / %d edges in %s", pathOrNode, depth, hubThreshold, len(subGraph.Nodes), len(subGraph.Edges), time.Since(startQuery))
 
 		if len(subGraph.Nodes) == 0 {
 			return mcp.NewToolResultText(fmt.Sprintf("No nodes found matching '%s' in the project graph.", pathOrNode)), nil
@@ -1003,7 +1013,6 @@ var (
 			sb.WriteString("### Mermaid Dependency Diagram:\n")
 			sb.WriteString("```mermaid\ngraph TD\n")
 			for _, edge := range subGraph.Edges {
-				// Escape labels for Mermaid
 				srcEscaped := escapeMermaid(edge.SourceID)
 				tgtEscaped := escapeMermaid(edge.TargetID)
 
@@ -1014,7 +1023,6 @@ var (
 				}
 			}
 
-			// Apply community styling/coloring
 			for _, node := range subGraph.Nodes {
 				cID := getCommID(node)
 				if cID > 0 {
@@ -1025,11 +1033,51 @@ var (
 			}
 
 			sb.WriteString("```\n")
+
+			// Confidence breakdown
+			var extracted, inferred, ambiguous int
+			for _, edge := range subGraph.Edges {
+				switch edge.Confidence {
+				case "EXTRACTED":
+					extracted++
+				case "INFERRED":
+					inferred++
+				case "AMBIGUOUS":
+					ambiguous++
+				default:
+					extracted++
+				}
+			}
+			total := extracted + inferred + ambiguous
+			if total > 0 {
+				sb.WriteString("\n### Edge Confidence Breakdown:\n")
+				sb.WriteString(fmt.Sprintf("- **EXTRACTED:** %d (%d%%) — explicit in source\n", extracted, extracted*100/total))
+				sb.WriteString(fmt.Sprintf("- **INFERRED:** %d (%d%%) — derived by resolution\n", inferred, inferred*100/total))
+				if ambiguous > 0 {
+					sb.WriteString(fmt.Sprintf("- **AMBIGUOUS:** %d (%d%%) — uncertain\n", ambiguous, ambiguous*100/total))
+				}
+			}
 		} else {
 			sb.WriteString("*No connections/edges found in this range.*\n")
 		}
 
-		return mcp.NewToolResultText(sb.String()), nil
+		responseText := sb.String()
+		if tokenBudget > 0 && len(responseText) > tokenBudget*4 {
+			totalNodes := len(subGraph.Nodes)
+			totalEdges := len(subGraph.Edges)
+			// Truncate to budget, ensure we don't cut mid-line
+			maxChars := tokenBudget * 4
+			truncated := responseText[:maxChars]
+			// Find last newline to avoid cutting mid-line
+			if lastNewline := strings.LastIndex(truncated, "\n"); lastNewline > 0 {
+				truncated = truncated[:lastNewline]
+			}
+			responseText = fmt.Sprintf(
+				"[!] TRUNCATED: showing ~%d chars (~%d tokens) of estimated %d total. The graph has %d nodes and %d edges. Narrow your query with depth, relation_type, direction, or increase token_budget.\n\n%s",
+				maxChars, tokenBudget, len(responseText)/4, totalNodes, totalEdges, truncated)
+		}
+
+		return mcp.NewToolResultText(responseText), nil
 	})
 
 	// 19. Tool: sv_graph_path
@@ -1074,7 +1122,36 @@ var (
 			return mcp.NewToolResultText(fmt.Sprintf("No path found between %s and %s.", startNode, endNode)), nil
 		}
 
-		return mcp.NewToolResultText(fmt.Sprintf("Path found: %s", strings.Join(path, " -> "))), nil
+		var pathParts []string
+		for i := 0; i < len(path); i++ {
+			node := g.Nodes[path[i]]
+			label := path[i]
+			if node != nil {
+				label = node.Label
+			}
+			pathParts = append(pathParts, fmt.Sprintf("`%s`", label))
+
+			if i+1 < len(path) {
+				// Find edge between this node and next
+				edgeInfo := ""
+				for _, e := range g.EdgesBySource[path[i]] {
+					if e.TargetID == path[i+1] {
+						conf := e.Confidence
+						if conf == "" {
+							conf = "EXTRACTED"
+						}
+						edgeInfo = fmt.Sprintf(" --[%s %s]--> ", e.RelationType, conf)
+						break
+					}
+				}
+				if edgeInfo == "" {
+					edgeInfo = " --> "
+				}
+				pathParts = append(pathParts, edgeInfo)
+			}
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Shortest path (%d hops):\n%s", len(path)-1, strings.Join(pathParts, ""))), nil
 	})
 
 	// 18. Tool: sv_graph_sync
@@ -1340,7 +1417,11 @@ var (
 			} else {
 				srcNode := g.Nodes[e.SourceID]
 				if srcNode != nil {
-					dependents = append(dependents, fmt.Sprintf("- `%s` (relation: `%s`)", srcNode.Label, e.RelationType))
+					conf := e.Confidence
+					if conf == "" {
+						conf = "EXTRACTED"
+					}
+					dependents = append(dependents, fmt.Sprintf("- `%s` (relation: `%s`, confidence: `%s`)", srcNode.Label, e.RelationType, conf))
 				}
 			}
 		}
@@ -1359,7 +1440,11 @@ var (
 			for _, e := range g.EdgesBySource[nID] {
 				tgtNode := g.Nodes[e.TargetID]
 				if tgtNode != nil {
-					sb.WriteString(fmt.Sprintf("- `%s` (relation: `%s`)\n", tgtNode.Label, e.RelationType))
+					conf := e.Confidence
+					if conf == "" {
+						conf = "EXTRACTED"
+					}
+					sb.WriteString(fmt.Sprintf("- `%s` (relation: `%s`, confidence: `%s`)\n", tgtNode.Label, e.RelationType, conf))
 				}
 			}
 		} else {
@@ -1384,6 +1469,127 @@ var (
 		} else {
 			sb.WriteString(fmt.Sprintf("3. \"Show me the source code implementation details of `%s`.\"\n", node.Label))
 		}
+
+		return mcp.NewToolResultText(sb.String()), nil
+	})
+
+	// 22. Tool: sv_graph_god_nodes
+	godNodesTool := mcp.NewTool("sv_graph_god_nodes",
+		mcp.WithDescription("List the most-connected nodes (God Nodes) in the project dependency graph. These are the concepts everything flows through — useful for architectural orientation."),
+		mcp.WithString("top_n", mcp.Description("Number of top god nodes to return (default '10')")),
+	)
+
+	s.AddTool(godNodesTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		topNStr := req.GetString("top_n", "10")
+		topN := 10
+		if d, err := strconv.Atoi(topNStr); err == nil && d > 0 {
+			topN = d
+		}
+		if topN > 100 {
+			topN = 100
+		}
+
+		g, err := getOrLoadGraph()
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
+		}
+
+		// Lazy-calculate communities and centrality if missing
+		hasBC := false
+		for _, node := range g.Nodes {
+			if node.Metadata != nil {
+				if _, ok := node.Metadata["betweenness_centrality"]; ok {
+					hasBC = true
+					break
+				}
+			}
+		}
+		if !hasBC {
+			debugLog("betweenness_centrality missing, calculating communities and centrality...")
+			if err := graph.UpdateCommunitiesAndCentrality(pool.Writer, cfg.ProjectID); err == nil {
+				graphMu.Lock()
+				cachedGraph = nil
+				graphMu.Unlock()
+				g, _ = getOrLoadGraph()
+			}
+		}
+
+		getBC := func(n *graph.Node) float64 {
+			if n.Metadata == nil {
+				return 0.0
+			}
+			val, ok := n.Metadata["betweenness_centrality"]
+			if !ok {
+				return 0.0
+			}
+			switch v := val.(type) {
+			case float64:
+				return v
+			case float32:
+				return float64(v)
+			}
+			return 0.0
+		}
+		getCommID := func(n *graph.Node) int {
+			if n.Metadata == nil {
+				return 0
+			}
+			val, ok := n.Metadata["community_id"]
+			if !ok {
+				return 0
+			}
+			switch v := val.(type) {
+			case float64:
+				return int(v)
+			case int:
+				return v
+			case int64:
+				return int(v)
+			}
+			return 0
+		}
+
+		type rankedNode struct {
+			id    string
+			node  *graph.Node
+			degree int
+			bc    float64
+			comm  int
+		}
+		var ranked []rankedNode
+		for id, n := range g.Nodes {
+			deg := g.FanIn[id] + g.FanOut[id]
+			ranked = append(ranked, rankedNode{
+				id:     id,
+				node:   n,
+				degree: deg,
+				bc:     getBC(n),
+				comm:   getCommID(n),
+			})
+		}
+		sort.Slice(ranked, func(i, j int) bool {
+			return ranked[i].degree > ranked[j].degree
+		})
+		if topN > len(ranked) {
+			topN = len(ranked)
+		}
+		ranked = ranked[:topN]
+
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("## Top %d God Nodes (Most Connected)\n\n", topN))
+		sb.WriteString("Ranked by total degree (fan-in + fan-out). High-degree nodes are architectural hubs.\n\n")
+		sb.WriteString("| Rank | Label | Type | Degree | Fan-In | Fan-Out | BC | Community |\n")
+		sb.WriteString("|------|-------|------|--------|--------|---------|----|-----------|\n")
+		for i, r := range ranked {
+			commStr := strconv.Itoa(r.comm)
+			if r.comm == 0 {
+				commStr = "none"
+			}
+			sb.WriteString(fmt.Sprintf("| %d | **%s** | `%s` | %d | %d | %d | %.2f | %s |\n",
+				i+1, r.node.Label, r.node.Type, r.degree, g.FanIn[r.id], g.FanOut[r.id], r.bc, commStr))
+		}
+		sb.WriteString("\n*Use `sv_graph_explain` on any node for deeper analysis.*\n")
+		sb.WriteString(fmt.Sprintf("\n*Response: ~%d tokens*", sb.Len()/4))
 
 		return mcp.NewToolResultText(sb.String()), nil
 	})

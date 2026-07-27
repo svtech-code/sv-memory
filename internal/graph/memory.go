@@ -3,6 +3,7 @@ package graph
 import (
 	"database/sql"
 	"encoding/json"
+	"sort"
 	"strings"
 )
 
@@ -15,6 +16,33 @@ type InMemoryGraph struct {
 	EdgesByTarget map[string][]*Edge
 	FanIn         map[string]int
 	FanOut        map[string]int
+	HubThreshold int
+}
+
+func (g *InMemoryGraph) ComputeHubThreshold() int {
+	if g.HubThreshold > 0 {
+		return g.HubThreshold
+	}
+	if len(g.Nodes) == 0 {
+		g.HubThreshold = 50
+		return g.HubThreshold
+	}
+	degrees := make([]int, 0, len(g.Nodes))
+	for id := range g.Nodes {
+		degrees = append(degrees, g.FanIn[id]+g.FanOut[id])
+	}
+	sort.Ints(degrees)
+	// p99 threshold, minimum 50
+	p99Idx := len(degrees) * 99 / 100
+	if p99Idx >= len(degrees) {
+		p99Idx = len(degrees) - 1
+	}
+	th := degrees[p99Idx]
+	if th < 50 {
+		th = 50
+	}
+	g.HubThreshold = th
+	return th
 }
 
 // LoadFullGraph executes two queries to load all nodes and edges for a project
@@ -117,7 +145,8 @@ type SubGraph struct {
 
 // Query performs a BFS traversal to find all nodes and edges within maxDepth,
 // filtered by optional relation type and direction ('in', 'out', 'all').
-func (g *InMemoryGraph) Query(start string, maxDepth int, relationType string, direction string) *SubGraph {
+// If hubThreshold > 0, nodes with total degree >= hubThreshold are not expanded through.
+func (g *InMemoryGraph) Query(start string, maxDepth int, relationType string, direction string, hubThreshold int) *SubGraph {
 	startID := g.FindNode(start)
 	if startID == "" {
 		return &SubGraph{}
@@ -138,6 +167,14 @@ func (g *InMemoryGraph) Query(start string, maxDepth int, relationType string, d
 
 		if curr.depth >= maxDepth {
 			continue
+		}
+
+		// Hub suppression: don't expand through nodes that exceed the threshold
+		if hubThreshold > 0 {
+			deg := g.FanIn[curr.id] + g.FanOut[curr.id]
+			if curr.depth > 0 && deg >= hubThreshold {
+				continue
+			}
 		}
 
 		// Explore outgoing edges if direction is 'out' or 'all'
