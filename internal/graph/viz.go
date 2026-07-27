@@ -185,20 +185,38 @@ func (g *InMemoryGraph) ExportHTML(w io.Writer, commLabels map[int]string) error
   <h2 id="detail-title"></h2>
   <div id="detail-body"></div>
 </div>
-<!-- Try multiple CDNs for vis-network -->
-<script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.6/dist/vis-network.min.js"
-  onerror="this.onerror=null; this.src='https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.6/vis-network.min.js';
-    this.onerror=function(){ document.getElementById('network').innerHTML=
-      '<div style=\\"padding:40px;text-align:center;color:#e94560;\\">Failed to load vis-network library. ' +
-      'Download it from <a href=\\"https://unpkg.com/vis-network@9.1.6/dist/vis-network.min.js\\" style=\\"color:#3498db;\\">unpkg</a> ' +
-      'and place it next to this file, or check your internet connection.</div>'; }">
+<!-- vis-network library with CDN fallback -->
+<script>
+(function() {
+  var loadVis = function(src) {
+    var s = document.createElement('script');
+    s.src = src;
+    s.onerror = function() {
+      if (src.indexOf('jsdelivr') > -1) {
+        loadVis('https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.6/vis-network.min.js');
+      } else {
+        document.getElementById('network').innerHTML =
+          '<div style="padding:40px;text-align:center;color:#e94560;">Failed to load vis-network. ' +
+          'Download from <a href="https://unpkg.com/vis-network@9.1.6/dist/vis-network.min.js" style="color:#3498db;">unpkg</a> ' +
+          'and place next to this file.</div>';
+      }
+    };
+    s.onload = initGraph;
+    document.head.appendChild(s);
+  };
+  loadVis('https://cdn.jsdelivr.net/npm/vis-network@9.1.6/dist/vis-network.min.js');
+})();
 </script>
 <script>
+function initGraph() {
+
 const PALETTE = [
   '#e94560','#0f3460','#16a085','#f39c12','#9b59b6','#2ecc71',
   '#e67e22','#1abc9c','#c0392b','#3498db','#f1c40f','#2980b9',
   '#d35400','#27ae60','#8e44ad','#ecf0f1','#7f8c8d','#34495e'
 ];
+
+function esc(s) { return String(s).replace(/[&<>"']/g, function(c) { return '&#'+c.charCodeAt(0)+';'; }); }
 
 const nodes = new vis.DataSet(%s);
 const edges = new vis.DataSet(%s);
@@ -207,7 +225,7 @@ const communities = %s;
 const container = document.getElementById('network');
 const data = { nodes, edges };
 const options = {
-  physics: { stabilization: { iterations: 100 }, solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -40, centralGravity: 0.005, springLength: 120, springConstant: 0.08, damping: 0.4 } },
+  physics: { stabilization: { iterations: 50 }, solver: 'barnesHut', barnesHut: { gravitationalConstant: -3000, centralGravity: 0.3, springLength: 120, springConstant: 0.04, damping: 0.3 } },
   edges: { smooth: { type: 'continuous' }, font: { size: 10, color: '#888' }, color: { inherit: 'to', opacity: 0.5 } },
   nodes: { font: { size: 12, color: '#eee' }, borderWidth: 1, borderWidthSelected: 2 },
   interaction: { hover: true, tooltipDelay: 200, navigationButtons: true, keyboard: true },
@@ -215,7 +233,7 @@ const options = {
 };
 
 const commIds = Object.keys(communities).map(Number);
-commIds.forEach((id, i) => {
+commIds.forEach(function(id) {
   const color = PALETTE[id %% PALETTE.length];
   options.groups[id] = { color: { background: color, border: '#fff' } };
 });
@@ -224,19 +242,19 @@ const network = new vis.Network(container, data, options);
 
 document.getElementById('stats').textContent = nodes.length + ' nodes, ' + edges.length + ' edges';
 
-let legendHTML = '';
-commIds.sort((a, b) => {
-  const ca = nodes.get().filter(n => n.group === a).length;
-  const cb = nodes.get().filter(n => n.group === b).length;
+var legendHTML = '';
+commIds.sort(function(a, b) {
+  const ca = nodes.get().filter(function(n) { return n.group === a; }).length;
+  const cb = nodes.get().filter(function(n) { return n.group === b; }).length;
   return cb - ca;
 });
-commIds.forEach((id, i) => {
+commIds.forEach(function(id) {
   const color = PALETTE[id %% PALETTE.length];
   const label = communities[id] || 'community_' + id;
-  const count = nodes.get().filter(n => n.group === id).length;
+  const count = nodes.get().filter(function(n) { return n.group === id; }).length;
   legendHTML += '<div class="comm" onclick="focusCommunity(' + id + ')">'
     + '<div class="dot" style="background:' + color + '"></div>'
-    + '<span class="name">' + label + '</span>'
+    + '<span class="name">' + esc(label) + '</span>'
     + '<span class="count">' + count + '</span></div>';
 });
 document.getElementById('legend-list').innerHTML = legendHTML;
@@ -252,21 +270,22 @@ network.on('click', function(params) {
 });
 
 function focusCommunity(id) {
-  const commNodes = nodes.get().filter(n => n.group === id);
+  const commNodes = nodes.get().filter(function(n) { return n.group === id; });
   if (commNodes.length > 0) {
-    network.selectNodes(commNodes.map(n => n.id));
+    network.selectNodes(commNodes.map(function(n) { return n.id; }));
     network.focus(commNodes[0].id, { scale: 1.5, animation: true });
   }
 }
 
-function filterNodes(query) {
-  if (!query) {
-    nodes.forEach(n => nodes.update({ id: n.id, hidden: false }));
+function filterNodes(q) {
+  if (!q) {
+    nodes.forEach(function(n) { nodes.update({ id: n.id, hidden: false }); });
     return;
   }
-  const q = query.toLowerCase();
-  nodes.forEach(n => {
-    const match = n.label.toLowerCase().includes(q) || n.id.toLowerCase().includes(q);
+  q = q.toLowerCase();
+  nodes.forEach(function(n) {
+    const match = (n.label && n.label.toLowerCase().indexOf(q) > -1) ||
+                  (n.id && n.id.toLowerCase().indexOf(q) > -1);
     nodes.update({ id: n.id, hidden: !match });
   });
   network.setData({ nodes, edges });
@@ -286,6 +305,8 @@ function hideDetail() {
   document.getElementById('detail').style.display = 'none';
   currentDetail = null;
 }
+
+} // initGraph
 </script>
 </body>
 </html>`, string(nodesJSON), string(edgesJSON), string(communitiesJSON))
