@@ -406,6 +406,7 @@ func scanCompactMemories(rows *sql.Rows) ([]*MemorySearchResult, error) {
 			return nil, fmt.Errorf("failed scanning compact memory row: %w", err)
 		}
 		r.TopicKey = topicKey.String
+		r.What = security.SanitizeText(r.What)
 		if revisionCount.Valid {
 			r.RevisionCount = int(revisionCount.Int64)
 		}
@@ -867,6 +868,34 @@ func computeHash(what, why, learned string) string {
 func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 	if mem.ProjectID == "" {
 		return nil, errors.New("memory ProjectID cannot be empty")
+	}
+
+	if len(mem.What) > 1000 {
+		return nil, fmt.Errorf("field 'what' exceeds maximum length of 1000 characters")
+	}
+	if len(mem.Why) > 4000 {
+		return nil, fmt.Errorf("field 'why' exceeds maximum length of 4000 characters")
+	}
+	if len(mem.Learned) > 4000 {
+		return nil, fmt.Errorf("field 'learned' exceeds maximum length of 4000 characters")
+	}
+	if len(mem.WherePath) > 1000 {
+		return nil, fmt.Errorf("field 'where_path' exceeds maximum length of 1000 characters")
+	}
+	if len(mem.Impact) > 4000 {
+		return nil, fmt.Errorf("field 'impact' exceeds maximum length of 4000 characters")
+	}
+	if len(mem.ErrorsFaced) > 4000 {
+		return nil, fmt.Errorf("field 'errors_faced' exceeds maximum length of 4000 characters")
+	}
+	if len(mem.NextSteps) > 4000 {
+		return nil, fmt.Errorf("field 'next_steps' exceeds maximum length of 4000 characters")
+	}
+	if len(mem.TopicKey) > 256 {
+		return nil, fmt.Errorf("field 'topic_key' exceeds maximum length of 256 characters")
+	}
+	if len(mem.SessionID) > 64 {
+		return nil, fmt.Errorf("field 'session_id' exceeds maximum length of 64 characters")
 	}
 
 	mem.What = security.SanitizeText(mem.What)
@@ -1479,11 +1508,15 @@ func GetMemory(db *sql.DB, projectID, id string) (*Memory, error) {
 	mem.GitBranch = gitBranch.String
 	mem.GitCommit = gitCommit.String
 	mem.Author = author.String
-	mem.Impact = impact.String
-	mem.ErrorsFaced = errorsFaced.String
-	mem.NextSteps = nextSteps.String
+	mem.Impact = security.SanitizeText(impact.String)
+	mem.ErrorsFaced = security.SanitizeText(errorsFaced.String)
+	mem.NextSteps = security.SanitizeText(nextSteps.String)
 	mem.SessionID = sessionID.String
 	mem.TopicKey = topicKey.String
+	mem.What = security.SanitizeText(mem.What)
+	mem.Why = security.SanitizeText(mem.Why)
+	mem.Learned = security.SanitizeText(mem.Learned)
+	mem.WherePath = security.SanitizeText(mem.WherePath)
 	if revisionCount.Valid {
 		mem.RevisionCount = int(revisionCount.Int64)
 	}
@@ -1903,11 +1936,15 @@ func scanMemories(rows *sql.Rows) ([]*Memory, error) {
 		mem.GitBranch = gitBranch.String
 		mem.GitCommit = gitCommit.String
 		mem.Author = author.String
-		mem.Impact = impact.String
-		mem.ErrorsFaced = errorsFaced.String
-		mem.NextSteps = nextSteps.String
+		mem.Impact = security.SanitizeText(impact.String)
+		mem.ErrorsFaced = security.SanitizeText(errorsFaced.String)
+		mem.NextSteps = security.SanitizeText(nextSteps.String)
 		mem.SessionID = sessionID.String
 		mem.TopicKey = topicKey.String
+		mem.What = security.SanitizeText(mem.What)
+		mem.Why = security.SanitizeText(mem.Why)
+		mem.Learned = security.SanitizeText(mem.Learned)
+		mem.WherePath = security.SanitizeText(mem.WherePath)
 		if revisionCount.Valid {
 			mem.RevisionCount = int(revisionCount.Int64)
 		}

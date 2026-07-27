@@ -48,6 +48,30 @@ func TestSanitizeText(t *testing.T) {
 			expected: "config.api_token = \"[REDACTED_SECRET]\"",
 			mustFind: "[REDACTED_SECRET]",
 		},
+		{
+			name:     "OpenAI sk-proj Key",
+			input:    "api_key: sk-proj-A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8S9T0U1V2W3X4",
+			expected: "api_key: [REDACTED_SECRET]",
+			mustFind: "[REDACTED_SECRET]",
+		},
+		{
+			name:     "Anthropic sk-ant-api03 Key",
+			input:    "anthropic_key = sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789-_ABCDEF",
+			expected: "anthropic_key = [REDACTED_SECRET]",
+			mustFind: "[REDACTED_SECRET]",
+		},
+		{
+			name:     "Export Secret Unquoted",
+			input:    "export SECRET_TOKEN=mySecretPassword123",
+			expected: "export SECRET_TOKEN=[REDACTED_SECRET]",
+			mustFind: "[REDACTED_SECRET]",
+		},
+		{
+			name:     "Generic Token Single Quotes",
+			input:    "api_key: 'abcdef1234567890'",
+			expected: "api_key: '[REDACTED_SECRET]'",
+			mustFind: "[REDACTED_SECRET]",
+		},
 	}
 
 	for _, tc := range tests {

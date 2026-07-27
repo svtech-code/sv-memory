@@ -390,6 +390,9 @@ var (
 		if err != nil {
 			return mcp.NewToolResultError("missing required field: query"), nil
 		}
+		if len(query) > 256 {
+			query = query[:256]
+		}
 		category := req.GetString("category", "")
 		limitStr := req.GetString("limit", "10")
 		offsetStr := req.GetString("offset", "0")
@@ -400,11 +403,22 @@ var (
 				limit = l
 			}
 		}
+		if limit < 1 {
+			limit = 1
+		} else if limit > 50 {
+			limit = 50
+		}
+
 		offset := 0
 		if offsetStr != "" {
 			if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
 				offset = o
 			}
+		}
+		if offset < 0 {
+			offset = 0
+		} else if offset > 1000 {
+			offset = 1000
 		}
 
 		startSync := time.Now()
@@ -824,6 +838,11 @@ var (
 			if d, err := strconv.Atoi(depthStr); err == nil {
 				depth = d
 			}
+		}
+		if depth < 1 {
+			depth = 1
+		} else if depth > 5 {
+			depth = 5
 		}
 
 		relationType := req.GetString("relation_type", "")
