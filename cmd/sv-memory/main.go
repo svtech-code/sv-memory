@@ -767,6 +767,52 @@ var rebuildCmd = &cobra.Command{
 	},
 }
 
+var graphVizCmd = &cobra.Command{
+	Use:   "viz",
+	Short: "Export an interactive HTML visualization of the dependency graph",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		cfg, err := config.LoadConfig(cwd)
+		if err != nil {
+			return err
+		}
+		database, err := db.InitDB(cfg.DBPath)
+		if err != nil {
+			return err
+		}
+		defer database.Close()
+
+		g, err := graph.LoadFullGraph(database, cfg.ProjectID)
+		if err != nil {
+			return err
+		}
+
+		output, _ := cmd.Flags().GetString("output")
+		if output == "" {
+			output = "graph.html"
+		}
+
+		f, err := os.Create(output)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		comms := g.LeidenDetectCommunities()
+		centrality := g.BetweennessCentrality()
+		commLabels := g.DetectCommunityLabels(comms, centrality)
+
+		if err := g.ExportHTML(f, commLabels); err != nil {
+			return err
+		}
+		fmt.Printf("Graph visualization exported to %s\n", output)
+		return nil
+	},
+}
+
 var syncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "Manually synchronize memories between SQLite database and Git JSON file",
@@ -1213,6 +1259,8 @@ func init() {
 	graphCmd.AddCommand(graphPathCmd)
 	graphCmd.AddCommand(graphExplainCmd)
 	graphCmd.AddCommand(graphCommunitiesCmd)
+	graphCmd.AddCommand(graphVizCmd)
+	graphVizCmd.Flags().StringP("output", "o", "graph.html", "Output HTML file path")
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(diagnoseCmd)

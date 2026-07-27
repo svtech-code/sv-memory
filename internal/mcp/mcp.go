@@ -1657,6 +1657,36 @@ var (
 		return mcp.NewToolResultText(sb.String()), nil
 	})
 
+	// 24. Tool: sv_graph_viz
+	vizTool := mcp.NewTool("sv_graph_viz",
+		mcp.WithDescription("Generate an interactive HTML visualization (graph.html) of the project dependency graph"),
+		mcp.WithString("output", mcp.Description("Output HTML file path (default 'graph.html')")),
+	)
+
+	s.AddTool(vizTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		g, err := getOrLoadGraph()
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
+		}
+
+		output := req.GetString("output", "graph.html")
+
+		comms := g.LeidenDetectCommunities()
+		centrality := g.BetweennessCentrality()
+		commLabels := g.DetectCommunityLabels(comms, centrality)
+
+		var buf strings.Builder
+		if err := g.ExportHTML(&buf, commLabels); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to generate HTML: %v", err)), nil
+		}
+
+		if err := os.WriteFile(output, []byte(buf.String()), 0644); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to write %s: %v", output, err)), nil
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Graph visualization exported to %s (%d bytes)", output, buf.Len())), nil
+	})
+
 	return s
 }
 
