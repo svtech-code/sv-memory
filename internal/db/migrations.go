@@ -6,6 +6,12 @@ import (
 )
 
 const schema = `
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -120,99 +126,146 @@ CREATE INDEX IF NOT EXISTS idx_memories_project_created ON memories(project_id, 
 CREATE INDEX IF NOT EXISTS idx_memories_project_category ON memories(project_id, category);
 `
 
+type migration struct {
+	version int
+	name    string
+	apply   func(*sql.DB) error
+}
+
+var migrations = []migration{
+	{1, "initial_schema", applyInitialSchema},
+	{2, "legacy_graph_schema", migrateLegacyGraphSchema},
+	{3, "add_memory_columns", addMemoryColumns},
+	{4, "add_graph_edge_columns", addGraphEdgeColumns},
+	{5, "add_memory_relation_columns", addMemoryRelationColumns},
+	{6, "create_post_indexes", createPostIndexes},
+}
+
 func applyMigrations(db *sql.DB) error {
-	rows, err := db.Query("PRAGMA table_info(graph_nodes)")
-	if err == nil {
-		defer rows.Close()
-		var countPK int
-		for rows.Next() {
-			var cid int
-			var name string
-			var typeVal string
-			var notnull int
-			var dfltVal interface{}
-			var pk int
-			if errScan := rows.Scan(&cid, &name, &typeVal, &notnull, &dfltVal, &pk); errScan == nil {
-				if pk > 0 {
-					countPK++
-				}
-			}
-		}
-		if countPK == 1 {
-			_, _ = db.Exec("DROP TABLE IF EXISTS graph_edges")
-			_, _ = db.Exec("DROP TABLE IF EXISTS graph_nodes")
-		}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+		version INTEGER PRIMARY KEY,
+		name TEXT NOT NULL,
+		applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`); err != nil {
+		return fmt.Errorf("failed to create schema_migrations table: %w", err)
 	}
 
-	if _, err := db.Exec(schema); err != nil {
-		return fmt.Errorf("failed to run database migration schema: %w", err)
-	}
-
-	columnChecks := map[string]string{
-		"git_branch":       "ALTER TABLE memories ADD COLUMN git_branch TEXT;",
-		"git_commit":       "ALTER TABLE memories ADD COLUMN git_commit TEXT;",
-		"author":           "ALTER TABLE memories ADD COLUMN author TEXT;",
-		"impact":           "ALTER TABLE memories ADD COLUMN impact TEXT;",
-		"errors_faced":     "ALTER TABLE memories ADD COLUMN errors_faced TEXT;",
-		"next_steps":       "ALTER TABLE memories ADD COLUMN next_steps TEXT;",
-		"session_id":       "ALTER TABLE memories ADD COLUMN session_id TEXT;",
-		"topic_key":        "ALTER TABLE memories ADD COLUMN topic_key TEXT;",
-		"revision_count":   "ALTER TABLE memories ADD COLUMN revision_count INTEGER DEFAULT 1;",
-		"duplicate_count":  "ALTER TABLE memories ADD COLUMN duplicate_count INTEGER DEFAULT 0;",
-		"last_seen_at":     "ALTER TABLE memories ADD COLUMN last_seen_at DATETIME;",
-		"normalized_hash":  "ALTER TABLE memories ADD COLUMN normalized_hash TEXT;",
-		"deleted_at":       "ALTER TABLE memories ADD COLUMN deleted_at DATETIME;",
-	}
-	for col, alterStmt := range columnChecks {
-		var exists bool
-		rows, err := db.Query("PRAGMA table_info(memories)")
+	for _, m := range migrations {
+		var applied int
+		err := db.QueryRow("SELECT 1 FROM schema_migrations WHERE version = ?", m.version).Scan(&applied)
 		if err == nil {
-			for rows.Next() {
-				var cid int
-				var name string
-				var typeVal string
-				var notnull int
-				var dfltVal interface{}
-				var pk int
-				if errScan := rows.Scan(&cid, &name, &typeVal, &notnull, &dfltVal, &pk); errScan == nil {
-					if name == col {
-						exists = true
-						break
-					}
-				}
+			continue
+		}
+		if err != sql.ErrNoRows {
+			return fmt.Errorf("failed to check migration %d (%s): %w", m.version, m.name, err)
+		}
+
+		if err := m.apply(db); err != nil {
+			return fmt.Errorf("migration %d (%s) failed: %w", m.version, m.name, err)
+		}
+
+		if _, err := db.Exec("INSERT INTO schema_migrations (version, name) VALUES (?, ?)", m.version, m.name); err != nil {
+			return fmt.Errorf("failed to record migration %d (%s): %w", m.version, m.name, err)
+		}
+	}
+
+	return nil
+}
+
+func applyInitialSchema(db *sql.DB) error {
+	_, err := db.Exec(schema)
+	if err != nil {
+		return fmt.Errorf("failed to run initial schema: %w", err)
+	}
+	return nil
+}
+
+func migrateLegacyGraphSchema(db *sql.DB) error {
+	rows, err := db.Query("PRAGMA table_info(graph_nodes)")
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var countPK int
+	for rows.Next() {
+		var cid int
+		var name string
+		var typeVal string
+		var notnull int
+		var dfltVal interface{}
+		var pk int
+		if errScan := rows.Scan(&cid, &name, &typeVal, &notnull, &dfltVal, &pk); errScan == nil {
+			if pk > 0 {
+				countPK++
 			}
-			rows.Close()
-		} else {
-			return fmt.Errorf("failed to query table info for memories: %w", err)
+		}
+	}
+	if countPK == 1 {
+		_, _ = db.Exec("DROP TABLE IF EXISTS graph_edges")
+		_, _ = db.Exec("DROP TABLE IF EXISTS graph_nodes")
+	}
+	return nil
+}
+
+func columnExists(db *sql.DB, table, col string) (bool, error) {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return false, fmt.Errorf("failed to query table info for %s: %w", table, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var typeVal string
+		var notnull int
+		var dfltVal interface{}
+		var pk int
+		if errScan := rows.Scan(&cid, &name, &typeVal, &notnull, &dfltVal, &pk); errScan == nil {
+			if name == col {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+func addMemoryColumns(db *sql.DB) error {
+	columns := map[string]string{
+		"git_branch":      "ALTER TABLE memories ADD COLUMN git_branch TEXT;",
+		"git_commit":      "ALTER TABLE memories ADD COLUMN git_commit TEXT;",
+		"author":          "ALTER TABLE memories ADD COLUMN author TEXT;",
+		"impact":          "ALTER TABLE memories ADD COLUMN impact TEXT;",
+		"errors_faced":    "ALTER TABLE memories ADD COLUMN errors_faced TEXT;",
+		"next_steps":      "ALTER TABLE memories ADD COLUMN next_steps TEXT;",
+		"session_id":      "ALTER TABLE memories ADD COLUMN session_id TEXT;",
+		"topic_key":       "ALTER TABLE memories ADD COLUMN topic_key TEXT;",
+		"revision_count":  "ALTER TABLE memories ADD COLUMN revision_count INTEGER DEFAULT 1;",
+		"duplicate_count": "ALTER TABLE memories ADD COLUMN duplicate_count INTEGER DEFAULT 0;",
+		"last_seen_at":    "ALTER TABLE memories ADD COLUMN last_seen_at DATETIME;",
+		"normalized_hash": "ALTER TABLE memories ADD COLUMN normalized_hash TEXT;",
+		"deleted_at":      "ALTER TABLE memories ADD COLUMN deleted_at DATETIME;",
+	}
+	for col, alterStmt := range columns {
+		exists, err := columnExists(db, "memories", col)
+		if err != nil {
+			return err
 		}
 		if !exists {
-			if _, errAlter := db.Exec(alterStmt); errAlter != nil {
-				return fmt.Errorf("failed to add column %s to memories: %w", col, errAlter)
+			if _, err := db.Exec(alterStmt); err != nil {
+				return fmt.Errorf("failed to add column %s to memories: %w", col, err)
 			}
 		}
 	}
+	return nil
+}
 
+func addGraphEdgeColumns(db *sql.DB) error {
 	for _, col := range []string{"confidence", "source_location"} {
-		var exists bool
-		rows, err := db.Query("PRAGMA table_info(graph_edges)")
-		if err == nil {
-			for rows.Next() {
-				var cid int
-				var name string
-				var typeVal string
-				var notnull int
-				var dfltVal interface{}
-				var pk int
-				if errScan := rows.Scan(&cid, &name, &typeVal, &notnull, &dfltVal, &pk); errScan == nil {
-					if name == col {
-						exists = true
-						break
-					}
-				}
-			}
-			rows.Close()
-		} else {
-			return fmt.Errorf("failed to query table info for graph_edges: %w", err)
+		exists, err := columnExists(db, "graph_edges", col)
+		if err != nil {
+			return err
 		}
 		if !exists {
 			var alterStmt string
@@ -221,33 +274,19 @@ func applyMigrations(db *sql.DB) error {
 			} else {
 				alterStmt = "ALTER TABLE graph_edges ADD COLUMN source_location TEXT;"
 			}
-			if _, errAlter := db.Exec(alterStmt); errAlter != nil {
-				return fmt.Errorf("failed to add column %s to graph_edges: %w", col, errAlter)
+			if _, err := db.Exec(alterStmt); err != nil {
+				return fmt.Errorf("failed to add column %s to graph_edges: %w", col, err)
 			}
 		}
 	}
+	return nil
+}
 
+func addMemoryRelationColumns(db *sql.DB) error {
 	for _, col := range []string{"status", "score"} {
-		var exists bool
-		rows, err := db.Query("PRAGMA table_info(memory_relations)")
-		if err == nil {
-			for rows.Next() {
-				var cid int
-				var name string
-				var typeVal string
-				var notnull int
-				var dfltVal interface{}
-				var pk int
-				if errScan := rows.Scan(&cid, &name, &typeVal, &notnull, &dfltVal, &pk); errScan == nil {
-					if name == col {
-						exists = true
-						break
-					}
-				}
-			}
-			rows.Close()
-		} else {
-			return fmt.Errorf("failed to query table info for memory_relations: %w", err)
+		exists, err := columnExists(db, "memory_relations", col)
+		if err != nil {
+			return err
 		}
 		if !exists {
 			var alterStmt string
@@ -256,24 +295,26 @@ func applyMigrations(db *sql.DB) error {
 			} else {
 				alterStmt = "ALTER TABLE memory_relations ADD COLUMN score REAL;"
 			}
-			if _, errAlter := db.Exec(alterStmt); errAlter != nil {
-				return fmt.Errorf("failed to add column %s to memory_relations: %w", col, errAlter)
+			if _, err := db.Exec(alterStmt); err != nil {
+				return fmt.Errorf("failed to add column %s to memory_relations: %w", col, err)
 			}
 		}
 	}
+	return nil
+}
 
-	postIndexes := []string{
+func createPostIndexes(db *sql.DB) error {
+	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_memories_topic ON memories(project_id, topic_key);",
 		"CREATE INDEX IF NOT EXISTS idx_memories_hash ON memories(project_id, normalized_hash);",
 		"CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id, started_at DESC);",
 		"CREATE INDEX IF NOT EXISTS idx_memory_relations_source ON memory_relations(project_id, source_id);",
 		"CREATE INDEX IF NOT EXISTS idx_memory_relations_target ON memory_relations(project_id, target_id);",
 	}
-	for _, idx := range postIndexes {
+	for _, idx := range indexes {
 		if _, err := db.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create index %s: %w", idx, err)
 		}
 	}
-
 	return nil
 }
