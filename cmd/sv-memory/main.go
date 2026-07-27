@@ -1381,7 +1381,7 @@ func init() {
 	graphMergeCmd.Flags().StringP("output", "o", "", "Output JSON file path")
 	graphCmd.AddCommand(graphVizCmd)
 	graphVizCmd.Flags().StringP("output", "o", "graph.html", "Output HTML file path")
-	graphVizCmd.Flags().Bool("open", false, "Open the visualization in the default browser automatically")
+	graphVizCmd.Flags().Bool("open", true, "Open the visualization in the default browser automatically")
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(diagnoseCmd)
