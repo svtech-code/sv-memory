@@ -278,10 +278,24 @@ document.getElementById('legend-list').innerHTML = legendHTML;
 network.on('click', function(params) {
   if (params.nodes.length > 0) {
     const nId = params.nodes[0];
-    const node = nodes.get(nId);
-    if (node) showDetail(node);
+    if (network.isCluster(nId)) {
+      const ids = network.getNodesInCluster(nId);
+      showClusterDetail(nId, ids);
+    } else {
+      const node = nodes.get(nId);
+      if (node) showDetail(node);
+    }
   } else {
     hideDetail();
+  }
+});
+
+network.on('doubleClick', function(params) {
+  if (params.nodes.length > 0) {
+    const nId = params.nodes[0];
+    if (network.isCluster(nId)) {
+      network.clustering.openCluster(nId);
+    }
   }
 });
 
@@ -320,6 +334,27 @@ function hideDetail() {
   document.getElementById('overlay').style.display = 'none';
   document.getElementById('detail').style.display = 'none';
   currentDetail = null;
+}
+
+function showClusterDetail(clusterId, childIds) {
+  const childNodes = nodes.get(childIds);
+  const types = {};
+  childNodes.forEach(function(n) {
+    types[n.type] = (types[n.type] || 0) + 1;
+  });
+  var typeInfo = '';
+  for (var t in types) {
+    typeInfo += '<div class="row"><span class="l">' + t + '</span><span class="v">' + types[t] + '</span></div>';
+  }
+  const clusterNode = network.body.nodes[clusterId];
+  const label = clusterNode ? clusterNode.options.label : 'Cluster';
+  document.getElementById('detail-title').textContent = label;
+  document.getElementById('detail-body').innerHTML =
+    '<div class="row"><span class="l">Clustered</span><span class="v">' + childIds.length + ' nodes</span></div>'
+    + typeInfo +
+    '<div class="row"><span style="color:#e94560;margin-top:8px;">Double-click to expand</span></div>';
+  document.getElementById('overlay').style.display = 'block';
+  document.getElementById('detail').style.display = 'block';
 }
 
 window.focusCommunity = focusCommunity;
