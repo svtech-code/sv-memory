@@ -67,6 +67,14 @@ var initCmd = &cobra.Command{
 			fmt.Printf("Injected rules into: %s\n", fmt.Sprintf("%v", injected))
 		}
 
+		// 3b. Ensure default .sv-memoryignore template exists
+		createdIgnore, err := graph.EnsureMemoryIgnore(cfg.ProjPath)
+		if err != nil {
+			fmt.Printf("Warning: failed to create .sv-memoryignore: %v\n", err)
+		} else if createdIgnore {
+			fmt.Println("Created default .sv-memoryignore template.")
+		}
+
 		// 4. Sync memories from Git (.sv-memory/memories.json) if it exists
 		err = memory.SyncFromGit(database, cfg.ProjectID, cfg.ProjPath)
 		if err != nil {

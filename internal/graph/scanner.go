@@ -35,6 +35,51 @@ func loadGitignore(projPath string) (*gitignoreMatcher, error) {
 	return m, nil
 }
 
+// DefaultMemoryIgnoreTemplate contains the default .sv-memoryignore template.
+const DefaultMemoryIgnoreTemplate = `# Default .sv-memoryignore template
+# Specify files and directories to exclude from sv-memory code graph analysis
+
+# Version control & internal tools
+.git/
+.sv-memory/
+
+# Dependencies & build outputs
+node_modules/
+vendor/
+dist/
+build/
+out/
+target/
+bin/
+
+# Environment & caches
+.venv/
+venv/
+__pycache__/
+.cache/
+.coverage
+
+# IDEs & System files
+.idea/
+.vscode/
+.DS_Store
+`
+
+// EnsureMemoryIgnore checks if .sv-memoryignore exists in projPath.
+// If it does not exist, it creates a default .sv-memoryignore file.
+func EnsureMemoryIgnore(projPath string) (bool, error) {
+	ignorePath := filepath.Join(projPath, ".sv-memoryignore")
+	if _, err := os.Stat(ignorePath); os.IsNotExist(err) {
+		err := os.WriteFile(ignorePath, []byte(DefaultMemoryIgnoreTemplate), 0644)
+		if err != nil {
+			return false, fmt.Errorf("failed to create default .sv-memoryignore: %w", err)
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+
 func (m *gitignoreMatcher) loadFile(path string) {
 	f, err := os.Open(path)
 	if err != nil {
