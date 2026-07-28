@@ -8,15 +8,16 @@ Developed under the **SVTech** ecosystem as a free and open-source tool for the 
 
 ## 🚀 Key Features
 
-1. **Persistent Decision Memory:** Captures complex bugfixes, architectural decisions, and coding standards using SQLite + FTS5 (Full-Text Search) for ultra-fast searches by the AI agent.
-2. **Team Synchronization (Git Sync):** Automatically syncs local memories into individual chunk files (`.sv-memory/chunks/{id}.json`) inside the repository — one JSON file per memory — so parallel saves on different branches never produce merge conflicts. Team members cloning or updating the repository will automatically integrate these memories into their local SQLite databases upon initialization.
-3. **Structural Code Graph:** Analyzes projects across 15+ languages, detects imports and dependencies, computes **betweenness centrality**, detects **god nodes**, and finds **surprising connections**. Uses **Leiden community detection** to cluster related modules.
-4. **Graph Visualization & Export:** Export interactive **HTML visualizations** (vis.js), **per-community wiki pages** (Markdown), and **merge** multiple graph snapshots.
-5. **Agent Orchestration (Protocol Rules):** Automatically injects agent guidelines into `AGENTS.md`, `.cursorrules`, or `.windsurfrules` files in the repository root to guide AI agents to query and write memory proactively.
-6. **Dependency-Free Portability:** Compiled in pure Go without requiring CGO, thanks to `modernc.org/sqlite`. The compiled binary runs directly on macOS, Linux, and Windows.
-7. **PreToolUse Hooks & Skills:** Installs PreToolUse hooks for Claude Code (soft nudge or strict block) and Antigravity CLI (agy), and a Skill for OpenCode. Hooks intercept file-read tool calls and redirect the agent to query the graph and memory first.
-8. **Markdown Deep Parsing:** Scans `.md` files for headings (→ "section" nodes with level metadata), fenced code blocks (→ "code_block" nodes with language metadata), and Mermaid diagrams (→ "diagram" nodes). Creates "contains" edges from documents to their structural elements.
-9. **SQL Schema Extraction:** Parses `.sql` files for DDL statements: CREATE TABLE (→ "table" nodes with column metadata), CREATE VIEW, CREATE INDEX, and CREATE TYPE...AS ENUM. Detects ALTER TABLE...FOREIGN KEY references.
+1. **Persistent Decision Memory:** Captures complex bugfixes, architectural decisions, and coding standards using SQLite + FTS5 with **BM25 ranking** and **path-scoped filtering** for ultra-fast, relevant searches.
+2. **Auto-Boot Context Bundle & Compaction:** `sv_mem_session_start` automatically delivers recent architectural decisions and session goals in 1 tool call. `sv_mem_compact` consolidates topic key revisions to keep the database lean.
+3. **Team Synchronization (Git Sync):** Automatically syncs local memories into individual chunk files (`.sv-memory/chunks/{id}.json`) inside the repository — one JSON file per memory — so parallel saves on different branches never produce merge conflicts. Team members cloning or updating the repository will automatically integrate these memories into their local SQLite databases upon initialization.
+4. **Structural Code Graph & Sub-millisecond LRU Cache:** Analyzes projects across 15+ languages, detects imports and dependencies, computes **betweenness centrality**, detects **god nodes**, **bridge nodes**, and **surprising connections**. Uses **Leiden community detection** to cluster related modules. In-memory LRU cache with `mtime` invalidation delivers graph queries in **<1ms**.
+5. **Graph Health Diagnostics & Markdown Semantic Extraction:** Built-in `DiagnoseGraph` tool detects dangling edges and orphan nodes. `MDSemanticExtractor` parses Markdown files, tables, code blocks, and decision rationales into graph nodes.
+6. **Graph & Memory Exporters (Obsidian & Cypher):** Export interactive **HTML visualizations** (vis.js), **Obsidian Vaults** (linked Markdown notes), **Neo4j/FalkorDB Cypher scripts**, **per-community wiki pages**, and **merge** graph snapshots.
+7. **Interactive Terminal UI (`sv-memory tui`):** Terminal UI for browsing memories, searching with BM25, inspecting decision details, running graph health diagnostics, and exporting Obsidian/Cypher files directly from the console.
+8. **Agent Orchestration (Protocol Rules):** Automatically injects agent guidelines into `AGENTS.md`, `.cursorrules`, or `.windsurfrules` files in the repository root to guide AI agents to query and write memory proactively.
+9. **Dependency-Free Portability:** Compiled in pure Go without requiring CGO, thanks to `modernc.org/sqlite`. The compiled binary runs directly on macOS, Linux, and Windows.
+10. **PreToolUse Hooks & Skills:** Installs PreToolUse hooks for Claude Code (soft nudge or strict block) and Antigravity CLI (agy), and a Skill for OpenCode. Hooks intercept file-read tool calls and redirect the agent to query the graph and memory first.
 
 ---
 
@@ -147,6 +148,14 @@ Starts the Model Context Protocol (MCP) server over standard input/output (`stdi
 
 ```bash
 sv-memory mcp
+```
+
+### 3. `sv-memory tui`
+
+Launches an interactive Terminal User Interface (TUI) to explore recent memories, search with FTS5 BM25, inspect decision details, run graph diagnostics, and export Obsidian/Cypher files.
+
+```bash
+sv-memory tui
 ```
 
 ### 3. `sv-memory sync`
@@ -358,11 +367,11 @@ sv-memory hooks uninstall --platform claude-code
 
 ## 🧩 Model Context Protocol (MCP) Tools
 
-Once connected, `sv-memory` exposes **25 MCP tools** to AI agents:
+Once connected, `sv-memory` exposes **26 MCP tools** to AI agents:
 
 ### Memory Tools
 1. **`sv_mem_save`**: Persists architectural decisions, bugfixes, or development guides with automatic Git sync.
-2. **`sv_mem_search`**: Full-Text Search (FTS5) on saved memories with category filters.
+2. **`sv_mem_search`**: Full-Text Search (FTS5) with **BM25 ranking**, category filters, and optional **path-scoping**.
 3. **`sv_mem_get`**: Retrieves full content of a specific memory with optional truncation.
 4. **`sv_mem_timeline`**: Chronological context around a specific memory (Layer 2 of progressive disclosure).
 5. **`sv_mem_suggest_topic_key`**: Generates a stable category/kebab-case topic key for upsert.
@@ -374,22 +383,23 @@ Once connected, `sv-memory` exposes **25 MCP tools** to AI agents:
 11. **`sv_mem_delete`**: Soft-deletes (or hard-deletes) a memory.
 12. **`sv_mem_capture_passive`**: Logs lightweight journal entries automatically.
 13. **`sv_mem_conflicts`**: Detects and surfaces conflicting memories with semantic overlap analysis.
+14. **`sv_mem_compact`**: Consolidates historical topic key revisions into unified summary records.
 
 ### Session Tools
-14. **`sv_mem_session_start`**: Registers a new coding session.
-15. **`sv_mem_session_end`**: Closes an active session with summary.
-16. **`sv_mem_session_summary`**: Updates goal, discoveries, and next steps.
-17. **`sv_mem_context`**: Recovers context from the last completed session (post-compaction recovery).
+15. **`sv_mem_session_start`**: Registers a new coding session and automatically delivers the **Auto-Boot Context Bundle** (previous summary + top architectural decisions).
+16. **`sv_mem_session_end`**: Closes an active session with summary.
+17. **`sv_mem_session_summary`**: Updates goal, discoveries, and next steps.
+18. **`sv_mem_context`**: Recovers context from the last completed session (post-compaction recovery).
 
 ### Graph Tools
-18. **`sv_graph_query`**: BFS dependency query with configurable depth. Returns Mermaid diagram.
-19. **`sv_graph_path`**: Shortest dependency path between two nodes.
-20. **`sv_graph_sync`**: Incrementally syncs the dependency graph from file changes.
-21. **`sv_graph_explain`**: Detailed node information with fan-in/fan-out metrics.
-22. **`sv_graph_god_nodes`**: Identifies highly-connected nodes (centrality analysis).
-23. **`sv_graph_surprising_connections`**: Finds unexpected or non-obvious dependencies.
-24. **`sv_graph_viz`**: Generates interactive HTML visualization with community coloring.
-25. **`sv_graph_merge`**: Merges a JSON graph snapshot into the current graph.
+19. **`sv_graph_query`**: BFS dependency query with sub-millisecond LRU cache. Returns Mermaid diagram.
+20. **`sv_graph_path`**: Shortest dependency path between two nodes.
+21. **`sv_graph_sync`**: Incrementally syncs the dependency graph from file changes.
+22. **`sv_graph_explain`**: Detailed node information with fan-in/fan-out metrics.
+23. **`sv_graph_god_nodes`**: Identifies highly-connected nodes (centrality analysis).
+24. **`sv_graph_surprising_connections`**: Finds unexpected or non-obvious dependencies.
+25. **`sv_graph_viz`**: Generates interactive HTML visualization with community coloring.
+26. **`sv_graph_merge`**: Merges a JSON graph snapshot into the current graph.
 
 ---
 
