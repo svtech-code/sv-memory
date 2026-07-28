@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"os/signal"
@@ -198,17 +199,23 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	// SQL queries then runs BFS in Go-land, avoiding N+1 round-trips per
 	// visited node. Invalidated by sv_graph_sync.
 var (
-	graphMu     sync.Mutex
-	cachedGraph *graph.InMemoryGraph
+	graphMu sync.Mutex
 )
 
 
 	getOrLoadGraph := func() (*graph.InMemoryGraph, error) {
+		if cached, ok := graph.GlobalGraphCache.Get(pool.Reader, cfg.ProjectID); ok {
+			return cached, nil
+		}
+
 		graphMu.Lock()
 		defer graphMu.Unlock()
-		if cachedGraph != nil {
-			return cachedGraph, nil
+
+		// Double-check after lock
+		if cached, ok := graph.GlobalGraphCache.Get(pool.Reader, cfg.ProjectID); ok {
+			return cached, nil
 		}
+
 		var count int
 		if err := pool.Reader.QueryRow("SELECT COUNT(*) FROM graph_nodes WHERE project_id = ?", cfg.ProjectID).Scan(&count); err != nil {
 			return nil, err
@@ -224,7 +231,10 @@ var (
 		if err != nil {
 			return nil, err
 		}
-		cachedGraph = g
+
+		var maxMtime sql.NullInt64
+		_ = pool.Reader.QueryRow("SELECT MAX(mtime_ms) FROM graph_files_meta WHERE project_id = ?", cfg.ProjectID).Scan(&maxMtime)
+		graph.GlobalGraphCache.Put(cfg.ProjectID, g, maxMtime.Int64)
 		return g, nil
 	}
 
@@ -1202,9 +1212,7 @@ var (
 
 		// Invalidate in-memory cache so the next sv_graph_query reloads fresh
 		// data from the rebuilt graph tables.
-		graphMu.Lock()
-		cachedGraph = nil
-		graphMu.Unlock()
+		graph.GlobalGraphCache.Invalidate(cfg.ProjectID)
 		return mcp.NewToolResultText("Dependency graph refreshed and synchronized successfully in SQLite."), nil
 	})
 
@@ -1321,9 +1329,7 @@ var (
 			debugLog("betweenness_centrality missing, calculating communities and centrality dynamically...")
 			if err := graph.UpdateCommunitiesAndCentrality(pool.Writer, cfg.ProjectID); err == nil {
 				// Invalidate cache and reload
-				graphMu.Lock()
-				cachedGraph = nil
-				graphMu.Unlock()
+				graph.GlobalGraphCache.Invalidate(cfg.ProjectID)
 				g, _ = getOrLoadGraph()
 				node = g.Nodes[nID]
 			}
@@ -1555,9 +1561,7 @@ var (
 		if !hasBC {
 			debugLog("betweenness_centrality missing, calculating communities and centrality...")
 			if err := graph.UpdateCommunitiesAndCentrality(pool.Writer, cfg.ProjectID); err == nil {
-				graphMu.Lock()
-				cachedGraph = nil
-				graphMu.Unlock()
+				graph.GlobalGraphCache.Invalidate(cfg.ProjectID)
 				g, _ = getOrLoadGraph()
 			}
 		}
