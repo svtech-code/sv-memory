@@ -442,6 +442,23 @@ var (
 		return mcp.NewToolResultText(contextStr), nil
 	})
 
+	// Tool: sv_mem_compact
+	compactTool := mcp.NewTool("sv_mem_compact",
+		mcp.WithDescription("Trigger automatic memory compaction for the project. Consolidates historical topic key revisions and duplicates into clean, high-quality summary records to keep search fast and token usage minimal."),
+	)
+
+	s.AddTool(compactTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		report, err := memory.CompactMemories(pool.Writer, cfg.ProjectID)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to compact memories: %v", err)), nil
+		}
+		if report.ProcessedTopics == 0 {
+			return mcp.NewToolResultText("No duplicate or multi-revision topic keys required compaction."), nil
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("Memory compaction complete!\n- Processed Topics: %d\n- Memories Compacted: %d\n- New Syntheses Created: %d\n- Topic Keys: %s",
+			report.ProcessedTopics, report.MemoriesCompacted, report.NewSynthesesCreated, strings.Join(report.TopicKeys, ", "))), nil
+	})
+
 	// 7. Tool: sv_mem_search
 	searchTool := mcp.NewTool("sv_mem_search",
 		mcp.WithDescription("Search historical project memories using keyword/FTS5 search with BM25 ranking. Returns compact results (ID, category, title, date, topic_key). Use sv_mem_get to retrieve full content of a specific memory, or sv_mem_timeline for chronological context around it."),

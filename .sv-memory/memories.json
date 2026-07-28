@@ -721,5 +721,41 @@
     "normalized_hash": "e9ab9990585ed259f24e2b382563e43e5cd2283a8d9bc0ccab2eb2c0187893f3",
     "deleted_at": "0001-01-01T00:00:00Z",
     "created_at": "2026-07-27T22:39:51.660269-04:00"
+  },
+  {
+    "id": "947b64b3",
+    "project_id": "ce22c23ac33d7a36",
+    "category": "decision",
+    "what": "Diseño de arquitectura para compactación pasiva de memorias y caché LRU de grafos",
+    "why": "Aprobado por el usuario para continuar con el desarrollo secuencial del proyecto.",
+    "learned": "La compactación pasiva mantendrá la BD SQLite liviana y el Caché LRU reducirá la latencia del grafo a sub-milisegundo (\u003c1ms).",
+    "git_branch": "main",
+    "git_commit": "6602fcc",
+    "author": "Mario Sandoval (Sv Tech)",
+    "session_id": "2c878241",
+    "topic_key": "decision/auto-compaction-and-graph-lru-plan",
+    "revision_count": 1,
+    "last_seen_at": "0001-01-01T00:00:00Z",
+    "normalized_hash": "eb10e9d61660f3f9caa370ea2289ca39bfcc6c2c871cc67554a5a97bf6460b91",
+    "deleted_at": "0001-01-01T00:00:00Z",
+    "created_at": "2026-07-27T22:48:19.884516-04:00"
+  },
+  {
+    "id": "8d2b5a37",
+    "project_id": "ce22c23ac33d7a36",
+    "category": "journal",
+    "what": "Finalización del Bloque 4 de compactación pasiva de memorias para sv-memory",
+    "why": "Cumplir con el plan de optimización de memorias para reducir el overhead de tokens e I/O.",
+    "learned": "La compactación pasiva consolida entradas de revisiones múltiples en una única síntesis limpia, manteniendo las búsquedas FTS5 veloces y la BD liviana.",
+    "git_branch": "main",
+    "git_commit": "6602fcc",
+    "author": "Mario Sandoval (Sv Tech)",
+    "session_id": "58d27c83",
+    "topic_key": "journal/block-4-auto-compaction-worker",
+    "revision_count": 1,
+    "last_seen_at": "0001-01-01T00:00:00Z",
+    "normalized_hash": "674d5fe98568dea10b89a38b8c1dff77941eaf9404bd222d61ae462b857365b6",
+    "deleted_at": "0001-01-01T00:00:00Z",
+    "created_at": "2026-07-27T22:55:09.760539-04:00"
   }
 ]
