@@ -19,6 +19,7 @@ import (
 	"github.com/svtech/sv-memory/internal/mcp"
 	"github.com/svtech/sv-memory/internal/memory"
 	"github.com/svtech/sv-memory/internal/protocol"
+	"github.com/svtech/sv-memory/internal/tui"
 )
 
 var rootCmd = &cobra.Command{
@@ -117,6 +118,30 @@ var mcpCmd = &cobra.Command{
 
 		// Start MCP Server
 		return mcp.StartServer(pool, cfg)
+	},
+}
+
+var tuiCmd = &cobra.Command{
+	Use:   "tui",
+	Short: "Launch interactive terminal user interface for memory and graph exploration",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+
+		cfg, err := config.LoadConfig(cwd)
+		if err != nil {
+			return err
+		}
+
+		database, err := db.InitDB(cfg.DBPath)
+		if err != nil {
+			return err
+		}
+		defer database.Close()
+
+		return tui.RunTUI(database, cfg.ProjectID, cfg.ProjPath)
 	},
 }
 
@@ -1498,6 +1523,7 @@ func init() {
 	graphVizCmd.Flags().Bool("open", true, "Open the visualization in the default browser automatically")
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(mcpCmd)
+	rootCmd.AddCommand(tuiCmd)
 	rootCmd.AddCommand(diagnoseCmd)
 	rootCmd.AddCommand(statsCmd)
 	rootCmd.AddCommand(exportCmd)
