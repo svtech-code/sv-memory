@@ -2,7 +2,7 @@
   <img src="assets/logo.png" width="180" alt="sv-memory logo">
 </p>
 
-<h1 align="center">sv-memory 🧠</h1>
+<h1 align="center">sv-memory</h1>
 
 <p align="center">
   <b>Eliminate context amnesia for AI coding agents with persistent decision memories, FTS5 BM25 search, and sub-millisecond structural code graphs.</b>
@@ -35,17 +35,17 @@
 
 ## 🚀 Key Features
 
-| Category | Feature | Description |
-| :--- | :--- | :--- |
-| 🧠 **Memory** | **FTS5 BM25 & Scoping** | SQLite Full-Text Search with BM25 relevance ranking and path-scoped directory filtering. |
-| ⚡ **Autonomy** | **Auto-Boot Context** | `sv_mem_session_start` delivers previous session summaries and key decisions in 1 tool call. |
-| 🧹 **Maintenance** | **Auto-Compaction Worker** | `sv_mem_compact` consolidates historical topic key revisions to keep storage ultra-lean. |
-| 🕸️ **Graph** | **Sub-ms LRU Cache** | Parses 15+ languages, Leiden communities, god nodes & bridge nodes with `<1ms` mtime-validated RAM cache. |
-| 🔍 **Diagnostics** | **Graph Health Gate** | `DiagnoseGraph` detects dangling edges, orphan nodes, and unlinked Markdown/SQL AST entities. |
-| 🎨 **Interfaces** | **Interactive TUI** | Terminal User Interface (`sv-memory tui`) for memory inspection, search, and graph diagnostics. |
-| 📦 **Export** | **Obsidian & Cypher** | Exports to linked Markdown Obsidian Vaults (`[[wikilinks]]`) and Neo4j / FalkorDB Cypher scripts. |
-| 🔄 **Collaboration** | **Git Sync Chunks** | Zero-conflict Git synchronization via `.sv-memory/chunks/{id}.json` files per memory. |
-| 🛡️ **Integration** | **PreToolUse Hooks** | Intercepts raw file reads in Claude Code, Antigravity CLI (agy), and OpenCode to query memory first. |
+| Category             | Feature                    | Description                                                                                               |
+| :------------------- | :------------------------- | :-------------------------------------------------------------------------------------------------------- |
+| 🧠 **Memory**        | **FTS5 BM25 & Scoping**    | SQLite Full-Text Search with BM25 relevance ranking and path-scoped directory filtering.                  |
+| ⚡ **Autonomy**      | **Auto-Boot Context**      | `sv_mem_session_start` delivers previous session summaries and key decisions in 1 tool call.              |
+| 🧹 **Maintenance**   | **Auto-Compaction Worker** | `sv_mem_compact` consolidates historical topic key revisions to keep storage ultra-lean.                  |
+| 🕸️ **Graph**         | **Sub-ms LRU Cache**       | Parses 15+ languages, Leiden communities, god nodes & bridge nodes with `<1ms` mtime-validated RAM cache. |
+| 🔍 **Diagnostics**   | **Graph Health Gate**      | `DiagnoseGraph` detects dangling edges, orphan nodes, and unlinked Markdown/SQL AST entities.             |
+| 🎨 **Interfaces**    | **Interactive TUI**        | Terminal User Interface (`sv-memory tui`) for memory inspection, search, and graph diagnostics.           |
+| 📦 **Export**        | **Obsidian & Cypher**      | Exports to linked Markdown Obsidian Vaults (`[[wikilinks]]`) and Neo4j / FalkorDB Cypher scripts.         |
+| 🔄 **Collaboration** | **Git Sync Chunks**        | Zero-conflict Git synchronization via `.sv-memory/chunks/{id}.json` files per memory.                     |
+| 🛡️ **Integration**   | **PreToolUse Hooks**       | Intercepts raw file reads in Claude Code, Antigravity CLI (agy), and OpenCode to query memory first.      |
 
 ---
 
@@ -61,7 +61,7 @@ flowchart TD
     subgraph Core["sv-memory Single-Binary Core"]
         MCP[MCP Server JSON-RPC]
         TUI[Terminal UI 'sv-memory tui']
-        
+
         subgraph Engines["Engines"]
             ME[Memory Engine FTS5 BM25]
             GE[Graph Engine Leiden + Tree-Sitter]
@@ -91,7 +91,9 @@ flowchart TD
 ## 📦 Getting Started
 
 ### 1. Installation (Global Binary)
+
 Compile pure Go executable (no CGO required):
+
 ```bash
 git clone https://github.com/svtech/sv-memory.git
 cd sv-memory
@@ -100,20 +102,26 @@ sudo mv sv-memory /usr/local/bin/
 ```
 
 ### 2. Interactive Setup (`sv-memory configure`)
+
 Configure editors, CLI clients, and PreToolUse hooks automatically:
+
 ```bash
 sv-memory configure
 ```
 
 ### 3. Initialize Repository (`sv-memory init`)
+
 Run inside any project directory to register SQLite DB, scan code graph, and inject protocol rules (`AGENTS.md`):
+
 ```bash
 cd /path/to/your-project
 sv-memory init
 ```
 
 ### 4. Interactive Terminal Exploration (`sv-memory tui`)
+
 Browse memories, run BM25 search, check graph health diagnostics, and export notes:
+
 ```bash
 sv-memory tui
 ```
@@ -122,30 +130,31 @@ sv-memory tui
 
 ## 💻 CLI Commands Reference
 
-| Command | Category | Description |
-| :--- | :--- | :--- |
-| `sv-memory init` | **Project** | Initializes repository, scans dependency graph, and injects `AGENTS.md`. |
-| `sv-memory mcp` | **Server** | Launches Model Context Protocol server over stdio for AI clients. |
-| `sv-memory tui` | **Interface** | Launches interactive terminal user interface for memories and graph diagnostics. |
-| `sv-memory configure` | **Setup** | Interactive terminal wizard to configure Cursor, Claude Code, agy, Zed, etc. |
-| `sv-memory sync` | **Git Sync** | Manual bidirectional sync between SQLite DB and `.sv-memory/chunks/*.json`. |
-| `sv-memory diagnose` | **Diagnostics**| Verifies DB connections, schema integrity, write permissions, and paths. |
-| `sv-memory stats` | **Analytics** | Displays project memory counts, 24h saves, active sessions, and relations. |
-| `sv-memory graph rebuild` | **Graph** | Forces full rescan of codebase files and updates structural graph tables. |
-| `sv-memory graph path <src> <tgt>` | **Graph** | Finds shortest dependency path between two code nodes (up to 10 hops). |
-| `sv-memory graph explain <node>` | **Graph** | Displays fan-in/fan-out, centrality, and metadata for a symbol or file. |
-| `sv-memory graph communities` | **Graph** | Detects Leiden community clusters, god nodes, and bridge nodes. |
-| `sv-memory graph wiki` | **Export** | Generates Markdown wiki pages per Leiden community. |
-| `sv-memory graph viz` | **Export** | Generates interactive HTML visualization (`vis.js`). |
-| `sv-memory obsidian-export` | **Export** | Exports memories into linked Obsidian Markdown notes (`[[wikilinks]]`). |
-| `sv-memory conflicts` | **Memory** | Detects semantic overlap and memory conflicts across the project. |
-| `sv-memory hooks install` | **Hooks** | Installs PreToolUse hooks for Claude Code, Antigravity CLI, and OpenCode. |
+| Command                            | Category        | Description                                                                      |
+| :--------------------------------- | :-------------- | :------------------------------------------------------------------------------- |
+| `sv-memory init`                   | **Project**     | Initializes repository, scans dependency graph, and injects `AGENTS.md`.         |
+| `sv-memory mcp`                    | **Server**      | Launches Model Context Protocol server over stdio for AI clients.                |
+| `sv-memory tui`                    | **Interface**   | Launches interactive terminal user interface for memories and graph diagnostics. |
+| `sv-memory configure`              | **Setup**       | Interactive terminal wizard to configure Cursor, Claude Code, agy, Zed, etc.     |
+| `sv-memory sync`                   | **Git Sync**    | Manual bidirectional sync between SQLite DB and `.sv-memory/chunks/*.json`.      |
+| `sv-memory diagnose`               | **Diagnostics** | Verifies DB connections, schema integrity, write permissions, and paths.         |
+| `sv-memory stats`                  | **Analytics**   | Displays project memory counts, 24h saves, active sessions, and relations.       |
+| `sv-memory graph rebuild`          | **Graph**       | Forces full rescan of codebase files and updates structural graph tables.        |
+| `sv-memory graph path <src> <tgt>` | **Graph**       | Finds shortest dependency path between two code nodes (up to 10 hops).           |
+| `sv-memory graph explain <node>`   | **Graph**       | Displays fan-in/fan-out, centrality, and metadata for a symbol or file.          |
+| `sv-memory graph communities`      | **Graph**       | Detects Leiden community clusters, god nodes, and bridge nodes.                  |
+| `sv-memory graph wiki`             | **Export**      | Generates Markdown wiki pages per Leiden community.                              |
+| `sv-memory graph viz`              | **Export**      | Generates interactive HTML visualization (`vis.js`).                             |
+| `sv-memory obsidian-export`        | **Export**      | Exports memories into linked Obsidian Markdown notes (`[[wikilinks]]`).          |
+| `sv-memory conflicts`              | **Memory**      | Detects semantic overlap and memory conflicts across the project.                |
+| `sv-memory hooks install`          | **Hooks**       | Installs PreToolUse hooks for Claude Code, Antigravity CLI, and OpenCode.        |
 
 ---
 
 ## 🧩 Model Context Protocol (MCP) Tools (26 Tools)
 
 ### 🧠 Memory Tools
+
 - **`sv_mem_save`**: Persists architectural decisions, bugfixes, or standards with auto Git sync.
 - **`sv_mem_search`**: FTS5 search with **BM25 ranking**, category filters, and **path-scoping**.
 - **`sv_mem_get`**: Retrieves full content of a specific memory with optional truncation.
@@ -162,12 +171,14 @@ sv-memory tui
 - **`sv_mem_compact`**: Consolidates historical topic key revisions into unified summary records.
 
 ### ⏱️ Session Tools
+
 - **`sv_mem_session_start`**: Registers coding session and delivers **Auto-Boot Context Bundle**.
 - **`sv_mem_session_end`**: Closes active session with summary.
 - **`sv_mem_session_summary`**: Updates session goal, discoveries, accomplished, and next steps.
 - **`sv_mem_context`**: Recovers context from the last completed session.
 
 ### 🕸️ Graph Tools
+
 - **`sv_graph_query`**: BFS dependency query with sub-millisecond LRU cache. Returns Mermaid diagram.
 - **`sv_graph_path`**: Shortest dependency path between two nodes.
 - **`sv_graph_sync`**: Incrementally syncs dependency graph from file changes.
@@ -182,7 +193,9 @@ sv-memory tui
 ## ⚙️ AI Client Configuration Examples
 
 ### Cursor / Claude Desktop / Windsurf
+
 Add the following snippet to your client's MCP configuration JSON:
+
 ```json
 {
   "mcpServers": {
