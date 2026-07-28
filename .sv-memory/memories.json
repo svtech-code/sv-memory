@@ -921,5 +921,24 @@
     "normalized_hash": "d3b530f88f3051f59a5893116fc3017a81dcac85fd0d4b9f1783dacb6bc04a28",
     "deleted_at": "0001-01-01T00:00:00Z",
     "created_at": "2026-07-28T00:44:57.165665-04:00"
+  },
+  {
+    "id": "8a33092e",
+    "project_id": "ce22c23ac33d7a36",
+    "category": "journal",
+    "what": "Compilación exitosa del ejecutable sv-memory en ./sv-memory",
+    "why": "Solicitado por el usuario para disponer del binario actualizado.",
+    "learned": "El ejecutable sv-memory actualizado contiene los últimos cambios para la generación automática de .sv-memoryignore.",
+    "git_branch": "main",
+    "git_commit": "2d31614",
+    "author": "Mario Sandoval (Sv Tech)",
+    "impact": "Ejecutable sv-memory compilado con éxito en la raíz del proyecto.",
+    "session_id": "68b8f70e",
+    "topic_key": "journal/compile-sv-memory-executable",
+    "revision_count": 1,
+    "last_seen_at": "0001-01-01T00:00:00Z",
+    "normalized_hash": "14dbe4945970c202db5d6578569c7c96ddd6677dbcbfc2ca6b7dabe8e919a37d",
+    "deleted_at": "0001-01-01T00:00:00Z",
+    "created_at": "2026-07-28T00:46:04.999006-04:00"
   }
 ]

@@ -1,0 +1,27 @@
+# Default .sv-memoryignore template
+# Specify files and directories to exclude from sv-memory code graph analysis
+
+# Version control & internal tools
+.git/
+.sv-memory/
+
+# Dependencies & build outputs
+node_modules/
+vendor/
+dist/
+build/
+out/
+target/
+bin/
+
+# Environment & caches
+.venv/
+venv/
+__pycache__/
+.cache/
+.coverage
+
+# IDEs & System files
+.idea/
+.vscode/
+.DS_Store
