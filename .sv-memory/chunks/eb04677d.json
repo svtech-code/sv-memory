@@ -1,0 +1,18 @@
+{
+  "id": "eb04677d",
+  "project_id": "ce22c23ac33d7a36",
+  "category": "journal",
+  "what": "Adición de hipervínculos a la guía de inicio rápido en README.md y README_ES.md",
+  "why": "Garantizar que los usuarios encuentren la guía de inicio fácilmente al revisar el repositorio.",
+  "learned": "Vincular la guía de inicio directamente en la sección principal de instalación del README mejora la visibilidad para nuevos usuarios.",
+  "git_branch": "main",
+  "git_commit": "24f3225",
+  "author": "Mario Sandoval (Sv Tech)",
+  "session_id": "f0cdc85f",
+  "topic_key": "journal/link-getting-started-guide-in-readme",
+  "revision_count": 1,
+  "last_seen_at": "0001-01-01T00:00:00Z",
+  "normalized_hash": "182fc2e2e327e9ac3c2671f56351328157426b8f6cec4fa4bf6f3fc6d1ee02e9",
+  "deleted_at": "0001-01-01T00:00:00Z",
+  "created_at": "2026-07-27T23:50:29.803806-04:00"
+}

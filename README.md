@@ -71,6 +71,8 @@ If you want to modify the code or build the binary yourself:
 
 ## 📦 Installation and Setup
 
+> 📖 **Complete Onboarding Guide:** For a detailed step-by-step walkthrough covering installation, editor configuration, project initialization, and daily AI workflow, check out the [Getting Started Guide](documentation/getting_started_guide.md).
+
 To start using `sv-memory`, you must complete **two mandatory phases**:
 
 1. **Global Phase:** Install the binary on your system and register the MCP server in your AI editor or CLI.

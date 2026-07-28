@@ -71,6 +71,8 @@ Si deseas modificar el código o compilar el binario tú mismo:
 
 ## 📦 Instalación y Uso
 
+> 📖 **Guía Completa de Inicio:** Para un recorrido detallado paso a paso sobre la instalación, configuración de editores, inicialización de proyectos y el flujo diario con IA, consulta la [Guía de Inicio Rápido](documentation/getting_started_guide.md).
+
 Para empezar a utilizar `sv-memory`, debes completar **dos fases** obligatorias:
 
 1. **Fase Global:** Instalar el binario en tu sistema y registrar el servidor MCP en tu editor o CLI de IA.
