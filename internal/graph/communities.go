@@ -411,3 +411,59 @@ func (g *InMemoryGraph) GetCommunityInfo(communities map[string]int, centrality 
 
 	return commInfo
 }
+
+// BridgeNode represents a node that bridges two or more distinct communities.
+type BridgeNode struct {
+	NodeID               string `json:"node_id"`
+	Label                string `json:"label"`
+	CommunityID          int    `json:"community_id"`
+	ConnectedCommunities []int  `json:"connected_communities"`
+	NeighborCount        int    `json:"neighbor_count"`
+}
+
+// DetectBridgeNodes identifies nodes that connect edges across 2 or more distinct communities.
+func (g *InMemoryGraph) DetectBridgeNodes() []BridgeNode {
+	communities := g.DetectCommunities()
+	var bridgeNodes []BridgeNode
+
+	for id, node := range g.Nodes {
+		ownComm := communities[id]
+		connectedCommMap := make(map[int]bool)
+
+		for _, e := range g.EdgesBySource[id] {
+			if targetComm, ok := communities[e.TargetID]; ok {
+				connectedCommMap[targetComm] = true
+			}
+		}
+		for _, e := range g.EdgesByTarget[id] {
+			if sourceComm, ok := communities[e.SourceID]; ok {
+				connectedCommMap[sourceComm] = true
+			}
+		}
+
+		if len(connectedCommMap) >= 2 {
+			var connComms []int
+			for c := range connectedCommMap {
+				connComms = append(connComms, c)
+			}
+			sort.Ints(connComms)
+
+			bridgeNodes = append(bridgeNodes, BridgeNode{
+				NodeID:               id,
+				Label:                node.Label,
+				CommunityID:          ownComm,
+				ConnectedCommunities: connComms,
+				NeighborCount:        len(g.EdgesBySource[id]) + len(g.EdgesByTarget[id]),
+			})
+		}
+	}
+
+	sort.Slice(bridgeNodes, func(i, j int) bool {
+		if len(bridgeNodes[i].ConnectedCommunities) != len(bridgeNodes[j].ConnectedCommunities) {
+			return len(bridgeNodes[i].ConnectedCommunities) > len(bridgeNodes[j].ConnectedCommunities)
+		}
+		return bridgeNodes[i].NeighborCount > bridgeNodes[j].NeighborCount
+	})
+
+	return bridgeNodes
+}
