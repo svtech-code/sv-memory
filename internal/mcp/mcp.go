@@ -368,7 +368,16 @@ var (
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to start session: %v", err)), nil
 		}
-		return mcp.NewToolResultText(fmt.Sprintf("Session started (ID: %s). Use sv_mem_save with session_id=\"%s\" to associate memories, then sv_mem_session_end to close.", session.ID, session.ID)), nil
+
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("Session started (ID: %s). Use sv_mem_save with session_id=\"%s\" to associate memories, then sv_mem_session_end to close.\n\n", session.ID, session.ID))
+
+		autoBundle, bundleErr := memory.GetAutoBootBundle(pool.Reader, cfg.ProjectID)
+		if bundleErr == nil && autoBundle != "" {
+			sb.WriteString(autoBundle)
+		}
+
+		return mcp.NewToolResultText(sb.String()), nil
 	})
 
 	// 4. Tool: sv_mem_session_end
@@ -435,9 +444,10 @@ var (
 
 	// 7. Tool: sv_mem_search
 	searchTool := mcp.NewTool("sv_mem_search",
-		mcp.WithDescription("Search historical project memories using keyword/FTS search. Returns compact results (ID, category, title, date, topic_key). Use sv_mem_get to retrieve full content of a specific memory, or sv_mem_timeline for chronological context around it."),
+		mcp.WithDescription("Search historical project memories using keyword/FTS5 search with BM25 ranking. Returns compact results (ID, category, title, date, topic_key). Use sv_mem_get to retrieve full content of a specific memory, or sv_mem_timeline for chronological context around it."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("The keyword or phrase to search for")),
 		mcp.WithString("category", mcp.Description("Optional category to filter results: 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem' | 'discussion' | 'idea' | 'qa'")),
+		mcp.WithString("path", mcp.Description("Optional path/directory scope filter to narrow memories relevant to a specific file or directory")),
 		mcp.WithString("limit", mcp.Description("Optional limit of results to return (default is '10')")),
 		mcp.WithString("offset", mcp.Description("Optional offset for pagination (default is '0')")),
 	)
@@ -451,6 +461,7 @@ var (
 			query = query[:256]
 		}
 		category := req.GetString("category", "")
+		pathFilter := req.GetString("path", "")
 		limitStr := req.GetString("limit", "10")
 		offsetStr := req.GetString("offset", "0")
 
@@ -483,7 +494,7 @@ var (
 		debugLog("mem_search maybeSyncFromGit took %s", time.Since(startSync))
 
 		startSearch := time.Now()
-		results, err := memory.SearchMemoriesCompact(pool.Reader, cfg.ProjectID, query, category, limit, offset)
+		results, err := memory.SearchMemoriesCompactScoped(pool.Reader, cfg.ProjectID, query, category, pathFilter, limit, offset)
 		debugLog("mem_search query=%q category=%q offset=%d returned %d rows in %s", query, category, offset, len(results), time.Since(startSearch))
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed searching memories: %v", err)), nil

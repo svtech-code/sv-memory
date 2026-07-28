@@ -904,3 +904,67 @@ func TestExportObsidian(t *testing.T) {
 	}
 }
 
+func TestAutoBootBundleAndScopedSearch(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_autoboot.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-autoboot"
+	err = db.RegisterProject(database, projectID, "AutoBoot Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// 1. Create a session and memory
+	sess, err := StartSession(database, projectID, "Refactor database module", tempDir)
+	if err != nil {
+		t.Fatalf("failed to start session: %v", err)
+	}
+	mem := &Memory{
+		ID:        "mem-boot-1",
+		ProjectID: projectID,
+		Category:  "architecture",
+		What:      "Use SQLite WAL mode",
+		Why:       "Improve concurrency",
+		WherePath: "internal/db/pool.go",
+		Learned:   "WAL mode avoids locks",
+		SessionID: sess.ID,
+		CreatedAt: time.Now(),
+	}
+	if _, err := SaveMemory(database, mem); err != nil {
+		t.Fatalf("failed to save memory: %v", err)
+	}
+
+	// 2. Test GetAutoBootBundle
+	bundle, err := GetAutoBootBundle(database, projectID)
+	if err != nil {
+		t.Fatalf("failed to get autoboot bundle: %v", err)
+	}
+	if !strings.Contains(bundle, "Use SQLite WAL mode") {
+		t.Errorf("expected autoboot bundle to contain architectural decision, got:\n%s", bundle)
+	}
+
+	// 3. Test SearchMemoriesCompactScoped with BM25 & path filter
+	results, err := SearchMemoriesCompactScoped(database, projectID, "SQLite", "", "internal/db", 10, 0)
+	if err != nil {
+		t.Fatalf("failed scoped search: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != "mem-boot-1" {
+		t.Errorf("expected 1 result with ID mem-boot-1, got %d results", len(results))
+	}
+
+	// Test path filter miss
+	noResults, err := SearchMemoriesCompactScoped(database, projectID, "SQLite", "", "internal/mcp", 10, 0)
+	if err != nil {
+		t.Fatalf("failed scoped search miss: %v", err)
+	}
+	if len(noResults) != 0 {
+		t.Errorf("expected 0 results for non-matching path, got %d", len(noResults))
+	}
+}
+
+

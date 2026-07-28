@@ -295,6 +295,46 @@ func GetSessionContext(db *sql.DB, projectID string) (string, error) {
 	return sb.String(), nil
 }
 
+// GetAutoBootBundle builds a compact Markdown context bundle containing:
+// 1. Context from the last completed session (goal, summary, memories)
+// 2. Up to 3 recent key architectural decisions (category IN ('architecture', 'decision'))
+func GetAutoBootBundle(db *sql.DB, projectID string) (string, error) {
+	var sb strings.Builder
+	sb.WriteString("### 🚀 Auto-Boot Context Bundle\n\n")
+
+	// 1. Previous session context
+	sessCtx, err := GetSessionContext(db, projectID)
+	if err == nil && sessCtx != "" && !strings.HasPrefix(sessCtx, "No previous session") {
+		sb.WriteString(sessCtx)
+		sb.WriteString("\n\n")
+	}
+
+	// 2. Recent key architectural decisions
+	query := `
+	SELECT id, category, what, why, learned, created_at
+	FROM memories
+	WHERE project_id = ? AND category IN ('architecture', 'decision') AND deleted_at IS NULL
+	ORDER BY created_at DESC LIMIT 3`
+	rows, err := db.Query(query, projectID)
+	if err == nil {
+		defer rows.Close()
+		var archMems []string
+		for rows.Next() {
+			var id, cat, what, why, learned, createdAt string
+			if scanErr := rows.Scan(&id, &cat, &what, &why, &learned, &createdAt); scanErr == nil {
+				archMems = append(archMems, fmt.Sprintf("- **[%s] %s** (ID: %s)\n  *Why:* %s", strings.ToUpper(cat), what, id, why))
+			}
+		}
+		if len(archMems) > 0 {
+			sb.WriteString("**Key Architectural Decisions:**\n")
+			sb.WriteString(strings.Join(archMems, "\n"))
+			sb.WriteString("\n\n")
+		}
+	}
+
+	return strings.TrimSpace(sb.String()), nil
+}
+
 // SearchMemoriesBySession returns memories associated with a specific session.
 func SearchMemoriesBySession(db *sql.DB, projectID, sessionID string, limit int) ([]*Memory, error) {
 	query := `
@@ -344,6 +384,11 @@ func SearchMemoriesBySessionCompact(db *sql.DB, projectID, sessionID string, lim
 // for token-efficient progressive disclosure. Supports optional offset for
 // pagination. Layer 1 of the progressive disclosure pattern.
 func SearchMemoriesCompact(db *sql.DB, projectID string, searchTerm string, category string, limit int, offset int) ([]*MemorySearchResult, error) {
+	return SearchMemoriesCompactScoped(db, projectID, searchTerm, category, "", limit, offset)
+}
+
+// SearchMemoriesCompactScoped supports path filtering and BM25 ranking for FTS5 full-text search.
+func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string, category string, pathFilter string, limit int, offset int) ([]*MemorySearchResult, error) {
 	var query string
 	var args []interface{}
 
@@ -359,6 +404,10 @@ func SearchMemoriesCompact(db *sql.DB, projectID string, searchTerm string, cate
 			query += " AND category = ?"
 			args = append(args, category)
 		}
+		if pathFilter != "" {
+			query += " AND (where_path LIKE ? OR where_path = ?)"
+			args = append(args, "%"+pathFilter+"%", pathFilter)
+		}
 		query += " ORDER BY created_at DESC"
 	} else {
 		query = `
@@ -373,7 +422,11 @@ func SearchMemoriesCompact(db *sql.DB, projectID string, searchTerm string, cate
 			query += " AND m.category = ?"
 			args = append(args, category)
 		}
-		query += " ORDER BY rank"
+		if pathFilter != "" {
+			query += " AND (m.where_path LIKE ? OR m.where_path = ?)"
+			args = append(args, "%"+pathFilter+"%", pathFilter)
+		}
+		query += " ORDER BY bm25(memories_fts, 10.0, 5.0, 2.0)"
 	}
 
 	if limit > 0 {
@@ -1015,8 +1068,13 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 	return mem, nil
 }
 
-// SearchMemories queries the database using FTS5 full-text search.
+// SearchMemories queries the database using FTS5 full-text search with BM25 ranking.
 func SearchMemories(db *sql.DB, projectID string, searchTerm string, category string, limit int) ([]*Memory, error) {
+	return SearchMemoriesScoped(db, projectID, searchTerm, category, "", limit)
+}
+
+// SearchMemoriesScoped supports path filtering and BM25 ranking.
+func SearchMemoriesScoped(db *sql.DB, projectID string, searchTerm string, category string, pathFilter string, limit int) ([]*Memory, error) {
 	var query string
 	var args []interface{}
 
@@ -1033,6 +1091,10 @@ func SearchMemories(db *sql.DB, projectID string, searchTerm string, category st
 			query += " AND category = ?"
 			args = append(args, category)
 		}
+		if pathFilter != "" {
+			query += " AND (where_path LIKE ? OR where_path = ?)"
+			args = append(args, "%"+pathFilter+"%", pathFilter)
+		}
 		query += " ORDER BY created_at DESC"
 	} else {
 		query = `
@@ -1048,7 +1110,11 @@ func SearchMemories(db *sql.DB, projectID string, searchTerm string, category st
 			query += " AND m.category = ?"
 			args = append(args, category)
 		}
-		query += " ORDER BY rank"
+		if pathFilter != "" {
+			query += " AND (m.where_path LIKE ? OR m.where_path = ?)"
+			args = append(args, "%"+pathFilter+"%", pathFilter)
+		}
+		query += " ORDER BY bm25(memories_fts, 10.0, 5.0, 2.0)"
 	}
 
 	if limit > 0 {
