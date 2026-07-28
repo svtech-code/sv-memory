@@ -2,6 +2,8 @@
   <img src="assets/logo.png" width="180" alt="sv-memory logo">
 </p>
 
+<h1 align="center">sv-memory — Memoria Persistente y Grafo de Código para Agentes de IA</h1>
+
 <p align="center">
   <b>Elimina la amnesia de contexto en agentes de IA con memoria persistente de decisiones, búsqueda FTS5 BM25 y grafos de código sub-milisegundo.</b>
 </p>

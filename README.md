@@ -2,6 +2,8 @@
   <img src="assets/logo.png" width="180" alt="sv-memory logo">
 </p>
 
+<h1 align="center">sv-memory — Persistent Memory & Code Graph for AI Agents</h1>
+
 <p align="center">
   <b>Eliminate context amnesia for AI coding agents with persistent decision memories, FTS5 BM25 search, and sub-millisecond structural code graphs.</b>
 </p>

@@ -1,0 +1,19 @@
+{
+  "id": "5e2f491a",
+  "project_id": "ce22c23ac33d7a36",
+  "category": "journal",
+  "what": "Inclusión de encabezados H1 descriptivos centrados en README.md y README_ES.md",
+  "why": "La imagen del logo no es indexada como H1 por motores de búsqueda ni lectores de pantalla. Un H1 centrado descriptivo resuelve SEO y accesibilidad de forma estética.",
+  "where_path": "README.md",
+  "learned": "Mantener un título H1 en texto es esencial para SEO de GitHub, lectores de pantalla (accesibilidad WCAG) y lectores CLI, incluso cuando exista una imagen de cabecera.",
+  "git_branch": "main",
+  "git_commit": "10fb7d5",
+  "author": "Mario Sandoval (Sv Tech)",
+  "impact": "README.md y README_ES.md actualizados con títulos H1 centrados y descriptivos sin romper el diseño del banner.",
+  "topic_key": "journal/readme-h1-header-title-added",
+  "revision_count": 1,
+  "last_seen_at": "0001-01-01T00:00:00Z",
+  "normalized_hash": "c4fb0c91e0c29d9711c1310785533efb5135f8b1469340681fb508d0963197fd",
+  "deleted_at": "0001-01-01T00:00:00Z",
+  "created_at": "2026-07-28T00:39:15.032707-04:00"
+}
