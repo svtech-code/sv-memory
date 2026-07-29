@@ -1,9 +1,12 @@
 package memory
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -170,4 +173,36 @@ func containsStr(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// StartAutoCompaction launches a background goroutine that runs CompactMemories
+// at the specified interval (in minutes). Stops when ctx is cancelled.
+func StartAutoCompaction(ctx context.Context, db *sql.DB, projectID string, intervalMinutes int) {
+	go func() {
+		if intervalMinutes < 1 {
+			intervalMinutes = 60
+		}
+		ticker := time.NewTicker(time.Duration(intervalMinutes) * time.Minute)
+		defer ticker.Stop()
+
+		log.Printf("[sv-memory] Auto-compaction worker started (interval: %d min)", intervalMinutes)
+
+		for {
+			select {
+			case <-ctx.Done():
+				log.Println("[sv-memory] Auto-compaction worker stopped")
+				return
+			case <-ticker.C:
+				report, err := CompactMemories(db, projectID)
+				if err != nil {
+					log.Printf("[sv-memory] Auto-compaction error: %v", err)
+					continue
+				}
+				if report.ProcessedTopics > 0 {
+					log.Printf("[sv-memory] Auto-compaction: %d topics processed, %d memories compacted, %d syntheses created",
+						report.ProcessedTopics, report.MemoriesCompacted, report.NewSynthesesCreated)
+				}
+			}
+		}
+	}()
 }

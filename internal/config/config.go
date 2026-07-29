@@ -30,6 +30,8 @@ func LoadGlobalAndLocalConfig(projPath string) {
 	viper.SetDefault("git_sync_enabled", true)
 	viper.SetDefault("conflict_threshold", 0.45)
 	viper.SetDefault("default_review_limit", 10)
+	viper.SetDefault("auto_compaction_enabled", true)
+	viper.SetDefault("compaction_interval_minutes", 60)
 
 	// 1. Load global config: ~/.sv-memory/config.yaml
 	home, err := os.UserHomeDir()

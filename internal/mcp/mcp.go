@@ -61,6 +61,10 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	if viper.GetBool("auto_compaction_enabled") {
+		memory.StartAutoCompaction(ctx, pool.Writer, cfg.ProjectID, viper.GetInt("compaction_interval_minutes"))
+	}
+
 	go func() {
 		<-ctx.Done()
 		debugLog("Shutdown signal received. Running cleanup...")
