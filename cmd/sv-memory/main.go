@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"database/sql"
 	"fmt"
 	"os"
 	"os/exec"
@@ -23,6 +24,23 @@ import (
 	"github.com/svtech/sv-memory/internal/security"
 	"github.com/svtech/sv-memory/internal/tui"
 )
+
+func withProject(fn func(cfg *config.Config, database *sql.DB) error) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current working directory: %w", err)
+	}
+	cfg, err := config.LoadConfig(cwd)
+	if err != nil {
+		return err
+	}
+	database, err := db.InitDB(cfg.DBPath)
+	if err != nil {
+		return err
+	}
+	defer database.Close()
+	return fn(cfg, database)
+}
 
 var rootCmd = &cobra.Command{
 	Use:   "sv-memory",
@@ -135,23 +153,9 @@ var tuiCmd = &cobra.Command{
 	Use:   "tui",
 	Short: "Launch interactive terminal user interface for memory and graph exploration",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-
-		cfg, err := config.LoadConfig(cwd)
-		if err != nil {
-			return err
-		}
-
-		database, err := db.InitDB(cfg.DBPath)
-		if err != nil {
-			return err
-		}
-		defer database.Close()
-
-		return tui.RunTUI(database, cfg.ProjectID, cfg.ProjPath)
+		return withProject(func(cfg *config.Config, database *sql.DB) error {
+			return tui.RunTUI(database, cfg.ProjectID, cfg.ProjPath)
+		})
 	},
 }
 
@@ -197,45 +201,31 @@ var diagnoseCmd = &cobra.Command{
 	Use:   "diagnose",
 	Short: "Run read-only health checks on the project setup (DB, schema, permissions)",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
+		return withProject(func(cfg *config.Config, database *sql.DB) error {
+			results := memory.RunDiagnostics(database, cfg.ProjectID, cfg.ProjPath, cfg.DBPath)
 
-		cfg, err := config.LoadConfig(cwd)
-		if err != nil {
-			return err
-		}
-
-		database, err := db.InitDB(cfg.DBPath)
-		if err != nil {
-			return err
-		}
-		defer database.Close()
-
-		results := memory.RunDiagnostics(database, cfg.ProjectID, cfg.ProjPath, cfg.DBPath)
-
-		fmt.Printf("=== Diagnostics for %s ===\n\n", cfg.ProjName)
-		passCount, warnCount, failCount := 0, 0, 0
-		for _, r := range results {
-			switch r.Status {
-			case "pass":
-				passCount++
-			case "warn":
-				warnCount++
-			case "fail":
-				failCount++
+			fmt.Printf("=== Diagnostics for %s ===\n\n", cfg.ProjName)
+			passCount, warnCount, failCount := 0, 0, 0
+			for _, r := range results {
+				switch r.Status {
+				case "pass":
+					passCount++
+				case "warn":
+					warnCount++
+				case "fail":
+					failCount++
+				}
+				fmt.Printf("[%s] %s\n", r.Status, r.Check)
+				if r.Message != "" {
+					fmt.Printf("   %s\n", r.Message)
+				}
 			}
-			fmt.Printf("[%s] %s\n", r.Status, r.Check)
-			if r.Message != "" {
-				fmt.Printf("   %s\n", r.Message)
+			fmt.Printf("\n%d pass, %d warnings, %d failures\n", passCount, warnCount, failCount)
+			if failCount > 0 {
+				return fmt.Errorf("diagnostics found %d failure(s)", failCount)
 			}
-		}
-		fmt.Printf("\n%d pass, %d warnings, %d failures\n", passCount, warnCount, failCount)
-		if failCount > 0 {
-			return fmt.Errorf("diagnostics found %d failure(s)", failCount)
-		}
-		return nil
+			return nil
+		})
 	},
 }
 
@@ -243,41 +233,26 @@ var statsCmd = &cobra.Command{
 	Use:   "stats",
 	Short: "Show aggregate memory statistics for the current project",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-
-		cfg, err := config.LoadConfig(cwd)
-		if err != nil {
-			return err
-		}
-
-		database, err := db.InitDB(cfg.DBPath)
-		if err != nil {
-			return err
-		}
-		defer database.Close()
-
-		s, err := memory.GetStats(database, cfg.ProjectID)
-		if err != nil {
-			return fmt.Errorf("failed to get stats: %w", err)
-		}
-
-		fmt.Printf("=== Memory Statistics for %s ===\n\n", cfg.ProjName)
-		fmt.Printf("Total memories:    %d\n", s.TotalMemories)
-		fmt.Printf("Deleted memories:  %d\n", s.DeletedMemories)
-		fmt.Printf("Recent (24h):      %d\n", s.Recent24h)
-		fmt.Printf("Total sessions:    %d\n", s.TotalSessions)
-		fmt.Printf("Active sessions:   %d\n", s.ActiveSessions)
-		fmt.Printf("Total relations:   %d\n", s.TotalRelations)
-		if len(s.ByCategory) > 0 {
-			fmt.Println("\nBy category:")
-			for cat, count := range s.ByCategory {
-				fmt.Printf("  %-15s %d\n", cat, count)
+		return withProject(func(cfg *config.Config, database *sql.DB) error {
+			s, err := memory.GetStats(database, cfg.ProjectID)
+			if err != nil {
+				return fmt.Errorf("failed to get stats: %w", err)
 			}
-		}
-		return nil
+			fmt.Printf("=== Memory Statistics for %s ===\n\n", cfg.ProjName)
+			fmt.Printf("Total memories:    %d\n", s.TotalMemories)
+			fmt.Printf("Deleted memories:  %d\n", s.DeletedMemories)
+			fmt.Printf("Recent (24h):      %d\n", s.Recent24h)
+			fmt.Printf("Total sessions:    %d\n", s.TotalSessions)
+			fmt.Printf("Active sessions:   %d\n", s.ActiveSessions)
+			fmt.Printf("Total relations:   %d\n", s.TotalRelations)
+			if len(s.ByCategory) > 0 {
+				fmt.Println("\nBy category:")
+				for cat, count := range s.ByCategory {
+					fmt.Printf("  %-15s %d\n", cat, count)
+				}
+			}
+			return nil
+		})
 	},
 }
 
@@ -322,29 +297,14 @@ var importCmd = &cobra.Command{
 	Short: "Import memories from a portable JSON file (upsert by ID)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-
-		cfg, err := config.LoadConfig(cwd)
-		if err != nil {
-			return err
-		}
-
-		database, err := db.InitDB(cfg.DBPath)
-		if err != nil {
-			return err
-		}
-		defer database.Close()
-
-		n, err := memory.ImportJSON(database, cfg.ProjectID, args[0])
-		if err != nil {
-			return fmt.Errorf("import failed: %w", err)
-		}
-
-		fmt.Printf("Imported %d memories from %s\n", n, args[0])
-		return nil
+		return withProject(func(cfg *config.Config, database *sql.DB) error {
+			n, err := memory.ImportJSON(database, cfg.ProjectID, args[0])
+			if err != nil {
+				return fmt.Errorf("import failed: %w", err)
+			}
+			fmt.Printf("Imported %d memories from %s\n", n, args[0])
+			return nil
+		})
 	},
 }
 
@@ -358,25 +318,13 @@ var deleteSessionCmd = &cobra.Command{
 	Short: "Delete a session (must have no associated memories)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		cfg, err := config.LoadConfig(cwd)
-		if err != nil {
-			return err
-		}
-		database, err := db.InitDB(cfg.DBPath)
-		if err != nil {
-			return err
-		}
-		defer database.Close()
-
-		if err := memory.DeleteSession(database, args[0]); err != nil {
-			return err
-		}
-		fmt.Printf("Session %s deleted successfully.\n", args[0])
-		return nil
+		return withProject(func(cfg *config.Config, database *sql.DB) error {
+			if err := memory.DeleteSession(database, args[0]); err != nil {
+				return err
+			}
+			fmt.Printf("Session %s deleted successfully.\n", args[0])
+			return nil
+		})
 	},
 }
 
@@ -385,31 +333,18 @@ var deleteProjectCmd = &cobra.Command{
 	Short: "Cascade-delete a project (soft-deletes memories by default; --hard removes permanently)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		cfg, err := config.LoadConfig(cwd)
-		if err != nil {
-			return err
-		}
-		database, err := db.InitDB(cfg.DBPath)
-		if err != nil {
-			return err
-		}
-		defer database.Close()
-
 		hard, _ := cmd.Flags().GetBool("hard")
-
-		if err := memory.DeleteProject(database, args[0], hard); err != nil {
-			return err
-		}
-		mode := "soft-deleted"
-		if hard {
-			mode = "permanently removed"
-		}
-		fmt.Printf("Project %s %s (cascade complete).\n", args[0], mode)
-		return nil
+		return withProject(func(cfg *config.Config, database *sql.DB) error {
+			if err := memory.DeleteProject(database, args[0], hard); err != nil {
+				return err
+			}
+			mode := "soft-deleted"
+			if hard {
+				mode = "permanently removed"
+			}
+			fmt.Printf("Project %s %s (cascade complete).\n", args[0], mode)
+			return nil
+		})
 	},
 }
 
@@ -756,29 +691,14 @@ var rebuildCmd = &cobra.Command{
 	Use:   "rebuild",
 	Short: "Rebuild the structural code graph by scanning files",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-
-		cfg, err := config.LoadConfig(cwd)
-		if err != nil {
-			return err
-		}
-
-		database, err := db.InitDB(cfg.DBPath)
-		if err != nil {
-			return err
-		}
-		defer database.Close()
-
-		fmt.Println("Rebuilding project dependency graph...")
-		err = graph.SyncGraphFull(database, cfg.ProjectID, cfg.ProjPath)
-		if err != nil {
-			return err
-		}
-		fmt.Println("Dependency graph rebuild complete.")
-		return nil
+		return withProject(func(cfg *config.Config, database *sql.DB) error {
+			fmt.Println("Rebuilding project dependency graph...")
+			if err := graph.SyncGraphFull(database, cfg.ProjectID, cfg.ProjPath); err != nil {
+				return err
+			}
+			fmt.Println("Dependency graph rebuild complete.")
+			return nil
+		})
 	},
 }
 
@@ -950,38 +870,18 @@ var syncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "Manually synchronize memories between SQLite database and Git JSON file",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-
-		cfg, err := config.LoadConfig(cwd)
-		if err != nil {
-			return err
-		}
-
-		database, err := db.InitDB(cfg.DBPath)
-		if err != nil {
-			return err
-		}
-		defer database.Close()
-
-		// Pull: load Git memories into SQLite database
-		fmt.Println("Pulling shared memories from Git...")
-		err = memory.SyncFromGit(database, cfg.ProjectID, cfg.ProjPath)
-		if err != nil {
-			return fmt.Errorf("failed to sync from Git: %w", err)
-		}
-
-		// Push: write all SQLite memories back to .sv-memory/memories.json
-		fmt.Println("Pushing/Exporting local memories back to Git...")
-		err = memory.SyncToGit(database, cfg.ProjectID, cfg.ProjPath)
-		if err != nil {
-			return fmt.Errorf("failed to sync to Git: %w", err)
-		}
-
-		fmt.Println("Synchronization completed successfully.")
-		return nil
+		return withProject(func(cfg *config.Config, database *sql.DB) error {
+			fmt.Println("Pulling shared memories from Git...")
+			if err := memory.SyncFromGit(database, cfg.ProjectID, cfg.ProjPath); err != nil {
+				return fmt.Errorf("failed to sync from Git: %w", err)
+			}
+			fmt.Println("Pushing/Exporting local memories back to Git...")
+			if err := memory.SyncToGit(database, cfg.ProjectID, cfg.ProjPath); err != nil {
+				return fmt.Errorf("failed to sync to Git: %w", err)
+			}
+			fmt.Println("Synchronization completed successfully.")
+			return nil
+		})
 	},
 }
 
@@ -1220,31 +1120,18 @@ var conflictsStatsCmd = &cobra.Command{
 	Use:   "stats",
 	Short: "Show statistics of surfaced conflicts",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		cfg, err := config.LoadConfig(cwd)
-		if err != nil {
-			return err
-		}
-		database, err := db.InitDB(cfg.DBPath)
-		if err != nil {
-			return err
-		}
-		defer database.Close()
-
-		stats, err := memory.ConflictStats(database, cfg.ProjectID)
-		if err != nil {
-			return err
-		}
-
-		fmt.Printf("=== Conflict Statistics for %s ===\n\n", cfg.ProjName)
-		fmt.Printf("Pending:   %d\n", stats["pending"])
-		fmt.Printf("Judged:    %d\n", stats["judged"])
-		fmt.Printf("Ignored:   %d\n", stats["ignored"])
-		fmt.Printf("Total:     %d\n", stats["pending"]+stats["judged"]+stats["ignored"])
-		return nil
+		return withProject(func(cfg *config.Config, database *sql.DB) error {
+			stats, err := memory.ConflictStats(database, cfg.ProjectID)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("=== Conflict Statistics for %s ===\n\n", cfg.ProjName)
+			fmt.Printf("Pending:   %d\n", stats["pending"])
+			fmt.Printf("Judged:    %d\n", stats["judged"])
+			fmt.Printf("Ignored:   %d\n", stats["ignored"])
+			fmt.Printf("Total:     %d\n", stats["pending"]+stats["judged"]+stats["ignored"])
+			return nil
+		})
 	},
 }
 
@@ -1312,27 +1199,13 @@ var conflictsIgnoreCmd = &cobra.Command{
 	Short: "Ignore a potential conflict by relation ID",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		cfg, err := config.LoadConfig(cwd)
-		if err != nil {
-			return err
-		}
-		database, err := db.InitDB(cfg.DBPath)
-		if err != nil {
-			return err
-		}
-		defer database.Close()
-
-		err = memory.IgnoreConflict(database, cfg.ProjectID, args[0])
-		if err != nil {
-			return err
-		}
-
-		fmt.Printf("Conflict relation %s marked as ignored.\n", args[0])
-		return nil
+		return withProject(func(cfg *config.Config, database *sql.DB) error {
+			if err := memory.IgnoreConflict(database, cfg.ProjectID, args[0]); err != nil {
+				return err
+			}
+			fmt.Printf("Conflict relation %s marked as ignored.\n", args[0])
+			return nil
+		})
 	},
 }
 
