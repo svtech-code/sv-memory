@@ -20,6 +20,7 @@ import (
 	"github.com/svtech/sv-memory/internal/mcp"
 	"github.com/svtech/sv-memory/internal/memory"
 	"github.com/svtech/sv-memory/internal/protocol"
+	"github.com/svtech/sv-memory/internal/security"
 	"github.com/svtech/sv-memory/internal/tui"
 )
 
@@ -172,6 +173,10 @@ var obsidianExportCmd = &cobra.Command{
 		if outputDir == "" {
 			outputDir = ".obsidian-sv-memory"
 		}
+		vaultPath, err := security.ValidateWritePath(cfg.ProjPath, outputDir)
+		if err != nil {
+			return fmt.Errorf("invalid output path: %w", err)
+		}
 
 		database, err := db.InitDB(cfg.DBPath)
 		if err != nil {
@@ -179,7 +184,7 @@ var obsidianExportCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		fmt.Printf("Exporting memories to Obsidian vault at %s...\n", filepath.Join(cfg.ProjPath, outputDir))
+		fmt.Printf("Exporting memories to Obsidian vault at %s...\n", vaultPath)
 		if err := memory.ExportObsidian(database, cfg.ProjectID, cfg.ProjPath, outputDir); err != nil {
 			return fmt.Errorf("obsidian export failed: %w", err)
 		}
@@ -839,6 +844,10 @@ var graphWikiCmd = &cobra.Command{
 		if output == "" {
 			output = "graph-wiki"
 		}
+		output, err = security.ValidateWritePath(cfg.ProjPath, output)
+		if err != nil {
+			return fmt.Errorf("invalid output path: %w", err)
+		}
 
 		comms := g.LeidenDetectCommunities()
 		centrality := g.BetweennessCentrality()
@@ -888,6 +897,10 @@ var graphMergeCmd = &cobra.Command{
 		if output == "" {
 			output = fmt.Sprintf("merged-%s-%s.json", args[0], args[1])
 		}
+		output, err = security.ValidateWritePath(cfg.ProjPath, output)
+		if err != nil {
+			return fmt.Errorf("invalid output path: %w", err)
+		}
 
 		if err := os.WriteFile(output, []byte(jsonStr), 0644); err != nil {
 			return err
@@ -924,6 +937,10 @@ var graphVizCmd = &cobra.Command{
 		output, _ := cmd.Flags().GetString("output")
 		if output == "" {
 			output = "graph.html"
+		}
+		output, err = security.ValidateWritePath(cfg.ProjPath, output)
+		if err != nil {
+			return fmt.Errorf("invalid output path: %w", err)
 		}
 
 		f, err := os.Create(output)
