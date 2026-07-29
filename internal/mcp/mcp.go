@@ -207,6 +207,15 @@ var (
 	graphMu sync.Mutex
 )
 
+	// computeCentralityIfMissing recalculates communities and betweenness
+	// centrality when they are missing from the graph metadata.
+	// The caller should invalidate the cache and reload the graph afterwards
+	// via GlobalGraphCache.Invalidate + getOrLoadGraph().
+	computeCentralityIfMissing := func() {
+		_ = graph.UpdateCommunitiesAndCentrality(pool.Writer, cfg.ProjectID)
+		graph.GlobalGraphCache.Invalidate(cfg.ProjectID)
+	}
+
 
 	getOrLoadGraph := func() (*graph.InMemoryGraph, error) {
 		if cached, ok := graph.GlobalGraphCache.Get(pool.Reader, cfg.ProjectID); ok {
@@ -1300,12 +1309,9 @@ var (
 		}
 		if !hasBC {
 			debugLog("betweenness_centrality missing, calculating communities and centrality dynamically...")
-			if err := graph.UpdateCommunitiesAndCentrality(pool.Writer, cfg.ProjectID); err == nil {
-				// Invalidate cache and reload
-				graph.GlobalGraphCache.Invalidate(cfg.ProjectID)
-				g, _ = getOrLoadGraph()
-				node = g.Nodes[nID]
-			}
+			computeCentralityIfMissing()
+			g, _ = getOrLoadGraph()
+			node = g.Nodes[nID]
 		}
 
 		commLabels := computeCommLabels(g)
@@ -1498,10 +1504,7 @@ var (
 		}
 		if !hasBC {
 			debugLog("betweenness_centrality missing, calculating communities and centrality...")
-			if err := graph.UpdateCommunitiesAndCentrality(pool.Writer, cfg.ProjectID); err == nil {
-				graph.GlobalGraphCache.Invalidate(cfg.ProjectID)
-				g, _ = getOrLoadGraph()
-			}
+			computeCentralityIfMissing()
 		}
 		type rankedNode struct {
 			id    string
