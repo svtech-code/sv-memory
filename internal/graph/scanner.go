@@ -283,7 +283,7 @@ func scanFiles(projPath string) (*walkResult, error) {
 			if fallbackIgnoreDirs[d.Name()] {
 				return filepath.SkipDir
 			}
-			if gi != nil && gi.match(relPath+"/", true) {
+			if gi != nil && gi.match(relPath, true) {
 				return filepath.SkipDir
 			}
 			return nil
