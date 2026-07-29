@@ -45,9 +45,12 @@ func NewDBPool(dbPath string) (*Pool, error) {
 }
 
 func openDBWithTuning(dbPath string, isWriter bool) (*sql.DB, error) {
+	pragmaParams := "_pragma=foreign_keys(ON)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=temp_store(MEMORY)&_pragma=cache_size(-20000)&_pragma=mmap_size(268435456)&_pragma=busy_timeout(5000)"
 	dsn := dbPath
 	if !isWriter {
-		dsn = "file:" + dbPath + "?mode=ro&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+		dsn = "file:" + dbPath + "?mode=ro&" + pragmaParams
+	} else {
+		dsn = "file:" + dbPath + "?" + pragmaParams
 	}
 
 	db, err := sql.Open("sqlite", dsn)
@@ -66,20 +69,11 @@ func openDBWithTuning(dbPath string, isWriter bool) (*sql.DB, error) {
 	db.SetConnMaxIdleTime(30 * time.Minute)
 	db.SetConnMaxLifetime(1 * time.Hour)
 
-	pragmas := []string{
-		"PRAGMA foreign_keys = ON;",
-		"PRAGMA journal_mode = WAL;",
-		"PRAGMA synchronous = NORMAL;",
-		"PRAGMA temp_store = MEMORY;",
-		"PRAGMA cache_size = -20000;",
-		"PRAGMA mmap_size = 268435456;",
-		"PRAGMA busy_timeout = 5000;",
-	}
-	for _, p := range pragmas {
-		if _, err := db.Exec(p); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("failed to apply pragma %q: %w", p, err)
-		}
+	// Apply foreign_keys pragma once via Exec to ensure correct value per-session
+	// (modernc's _pragma may not set it correctly for some configurations).
+	if _, err := db.Exec("PRAGMA foreign_keys = ON;"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to enable foreign_keys: %w", err)
 	}
 
 	return db, nil

@@ -967,4 +967,77 @@ func TestAutoBootBundleAndScopedSearch(t *testing.T) {
 	}
 }
 
+func TestSanitizeFTS5Query(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"empty", "", ""},
+		{"normal phrase", "sv-memory protocol", `"sv-memory" "protocol"`},
+		{"column targeting chars", "memory: protocol", `"memory:" "protocol"`},
+		{"double quotes", `foo "bar"`, `"foo" "bar"`},
+		{"AND operator", "foo AND bar", `"foo" "AND" "bar"`},
+		{"special chars", `-WAL memory (`, `"-WAL" "memory" "("`},
+		{"multiple spaces", "foo   bar", `"foo" "bar"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitizeFTS5Query(tt.input)
+			if got != tt.want {
+				t.Errorf("sanitizeFTS5Query(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFTS5WithSpecialChars(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-fts-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "test-fts"
+	if err := db.RegisterProject(database, projectID, "FTS Test", tempDir); err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	_, err = SaveMemory(database, &Memory{
+		ID: "fts-1", ProjectID: projectID, Category: "test",
+		What: "memory save protocol", Why: "testing save with FTS5",
+		Learned: "always test save", CreatedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("failed to save memory: %v", err)
+	}
+
+	// Queries that previously caused "no such column" or syntax errors
+	hostileQueries := []string{
+		"sv-memory: rules",
+		"memory: protocol",
+		`foo "bar"`,
+		"-WAL",
+		"AND",
+		"memory (",
+	}
+	for _, q := range hostileQueries {
+		t.Run("hostile_"+q, func(t *testing.T) {
+			results, err := SearchMemoriesCompact(database, projectID, q, "", 10, 0)
+			if err != nil {
+				t.Fatalf("hostile query %q returned error: %v", q, err)
+			}
+			// Should not error — may or may not find results
+			_ = results
+		})
+	}
+}
+
 

@@ -140,8 +140,9 @@ func CompactMemories(db *sql.DB, projectID string) (*CompactionReport, error) {
 		newRev := maxRev + len(group)
 
 		// Soft-delete older entries
+		now := time.Now()
 		for _, m := range group {
-			if _, e := tx.Exec("UPDATE memories SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?", m.ID); e != nil {
+			if _, e := tx.Exec("UPDATE memories SET deleted_at = ? WHERE id = ?", now, m.ID); e != nil {
 				return nil, fmt.Errorf("compaction: failed soft-deleting %s: %w", m.ID, e)
 			}
 		}

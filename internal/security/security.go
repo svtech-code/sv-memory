@@ -66,7 +66,10 @@ func ValidateWritePath(projPath, userPath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("invalid project path: %w", err)
 	}
-	if !strings.HasPrefix(absPath, projAbs) {
+	// Use filepath.Rel to detect path traversal: if the relative path starts
+	// with "..", the resolved path escapes the project directory.
+	rel, err := filepath.Rel(projAbs, absPath)
+	if err != nil || strings.HasPrefix(rel, "..") {
 		return "", fmt.Errorf("path %q escapes project directory", userPath)
 	}
 	projReal, err := filepath.EvalSymlinks(projAbs)
@@ -77,8 +80,11 @@ func ValidateWritePath(projPath, userPath string) (string, error) {
 	if err != nil && !os.IsNotExist(err) {
 		return "", fmt.Errorf("failed to resolve symlinks: %w", err)
 	}
-	if err == nil && !strings.HasPrefix(realPath, projReal) {
-		return "", fmt.Errorf("path %q escapes project directory via symlink", userPath)
+	if err == nil {
+		symRel, symErr := filepath.Rel(projReal, realPath)
+		if symErr != nil || strings.HasPrefix(symRel, "..") {
+			return "", fmt.Errorf("path %q escapes project directory via symlink", userPath)
+		}
 	}
 	return absPath, nil
 }

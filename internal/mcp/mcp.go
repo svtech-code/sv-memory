@@ -492,7 +492,6 @@ var (
 		if len(query) > 256 {
 			query = query[:256]
 		}
-		query = strings.ReplaceAll(query, ":", " ") // prevent FTS5 column targeting
 		category := req.GetString("category", "")
 		pathFilter := req.GetString("path", "")
 		pathFilter = security.SanitizeSQLitePathFilter(pathFilter)

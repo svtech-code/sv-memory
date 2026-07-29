@@ -101,6 +101,16 @@ func injectToFile(filePath string) (bool, error) {
 		startIndex := strings.Index(strContent, "<!-- SV-MEMORY:START -->")
 		endIndex := strings.Index(strContent, "<!-- SV-MEMORY:END -->") + len("<!-- SV-MEMORY:END -->")
 
+		if endIndex <= startIndex {
+			// Malformed block (END appears before START) — replace entire file
+			newContent := strings.TrimSpace(protocolTemplate) + "\n"
+			err = os.WriteFile(filePath, []byte(newContent), 0644)
+			if err != nil {
+				return false, err
+			}
+			return true, nil
+		}
+
 		oldBlock := strContent[startIndex:endIndex]
 		newBlock := strings.TrimSpace(protocolTemplate)
 

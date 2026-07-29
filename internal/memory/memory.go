@@ -415,6 +415,7 @@ func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string
 		}
 		query += " ORDER BY created_at DESC"
 	} else {
+		searchTerm = sanitizeFTS5Query(searchTerm)
 		query = `
 		SELECT m.id, m.category, m.what,
 			m.topic_key, m.revision_count, m.duplicate_count, m.created_at
@@ -743,7 +744,8 @@ func GetStats(db *sql.DB, projectID string) (*Stats, error) {
 		return nil, fmt.Errorf("failed to count relations: %w", err)
 	}
 
-	if err := db.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ? AND deleted_at IS NULL AND created_at > datetime('now', '-24 hours')", projectID).Scan(&stats.Recent24h); err != nil {
+	cutoff := time.Now().Add(-24 * time.Hour)
+	if err := db.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ? AND deleted_at IS NULL AND created_at > ?", projectID, cutoff).Scan(&stats.Recent24h); err != nil {
 		return nil, fmt.Errorf("failed to count recent memories: %w", err)
 	}
 
@@ -975,7 +977,7 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 		var existingID string
 		var revCount int
 		err := db.QueryRow(
-			"SELECT id, revision_count FROM memories WHERE project_id = ? AND topic_key = ?",
+			"SELECT id, revision_count FROM memories WHERE project_id = ? AND topic_key = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1",
 			mem.ProjectID, mem.TopicKey,
 		).Scan(&existingID, &revCount)
 		if err == nil {
@@ -990,7 +992,7 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 				git_branch = ?, git_commit = ?, author = ?, impact = ?,
 				errors_faced = ?, next_steps = ?, session_id = ?,
 				topic_key = ?, revision_count = ?, normalized_hash = ?,
-				last_seen_at = ?, created_at = ?
+				last_seen_at = ?, created_at = ?, deleted_at = NULL
 			WHERE id = ?`
 			_, err := db.Exec(query,
 				mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned,
@@ -1102,6 +1104,7 @@ func SearchMemoriesScoped(db *sql.DB, projectID string, searchTerm string, categ
 		}
 		query += " ORDER BY created_at DESC"
 	} else {
+		searchTerm = sanitizeFTS5Query(searchTerm)
 		query = `
 		SELECT m.id, m.project_id, m.category, m.what, m.why, m.where_path, m.learned,
 			m.git_branch, m.git_commit, m.author, m.impact, m.errors_faced, m.next_steps,
@@ -1174,6 +1177,23 @@ func SearchMemoriesScoped(db *sql.DB, projectID string, searchTerm string, categ
 	}
 
 	return memories, nil
+}
+
+// sanitizeFTS5Query wraps each token of a user-supplied search term in double
+// quotes so FTS5 interprets them as literal strings, preventing column targeting
+// (e.g. "memory:" → no such column), operator injection (AND, OR, NOT), and
+// syntax errors from special characters (", *, (, ), etc.).
+func sanitizeFTS5Query(term string) string {
+	tokens := strings.Fields(term)
+	if len(tokens) == 0 {
+		return ""
+	}
+	quoted := make([]string, 0, len(tokens))
+	for _, t := range tokens {
+		cleaned := strings.ReplaceAll(t, `"`, ``)
+		quoted = append(quoted, `"`+cleaned+`"`)
+	}
+	return strings.Join(quoted, " ")
 }
 
 // parseTime tries RFC3339 first, then the SQLite default datetime format.
