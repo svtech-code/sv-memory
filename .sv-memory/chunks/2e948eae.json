@@ -1,0 +1,18 @@
+{
+  "id": "2e948eae",
+  "project_id": "ce22c23ac33d7a36",
+  "category": "decision",
+  "what": "Reglas de workflow obligatorias al completar fases: commit message + test validation",
+  "why": "El usuario requiere control explícito sobre cada etapa de desarrollo y asegurar calidad antes de dar por terminada una tarea.",
+  "learned": "1) Al completar cualquier tarea, fase, opción o punto planificado, DEBO mostrar el mensaje de commit propuesto y preguntar al usuario si desea continuar, sin ejecutar git add/commit/push. 2) Una tarea no se considera completa hasta que todos los tests (y linter/typecheck si aplica) pasan exitosamente. La validación con tests es requisito obligatorio antes de marcar como completada.",
+  "git_branch": "main",
+  "git_commit": "d61db87",
+  "author": "Mario Sandoval (Sv Tech)",
+  "session_id": "0902476a",
+  "topic_key": "decision/workflow-rules-for-phase-completion-commit-message-prompt-test-validati",
+  "revision_count": 1,
+  "last_seen_at": "0001-01-01T00:00:00Z",
+  "normalized_hash": "f601f8cc5d8a70785a9f5938dbea29de5ec198711e1a8cb2aa6a79fc59244760",
+  "deleted_at": "0001-01-01T00:00:00Z",
+  "created_at": "2026-07-29T01:26:53.302057-04:00"
+}
