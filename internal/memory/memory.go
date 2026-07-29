@@ -405,7 +405,7 @@ func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string
 			args = append(args, category)
 		}
 		if pathFilter != "" {
-			query += " AND (where_path LIKE ? OR where_path = ?)"
+			query += " AND (where_path LIKE ? ESCAPE '\\' OR where_path = ?)"
 			args = append(args, "%"+pathFilter+"%", pathFilter)
 		}
 		query += " ORDER BY created_at DESC"
@@ -423,7 +423,7 @@ func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string
 			args = append(args, category)
 		}
 		if pathFilter != "" {
-			query += " AND (m.where_path LIKE ? OR m.where_path = ?)"
+			query += " AND (m.where_path LIKE ? ESCAPE '\\' OR m.where_path = ?)"
 			args = append(args, "%"+pathFilter+"%", pathFilter)
 		}
 		query += " ORDER BY bm25(memories_fts, 10.0, 5.0, 2.0)"
@@ -1092,7 +1092,7 @@ func SearchMemoriesScoped(db *sql.DB, projectID string, searchTerm string, categ
 			args = append(args, category)
 		}
 		if pathFilter != "" {
-			query += " AND (where_path LIKE ? OR where_path = ?)"
+			query += " AND (where_path LIKE ? ESCAPE '\\' OR where_path = ?)"
 			args = append(args, "%"+pathFilter+"%", pathFilter)
 		}
 		query += " ORDER BY created_at DESC"
@@ -1111,7 +1111,7 @@ func SearchMemoriesScoped(db *sql.DB, projectID string, searchTerm string, categ
 			args = append(args, category)
 		}
 		if pathFilter != "" {
-			query += " AND (m.where_path LIKE ? OR m.where_path = ?)"
+			query += " AND (m.where_path LIKE ? ESCAPE '\\' OR m.where_path = ?)"
 			args = append(args, "%"+pathFilter+"%", pathFilter)
 		}
 		query += " ORDER BY bm25(memories_fts, 10.0, 5.0, 2.0)"

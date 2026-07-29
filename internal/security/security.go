@@ -70,6 +70,7 @@ func ValidateWritePath(projPath, userPath string) (string, error) {
 
 // SanitizeSQLitePathFilter escapes SQL LIKE wildcards (% and _) in path filter input.
 func SanitizeSQLitePathFilter(input string) string {
+	input = strings.ReplaceAll(input, "\\", "\\\\")
 	input = strings.ReplaceAll(input, "%", "\\%")
 	input = strings.ReplaceAll(input, "_", "\\_")
 	return input
