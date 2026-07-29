@@ -34,8 +34,8 @@ func TestGraphCache(t *testing.T) {
 		},
 	}
 
-	// 1. Put into cache with mtime 1000
-	cache.Put(projectID, g, 1000)
+	// 1. Put into cache with mtime 1000 and fileCount 1
+	cache.Put(projectID, g, 1, 1000)
 
 	// 2. Get from cache - should hit
 	cachedG, ok := cache.Get(database, projectID)
@@ -52,8 +52,18 @@ func TestGraphCache(t *testing.T) {
 		t.Fatalf("expected cache miss due to mtime invalidation, got hit")
 	}
 
-	// 5. Test manual clear
-	cache.Put(projectID, g, 2000)
+	// 5. Re-cache with updated mtime
+	cache.Put(projectID, g, 1, 2000)
+
+	// 6. Delete the meta row (simulate file deleted) — cache should miss
+	_, _ = database.Exec("DELETE FROM graph_files_meta WHERE project_id = ?", projectID)
+	deletedG, ok := cache.Get(database, projectID)
+	if ok || deletedG != nil {
+		t.Fatalf("expected cache miss after file deletion, got hit")
+	}
+
+	// 7. Test manual clear
+	cache.Put(projectID, g, 1, 2000)
 	cache.Clear()
 	if _, ok := cache.Get(database, projectID); ok {
 		t.Fatalf("expected cache miss after Clear()")

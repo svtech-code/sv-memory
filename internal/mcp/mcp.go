@@ -237,9 +237,10 @@ var (
 			return nil, err
 		}
 
+		var fileCount int
 		var maxMtime sql.NullInt64
-		_ = pool.Reader.QueryRow("SELECT MAX(mtime_ms) FROM graph_files_meta WHERE project_id = ?", cfg.ProjectID).Scan(&maxMtime)
-		graph.GlobalGraphCache.Put(cfg.ProjectID, g, maxMtime.Int64)
+		_ = pool.Reader.QueryRow("SELECT COUNT(*), COALESCE(MAX(mtime_ms), 0) FROM graph_files_meta WHERE project_id = ?", cfg.ProjectID).Scan(&fileCount, &maxMtime)
+		graph.GlobalGraphCache.Put(cfg.ProjectID, g, fileCount, maxMtime.Int64)
 		return g, nil
 	}
 

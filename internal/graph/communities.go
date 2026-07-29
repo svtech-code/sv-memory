@@ -172,13 +172,14 @@ func UpdateCommunitiesAndCentrality(db *sql.DB, projectID string) error {
 	defer stmt.Close()
 
 	for id, node := range g.Nodes {
-		if node.Metadata == nil {
-			node.Metadata = make(map[string]interface{})
+		meta := make(map[string]interface{})
+		for k, v := range node.Metadata {
+			meta[k] = v
 		}
-		node.Metadata["community_id"] = comms[id]
-		node.Metadata["betweenness_centrality"] = centrality[id]
+		meta["community_id"] = comms[id]
+		meta["betweenness_centrality"] = centrality[id]
 
-		metaBytes, _ := json.Marshal(node.Metadata)
+		metaBytes, _ := json.Marshal(meta)
 		metaStr := string(metaBytes)
 		if metaStr == "null" {
 			metaStr = "{}"

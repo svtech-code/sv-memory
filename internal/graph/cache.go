@@ -7,9 +7,10 @@ import (
 )
 
 type cacheEntry struct {
-	graph      *InMemoryGraph
-	maxMtimeMs int64
-	cachedAt   time.Time
+	graph          *InMemoryGraph
+	maxMtimeMs     int64
+	fileCount      int
+	cachedAt       time.Time
 }
 
 // GraphCache provides a thread-safe in-memory cache for InMemoryGraph with mtime invalidation.
@@ -26,7 +27,9 @@ func NewGraphCache() *GraphCache {
 	}
 }
 
-// Get returns the cached InMemoryGraph if the underlying database table mtime has not changed.
+// Get returns the cached InMemoryGraph if the underlying database table has not changed.
+// Validates against both the file count and max mtime to detect both deletions
+// (which lower max mtime) and modifications/restorations.
 func (c *GraphCache) Get(db *sql.DB, projectID string) (*InMemoryGraph, bool) {
 	c.mu.RLock()
 	entry, ok := c.entries[projectID]
@@ -36,14 +39,16 @@ func (c *GraphCache) Get(db *sql.DB, projectID string) (*InMemoryGraph, bool) {
 		return nil, false
 	}
 
-	// Fast mtime validation against graph_files_meta table
+	// Validate against both COUNT and MAX(mtime_ms) to detect deletions
+	// (which reduce max mtime) or restorations (which may set older mtime).
+	var currentCount sql.NullInt64
 	var currentMaxMtime sql.NullInt64
-	err := db.QueryRow("SELECT MAX(mtime_ms) FROM graph_files_meta WHERE project_id = ?", projectID).Scan(&currentMaxMtime)
-	if err != nil || !currentMaxMtime.Valid {
+	err := db.QueryRow("SELECT COUNT(*), COALESCE(MAX(mtime_ms), 0) FROM graph_files_meta WHERE project_id = ?", projectID).Scan(&currentCount, &currentMaxMtime)
+	if err != nil || !currentCount.Valid {
 		return entry.graph, true
 	}
 
-	if currentMaxMtime.Int64 > entry.maxMtimeMs {
+	if currentCount.Int64 != int64(entry.fileCount) || currentMaxMtime.Int64 > entry.maxMtimeMs {
 		c.Invalidate(projectID)
 		return nil, false
 	}
@@ -51,12 +56,13 @@ func (c *GraphCache) Get(db *sql.DB, projectID string) (*InMemoryGraph, bool) {
 	return entry.graph, true
 }
 
-// Put caches the InMemoryGraph alongside the current max file mtime.
-func (c *GraphCache) Put(projectID string, g *InMemoryGraph, maxMtimeMs int64) {
+// Put caches the InMemoryGraph alongside the current file count and max mtime.
+func (c *GraphCache) Put(projectID string, g *InMemoryGraph, fileCount int, maxMtimeMs int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.entries[projectID] = &cacheEntry{
 		graph:      g,
+		fileCount:  fileCount,
 		maxMtimeMs: maxMtimeMs,
 		cachedAt:   time.Now(),
 	}
