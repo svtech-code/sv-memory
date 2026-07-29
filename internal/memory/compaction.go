@@ -141,7 +141,9 @@ func CompactMemories(db *sql.DB, projectID string) (*CompactionReport, error) {
 
 		// Soft-delete older entries
 		for _, m := range group {
-			_, _ = tx.Exec("UPDATE memories SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?", m.ID)
+			if _, e := tx.Exec("UPDATE memories SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?", m.ID); e != nil {
+				return nil, fmt.Errorf("compaction: failed soft-deleting %s: %w", m.ID, e)
+			}
 		}
 
 		// Create clean unified memory

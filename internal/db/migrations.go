@@ -209,6 +209,16 @@ func migrateLegacyGraphSchema(db *sql.DB) error {
 }
 
 func columnExists(db *sql.DB, table, col string) (bool, error) {
+	allowed := map[string]bool{
+		"memories":          true,
+		"graph_edges":       true,
+		"graph_nodes":       true,
+		"memory_relations":  true,
+		"sessions":          true,
+	}
+	if !allowed[table] {
+		return false, fmt.Errorf("columnExists: unknown table %q", table)
+	}
 	rows, err := db.Query("PRAGMA table_info(" + table + ")")
 	if err != nil {
 		return false, fmt.Errorf("failed to query table info for %s: %w", table, err)
