@@ -2,6 +2,7 @@ package security
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -54,6 +55,9 @@ func SanitizeText(input string) string {
 // ValidateWritePath checks that userPath, when resolved against projPath,
 // stays within projPath. Returns the cleaned absolute path or an error.
 func ValidateWritePath(projPath, userPath string) (string, error) {
+	if filepath.IsAbs(userPath) {
+		return "", fmt.Errorf("absolute path not allowed: %q", userPath)
+	}
 	absPath, err := filepath.Abs(filepath.Join(projPath, userPath))
 	if err != nil {
 		return "", fmt.Errorf("invalid path: %w", err)
@@ -64,6 +68,17 @@ func ValidateWritePath(projPath, userPath string) (string, error) {
 	}
 	if !strings.HasPrefix(absPath, projAbs) {
 		return "", fmt.Errorf("path %q escapes project directory", userPath)
+	}
+	projReal, err := filepath.EvalSymlinks(projAbs)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve project path: %w", err)
+	}
+	realPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("failed to resolve symlinks: %w", err)
+	}
+	if err == nil && !strings.HasPrefix(realPath, projReal) {
+		return "", fmt.Errorf("path %q escapes project directory via symlink", userPath)
 	}
 	return absPath, nil
 }

@@ -1,6 +1,8 @@
 package security
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -90,6 +92,97 @@ func TestSanitizeText(t *testing.T) {
 			}
 			if tc.name == "Database Connection String Credentials" && strings.Contains(output, "superSecretPassword123") {
 				t.Error("DB password was not redacted")
+			}
+		})
+	}
+}
+
+func TestValidateWritePath(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	t.Run("subdir allowed", func(t *testing.T) {
+		got, err := ValidateWritePath(tmpDir, "sub/file.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		exp := filepath.Join(tmpDir, "sub/file.txt")
+		if got != exp {
+			t.Errorf("expected %q, got %q", exp, got)
+		}
+	})
+
+	t.Run("empty path allowed", func(t *testing.T) {
+		got, err := ValidateWritePath(tmpDir, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != tmpDir {
+			t.Errorf("expected %q, got %q", tmpDir, got)
+		}
+	})
+
+	t.Run("dot allowed", func(t *testing.T) {
+		got, err := ValidateWritePath(tmpDir, ".")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != tmpDir {
+			t.Errorf("expected %q, got %q", tmpDir, got)
+		}
+	})
+
+	t.Run("rejects parent traversal", func(t *testing.T) {
+		_, err := ValidateWritePath(tmpDir, "../etc/passwd")
+		if err == nil {
+			t.Fatal("expected error for path traversal")
+		}
+	})
+
+	t.Run("rejects deep parent traversal", func(t *testing.T) {
+		_, err := ValidateWritePath(tmpDir, "a/../../etc/passwd")
+		if err == nil {
+			t.Fatal("expected error for deep traversal")
+		}
+	})
+
+	t.Run("rejects absolute path outside project", func(t *testing.T) {
+		_, err := ValidateWritePath(tmpDir, "/etc/passwd")
+		if err == nil {
+			t.Fatal("expected error for absolute path outside project")
+		}
+	})
+
+	t.Run("rejects symlink escape", func(t *testing.T) {
+		link := filepath.Join(tmpDir, "link")
+		if err := os.Symlink("/etc", link); err != nil {
+			t.Skip("symlink not supported:", err)
+		}
+		_, err := ValidateWritePath(tmpDir, "link/passwd")
+		if err == nil {
+			t.Fatal("expected error for symlink escape")
+		}
+	})
+}
+
+func TestSanitizeSQLitePathFilter(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"plain string", "src/main.go", "src/main.go"},
+		{"escapes percent", "100%", "100\\%"},
+		{"escapes underscore", "my_file", "my\\_file"},
+		{"escapes backslash", "test\\path", "test\\\\path"},
+		{"escapes all", "a_b%c\\d", "a\\_b\\%c\\\\d"},
+		{"empty", "", ""},
+		{"no special chars", "simple", "simple"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := SanitizeSQLitePathFilter(tc.input)
+			if got != tc.expected {
+				t.Errorf("SanitizeSQLitePathFilter(%q) = %q, want %q", tc.input, got, tc.expected)
 			}
 		})
 	}
