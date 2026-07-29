@@ -4,14 +4,10 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
 
@@ -19,22 +15,6 @@ import (
 	"github.com/svtech/sv-memory/internal/security"
 )
 
-// Package-level cache so SyncToGit can skip redundant writes when nothing
-// changed in SQLite and the json file on disk is already up-to-date. Held
-// across the MCP server lifetime (stdio — one process).
-var (
-	syncCacheMu   sync.Mutex
-	lastWriteInfo = map[string]syncCacheEntry{} // keyed by projectID
-)
-
-type syncCacheEntry struct {
-	memoryCount int
-	fileMtim    time.Time // mtime of the JSON file at last write
-}
-
-// MemorySearchResult is a compact representation used for progressive disclosure
-// (Layer 1 — search). It carries only the fields needed for the agent to decide
-// whether to drill down via sv_mem_get (Layer 3) or sv_mem_timeline (Layer 2).
 type MemorySearchResult struct {
 	ID             string    `json:"id"`
 	Category       string    `json:"category"`
@@ -45,11 +25,10 @@ type MemorySearchResult struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
-// Memory represents a recorded design decision, bugfix, or coding standard.
 type Memory struct {
 	ID             string    `json:"id"`
 	ProjectID      string    `json:"project_id"`
-	Category       string    `json:"category"` // 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem' | 'discussion' | 'idea' | 'qa' | 'observation'
+	Category       string    `json:"category"`
 	What           string    `json:"what"`
 	Why            string    `json:"why"`
 	WherePath      string    `json:"where_path,omitempty"`
@@ -70,37 +49,32 @@ type Memory struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
-// MemoryRelation records a judgment that links two memories together.
 type MemoryRelation struct {
 	ID           string    `json:"id"`
 	ProjectID    string    `json:"project_id"`
 	SourceID     string    `json:"source_id"`
 	TargetID     string    `json:"target_id"`
-	RelationType string    `json:"relation_type"` // 'supersedes' | 'conflicts_with' | 'relates_to'
+	RelationType string    `json:"relation_type"`
 	Status       string    `json:"status,omitempty"`
 	Score        float64   `json:"score,omitempty"`
 	Reason       string    `json:"reason"`
 	JudgedBy     string    `json:"judged_by"`
 	CreatedAt    time.Time `json:"created_at"`
-	// Enriched fields for user display
 	SourceWhat   string    `json:"source_what,omitempty"`
 	TargetWhat   string    `json:"target_what,omitempty"`
 }
 
-// MemoryReviewItem is a single item returned by sv_mem_review.
 type MemoryReviewItem struct {
-	Memory          *MemorySearchResult `json:"memory"`
-	AgeDays         int                 `json:"age_days"`
-	LastSeenDays    int                 `json:"last_seen_days,omitempty"`
-	RevisionCount   int                 `json:"revision_count"`
-	DuplicateCount  int                 `json:"duplicate_count"`
-	RelationCount   int                 `json:"relation_count"`
-	NeedsConsolidation bool             `json:"needs_consolidation"`
-	Reason          string              `json:"reason"`
+	Memory             *MemorySearchResult `json:"memory"`
+	AgeDays            int                 `json:"age_days"`
+	LastSeenDays       int                 `json:"last_seen_days,omitempty"`
+	RevisionCount      int                 `json:"revision_count"`
+	DuplicateCount     int                 `json:"duplicate_count"`
+	RelationCount      int                 `json:"relation_count"`
+	NeedsConsolidation bool                `json:"needs_consolidation"`
+	Reason             string              `json:"reason"`
 }
 
-// Session represents a coding session that groups multiple memories together.
-// Sessions enable context recovery after compaction via sv_mem_context.
 type Session struct {
 	ID        string    `json:"id"`
 	ProjectID string    `json:"project_id"`
@@ -109,10 +83,9 @@ type Session struct {
 	StartedAt time.Time `json:"started_at"`
 	EndedAt   time.Time `json:"ended_at,omitempty"`
 	Summary   string    `json:"summary,omitempty"`
-	Status    string    `json:"status"` // 'active' | 'completed'
+	Status    string    `json:"status"`
 }
 
-// StartSession creates a new active session for the given project.
 func StartSession(db *sql.DB, projectID, goal, directory string) (*Session, error) {
 	id := uuid.New().String()[:8]
 	now := time.Now()
@@ -132,7 +105,6 @@ func StartSession(db *sql.DB, projectID, goal, directory string) (*Session, erro
 	}, nil
 }
 
-// EndSession marks a session as completed with an optional summary.
 func EndSession(db *sql.DB, id, summary string) error {
 	result, err := db.Exec(
 		"UPDATE sessions SET ended_at = ?, summary = ?, status = 'completed' WHERE id = ? AND status = 'active'",
@@ -147,7 +119,6 @@ func EndSession(db *sql.DB, id, summary string) error {
 	return nil
 }
 
-// SaveSessionSummary updates the goal and summary fields of a session.
 func SaveSessionSummary(db *sql.DB, id, goal, discoveries, accomplished, nextSteps, files string) error {
 	goal = security.SanitizeText(goal)
 	discoveries = security.SanitizeText(discoveries)
@@ -167,7 +138,6 @@ func SaveSessionSummary(db *sql.DB, id, goal, discoveries, accomplished, nextSte
 	return nil
 }
 
-// GetSession retrieves a single session by ID.
 func GetSession(db *sql.DB, id string) (*Session, error) {
 	row := db.QueryRow("SELECT id, project_id, goal, directory, started_at, ended_at, summary, status FROM sessions WHERE id = ?", id)
 	var s Session
@@ -194,8 +164,6 @@ func GetSession(db *sql.DB, id string) (*Session, error) {
 	return &s, nil
 }
 
-// GetActiveSession returns the currently active session (status='active') for a
-// project, or nil if none exists. There should be at most one active session.
 func GetActiveSession(db *sql.DB, projectID string) (*Session, error) {
 	row := db.QueryRow("SELECT id, project_id, goal, directory, started_at, ended_at, summary, status FROM sessions WHERE project_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1", projectID)
 	var s Session
@@ -217,7 +185,6 @@ func GetActiveSession(db *sql.DB, projectID string) (*Session, error) {
 	return &s, nil
 }
 
-// GetLastSession returns the most recently completed session for the project.
 func GetLastSession(db *sql.DB, projectID string) (*Session, error) {
 	row := db.QueryRow("SELECT id, project_id, goal, directory, started_at, ended_at, summary, status FROM sessions WHERE project_id = ? AND status = 'completed' ORDER BY ended_at DESC LIMIT 1", projectID)
 	var s Session
@@ -244,16 +211,12 @@ func GetLastSession(db *sql.DB, projectID string) (*Session, error) {
 	return &s, nil
 }
 
-// GetSessionContext returns a formatted Markdown summary of the last completed
-// session and its associated memories. This is designed for post-compaction
-// context recovery: the agent calls sv_mem_context to quickly resume work.
 func GetSessionContext(db *sql.DB, projectID string) (string, error) {
 	session, err := GetLastSession(db, projectID)
 	if err != nil {
 		return "", err
 	}
 	if session == nil {
-		// Fall back to most recent memories if no session exists
 		mems, err := SearchMemories(db, projectID, "", "", 5)
 		if err != nil {
 			return "", err
@@ -271,7 +234,7 @@ func GetSessionContext(db *sql.DB, projectID string) (string, error) {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("## Previous Session Context\n\n"))
+	sb.WriteString("## Previous Session Context\n\n")
 	sb.WriteString(fmt.Sprintf("**Session ID:** %s\n", session.ID))
 	sb.WriteString(fmt.Sprintf("**Started:** %s\n", session.StartedAt.Format("2006-01-02 15:04")))
 	if !session.EndedAt.IsZero() {
@@ -284,7 +247,6 @@ func GetSessionContext(db *sql.DB, projectID string) (string, error) {
 		sb.WriteString(fmt.Sprintf("**Summary:** %s\n", session.Summary))
 	}
 
-	// Fetch memories from that session (compact — only IDs + titles)
 	mems, err := SearchMemoriesBySessionCompact(db, projectID, session.ID, 10)
 	if err != nil {
 		return "", err
@@ -296,31 +258,24 @@ func GetSessionContext(db *sql.DB, projectID string) (string, error) {
 				strings.ToUpper(m.Category), m.What, m.ID))
 		}
 	}
-
 	return sb.String(), nil
 }
 
-// GetAutoBootBundle builds a compact Markdown context bundle containing:
-// 1. Context from the last completed session (goal, summary, memories)
-// 2. Up to 3 recent key architectural decisions (category IN ('architecture', 'decision'))
 func GetAutoBootBundle(db *sql.DB, projectID string) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("### 🚀 Auto-Boot Context Bundle\n\n")
 
-	// 1. Previous session context
 	sessCtx, err := GetSessionContext(db, projectID)
 	if err == nil && sessCtx != "" && !strings.HasPrefix(sessCtx, "No previous session") {
 		sb.WriteString(sessCtx)
 		sb.WriteString("\n\n")
 	}
 
-	// 2. Recent key architectural decisions
-	query := `
+	rows, err := db.Query(`
 	SELECT id, category, what, why, learned, created_at
 	FROM memories
 	WHERE project_id = ? AND category IN ('architecture', 'decision') AND deleted_at IS NULL
-	ORDER BY created_at DESC LIMIT 3`
-	rows, err := db.Query(query, projectID)
+	ORDER BY created_at DESC LIMIT 3`, projectID)
 	if err == nil {
 		defer rows.Close()
 		var archMems []string
@@ -336,11 +291,9 @@ func GetAutoBootBundle(db *sql.DB, projectID string) (string, error) {
 			sb.WriteString("\n\n")
 		}
 	}
-
 	return strings.TrimSpace(sb.String()), nil
 }
 
-// SearchMemoriesBySession returns memories associated with a specific session.
 func SearchMemoriesBySession(db *sql.DB, projectID, sessionID string, limit int) ([]*Memory, error) {
 	query := `
 	SELECT id, project_id, category, what, why, where_path, learned,
@@ -362,9 +315,6 @@ func SearchMemoriesBySession(db *sql.DB, projectID, sessionID string, limit int)
 	return scanMemories(rows)
 }
 
-// SearchMemoriesBySessionCompact returns compact search results for memories
-// associated with a specific session. Uses a lightweight SELECT (7 columns)
-// to reduce I/O and token overhead in session context views.
 func SearchMemoriesBySessionCompact(db *sql.DB, projectID, sessionID string, limit int) ([]*MemorySearchResult, error) {
 	query := `
 	SELECT id, category, what,
@@ -385,14 +335,10 @@ func SearchMemoriesBySessionCompact(db *sql.DB, projectID, sessionID string, lim
 	return scanCompactMemories(rows)
 }
 
-// SearchMemoriesCompact returns compact search results (7 columns instead of 20)
-// for token-efficient progressive disclosure. Supports optional offset for
-// pagination. Layer 1 of the progressive disclosure pattern.
 func SearchMemoriesCompact(db *sql.DB, projectID string, searchTerm string, category string, limit int, offset int) ([]*MemorySearchResult, error) {
 	return SearchMemoriesCompactScoped(db, projectID, searchTerm, category, "", limit, offset)
 }
 
-// SearchMemoriesCompactScoped supports path filtering and BM25 ranking for FTS5 full-text search.
 func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string, category string, pathFilter string, limit int, offset int) ([]*MemorySearchResult, error) {
 	var query string
 	var args []interface{}
@@ -452,7 +398,6 @@ func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string
 	return scanCompactMemories(rows)
 }
 
-// scanCompactMemories scans compact memory rows into MemorySearchResult slice.
 func scanCompactMemories(rows *sql.Rows) ([]*MemorySearchResult, error) {
 	var results []*MemorySearchResult
 	for rows.Next() {
@@ -482,7 +427,6 @@ func scanCompactMemories(rows *sql.Rows) ([]*MemorySearchResult, error) {
 	return results, rows.Err()
 }
 
-// MemoryCandidate is a potential duplicate returned by conflict surfacing.
 type MemoryCandidate struct {
 	ID         string  `json:"id"`
 	Category   string  `json:"category"`
@@ -490,7 +434,6 @@ type MemoryCandidate struct {
 	Similarity float64 `json:"similarity"`
 }
 
-// stopWords for English titles — common words that don't carry semantic weight.
 var stopWords = map[string]bool{
 	"the": true, "a": true, "an": true, "and": true, "or": true, "but": true,
 	"in": true, "on": true, "at": true, "to": true, "for": true, "of": true,
@@ -506,7 +449,6 @@ var stopWords = map[string]bool{
 	"its": true, "if": true, "then": true, "else": true, "than": true, "so": true,
 }
 
-// tokenizeTitle splits a title into normalized tokens, removing stop words.
 func tokenizeTitle(title string) []string {
 	title = strings.ToLower(title)
 	var tokens []string
@@ -533,7 +475,6 @@ func tokenizeTitle(title string) []string {
 	return filtered
 }
 
-// jaccardSimilarity computes the Jaccard similarity between two token slices.
 func jaccardSimilarity(a, b []string) float64 {
 	if len(a) == 0 && len(b) == 0 {
 		return 1.0
@@ -562,311 +503,11 @@ func jaccardSimilarity(a, b []string) float64 {
 	return float64(intersection) / float64(union)
 }
 
-// Stats holds aggregate statistics about project memories.
-type Stats struct {
-	TotalMemories    int               `json:"total_memories"`
-	DeletedMemories  int               `json:"deleted_memories"`
-	ByCategory       map[string]int    `json:"by_category"`
-	TotalSessions    int               `json:"total_sessions"`
-	ActiveSessions   int               `json:"active_sessions"`
-	TotalRelations   int               `json:"total_relations"`
-	Recent24h        int               `json:"recent_24h"`
-}
-
-// DiagnosticsResult holds a single diagnostic check outcome.
-type DiagnosticsResult struct {
-	Check   string `json:"check"`
-	Status  string `json:"status"` // "pass" | "warn" | "fail"
-	Message string `json:"message"`
-}
-
-// RunDiagnostics performs read-only health checks on the project setup.
-// Returns a list of check results with status pass/warn/fail.
-func RunDiagnostics(db *sql.DB, projectID, projPath, dbPath string) []DiagnosticsResult {
-	var results []DiagnosticsResult
-
-	add := func(check, status, msg string) {
-		results = append(results, DiagnosticsResult{Check: check, Status: status, Message: msg})
-	}
-
-	// 1. DB file exists and is readable
-	if _, err := os.Stat(dbPath); err == nil {
-		add("database_file", "pass", fmt.Sprintf("Database file found at %s", dbPath))
-	} else {
-		add("database_file", "fail", fmt.Sprintf("Database file not found at %s: %v", dbPath, err))
-		return results
-	}
-
-	// 2. DB connection is alive
-	if err := db.Ping(); err != nil {
-		add("database_connection", "fail", fmt.Sprintf("Cannot ping database: %v", err))
-		return results
-	}
-	add("database_connection", "pass", "Database connection is alive")
-
-	// 3. Required tables exist
-	requiredTables := []string{
-		"projects", "memories", "memories_fts",
-		"sessions", "memory_relations",
-		"graph_nodes", "graph_edges", "graph_files_meta",
-	}
-	for _, table := range requiredTables {
-		var found int
-		err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&found)
-		if err != nil {
-			add("table_"+table, "fail", fmt.Sprintf("Error checking table %s: %v", table, err))
-			continue
-		}
-		if found == 0 {
-			// It might be a virtual table (like FTS)
-			err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE name=?", table).Scan(&found)
-			if err != nil {
-				add("table_"+table, "fail", fmt.Sprintf("Error checking virtual table %s: %v", table, err))
-				continue
-			}
-		}
-		if found > 0 {
-			add("table_"+table, "pass", fmt.Sprintf("Table %s exists", table))
-		} else {
-			add("table_"+table, "fail", fmt.Sprintf("Table %s is missing", table))
-		}
-	}
-
-	// 4. FTS5 triggers exist
-	requiredTriggers := []string{"memories_ai", "memories_ad", "memories_au"}
-	for _, trig := range requiredTriggers {
-		var found int
-		if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name=?", trig).Scan(&found); err != nil {
-			add("trigger_"+trig, "fail", fmt.Sprintf("Error checking trigger %s: %v", trig, err))
-			continue
-		}
-		if found > 0 {
-			add("trigger_"+trig, "pass", fmt.Sprintf("Trigger %s exists", trig))
-		} else {
-			add("trigger_"+trig, "warn", fmt.Sprintf("Trigger %s is missing — FTS5 sync may be incomplete", trig))
-		}
-	}
-
-	// 5. Project is registered
-	var projCount int
-	if err := db.QueryRow("SELECT COUNT(*) FROM projects WHERE id=?", projectID).Scan(&projCount); err != nil {
-		add("project_registered", "fail", fmt.Sprintf("Error querying project: %v", err))
-	} else if projCount > 0 {
-		add("project_registered", "pass", "Project is registered in database")
-	} else {
-		add("project_registered", "fail", "Project is not registered — run 'sv-memory init'")
-	}
-
-	// 6. ProjPath writable
-	tmpFile := filepath.Join(projPath, ".sv-memory-write-test")
-	if err := os.WriteFile(tmpFile, []byte{}, 0644); err != nil {
-		add("project_path_writable", "fail", fmt.Sprintf("Project path is not writable: %v", err))
-	} else {
-		os.Remove(tmpFile)
-		add("project_path_writable", "pass", "Project path is writable")
-	}
-
-	// 7. Chunk directory state
-	chunkDir := filepath.Join(projPath, ".sv-memory", "chunks")
-	if fi, err := os.Stat(chunkDir); err == nil {
-		if fi.IsDir() {
-			entries, _ := os.ReadDir(chunkDir)
-			jsonCount := 0
-			for _, e := range entries {
-				if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
-					jsonCount++
-				}
-			}
-			add("chunk_directory", "pass", fmt.Sprintf("Chunk directory exists with %d JSON files", jsonCount))
-		}
-	} else if os.IsNotExist(err) {
-		// Check legacy file
-		if _, err := os.Stat(filepath.Join(projPath, ".sv-memory", "memories.json")); err == nil {
-			add("chunk_directory", "warn", "Using legacy memories.json (no chunk directory)")
-		} else {
-			add("chunk_directory", "warn", "No sync directory found — run 'sv-memory sync' after first save")
-		}
-	} else {
-		add("chunk_directory", "warn", fmt.Sprintf("Cannot stat chunk directory: %v", err))
-	}
-
-	// 8. FTS5 quick health check
-	var ftsCount int
-	if err := db.QueryRow("SELECT COUNT(*) FROM memories_fts").Scan(&ftsCount); err != nil {
-		add("fts5_healthy", "fail", fmt.Sprintf("FTS5 query failed: %v", err))
-	} else {
-		add("fts5_healthy", "pass", fmt.Sprintf("FTS5 is healthy (%d indexed rows)", ftsCount))
-	}
-
-	return results
-}
-
-// GetStats returns aggregate statistics for the given project.
-func GetStats(db *sql.DB, projectID string) (*Stats, error) {
-	stats := &Stats{
-		ByCategory: make(map[string]int),
-	}
-
-	if err := db.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ? AND deleted_at IS NULL", projectID).Scan(&stats.TotalMemories); err != nil {
-		return nil, fmt.Errorf("failed to count memories: %w", err)
-	}
-
-	if err := db.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ? AND deleted_at IS NOT NULL", projectID).Scan(&stats.DeletedMemories); err != nil {
-		return nil, fmt.Errorf("failed to count deleted memories: %w", err)
-	}
-
-	catRows, err := db.Query("SELECT category, COUNT(*) FROM memories WHERE project_id = ? AND deleted_at IS NULL GROUP BY category ORDER BY COUNT(*) DESC", projectID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query categories: %w", err)
-	}
-	defer catRows.Close()
-	for catRows.Next() {
-		var cat string
-		var count int
-		if err := catRows.Scan(&cat, &count); err != nil {
-			return nil, fmt.Errorf("failed scanning category row: %w", err)
-		}
-		stats.ByCategory[cat] = count
-	}
-	if err := catRows.Err(); err != nil {
-		return nil, err
-	}
-
-	if err := db.QueryRow("SELECT COUNT(*) FROM sessions WHERE project_id = ?", projectID).Scan(&stats.TotalSessions); err != nil {
-		return nil, fmt.Errorf("failed to count sessions: %w", err)
-	}
-
-	if err := db.QueryRow("SELECT COUNT(*) FROM sessions WHERE project_id = ? AND status = 'active'", projectID).Scan(&stats.ActiveSessions); err != nil {
-		return nil, fmt.Errorf("failed to count active sessions: %w", err)
-	}
-
-	if err := db.QueryRow("SELECT COUNT(*) FROM memory_relations WHERE project_id = ?", projectID).Scan(&stats.TotalRelations); err != nil {
-		return nil, fmt.Errorf("failed to count relations: %w", err)
-	}
-
-	cutoff := time.Now().Add(-24 * time.Hour)
-	if err := db.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ? AND deleted_at IS NULL AND created_at > ?", projectID, cutoff).Scan(&stats.Recent24h); err != nil {
-		return nil, fmt.Errorf("failed to count recent memories: %w", err)
-	}
-
-	return stats, nil
-}
-
-// ProjectInfo holds summary data for a registered project.
-type ProjectInfo struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Path         string `json:"path"`
-	MemoryCount  int    `json:"memory_count"`
-	SessionCount int    `json:"session_count"`
-}
-
-// ListProjects returns all registered projects with their memory and session counts.
-func ListProjects(db *sql.DB) ([]*ProjectInfo, error) {
-	rows, err := db.Query(`
-		SELECT p.id, p.name, p.path,
-			(SELECT COUNT(*) FROM memories m WHERE m.project_id = p.id AND m.deleted_at IS NULL) as mem_count,
-			(SELECT COUNT(*) FROM sessions s WHERE s.project_id = p.id) as sess_count
-		FROM projects p
-		ORDER BY p.name ASC`)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list projects: %w", err)
-	}
-	defer rows.Close()
-
-	var projects []*ProjectInfo
-	for rows.Next() {
-		var p ProjectInfo
-		if err := rows.Scan(&p.ID, &p.Name, &p.Path, &p.MemoryCount, &p.SessionCount); err != nil {
-			return nil, fmt.Errorf("failed scanning project row: %w", err)
-		}
-		projects = append(projects, &p)
-	}
-	return projects, rows.Err()
-}
-
-// PruneProjects removes projects that have zero memories.
-// Returns the IDs of pruned projects.
-func PruneProjects(db *sql.DB) ([]string, error) {
-	projects, err := ListProjects(db)
-	if err != nil {
-		return nil, err
-	}
-
-	var pruned []string
-	for _, p := range projects {
-		if p.MemoryCount == 0 && p.SessionCount == 0 {
-			if _, err := db.Exec("DELETE FROM projects WHERE id=?", p.ID); err != nil {
-				return pruned, fmt.Errorf("failed to prune project %s: %w", p.ID, err)
-			}
-			pruned = append(pruned, p.ID)
-		}
-	}
-	return pruned, nil
-}
-
-// ConsolidateProjects moves all memories and sessions from sourceProjectID
-// to targetProjectID, then removes the source project. Returns counts of
-// moved memories and sessions.
-func ConsolidateProjects(db *sql.DB, sourceID, targetID string) (movedMemories int, movedSessions int, err error) {
-	// Verify both projects exist
-	var srcName, tgtName string
-	if err := db.QueryRow("SELECT name FROM projects WHERE id=?", sourceID).Scan(&srcName); err != nil {
-		return 0, 0, fmt.Errorf("source project %s not found", sourceID)
-	}
-	if err := db.QueryRow("SELECT name FROM projects WHERE id=?", targetID).Scan(&tgtName); err != nil {
-		return 0, 0, fmt.Errorf("target project %s not found", targetID)
-	}
-
-	tx, err := db.Begin()
-	if err != nil {
-		return 0, 0, err
-	}
-	defer tx.Rollback()
-
-	// Move memories
-	res, err := tx.Exec("UPDATE memories SET project_id=? WHERE project_id=?", targetID, sourceID)
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to move memories: %w", err)
-	}
-	memN, _ := res.RowsAffected()
-	movedMemories = int(memN)
-
-	// Move sessions
-	res, err = tx.Exec("UPDATE sessions SET project_id=? WHERE project_id=?", targetID, sourceID)
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to move sessions: %w", err)
-	}
-	sessN, _ := res.RowsAffected()
-	movedSessions = int(sessN)
-
-	// Move relations
-	if _, err := tx.Exec("UPDATE memory_relations SET project_id=? WHERE project_id=?", targetID, sourceID); err != nil {
-		return 0, 0, fmt.Errorf("failed to move relations: %w", err)
-	}
-
-	// Delete source project
-	if _, err := tx.Exec("DELETE FROM projects WHERE id=?", sourceID); err != nil {
-		return 0, 0, fmt.Errorf("failed to delete source project: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return 0, 0, err
-	}
-
-	return movedMemories, movedSessions, nil
-}
-
-// FindSimilarMemories returns up to `limit` memory candidates whose title
-// tokens overlap significantly with the given title (Jaccard > threshold).
-// Uses FTS5 for initial candidate retrieval, then filters by token similarity.
 func FindSimilarMemories(db *sql.DB, projectID, title string, limit int, threshold float64) ([]*MemoryCandidate, error) {
 	tokens := tokenizeTitle(title)
 	if len(tokens) == 0 {
 		return nil, nil
 	}
-
-	// Build FTS5 query from tokens (OR match to maximize recall).
 	ftsQuery := strings.Join(tokens, " OR ")
 
 	rows, err := db.Query(`
@@ -904,32 +545,19 @@ func FindSimilarMemories(db *sql.DB, projectID, title string, limit int, thresho
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-
 	return candidates, nil
 }
 
-// computeHash returns a SHA256 hex digest of the concatenated what/why/learned/where_path fields.
 func computeHash(what, why, learned, wherePath string) string {
 	data := what + "\x00" + why + "\x00" + learned + "\x00" + wherePath
 	h := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(h[:])
 }
 
-// SaveMemory inserts or updates a memory record in the database.
-// It implements two economisation strategies:
-//  1. Topic-key upsert: if topic_key is set and a record with the same
-//     project_id + topic_key exists, that record is updated (revision_count++)
-//     instead of creating a new one.
-//  2. Rolling-window dedup: if topic_key is NOT set and an identical
-//     normalized_hash exists for the same project + category within the last
-//     24 hours, duplicate_count is incremented and last_seen_at is bumped
-//     without creating a new row.
-// Returns the saved/updated memory so callers can inspect resulting state.
 func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 	if mem.ProjectID == "" {
 		return nil, errors.New("memory ProjectID cannot be empty")
 	}
-
 	if len(mem.What) > 1000 {
 		return nil, fmt.Errorf("field 'what' exceeds maximum length of 1000 characters")
 	}
@@ -972,7 +600,6 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 	now := time.Now()
 	mem.NormalizedHash = computeHash(mem.What, mem.Why, mem.Learned, mem.WherePath)
 
-	// Strategy 1 — topic_key upsert: update existing record if same project + topic
 	if mem.TopicKey != "" {
 		var existingID string
 		var revCount int
@@ -1005,10 +632,8 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 			}
 			return mem, nil
 		}
-		// Not found: fall through to insert
 	}
 
-	// Strategy 2 — rolling-window dedup: same content hash within 24h
 	if mem.TopicKey == "" {
 		var existingID string
 		var dupCount int
@@ -1027,10 +652,8 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 			mem.LastSeenAt = now
 			return mem, nil
 		}
-		// Not found: fall through to insert
 	}
 
-	// New memory insert
 	if mem.ID == "" {
 		mem.ID = uuid.New().String()[:8]
 	}
@@ -1042,29 +665,7 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 	}
 	mem.DuplicateCount = 0
 
-	query := `
-	INSERT INTO memories (id, project_id, category, what, why, where_path, learned, git_branch, git_commit, author, impact, errors_faced, next_steps, session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	ON CONFLICT(id) DO UPDATE SET
-		category = excluded.category,
-		what = excluded.what,
-		why = excluded.why,
-		where_path = excluded.where_path,
-		learned = excluded.learned,
-		git_branch = excluded.git_branch,
-		git_commit = excluded.git_commit,
-		author = excluded.author,
-		impact = excluded.impact,
-		errors_faced = excluded.errors_faced,
-		next_steps = excluded.next_steps,
-		session_id = excluded.session_id,
-		topic_key = excluded.topic_key,
-		revision_count = excluded.revision_count,
-		duplicate_count = excluded.duplicate_count,
-		last_seen_at = excluded.last_seen_at,
-		normalized_hash = excluded.normalized_hash,
-		created_at = excluded.created_at;`
-	_, err := db.Exec(query,
+	_, err := db.Exec(memoryInsertConflictQuery(),
 		mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned,
 		mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact, mem.ErrorsFaced, mem.NextSteps,
 		mem.SessionID, mem.TopicKey, mem.RevisionCount, mem.DuplicateCount, mem.LastSeenAt,
@@ -1075,12 +676,10 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 	return mem, nil
 }
 
-// SearchMemories queries the database using FTS5 full-text search with BM25 ranking.
 func SearchMemories(db *sql.DB, projectID string, searchTerm string, category string, limit int) ([]*Memory, error) {
 	return SearchMemoriesScoped(db, projectID, searchTerm, category, "", limit)
 }
 
-// SearchMemoriesScoped supports path filtering and BM25 ranking.
 func SearchMemoriesScoped(db *sql.DB, projectID string, searchTerm string, category string, pathFilter string, limit int) ([]*Memory, error) {
 	var query string
 	var args []interface{}
@@ -1175,14 +774,34 @@ func SearchMemoriesScoped(db *sql.DB, projectID string, searchTerm string, categ
 		}
 		memories = append(memories, &mem)
 	}
-
 	return memories, nil
 }
 
-// sanitizeFTS5Query wraps each token of a user-supplied search term in double
-// quotes so FTS5 interprets them as literal strings, preventing column targeting
-// (e.g. "memory:" → no such column), operator injection (AND, OR, NOT), and
-// syntax errors from special characters (", *, (, ), etc.).
+func memoryInsertConflictQuery() string {
+	return `
+	INSERT INTO memories (id, project_id, category, what, why, where_path, learned, git_branch, git_commit, author, impact, errors_faced, next_steps, session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	ON CONFLICT(id) DO UPDATE SET
+		category = excluded.category,
+		what = excluded.what,
+		why = excluded.why,
+		where_path = excluded.where_path,
+		learned = excluded.learned,
+		git_branch = excluded.git_branch,
+		git_commit = excluded.git_commit,
+		author = excluded.author,
+		impact = excluded.impact,
+		errors_faced = excluded.errors_faced,
+		next_steps = excluded.next_steps,
+		session_id = excluded.session_id,
+		topic_key = excluded.topic_key,
+		revision_count = excluded.revision_count,
+		duplicate_count = excluded.duplicate_count,
+		last_seen_at = excluded.last_seen_at,
+		normalized_hash = excluded.normalized_hash,
+		created_at = excluded.created_at;`
+}
+
 func sanitizeFTS5Query(term string) string {
 	tokens := strings.Fields(term)
 	if len(tokens) == 0 {
@@ -1196,7 +815,6 @@ func sanitizeFTS5Query(term string) string {
 	return strings.Join(quoted, " ")
 }
 
-// parseTime tries RFC3339 first, then the SQLite default datetime format.
 func parseTime(s string) (time.Time, error) {
 	t, err := time.Parse(time.RFC3339, s)
 	if err == nil {
@@ -1209,356 +827,6 @@ func parseTime(s string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("cannot parse time %q", s)
 }
 
-// countMemories returns the total number of memories for a given project.
-func countMemories(db *sql.DB, projectID string) (int, error) {
-	var n int
-	err := db.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ?", projectID).Scan(&n)
-	return n, err
-}
-
-// chunkedSyncDir returns the chunks directory path for a project.
-func chunkedSyncDir(projPath string) string {
-	return filepath.Join(projPath, ".sv-memory", "chunks")
-}
-
-// SyncToGitChunked writes each memory as its own JSON file in .sv-memory/chunks/.
-// This avoids Git merge conflicts: each memory is an independent file, so parallel
-// saves on different branches produce no merge conflicts.
-func SyncToGitChunked(db *sql.DB, projectID string, projPath string) error {
-	chunkDir := chunkedSyncDir(projPath)
-	if err := os.MkdirAll(chunkDir, 0755); err != nil {
-		return fmt.Errorf("failed to create chunks directory: %w", err)
-	}
-
-	// Load all memories including soft-deleted.
-	memories, err := searchAllMemories(db, projectID)
-	if err != nil {
-		return err
-	}
-
-	// Track existing chunks so we can clean up stale ones.
-	existingChunks := make(map[string]bool)
-	entries, err := os.ReadDir(chunkDir)
-	if err == nil {
-		for _, e := range entries {
-			if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
-				existingChunks[strings.TrimSuffix(e.Name(), ".json")] = true
-			}
-		}
-	}
-
-	for _, mem := range memories {
-		data, err := json.MarshalIndent(mem, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal chunk %s: %w", mem.ID, err)
-		}
-		chunkPath := filepath.Join(chunkDir, mem.ID+".json")
-		tmpPath := chunkPath + ".tmp"
-		if err := os.WriteFile(tmpPath, data, 0644); err != nil {
-			return fmt.Errorf("failed to write chunk %s: %w", mem.ID, err)
-		}
-		if err := os.Rename(tmpPath, chunkPath); err != nil {
-			os.Remove(tmpPath)
-			return fmt.Errorf("failed to rename chunk %s: %w", mem.ID, err)
-		}
-		delete(existingChunks, mem.ID)
-	}
-
-	// Remove chunks for memories that no longer exist (hard-deleted).
-	for id := range existingChunks {
-		os.Remove(filepath.Join(chunkDir, id+".json"))
-	}
-
-	return nil
-}
-
-// SyncFromGitChunked reads all memory chunks from .sv-memory/chunks/ and imports
-// them into SQLite. Each chunk is a single JSON file per memory, so parallel edits
-// on different branches never conflict. Falls back to legacy memories.json if no
-// chunks directory exists.
-func SyncFromGitChunked(db *sql.DB, projectID string, projPath string) error {
-	chunkDir := chunkedSyncDir(projPath)
-	if _, err := os.Stat(chunkDir); os.IsNotExist(err) {
-		return SyncFromGit(db, projectID, projPath)
-	}
-
-	entries, err := os.ReadDir(chunkDir)
-	if err != nil {
-		return fmt.Errorf("failed to read chunks directory: %w", err)
-	}
-
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	query := `
-	INSERT INTO memories (id, project_id, category, what, why, where_path, learned, git_branch, git_commit, author, impact, errors_faced, next_steps, session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	ON CONFLICT(id) DO UPDATE SET
-		category = excluded.category,
-		what = excluded.what,
-		why = excluded.why,
-		where_path = excluded.where_path,
-		learned = excluded.learned,
-		git_branch = excluded.git_branch,
-		git_commit = excluded.git_commit,
-		author = excluded.author,
-		impact = excluded.impact,
-		errors_faced = excluded.errors_faced,
-		next_steps = excluded.next_steps,
-		session_id = excluded.session_id,
-		topic_key = excluded.topic_key,
-		revision_count = excluded.revision_count,
-		duplicate_count = excluded.duplicate_count,
-		last_seen_at = excluded.last_seen_at,
-		normalized_hash = excluded.normalized_hash,
-		created_at = excluded.created_at;`
-	stmt, err := tx.Prepare(query)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			continue
-		}
-		chunkPath := filepath.Join(chunkDir, entry.Name())
-		data, err := os.ReadFile(chunkPath)
-		if err != nil {
-			return fmt.Errorf("failed to read chunk %s: %w", entry.Name(), err)
-		}
-		var mem Memory
-		if err := json.Unmarshal(data, &mem); err != nil {
-			return fmt.Errorf("failed to parse chunk %s: %w", entry.Name(), err)
-		}
-		mem.ProjectID = projectID
-		createdAt := mem.CreatedAt
-		if createdAt.IsZero() {
-			createdAt = time.Now()
-		}
-		_, err = stmt.Exec(
-			mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned,
-			mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact, mem.ErrorsFaced, mem.NextSteps,
-			nullString(mem.SessionID), nullString(mem.TopicKey),
-			mem.RevisionCount, mem.DuplicateCount,
-			nullTime(mem.LastSeenAt), nullString(mem.NormalizedHash),
-			createdAt)
-		if err != nil {
-			return fmt.Errorf("failed to import chunk %s: %w", entry.Name(), err)
-		}
-	}
-
-	return tx.Commit()
-}
-
-// SyncToGit serializes all project memories to local files in `.sv-memory/`.
-// Uses the chunked format (.sv-memory/chunks/{id}.json) to avoid Git merge
-// conflicts. Also writes a legacy memories.json for backward compatibility.
-// When nothing changed since the last write it skips the I/O entirely.
-func SyncToGit(db *sql.DB, projectID string, projPath string) error {
-	syncDir := filepath.Join(projPath, ".sv-memory")
-	syncFile := filepath.Join(syncDir, "memories.json")
-	chunkDir := chunkedSyncDir(projPath)
-
-	// Quick check: count current memories and compare with cache.
-	// Uses the chunk dir mtime as the signal (more reliable than the legacy file).
-	count, err := countMemories(db, projectID)
-	if err != nil {
-		return err
-	}
-
-	syncCacheMu.Lock()
-	info := lastWriteInfo[projectID]
-	currentMtim := time.Time{}
-	if fi, statErr := os.Stat(chunkDir); statErr == nil {
-		currentMtim = fi.ModTime()
-	} else if fi, statErr := os.Stat(syncFile); statErr == nil {
-		currentMtim = fi.ModTime()
-	}
-	if count == info.memoryCount && currentMtim.Equal(info.fileMtim) {
-		syncCacheMu.Unlock()
-		return nil // nothing changed — skip write
-	}
-	syncCacheMu.Unlock()
-
-	// Load all memories from SQLite (including soft-deleted for faithful sync).
-	memories, err := searchAllMemories(db, projectID)
-	if err != nil {
-		return err
-	}
-
-	// Create directories if missing.
-	if err := os.MkdirAll(syncDir, 0755); err != nil {
-		return fmt.Errorf("failed to create sync directory: %w", err)
-	}
-
-	// 1. Write chunked format (primary — merge-conflict-free).
-	if err := os.MkdirAll(chunkDir, 0755); err != nil {
-		return fmt.Errorf("failed to create chunks directory: %w", err)
-	}
-	existingChunks := make(map[string]bool)
-	entries, err := os.ReadDir(chunkDir)
-	if err == nil {
-		for _, e := range entries {
-			if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
-				existingChunks[strings.TrimSuffix(e.Name(), ".json")] = true
-			}
-		}
-	}
-	for _, mem := range memories {
-		data, err := json.MarshalIndent(mem, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal chunk %s: %w", mem.ID, err)
-		}
-		chunkPath := filepath.Join(chunkDir, mem.ID+".json")
-		tmpPath := chunkPath + ".tmp"
-		if err := os.WriteFile(tmpPath, data, 0644); err != nil {
-			return fmt.Errorf("failed to write chunk %s: %w", mem.ID, err)
-		}
-		if err := os.Rename(tmpPath, chunkPath); err != nil {
-			os.Remove(tmpPath)
-			return fmt.Errorf("failed to rename chunk %s: %w", mem.ID, err)
-		}
-		delete(existingChunks, mem.ID)
-	}
-	for id := range existingChunks {
-		os.Remove(filepath.Join(chunkDir, id+".json"))
-	}
-
-	// 2. Write legacy JSON array for backward compatibility.
-	data, err := json.MarshalIndent(memories, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal memories JSON: %w", err)
-	}
-	tmpFile := syncFile + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temp memories file: %w", err)
-	}
-	if err := os.Rename(tmpFile, syncFile); err != nil {
-		os.Remove(tmpFile)
-		return fmt.Errorf("failed to rename temp file: %w", err)
-	}
-
-	// Update cache with mtime from the chunk dir (primary signal for changes).
-	signalPath := chunkDir
-	if fi, statErr := os.Stat(signalPath); statErr == nil {
-		syncCacheMu.Lock()
-		lastWriteInfo[projectID] = syncCacheEntry{
-			memoryCount: count,
-			fileMtim:    fi.ModTime(),
-		}
-		syncCacheMu.Unlock()
-	} else {
-		syncCacheMu.Lock()
-		delete(lastWriteInfo, projectID)
-		syncCacheMu.Unlock()
-	}
-
-	return nil
-}
-
-// SyncFromGit imports memories from `.sv-memory/`, preferring the chunked format.
-// Falls back to the legacy `memories.json` for backward compatibility.
-func SyncFromGit(db *sql.DB, projectID string, projPath string) error {
-	// Try chunked format first (merge-conflict-free).
-	chunkDir := chunkedSyncDir(projPath)
-	if _, err := os.Stat(chunkDir); err == nil {
-		return SyncFromGitChunked(db, projectID, projPath)
-	}
-
-	syncFile := filepath.Join(projPath, ".sv-memory", "memories.json")
-	if _, err := os.Stat(syncFile); os.IsNotExist(err) {
-		// Nothing to sync, that is normal
-		return nil
-	}
-
-	data, err := os.ReadFile(syncFile)
-	if err != nil {
-		return fmt.Errorf("failed to read memories file %s: %w", syncFile, err)
-	}
-
-	var memories []*Memory
-	if err := json.Unmarshal(data, &memories); err != nil {
-		return fmt.Errorf("failed to parse memories JSON: %w", err)
-	}
-
-	// Begin transaction
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	query := `
-	INSERT INTO memories (id, project_id, category, what, why, where_path, learned, git_branch, git_commit, author, impact, errors_faced, next_steps, session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	ON CONFLICT(id) DO UPDATE SET
-		category = excluded.category,
-		what = excluded.what,
-		why = excluded.why,
-		where_path = excluded.where_path,
-		learned = excluded.learned,
-		git_branch = excluded.git_branch,
-		git_commit = excluded.git_commit,
-		author = excluded.author,
-		impact = excluded.impact,
-		errors_faced = excluded.errors_faced,
-		next_steps = excluded.next_steps,
-		session_id = excluded.session_id,
-		topic_key = excluded.topic_key,
-		revision_count = excluded.revision_count,
-		duplicate_count = excluded.duplicate_count,
-		last_seen_at = excluded.last_seen_at,
-		normalized_hash = excluded.normalized_hash,
-		created_at = excluded.created_at;`
-	stmt, err := tx.Prepare(query)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	for _, mem := range memories {
-		mem.ProjectID = projectID
-		createdAt := mem.CreatedAt
-		if createdAt.IsZero() {
-			createdAt = time.Now()
-		}
-		_, err := stmt.Exec(
-			mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned,
-			mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact, mem.ErrorsFaced, mem.NextSteps,
-			nullString(mem.SessionID), nullString(mem.TopicKey),
-			mem.RevisionCount, mem.DuplicateCount,
-			nullTime(mem.LastSeenAt), nullString(mem.NormalizedHash),
-			createdAt)
-		if err != nil {
-			return fmt.Errorf("failed to sync memory %s: %w", mem.ID, err)
-		}
-	}
-
-	return tx.Commit()
-}
-
-// searchAllMemories returns ALL memories for a project including soft-deleted ones.
-// Used by SyncToGit to ensure a faithful export for team sync.
-func searchAllMemories(db *sql.DB, projectID string) ([]*Memory, error) {
-	rows, err := db.Query(`
-		SELECT id, project_id, category, what, why, where_path, learned,
-			git_branch, git_commit, author, impact, errors_faced, next_steps,
-			session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at
-		FROM memories WHERE project_id = ?
-		ORDER BY created_at ASC
-	`, projectID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanMemories(rows)
-}
-
-// nullString returns a *string for SQL NULL handling: empty string → nil.
 func nullString(s string) interface{} {
 	if s == "" {
 		return nil
@@ -1566,7 +834,6 @@ func nullString(s string) interface{} {
 	return s
 }
 
-// nullTime returns a *time.Time for SQL NULL handling: zero time → nil.
 func nullTime(t time.Time) interface{} {
 	if t.IsZero() {
 		return nil
@@ -1574,8 +841,6 @@ func nullTime(t time.Time) interface{} {
 	return t
 }
 
-// GetMemory retrieves a single memory by its full ID (project_id + id).
-// Returns nil without error when the memory is not found.
 func GetMemory(db *sql.DB, projectID, id string) (*Memory, error) {
 	query := `
 	SELECT id, project_id, category, what, why, where_path, learned,
@@ -1628,11 +893,7 @@ func GetMemory(db *sql.DB, projectID, id string) (*Memory, error) {
 	return &mem, nil
 }
 
-// GetTimeline returns N memories created before and N memories after the
-// given observation id, ordered chronologically. This is the second layer
-// of the progressive disclosure pattern (context around a specific memory).
 func GetTimeline(db *sql.DB, projectID, obsID string, before, after int) (previous, next []*Memory, err error) {
-	// Find the created_at of the target observation
 	var targetTime time.Time
 	var targetCreatedAt string
 	err = db.QueryRow("SELECT created_at FROM memories WHERE project_id = ? AND id = ?", projectID, obsID).Scan(&targetCreatedAt)
@@ -1644,7 +905,6 @@ func GetTimeline(db *sql.DB, projectID, obsID string, before, after int) (previo
 		return nil, nil, err
 	}
 
-	// N memories strictly before targetTime
 	if before > 0 {
 		rows, qErr := db.Query(`
 		SELECT id, project_id, category, what, why, where_path, learned,
@@ -1660,13 +920,11 @@ func GetTimeline(db *sql.DB, projectID, obsID string, before, after int) (previo
 		if qErr != nil {
 			return nil, nil, qErr
 		}
-		// Reverse to get ascending order
 		for i, j := 0, len(previous)-1; i < j; i, j = i+1, j-1 {
 			previous[i], previous[j] = previous[j], previous[i]
 		}
 	}
 
-	// N memories strictly after targetTime
 	if after > 0 {
 		rows, qErr := db.Query(`
 		SELECT id, project_id, category, what, why, where_path, learned,
@@ -1683,12 +941,9 @@ func GetTimeline(db *sql.DB, projectID, obsID string, before, after int) (previo
 			return nil, nil, qErr
 		}
 	}
-
 	return previous, next, nil
 }
 
-// SaveJudgment creates a relation between two memories (conflict surfacing).
-// If a relation with the same source+target+type already exists, it updates in place.
 func SaveJudgment(db *sql.DB, projectID, sourceID, targetID, relationType, reason, judgedBy string) (*MemoryRelation, error) {
 	if sourceID == targetID {
 		return nil, errors.New("cannot create a relation between a memory and itself")
@@ -1698,7 +953,6 @@ func SaveJudgment(db *sql.DB, projectID, sourceID, targetID, relationType, reaso
 	reason = security.SanitizeText(reason)
 	judgedBy = security.SanitizeText(judgedBy)
 
-	// Check if both memories exist and are not deleted
 	var srcExists, tgtExists bool
 	_ = db.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ? AND id = ? AND deleted_at IS NULL", projectID, sourceID).Scan(&srcExists)
 	_ = db.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ? AND id = ? AND deleted_at IS NULL", projectID, targetID).Scan(&tgtExists)
@@ -1718,7 +972,6 @@ func SaveJudgment(db *sql.DB, projectID, sourceID, targetID, relationType, reaso
 	if err != nil {
 		return nil, fmt.Errorf("failed to save judgment: %w", err)
 	}
-
 	return &MemoryRelation{
 		ID:           id,
 		ProjectID:    projectID,
@@ -1731,7 +984,6 @@ func SaveJudgment(db *sql.DB, projectID, sourceID, targetID, relationType, reaso
 	}, nil
 }
 
-// GetRelations returns all relations involving a given memory (as source or target).
 func GetRelations(db *sql.DB, projectID, memoryID string) ([]*MemoryRelation, error) {
 	rows, err := db.Query(`
 		SELECT id, project_id, source_id, target_id, relation_type, reason, judged_by, created_at
@@ -1759,14 +1011,12 @@ func GetRelations(db *sql.DB, projectID, memoryID string) ([]*MemoryRelation, er
 	return relations, rows.Err()
 }
 
-// CountRelations returns the total number of relations for a given memory.
 func CountRelations(db *sql.DB, projectID, memoryID string) (int, error) {
 	var n int
 	err := db.QueryRow("SELECT COUNT(*) FROM memory_relations WHERE project_id = ? AND (source_id = ? OR target_id = ?)", projectID, memoryID, memoryID).Scan(&n)
 	return n, err
 }
 
-// CompareMemories returns both memories side by side in a formatted Markdown string.
 func CompareMemories(db *sql.DB, projectID, id1, id2 string) (string, error) {
 	m1, err := GetMemory(db, projectID, id1)
 	if err != nil {
@@ -1797,7 +1047,6 @@ func CompareMemories(db *sql.DB, projectID, id1, id2 string) (string, error) {
 	}
 	sb.WriteString(fmt.Sprintf("| **Date** | %s | %s |\n", m1.CreatedAt.Format("2006-01-02"), m2.CreatedAt.Format("2006-01-02")))
 
-	// Check for existing relations between them
 	rels, _ := GetRelations(db, projectID, id1)
 	for _, r := range rels {
 		if (r.SourceID == id1 && r.TargetID == id2) || (r.SourceID == id2 && r.TargetID == id1) {
@@ -1805,12 +1054,9 @@ func CompareMemories(db *sql.DB, projectID, id1, id2 string) (string, error) {
 			break
 		}
 	}
-
 	return sb.String(), nil
 }
 
-// ReviewMemories returns a list of memories that may need attention: old, stale,
-// with many duplicates, or candidates for consolidation.
 func ReviewMemories(db *sql.DB, projectID string) ([]*MemoryReviewItem, error) {
 	rows, err := db.Query(`
 		SELECT id, category, what, topic_key, revision_count, duplicate_count, created_at, last_seen_at
@@ -1856,11 +1102,9 @@ func ReviewMemories(db *sql.DB, projectID string) ([]*MemoryReviewItem, error) {
 			}
 		}
 
-		// Check for relations
 		relCount, _ := CountRelations(db, projectID, r.Memory.ID)
 		r.RelationCount = relCount
 
-		// Determine reasons
 		var reasons []string
 		if r.AgeDays > 30 {
 			reasons = append(reasons, fmt.Sprintf("old (%d days)", r.AgeDays))
@@ -1884,7 +1128,6 @@ func ReviewMemories(db *sql.DB, projectID string) ([]*MemoryReviewItem, error) {
 	return items, rows.Err()
 }
 
-// DeleteSession deletes a session by ID. It must have no associated memories.
 func DeleteSession(db *sql.DB, id string) error {
 	var memCount int
 	if err := db.QueryRow("SELECT COUNT(*) FROM memories WHERE session_id=?", id).Scan(&memCount); err != nil {
@@ -1893,7 +1136,6 @@ func DeleteSession(db *sql.DB, id string) error {
 	if memCount > 0 {
 		return fmt.Errorf("session %s has %d associated memories — delete them first", id, memCount)
 	}
-
 	result, err := db.Exec("DELETE FROM sessions WHERE id=?", id)
 	if err != nil {
 		return fmt.Errorf("failed to delete session: %w", err)
@@ -1905,11 +1147,6 @@ func DeleteSession(db *sql.DB, id string) error {
 	return nil
 }
 
-// DeleteProject cascade-deletes a project. When hard=true, all associated
-// memories, sessions, relations, and graph data are permanently removed.
-// When hard=false, memories are soft-deleted (deleted_at set) and the
-// project row is removed — sessions and relations are cascade-deleted
-// by foreign key.
 func DeleteProject(db *sql.DB, id string, hard bool) error {
 	if hard {
 		tx, err := db.Begin()
@@ -1939,13 +1176,9 @@ func DeleteProject(db *sql.DB, id string, hard bool) error {
 		if _, err := tx.Exec("DELETE FROM projects WHERE id=?", id); err != nil {
 			return fmt.Errorf("failed to delete project: %w", err)
 		}
-
 		return tx.Commit()
 	}
 
-	// Soft: mark all non-deleted memories as deleted, remove sessions and
-	// relations, but keep the project row (shell) so foreign key references
-	// from graph data remain valid.
 	if _, err := db.Exec("UPDATE memories SET deleted_at=? WHERE project_id=? AND deleted_at IS NULL", time.Now(), id); err != nil {
 		return fmt.Errorf("failed to soft-delete memories: %w", err)
 	}
@@ -1955,7 +1188,6 @@ func DeleteProject(db *sql.DB, id string, hard bool) error {
 	if _, err := db.Exec("DELETE FROM memory_relations WHERE project_id=?", id); err != nil {
 		return fmt.Errorf("failed to delete relations: %w", err)
 	}
-	// Verify project exists
 	var n int
 	if err := db.QueryRow("SELECT COUNT(*) FROM projects WHERE id=?", id).Scan(&n); err != nil {
 		return fmt.Errorf("failed to check project: %w", err)
@@ -1966,9 +1198,6 @@ func DeleteProject(db *sql.DB, id string, hard bool) error {
 	return nil
 }
 
-// DeleteMemory performs a soft or hard delete of a memory.
-// Soft: sets deleted_at to NOW, excluded from search results but recoverable.
-// Hard: removes the row permanently.
 func DeleteMemory(db *sql.DB, projectID, id string, hard bool) error {
 	if hard {
 		result, err := db.Exec("DELETE FROM memories WHERE project_id = ? AND id = ?", projectID, id)
@@ -1993,10 +1222,6 @@ func DeleteMemory(db *sql.DB, projectID, id string, hard bool) error {
 	return nil
 }
 
-// CapturePassive saves a lightweight observation without requiring the full
-// memory schema. Used for passive context logging. The 'learned' field is
-// derived from 'what' when not explicitly provided. Category is forced to
-// 'observation' internally for search filtering.
 func CapturePassive(db *sql.DB, projectID, what, why, sessionID string) (*Memory, error) {
 	learned := what
 	mem := &Memory{
@@ -2006,13 +1231,12 @@ func CapturePassive(db *sql.DB, projectID, what, why, sessionID string) (*Memory
 		Why:       why,
 		Learned:   learned,
 		SessionID: sessionID,
-		GitBranch: "", // passive captures are not git-versioned
+		GitBranch: "",
 		GitCommit: "",
 	}
 	return SaveMemory(db, mem)
 }
 
-// scanMemories is a helper that scans all rows from a query result into []*Memory.
 func scanMemories(rows *sql.Rows) ([]*Memory, error) {
 	var memories []*Memory
 	for rows.Next() {
@@ -2060,542 +1284,11 @@ func scanMemories(rows *sql.Rows) ([]*Memory, error) {
 	return memories, rows.Err()
 }
 
-// ExportJSON exports all non-deleted project memories to a JSON file.
-// Returns the number of memories exported.
-func ExportJSON(db *sql.DB, projectID, filePath string) (int, error) {
-	memories, err := SearchMemories(db, projectID, "", "", 0)
-	if err != nil {
-		return 0, fmt.Errorf("failed to query memories for export: %w", err)
-	}
-
-	data, err := json.MarshalIndent(memories, "", "  ")
-	if err != nil {
-		return 0, fmt.Errorf("failed to marshal memories JSON: %w", err)
-	}
-
-	tmpPath := filePath + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
-		return 0, fmt.Errorf("failed to write export file: %w", err)
-	}
-	if err := os.Rename(tmpPath, filePath); err != nil {
-		os.Remove(tmpPath)
-		return 0, fmt.Errorf("failed to finalize export file: %w", err)
-	}
-
-	return len(memories), nil
-}
-
-// ImportJSON imports memories from a JSON file into the database.
-// Uses upsert semantics: existing IDs are updated, new IDs are inserted.
-// Returns the number of memories imported.
-func ImportJSON(db *sql.DB, projectID, filePath string) (int, error) {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return 0, fmt.Errorf("failed to read import file: %w", err)
-	}
-
-	var memories []*Memory
-	if err := json.Unmarshal(data, &memories); err != nil {
-		return 0, fmt.Errorf("failed to parse import JSON: %w", err)
-	}
-
-	if len(memories) == 0 {
-		return 0, nil
-	}
-
-	tx, err := db.Begin()
-	if err != nil {
-		return 0, fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	query := `
-	INSERT INTO memories (id, project_id, category, what, why, where_path, learned, git_branch, git_commit, author, impact, errors_faced, next_steps, session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	ON CONFLICT(id) DO UPDATE SET
-		category = excluded.category,
-		what = excluded.what,
-		why = excluded.why,
-		where_path = excluded.where_path,
-		learned = excluded.learned,
-		git_branch = excluded.git_branch,
-		git_commit = excluded.git_commit,
-		author = excluded.author,
-		impact = excluded.impact,
-		errors_faced = excluded.errors_faced,
-		next_steps = excluded.next_steps,
-		session_id = excluded.session_id,
-		topic_key = excluded.topic_key,
-		revision_count = excluded.revision_count,
-		duplicate_count = excluded.duplicate_count,
-		last_seen_at = excluded.last_seen_at,
-		normalized_hash = excluded.normalized_hash,
-		created_at = excluded.created_at;`
-	stmt, err := tx.Prepare(query)
-	if err != nil {
-		return 0, fmt.Errorf("failed to prepare insert statement: %w", err)
-	}
-	defer stmt.Close()
-
-	for _, mem := range memories {
-		mem.ProjectID = projectID
-		createdAt := mem.CreatedAt
-		if createdAt.IsZero() {
-			createdAt = time.Now()
-		}
-		_, err := stmt.Exec(
-			mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned,
-			mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact, mem.ErrorsFaced, mem.NextSteps,
-			nullString(mem.SessionID), nullString(mem.TopicKey),
-			mem.RevisionCount, mem.DuplicateCount,
-			nullTime(mem.LastSeenAt), nullString(mem.NormalizedHash),
-			createdAt)
-		if err != nil {
-			return 0, fmt.Errorf("failed to import memory %s: %w", mem.ID, err)
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("failed to commit import: %w", err)
-	}
-
-	return len(memories), nil
-}
-
-// ExportObsidian exports all project memories as Markdown files in Obsidian vault
-// format, along with codebase structural graph nodes and edges.
-func ExportObsidian(db *sql.DB, projectID, projPath, outputDir string) error {
-	memories, err := SearchMemories(db, projectID, "", "", 0)
-	if err != nil {
-		return err
-	}
-
-	vaultDir := filepath.Join(projPath, outputDir)
-	if err := os.MkdirAll(vaultDir, 0755); err != nil {
-		return fmt.Errorf("failed to create vault directory: %w", err)
-	}
-
-	// 1. Fetch all nodes in the structural graph
-	type graphNode struct {
-		id       string
-		nodeType string
-		label    string
-		path     string
-		metadata string
-	}
-	var fileNodes []graphNode
-	var packageNodes []graphNode
-	symbolNodesByFile := make(map[string][]graphNode)
-	nodesMap := make(map[string]graphNode)
-
-	nodeRows, err := db.Query("SELECT id, node_type, label, path, metadata FROM graph_nodes WHERE project_id = ?", projectID)
-	if err == nil {
-		defer nodeRows.Close()
-		for nodeRows.Next() {
-			var n graphNode
-			var pathVal, metaVal sql.NullString
-			if errScan := nodeRows.Scan(&n.id, &n.nodeType, &n.label, &pathVal, &metaVal); errScan == nil {
-				if pathVal.Valid {
-					n.path = pathVal.String
-				}
-				if metaVal.Valid {
-					n.metadata = metaVal.String
-				}
-				nodesMap[n.id] = n
-				switch n.nodeType {
-				case "file", "document":
-					fileNodes = append(fileNodes, n)
-				case "package":
-					packageNodes = append(packageNodes, n)
-				case "function", "class":
-					symbolNodesByFile[n.path] = append(symbolNodesByFile[n.path], n)
-				}
-			}
-		}
-	}
-
-	// 2. Fetch all edges in the structural graph
-	type graphEdge struct {
-		sourceID   string
-		targetID   string
-		relType    string
-		confidence string
-		sourceLoc  sql.NullString
-	}
-	var edges []graphEdge
-	edgesBySource := make(map[string][]graphEdge)
-	edgesByTarget := make(map[string][]graphEdge)
-
-	edgeRows, err := db.Query("SELECT source_id, target_id, relation_type, confidence, source_location FROM graph_edges WHERE project_id = ?", projectID)
-	if err == nil {
-		defer edgeRows.Close()
-		for edgeRows.Next() {
-			var e graphEdge
-			if errScan := edgeRows.Scan(&e.sourceID, &e.targetID, &e.relType, &e.confidence, &e.sourceLoc); errScan == nil {
-				edges = append(edges, e)
-				edgesBySource[e.sourceID] = append(edgesBySource[e.sourceID], e)
-				edgesByTarget[e.targetID] = append(edgesByTarget[e.targetID], e)
-			}
-		}
-	}
-
-	// Pre-load memory relations for memory-to-memory links
-	type relPair struct{ source, target string }
-	allRels := make(map[string][]relPair)
-	relRows, err := db.Query("SELECT source_id, target_id FROM memory_relations WHERE project_id = ?", projectID)
-	if err == nil {
-		defer relRows.Close()
-		for relRows.Next() {
-			var s, t string
-			if relRows.Scan(&s, &t) == nil {
-				allRels[s] = append(allRels[s], relPair{s, t})
-				allRels[t] = append(allRels[t], relPair{s, t})
-			}
-		}
-	}
-
-	// 3. Export memories to root vault dir
-	for _, mem := range memories {
-		fm := fmt.Sprintf(`---
-id: "%s"
-category: "%s"
-title: "%s"
-created: "%s"
-tags: [memory/%s]
-`,
-			mem.ID,
-			mem.Category,
-			mem.What,
-			mem.CreatedAt.Format("2006-01-02"),
-			mem.Category)
-
-		if mem.TopicKey != "" {
-			fm += fmt.Sprintf(`topic_key: "%s"
-revision: %d
-`, mem.TopicKey, mem.RevisionCount)
-		}
-		if mem.WherePath != "" {
-			fm += fmt.Sprintf(`path: "%s"
-`, mem.WherePath)
-		}
-		fm += "---\n\n"
-
-		body := fmt.Sprintf("# %s\n\n**Category:** `%s`\n\n", mem.What, mem.Category)
-
-		if mem.Why != "" {
-			body += fmt.Sprintf("## Why\n%s\n\n", mem.Why)
-		}
-		if mem.Learned != "" {
-			body += fmt.Sprintf("## Learned\n%s\n\n", mem.Learned)
-		}
-		if mem.WherePath != "" {
-			body += fmt.Sprintf("**Path:** [[code/%s|%s]]\n\n", mem.WherePath, mem.WherePath)
-		}
-		if mem.Impact != "" {
-			body += fmt.Sprintf("## Impact\n%s\n\n", mem.Impact)
-		}
-		if mem.ErrorsFaced != "" {
-			body += fmt.Sprintf("## Errors Faced\n%s\n\n", mem.ErrorsFaced)
-		}
-		if mem.NextSteps != "" {
-			body += fmt.Sprintf("## Next Steps\n%s\n\n", mem.NextSteps)
-		}
-
-		// Memory relations
-		if rels, ok := allRels[mem.ID]; ok && len(rels) > 0 {
-			body += "## Related Memories\n"
-			for _, r := range rels {
-				otherID := r.target
-				if r.target == mem.ID {
-					otherID = r.source
-				}
-				body += fmt.Sprintf("- [[%s]]\n", otherID)
-			}
-			body += "\n"
-		}
-
-		// Rationales pointing from this memory to files/symbols
-		if rationaleEdges, ok := edgesBySource[mem.ID]; ok && len(rationaleEdges) > 0 {
-			body += "## Links to Codebase\n"
-			for _, edge := range rationaleEdges {
-				if edge.relType == "rationale_for" {
-					if targetNode, exists := nodesMap[edge.targetID]; exists {
-						if targetNode.nodeType == "function" || targetNode.nodeType == "class" {
-							body += fmt.Sprintf("- [[code/%s#%s|%s (%s)]]\n", targetNode.path, targetNode.label, targetNode.label, targetNode.nodeType)
-						} else {
-							body += fmt.Sprintf("- [[code/%s|%s (%s)]]\n", targetNode.id, targetNode.id, targetNode.nodeType)
-						}
-					}
-				}
-			}
-			body += "\n"
-		}
-
-		body += fmt.Sprintf("---\n*Exported from sv-memory on %s*\n", time.Now().Format("2006-01-02 15:04:05"))
-
-		content := fm + body
-		filePath := filepath.Join(vaultDir, mem.ID+".md")
-		if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-			return fmt.Errorf("failed to write memory file %s: %w", filePath, err)
-		}
-	}
-
-	// Helper to calculate relative prefix back to the root of the vault from code/ path
-	relativePrefixToRoot := func(filePath string) string {
-		parts := strings.Split(filePath, "/")
-		if len(parts) <= 1 {
-			return ""
-		}
-		var sb strings.Builder
-		for i := 0; i < len(parts)-1; i++ {
-			sb.WriteString("../")
-		}
-		return sb.String()
-	}
-
-	makeRelativeLink := func(sourceNodePath, targetNodePath, targetSymbol, label, relationType string) string {
-		sourceFilePath := "code/" + sourceNodePath + ".md"
-		prefix := relativePrefixToRoot(sourceFilePath)
-		var targetLink string
-		if relationType == "rationale_for" {
-			targetLink = prefix + targetNodePath
-		} else if strings.HasPrefix(targetNodePath, "pkg:") {
-			pkgName := strings.TrimPrefix(targetNodePath, "pkg:")
-			targetLink = prefix + "code/packages/pkg_" + pkgName
-		} else {
-			targetLink = prefix + "code/" + targetNodePath
-			if targetSymbol != "" {
-				targetLink += "#" + targetSymbol
-			}
-		}
-		return fmt.Sprintf("[[%s|%s]]", targetLink, label)
-	}
-
-	// 4. Export file nodes to vault/code/
-	for _, fn := range fileNodes {
-		exportedFilePath := filepath.Join(vaultDir, "code", fn.id+".md")
-		if err := os.MkdirAll(filepath.Dir(exportedFilePath), 0755); err != nil {
-			return fmt.Errorf("failed to create code subfolders for %s: %w", fn.id, err)
-		}
-
-		fm := fmt.Sprintf(`---
-id: "%s"
-type: "%s"
-label: "%s"
-path: "%s"
-`, fn.id, fn.nodeType, fn.label, fn.path)
-
-		var metaMap map[string]interface{}
-		if fn.metadata != "" {
-			_ = json.Unmarshal([]byte(fn.metadata), &metaMap)
-		}
-		for k, v := range metaMap {
-			if k != "line" && k != "exported" {
-				fm += fmt.Sprintf("%s: %v\n", k, v)
-			}
-		}
-		fm += "---\n\n"
-
-		body := fmt.Sprintf("# %s\n\n**Type:** `%s`\n\n", fn.label, fn.nodeType)
-
-		// Symbols inside this file
-		if symbols, ok := symbolNodesByFile[fn.id]; ok && len(symbols) > 0 {
-			body += "## Defined Symbols\n\n"
-			for _, sym := range symbols {
-				body += fmt.Sprintf("### %s\n", sym.label)
-				body += fmt.Sprintf("- **Type:** `%s`\n", sym.nodeType)
-
-				var symMeta map[string]interface{}
-				if sym.metadata != "" {
-					_ = json.Unmarshal([]byte(sym.metadata), &symMeta)
-				}
-				if lineVal, ok := symMeta["line"]; ok {
-					body += fmt.Sprintf("- **Declared on:** Line %v\n", lineVal)
-				}
-
-				// Symbol calls
-				if symEdges, ok := edgesBySource[sym.id]; ok && len(symEdges) > 0 {
-					callsFound := false
-					for _, edge := range symEdges {
-						if edge.relType == "calls" {
-							if !callsFound {
-								body += "- **Calls:**\n"
-								callsFound = true
-							}
-							targetNode, exists := nodesMap[edge.targetID]
-							var sourceLocText string
-							if edge.sourceLoc.Valid {
-								sourceLocText = fmt.Sprintf(" (at %s)", edge.sourceLoc.String)
-							}
-							if exists {
-								body += fmt.Sprintf("  - %s%s\n", makeRelativeLink(fn.id, targetNode.path, targetNode.label, targetNode.label, "calls"), sourceLocText)
-							} else {
-								body += fmt.Sprintf("  - `%s` (unresolved)%s\n", edge.targetID, sourceLocText)
-							}
-						}
-					}
-				}
-
-				// Symbol callers
-				if symEdges, ok := edgesByTarget[sym.id]; ok && len(symEdges) > 0 {
-					callersFound := false
-					for _, edge := range symEdges {
-						if edge.relType == "calls" {
-							if !callersFound {
-								body += "- **Called by:**\n"
-								callersFound = true
-							}
-							sourceNode, exists := nodesMap[edge.sourceID]
-							var sourceLocText string
-							if edge.sourceLoc.Valid {
-								sourceLocText = fmt.Sprintf(" (at %s)", edge.sourceLoc.String)
-							}
-							if exists {
-								body += fmt.Sprintf("  - %s%s\n", makeRelativeLink(fn.id, sourceNode.path, sourceNode.label, sourceNode.label, "calls"), sourceLocText)
-							} else {
-								body += fmt.Sprintf("  - `%s` (unresolved)%s\n", edge.sourceID, sourceLocText)
-							}
-						}
-					}
-				}
-				body += "\n"
-			}
-		}
-
-		// Imports / Dependencies
-		if fileEdges, ok := edgesBySource[fn.id]; ok && len(fileEdges) > 0 {
-			importsFound := false
-			for _, edge := range fileEdges {
-				if edge.relType == "imports" || edge.relType == "depends_on" || edge.relType == "references" {
-					if !importsFound {
-						body += "## Dependencies\n"
-						importsFound = true
-					}
-					targetNode, exists := nodesMap[edge.targetID]
-					if exists {
-						body += fmt.Sprintf("- **%s**: %s\n", edge.relType, makeRelativeLink(fn.id, targetNode.id, "", targetNode.label, edge.relType))
-					} else {
-						body += fmt.Sprintf("- **%s**: `%s` (unresolved)\n", edge.relType, edge.targetID)
-					}
-				}
-			}
-			if importsFound {
-				body += "\n"
-			}
-		}
-
-		// Dependents (which nodes import this)
-		if fileEdges, ok := edgesByTarget[fn.id]; ok && len(fileEdges) > 0 {
-			dependentsFound := false
-			for _, edge := range fileEdges {
-				if edge.relType == "imports" || edge.relType == "depends_on" || edge.relType == "references" {
-					if !dependentsFound {
-						body += "## Dependents\n"
-						dependentsFound = true
-					}
-					sourceNode, exists := nodesMap[edge.sourceID]
-					if exists {
-						body += fmt.Sprintf("- %s\n", makeRelativeLink(fn.id, sourceNode.id, "", sourceNode.label, edge.relType))
-					} else {
-						body += fmt.Sprintf("- `%s` (unresolved)\n", edge.sourceID)
-					}
-				}
-			}
-			if dependentsFound {
-				body += "\n"
-			}
-		}
-
-		// Decisions/Rationales referencing this file or symbols in it
-		var referencingRationales []graphEdge
-		if rEdges, ok := edgesByTarget[fn.id]; ok {
-			for _, re := range rEdges {
-				if re.relType == "rationale_for" {
-					referencingRationales = append(referencingRationales, re)
-				}
-			}
-		}
-		if symbols, ok := symbolNodesByFile[fn.id]; ok {
-			for _, sym := range symbols {
-				if rEdges, ok := edgesByTarget[sym.id]; ok {
-					for _, re := range rEdges {
-						if re.relType == "rationale_for" {
-							referencingRationales = append(referencingRationales, re)
-						}
-					}
-				}
-			}
-		}
-
-		if len(referencingRationales) > 0 {
-			body += "## Associated Memories / Decisions\n"
-			for _, re := range referencingRationales {
-				body += fmt.Sprintf("- %s\n", makeRelativeLink(fn.id, re.sourceID, "", re.sourceID, "rationale_for"))
-			}
-			body += "\n"
-		}
-
-		body += fmt.Sprintf("---\n*Exported from sv-memory on %s*\n", time.Now().Format("2006-01-02 15:04:05"))
-
-		content := fm + body
-		if err := os.WriteFile(exportedFilePath, []byte(content), 0644); err != nil {
-			return fmt.Errorf("failed to write code file %s: %w", exportedFilePath, err)
-		}
-	}
-
-	// 5. Export package nodes to vault/code/packages/
-	for _, pn := range packageNodes {
-		pkgName := strings.TrimPrefix(pn.id, "pkg:")
-		exportedFilePath := filepath.Join(vaultDir, "code", "packages", "pkg_"+pkgName+".md")
-		if err := os.MkdirAll(filepath.Dir(exportedFilePath), 0755); err != nil {
-			return fmt.Errorf("failed to create packages subfolder: %w", err)
-		}
-
-		fm := fmt.Sprintf(`---
-id: "%s"
-type: "package"
-label: "%s"
----
-
-`, pn.id, pn.label)
-
-		body := fmt.Sprintf("# Package: %s\n\n", pn.label)
-
-		// List of files that import this package
-		if fileEdges, ok := edgesByTarget[pn.id]; ok && len(fileEdges) > 0 {
-			body += "## Dependents\n"
-			for _, edge := range fileEdges {
-				sourceNode, exists := nodesMap[edge.sourceID]
-				if exists {
-					body += fmt.Sprintf("- %s\n", makeRelativeLink("packages/pkg_"+pkgName, sourceNode.id, "", sourceNode.label, edge.relType))
-				} else {
-					body += fmt.Sprintf("- `%s` (unresolved)\n", edge.sourceID)
-				}
-			}
-			body += "\n"
-		}
-
-		body += fmt.Sprintf("---\n*Exported from sv-memory on %s*\n", time.Now().Format("2006-01-02 15:04:05"))
-
-		content := fm + body
-		if err := os.WriteFile(exportedFilePath, []byte(content), 0644); err != nil {
-			return fmt.Errorf("failed to write package file %s: %w", exportedFilePath, err)
-		}
-	}
-
-	return nil
-}
-
-// SuggestTopicKey generates a topic_key suggestion in the format
-// "category/kebab-case-description" from the memory category and title.
-// This helps agents adopt a consistent naming convention for topic upserts.
 func SuggestTopicKey(category, what string) string {
 	var sb strings.Builder
 	sb.Grow(len(category) + 1 + len(what))
-
 	sb.WriteString(category)
 	sb.WriteByte('/')
-
 	for _, r := range strings.ToLower(what) {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			sb.WriteRune(r)
@@ -2603,15 +1296,11 @@ func SuggestTopicKey(category, what string) string {
 			sb.WriteByte('-')
 		}
 	}
-
 	key := sb.String()
-	// Collapse multiple consecutive hyphens
 	for strings.Contains(key, "--") {
 		key = strings.ReplaceAll(key, "--", "-")
 	}
-	// Trim leading/trailing hyphens
 	key = strings.Trim(key, "-")
-	// Limit length
 	if len(key) > 80 {
 		key = key[:80]
 	}

@@ -580,43 +580,8 @@ var graphExplainCmd = &cobra.Command{
 
 		node := g.Nodes[nodeID]
 
-		getBC := func(n *graph.Node) float64 {
-			if n.Metadata == nil {
-				return 0.0
-			}
-			val, ok := n.Metadata["betweenness_centrality"]
-			if !ok {
-				return 0.0
-			}
-			switch v := val.(type) {
-			case float64:
-				return v
-			case float32:
-				return float64(v)
-			}
-			return 0.0
-		}
-		getCommID := func(n *graph.Node) int {
-			if n.Metadata == nil {
-				return 0
-			}
-			val, ok := n.Metadata["community_id"]
-			if !ok {
-				return 0
-			}
-			switch v := val.(type) {
-			case float64:
-				return int(v)
-			case int:
-				return v
-			case int64:
-				return int(v)
-			}
-			return 0
-		}
-
-		cID := getCommID(node)
-		bc := getBC(node)
+		cID := graph.NodeCommunityID(node)
+		bc := graph.NodeBetweennessCentrality(node)
 		fanIn := g.FanIn[nodeID]
 		fanOut := g.FanOut[nodeID]
 

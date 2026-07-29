@@ -217,6 +217,44 @@ func (g *InMemoryGraph) Query(start string, maxDepth int, relationType string, d
 	return &SubGraph{Nodes: nodes, Edges: edges}
 }
 
+// NodeBetweennessCentrality extracts the betweenness_centrality value from a node's metadata.
+func NodeBetweennessCentrality(n *Node) float64 {
+	if n == nil || n.Metadata == nil {
+		return 0.0
+	}
+	val, ok := n.Metadata["betweenness_centrality"]
+	if !ok {
+		return 0.0
+	}
+	switch v := val.(type) {
+	case float64:
+		return v
+	case float32:
+		return float64(v)
+	}
+	return 0.0
+}
+
+// NodeCommunityID extracts the community_id value from a node's metadata.
+func NodeCommunityID(n *Node) int {
+	if n == nil || n.Metadata == nil {
+		return 0
+	}
+	val, ok := n.Metadata["community_id"]
+	if !ok {
+		return 0
+	}
+	switch v := val.(type) {
+	case float64:
+		return int(v)
+	case int:
+		return v
+	case int64:
+		return int(v)
+	}
+	return 0
+}
+
 // FindNode performs a fuzzy match to find a node ID, prioritizing exact matches.
 func (g *InMemoryGraph) FindNode(start string) string {
 	if _, ok := g.Nodes[start]; ok {

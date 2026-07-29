@@ -973,40 +973,6 @@ var (
 			return mcp.NewToolResultText(fmt.Sprintf("No nodes found matching '%s' in the project graph.", pathOrNode)), nil
 		}
 
-		getBC := func(node *graph.Node) float64 {
-			if node.Metadata == nil {
-				return 0.0
-			}
-			val, ok := node.Metadata["betweenness_centrality"]
-			if !ok {
-				return 0.0
-			}
-			switch v := val.(type) {
-			case float64:
-				return v
-			case float32:
-				return float64(v)
-			}
-			return 0.0
-		}
-		getCommID := func(node *graph.Node) int {
-			if node.Metadata == nil {
-				return 0
-			}
-			val, ok := node.Metadata["community_id"]
-			if !ok {
-				return 0
-			}
-			switch v := val.(type) {
-			case float64:
-				return int(v)
-			case int:
-				return v
-			case int64:
-				return int(v)
-			}
-			return 0
-		}
 		commColors := []string{
 			"#ECECFF", // light purple
 			"#FFF0F5", // lavender blush
@@ -1027,8 +993,8 @@ var (
 
 		sb.WriteString("### Nodes in Sub-graph:\n")
 		for _, node := range subGraph.Nodes {
-			cID := getCommID(node)
-			bc := getBC(node)
+			cID := graph.NodeCommunityID(node)
+			bc := graph.NodeBetweennessCentrality(node)
 			commStr := commLabelStr(cID, commLabels)
 			sb.WriteString(fmt.Sprintf("- **%s** (`%s`): %s (fan-in: %d, fan-out: %d, community: %s, BC: %.2f)\n",
 				node.Label, node.ID, node.Type, g.FanIn[node.ID], g.FanOut[node.ID], commStr, bc))
@@ -1038,7 +1004,7 @@ var (
 		// Identify potential God Nodes (degree > 10 or high betweenness centrality)
 		var godNodes []string
 		for _, node := range subGraph.Nodes {
-			bc := getBC(node)
+			bc := graph.NodeBetweennessCentrality(node)
 			if g.FanIn[node.ID] > 10 || g.FanOut[node.ID] > 10 || bc > 50.0 {
 				godNodes = append(godNodes, node.ID)
 			}
@@ -1046,7 +1012,7 @@ var (
 		if len(godNodes) > 0 {
 			sb.WriteString("### Potential God Nodes:\n")
 			for _, id := range godNodes {
-				bc := getBC(g.Nodes[id])
+				bc := graph.NodeBetweennessCentrality(g.Nodes[id])
 				sb.WriteString(fmt.Sprintf("- **%s** (fan-in: %d, fan-out: %d, BC: %.2f)\n", g.Nodes[id].Label, g.FanIn[id], g.FanOut[id], bc))
 			}
 			sb.WriteString("\n")
@@ -1067,7 +1033,7 @@ var (
 			}
 
 			for _, node := range subGraph.Nodes {
-				cID := getCommID(node)
+				cID := graph.NodeCommunityID(node)
 				if cID > 0 {
 					nodeEscaped := escapeMermaid(node.ID)
 					color := commColors[(cID-1)%len(commColors)]
@@ -1342,44 +1308,9 @@ var (
 			}
 		}
 
-		getBC := func(node *graph.Node) float64 {
-			if node.Metadata == nil {
-				return 0.0
-			}
-			val, ok := node.Metadata["betweenness_centrality"]
-			if !ok {
-				return 0.0
-			}
-			switch v := val.(type) {
-			case float64:
-				return v
-			case float32:
-				return float64(v)
-			}
-			return 0.0
-		}
-		getCommID := func(node *graph.Node) int {
-			if node.Metadata == nil {
-				return 0
-			}
-			val, ok := node.Metadata["community_id"]
-			if !ok {
-				return 0
-			}
-			switch v := val.(type) {
-			case float64:
-				return int(v)
-			case int:
-				return v
-			case int64:
-				return int(v)
-			}
-			return 0
-		}
-
 		commLabels := computeCommLabels(g)
-		cID := getCommID(node)
-		bc := getBC(node)
+		cID := graph.NodeCommunityID(node)
+		bc := graph.NodeBetweennessCentrality(node)
 		fanIn := g.FanIn[nID]
 		fanOut := g.FanOut[nID]
 
@@ -1572,42 +1503,6 @@ var (
 				g, _ = getOrLoadGraph()
 			}
 		}
-
-		getBC := func(n *graph.Node) float64 {
-			if n.Metadata == nil {
-				return 0.0
-			}
-			val, ok := n.Metadata["betweenness_centrality"]
-			if !ok {
-				return 0.0
-			}
-			switch v := val.(type) {
-			case float64:
-				return v
-			case float32:
-				return float64(v)
-			}
-			return 0.0
-		}
-		getCommID := func(n *graph.Node) int {
-			if n.Metadata == nil {
-				return 0
-			}
-			val, ok := n.Metadata["community_id"]
-			if !ok {
-				return 0
-			}
-			switch v := val.(type) {
-			case float64:
-				return int(v)
-			case int:
-				return v
-			case int64:
-				return int(v)
-			}
-			return 0
-		}
-
 		type rankedNode struct {
 			id    string
 			node  *graph.Node
@@ -1622,8 +1517,8 @@ var (
 				id:     id,
 				node:   n,
 				degree: deg,
-				bc:     getBC(n),
-				comm:   getCommID(n),
+				bc:     graph.NodeBetweennessCentrality(n),
+				comm:   graph.NodeCommunityID(n),
 			})
 		}
 		sort.Slice(ranked, func(i, j int) bool {
