@@ -149,6 +149,11 @@ func EndSession(db *sql.DB, id, summary string) error {
 
 // SaveSessionSummary updates the goal and summary fields of a session.
 func SaveSessionSummary(db *sql.DB, id, goal, discoveries, accomplished, nextSteps, files string) error {
+	goal = security.SanitizeText(goal)
+	discoveries = security.SanitizeText(discoveries)
+	accomplished = security.SanitizeText(accomplished)
+	nextSteps = security.SanitizeText(nextSteps)
+	files = security.SanitizeText(files)
 	summary := fmt.Sprintf("Goal: %s\nDiscoveries: %s\nAccomplished: %s\nNext Steps: %s\nFiles: %s",
 		goal, discoveries, accomplished, nextSteps, files)
 	result, err := db.Exec("UPDATE sessions SET goal = ?, summary = ? WHERE id = ?", goal, summary, id)
@@ -1670,6 +1675,8 @@ func SaveJudgment(db *sql.DB, projectID, sourceID, targetID, relationType, reaso
 	}
 	id := uuid.New().String()[:8]
 	now := time.Now()
+	reason = security.SanitizeText(reason)
+	judgedBy = security.SanitizeText(judgedBy)
 
 	// Check if both memories exist and are not deleted
 	var srcExists, tgtExists bool
