@@ -1,14 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
@@ -1002,6 +1003,51 @@ var syncCmd = &cobra.Command{
 	},
 }
 
+func promptMultiSelect(title string, options []string) ([]string, error) {
+	fmt.Printf("\n=== %s ===\n", title)
+	for i, opt := range options {
+		fmt.Printf("  %2d. %s\n", i+1, opt)
+	}
+	fmt.Print("\nIngresa los números separados por coma (ej: 1,3,4) o 0 para ninguno: ")
+	reader := bufio.NewReader(os.Stdin)
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return nil, err
+	}
+	input = strings.TrimSpace(input)
+	if input == "" || input == "0" {
+		return nil, nil
+	}
+	parts := strings.Split(input, ",")
+	selected := make([]string, 0, len(parts))
+	seen := make(map[int]bool)
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 1 || n > len(options) {
+			fmt.Printf("  Opción inválida: %s, ignorada.\n", p)
+			continue
+		}
+		if seen[n] {
+			continue
+		}
+		seen[n] = true
+		selected = append(selected, options[n-1])
+	}
+	return selected, nil
+}
+
+func promptConfirm(msg string) (bool, error) {
+	fmt.Printf("%s (s/N): ", msg)
+	reader := bufio.NewReader(os.Stdin)
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return false, err
+	}
+	input = strings.TrimSpace(strings.ToLower(input))
+	return input == "s" || input == "si" || input == "y" || input == "yes", nil
+}
+
 var configureCmd = &cobra.Command{
 	Use:   "configure",
 	Short: "Configure local editor and CLI environments (Cursor, VS Code, Zed, Windsurf, Claude Code, OpenCode, Codex, Antigravity) with sv-memory",
@@ -1023,13 +1069,11 @@ var configureCmd = &cobra.Command{
 		}
 
 		var selectedEditorLabels []string
-		editorPrompt := &survey.MultiSelect{
-			Message: "Selecciona los editores de código que deseas configurar:",
-			Options: editorOptions,
-		}
-		
-		fmt.Println("=== CONFIGURACIÓN DE EDITORES DE CÓDIGO ===")
-		err := survey.AskOne(editorPrompt, &selectedEditorLabels)
+		var err error
+		selectedEditorLabels, err = promptMultiSelect(
+			"CONFIGURACIÓN DE EDITORES DE CÓDIGO",
+			editorOptions,
+		)
 		if err != nil {
 			return err
 		}
@@ -1056,13 +1100,10 @@ var configureCmd = &cobra.Command{
 		}
 
 		var selectedCLILabels []string
-		cliPrompt := &survey.MultiSelect{
-			Message: "Selecciona las herramientas CLI que deseas configurar:",
-			Options: cliOptions,
-		}
-
-		fmt.Println("=== CONFIGURACIÓN DE CLIs DE TERMINAL ===")
-		err = survey.AskOne(cliPrompt, &selectedCLILabels)
+		selectedCLILabels, err = promptMultiSelect(
+			"CONFIGURACIÓN DE CLIs DE TERMINAL",
+			cliOptions,
+		)
 		if err != nil {
 			return err
 		}
@@ -1088,13 +1129,7 @@ var configureCmd = &cobra.Command{
 		}
 		fmt.Println()
 
-		confirm := false
-		confirmPrompt := &survey.Confirm{
-			Message: "¿Deseas aplicar estos cambios y ver las instrucciones?",
-			Default: true,
-		}
-		
-		err = survey.AskOne(confirmPrompt, &confirm)
+		confirm, err := promptConfirm("¿Deseas aplicar estos cambios y ver las instrucciones?")
 		if err != nil {
 			return err
 		}
