@@ -21,6 +21,7 @@ import (
 	"github.com/svtech/sv-memory/internal/db"
 	"github.com/svtech/sv-memory/internal/graph"
 	"github.com/svtech/sv-memory/internal/memory"
+	"github.com/svtech/sv-memory/internal/security"
 	"github.com/spf13/viper"
 )
 
@@ -493,6 +494,7 @@ var (
 		}
 		category := req.GetString("category", "")
 		pathFilter := req.GetString("path", "")
+		pathFilter = security.SanitizeSQLitePathFilter(pathFilter)
 		limitStr := req.GetString("limit", "10")
 		offsetStr := req.GetString("offset", "0")
 
@@ -1737,6 +1739,10 @@ var (
 		}
 
 		output := req.GetString("output", "graph.html")
+		output, err = security.ValidateWritePath(cfg.ProjPath, output)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("invalid output path: %v", err)), nil
+		}
 
 		comms := g.LeidenDetectCommunities()
 		centrality := g.BetweennessCentrality()
@@ -1772,6 +1778,12 @@ var (
 			return mcp.NewToolResultError("missing required field: project_b"), nil
 		}
 		output := req.GetString("output", "")
+		if output != "" {
+			output, err = security.ValidateWritePath(cfg.ProjPath, output)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("invalid output path: %v", err)), nil
+			}
+		}
 
 		mergeDB, err := db.InitDB(cfg.DBPath)
 		if err != nil {

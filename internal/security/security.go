@@ -1,7 +1,10 @@
 package security
 
 import (
+	"fmt"
+	"path/filepath"
 	"regexp"
+	"strings"
 )
 
 // Regex patterns and their replacements for detecting and redacting common secrets.
@@ -46,4 +49,28 @@ func SanitizeText(input string) string {
 	}
 
 	return sanitized
+}
+
+// ValidateWritePath checks that userPath, when resolved against projPath,
+// stays within projPath. Returns the cleaned absolute path or an error.
+func ValidateWritePath(projPath, userPath string) (string, error) {
+	absPath, err := filepath.Abs(filepath.Join(projPath, userPath))
+	if err != nil {
+		return "", fmt.Errorf("invalid path: %w", err)
+	}
+	projAbs, err := filepath.Abs(projPath)
+	if err != nil {
+		return "", fmt.Errorf("invalid project path: %w", err)
+	}
+	if !strings.HasPrefix(absPath, projAbs) {
+		return "", fmt.Errorf("path %q escapes project directory", userPath)
+	}
+	return absPath, nil
+}
+
+// SanitizeSQLitePathFilter escapes SQL LIKE wildcards (% and _) in path filter input.
+func SanitizeSQLitePathFilter(input string) string {
+	input = strings.ReplaceAll(input, "%", "\\%")
+	input = strings.ReplaceAll(input, "_", "\\_")
+	return input
 }
