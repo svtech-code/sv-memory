@@ -750,11 +750,15 @@ func SearchMemoriesScoped(db *sql.DB, projectID string, searchTerm string, categ
 		mem.GitBranch = gitBranch.String
 		mem.GitCommit = gitCommit.String
 		mem.Author = author.String
-		mem.Impact = impact.String
-		mem.ErrorsFaced = errorsFaced.String
-		mem.NextSteps = nextSteps.String
+		mem.Impact = security.SanitizeText(impact.String)
+		mem.ErrorsFaced = security.SanitizeText(errorsFaced.String)
+		mem.NextSteps = security.SanitizeText(nextSteps.String)
 		mem.SessionID = sessionID.String
 		mem.TopicKey = topicKey.String
+		mem.What = security.SanitizeText(mem.What)
+		mem.Why = security.SanitizeText(mem.Why)
+		mem.Learned = security.SanitizeText(mem.Learned)
+		mem.WherePath = security.SanitizeText(mem.WherePath)
 		if revisionCount.Valid {
 			mem.RevisionCount = int(revisionCount.Int64)
 		}
