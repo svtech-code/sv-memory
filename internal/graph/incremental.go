@@ -97,7 +97,16 @@ func syncGraphFull(db *sql.DB, projectID string, projPath string) error {
 // is recommended (no prior meta or too many changes), or (false, err) on
 // database error.
 func trySyncGraphIncremental(db *sql.DB, projectID string, projPath string) (bool, error) {
-	wr, err := scanFiles(projPath)
+	return trySyncGraphIncrementalFiltered(db, projectID, projPath, nil)
+}
+
+// trySyncGraphIncrementalFiltered is trySyncGraphIncremental with an optional
+// readOnly set. When readOnly is non-nil, only those files are read and parsed
+// for symbols; every other supported file is still registered as a file node
+// via its mtime/size so import resolution stays intact. This avoids re-reading
+// the whole project when only a few files changed.
+func trySyncGraphIncrementalFiltered(db *sql.DB, projectID string, projPath string, readOnly map[string]bool) (bool, error) {
+	wr, err := scanFilesFiltered(projPath, readOnly)
 	if err != nil {
 		return false, err
 	}

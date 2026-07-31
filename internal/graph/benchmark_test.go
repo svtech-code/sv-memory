@@ -276,6 +276,70 @@ func BenchmarkSyncGraphIncremental(b *testing.B) {
 	}
 }
 
+// BenchmarkSyncGraphIfStale measures the lazy freshness path: on a clean tree
+// it is a cheap mtime probe (no re-parse); on a single-file change it only
+// re-reads the changed file instead of the whole project.
+func BenchmarkSyncGraphIfStale(b *testing.B) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-bench-ifstale")
+	if err != nil {
+		b.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "bench.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		b.Fatalf("failed to init DB: %v", err)
+	}
+
+	projectID := "bench-ifstale"
+	if err := db.RegisterProject(database, projectID, "Bench IfStale", tempDir); err != nil {
+		b.Fatalf("failed to register project: %v", err)
+	}
+
+	for i := 0; i < 100; i++ {
+		content := fmt.Sprintf(`package main; import "./mod%d"; func fn%d() {}`, i%5, i)
+		if err := os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("f%d.go", i)), []byte(content), 0644); err != nil {
+			b.Fatalf("failed writing f%d.go: %v", i, err)
+		}
+	}
+
+	if err := SyncGraph(database, projectID, tempDir); err != nil {
+		b.Fatalf("failed initial sync: %v", err)
+	}
+	database.Close()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		database, err = db.InitDB(dbPath)
+		if err != nil {
+			b.Fatalf("failed to init DB: %v", err)
+		}
+
+		// Clean case: no changes → cheap mtime probe only.
+		if _, err := SyncGraphIfStale(database, projectID, tempDir); err != nil {
+			b.Fatalf("SyncGraphIfStale clean: %v", err)
+		}
+
+		// Change one file → incremental refresh restricted to that file.
+		content := fmt.Sprintf(`package main; import "./mod%d"; func fn%d() {}`, i%5, 9999+i)
+		if err := os.WriteFile(filepath.Join(tempDir, "f0.go"), []byte(content), 0644); err != nil {
+			b.Fatalf("failed writing f0.go: %v", err)
+		}
+		if _, err := SyncGraphIfStale(database, projectID, tempDir); err != nil {
+			b.Fatalf("SyncGraphIfStale changed: %v", err)
+		}
+
+		// Restore for next iteration.
+		content = fmt.Sprintf(`package main; import "./mod%d"; func fn0() {}`, i%5)
+		if err := os.WriteFile(filepath.Join(tempDir, "f0.go"), []byte(content), 0644); err != nil {
+			b.Fatalf("failed restoring f0.go: %v", err)
+		}
+
+		database.Close()
+	}
+}
+
 func BenchmarkSyncGraphWithMarkdownDeep(b *testing.B) {
 	tempDir, err := os.MkdirTemp("", "sv-mem-bench-mddeep")
 	if err != nil {

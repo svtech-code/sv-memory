@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/svtech/sv-memory/internal/db"
 )
@@ -1312,4 +1313,152 @@ func stringSliceEqual(a, b []string) bool {
 		m[v]--
 	}
 	return true
+}
+
+// TestDetectStaleFiles verifies the cheap mtime/size probe: unchanged files are
+// not reported, a modified file and a new file are reported as Changed, and a
+// removed file is reported as Deleted.
+func TestDetectStaleFiles(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-stale-test")
+	if err != nil {
+		t.Fatalf("failed to create temp workspace: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_stale.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "prog-stale-test"
+	if err := db.RegisterProject(database, projectID, "Stale Test", tempDir); err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// a.js unchanged, b.js will be modified.
+	os.WriteFile(filepath.Join(tempDir, "a.js"), []byte("export const a = 1;"), 0644)
+	os.WriteFile(filepath.Join(tempDir, "b.js"), []byte("export const b = 1;"), 0644)
+
+	if err := SyncGraph(database, projectID, tempDir); err != nil {
+		t.Fatalf("initial SyncGraph failed: %v", err)
+	}
+
+	// No changes yet → report must be clean.
+	stale, err := DetectStaleFiles(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("DetectStaleFiles: %v", err)
+	}
+	if stale.HasChanges || stale.NeedsFull {
+		t.Fatalf("expected clean report right after sync, got changed=%v deleted=%v needsFull=%v", stale.Changed, stale.Deleted, stale.NeedsFull)
+	}
+
+	// Modify b.js and add c.js, keep a.js untouched.
+	time.Sleep(5 * time.Millisecond)
+	os.WriteFile(filepath.Join(tempDir, "b.js"), []byte("export const b = 2;"), 0644)
+	os.WriteFile(filepath.Join(tempDir, "c.js"), []byte("export const c = 1;"), 0644)
+
+	stale, err = DetectStaleFiles(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("DetectStaleFiles after changes: %v", err)
+	}
+	if !stale.HasChanges {
+		t.Fatal("expected HasChanges after modifying b.js and adding c.js")
+	}
+	if !containsStr(stale.Changed, "b.js") {
+		t.Errorf("expected b.js in Changed, got %v", stale.Changed)
+	}
+	if !containsStr(stale.Changed, "c.js") {
+		t.Errorf("expected c.js in Changed, got %v", stale.Changed)
+	}
+	if containsStr(stale.Changed, "a.js") {
+		t.Errorf("a.js is unchanged but reported as changed: %v", stale.Changed)
+	}
+
+	// Remove a.js → must be reported as Deleted.
+	os.Remove(filepath.Join(tempDir, "a.js"))
+	stale, err = DetectStaleFiles(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("DetectStaleFiles after deletion: %v", err)
+	}
+	if !containsStr(stale.Deleted, "a.js") {
+		t.Errorf("expected a.js in Deleted, got %v", stale.Deleted)
+	}
+}
+
+// TestSyncGraphIfStale verifies the lazy refresh path: no-op when clean,
+// incremental refresh on change, and the graph reflects the new file.
+func TestSyncGraphIfStale(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-ifstale-test")
+	if err != nil {
+		t.Fatalf("failed to create temp workspace: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_ifstale.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "prog-ifstale-test"
+	if err := db.RegisterProject(database, projectID, "IfStale Test", tempDir); err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	os.WriteFile(filepath.Join(tempDir, "a.js"), []byte(`import b from './b';`), 0644)
+	os.WriteFile(filepath.Join(tempDir, "b.js"), []byte("export const b = 1;"), 0644)
+	if err := SyncGraph(database, projectID, tempDir); err != nil {
+		t.Fatalf("initial SyncGraph failed: %v", err)
+	}
+
+	// Clean → SyncGraphIfStale must be a no-op.
+	synced, err := SyncGraphIfStale(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("SyncGraphIfStale clean: %v", err)
+	}
+	if synced {
+		t.Error("expected SyncGraphIfStale to be a no-op when nothing changed")
+	}
+
+	// Change b.js to import a new file d.js, and add d.js.
+	time.Sleep(5 * time.Millisecond)
+	os.WriteFile(filepath.Join(tempDir, "b.js"), []byte(`import d from './d'; export const b = 2;`), 0644)
+	os.WriteFile(filepath.Join(tempDir, "d.js"), []byte("export const d = 1;"), 0644)
+
+	synced, err = SyncGraphIfStale(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("SyncGraphIfStale changed: %v", err)
+	}
+	if !synced {
+		t.Error("expected SyncGraphIfStale to refresh after a change")
+	}
+
+	// d.js must now exist in the graph.
+	var count int
+	if err := database.QueryRow("SELECT COUNT(*) FROM graph_nodes WHERE project_id = ? AND id = 'd.js'", projectID).Scan(&count); err != nil {
+		t.Fatalf("count d.js: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected d.js node after lazy refresh, got %d", count)
+	}
+
+	// b.js -> d.js edge must exist.
+	if err := database.QueryRow("SELECT COUNT(*) FROM graph_edges WHERE project_id = ? AND source_id = 'b.js' AND target_id = 'd.js' AND relation_type = 'imports'", projectID).Scan(&count); err != nil {
+		t.Fatalf("count b.js->d.js edge: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected b.js->d.js edge after lazy refresh, got %d", count)
+	}
+}
+
+func containsStr(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
 }

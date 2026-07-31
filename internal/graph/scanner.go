@@ -244,6 +244,15 @@ var symbolScanExts = map[string]bool{
 	".vue": true, ".svelte": true, ".md": true, ".sql": true,
 }
 
+// supportedScanExts lists every extension that participates in the code graph.
+// Used by both scanFiles (full scan) and DetectStaleFiles (cheap mtime probe).
+var supportedScanExts = map[string]bool{
+	".go": true, ".py": true, ".js": true, ".jsx": true, ".ts": true, ".tsx": true,
+	".html": true, ".php": true, ".css": true, ".astro": true, ".sh": true,
+	".lua": true, ".rb": true, ".rs": true, ".java": true, ".vue": true,
+	".svelte": true, ".md": true, ".sql": true,
+}
+
 var manifestFilenames = []string{"package.json", "go.mod", "requirements.txt", "Cargo.toml", "composer.json", "Gemfile"}
 
 type walkResult struct {
@@ -260,6 +269,16 @@ type fileMetaEntry struct {
 }
 
 func scanFiles(projPath string) (*walkResult, error) {
+	return scanFilesFiltered(projPath, nil)
+}
+
+// scanFilesFiltered walks the project and builds nodes/edges metadata. When
+// readOnly is non-nil, only those relative paths are read from disk and parsed
+// for symbols; every other supported file is still registered as a file node
+// (with its mtime/size) so import resolution keeps working, but its content is
+// not read. When readOnly is nil every supported file is fully scanned (the
+// original full-scan behaviour).
+func scanFilesFiltered(projPath string, readOnly map[string]bool) (*walkResult, error) {
 	nodes := make(map[string]*Node)
 	fileList := []string{}
 	fileMeta := make(map[string]fileMetaEntry)
@@ -295,52 +314,55 @@ func scanFiles(projPath string) (*walkResult, error) {
 		}
 
 		ext := strings.ToLower(filepath.Ext(relPath))
-		switch ext {
-		case ".go", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".php", ".css", ".astro", ".sh", ".lua", ".rb", ".rs", ".java", ".vue", ".svelte", ".md", ".sql":
-			fi, fiErr := os.Stat(path)
-			mtimeMs := int64(0)
-			size := int64(0)
-			if fiErr == nil {
-				mtimeMs = fi.ModTime().UnixMilli()
-				size = fi.Size()
-			}
+		if !supportedScanExts[ext] {
+			return nil
+		}
 
-			baseMeta := map[string]interface{}{
-				"extension": ext,
-				"size":      size,
-			}
+		fi, fiErr := os.Stat(path)
+		mtimeMs := int64(0)
+		size := int64(0)
+		if fiErr == nil {
+			mtimeMs = fi.ModTime().UnixMilli()
+			size = fi.Size()
+		}
 
-			if symbolScanExts[ext] {
-				content, readErr := os.ReadFile(path)
-				if readErr == nil {
-					fileContents[relPath] = content
-					symbolNodes, symMeta := parseSymbols(relPath, ext, content)
-					for k, v := range symMeta {
-						baseMeta[k] = v
-					}
-					for _, sn := range symbolNodes {
-						nodes[sn.ID] = sn
-					}
+		baseMeta := map[string]interface{}{
+			"extension": ext,
+			"size":      size,
+		}
+
+		// Read + parse symbols only when this file is in the requested set
+		// (or when doing a full scan with readOnly == nil).
+		if symbolScanExts[ext] && (readOnly == nil || readOnly[relPath]) {
+			content, readErr := os.ReadFile(path)
+			if readErr == nil {
+				fileContents[relPath] = content
+				symbolNodes, symMeta := parseSymbols(relPath, ext, content)
+				for k, v := range symMeta {
+					baseMeta[k] = v
+				}
+				for _, sn := range symbolNodes {
+					nodes[sn.ID] = sn
 				}
 			}
-
-			nodeType := "file"
-			switch ext {
-			case ".md":
-				nodeType = "document"
-			case ".sql":
-				nodeType = "sql"
-			}
-			nodes[relPath] = &Node{
-				ID:       relPath,
-				Type:     nodeType,
-				Label:    filepath.Base(relPath),
-				Path:     relPath,
-				Metadata: baseMeta,
-			}
-			fileList = append(fileList, relPath)
-			fileMeta[relPath] = fileMetaEntry{mtimeMs: mtimeMs, size: size}
 		}
+
+		nodeType := "file"
+		switch ext {
+		case ".md":
+			nodeType = "document"
+		case ".sql":
+			nodeType = "sql"
+		}
+		nodes[relPath] = &Node{
+			ID:       relPath,
+			Type:     nodeType,
+			Label:    filepath.Base(relPath),
+			Path:     relPath,
+			Metadata: baseMeta,
+		}
+		fileList = append(fileList, relPath)
+		fileMeta[relPath] = fileMetaEntry{mtimeMs: mtimeMs, size: size}
 		return nil
 	})
 	if err != nil {

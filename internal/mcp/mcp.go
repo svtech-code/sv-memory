@@ -261,6 +261,16 @@ var (
 
 
 	getOrLoadGraph := func() (*graph.InMemoryGraph, error) {
+		// Lazy freshness: refresh the graph only when files changed on disk.
+		// This keeps the graph current across edits without a filesystem
+		// watcher, and without re-scanning on every query when nothing changed.
+		startStale := time.Now()
+		if synced, err := graph.SyncGraphIfStale(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
+			return nil, err
+		} else if synced {
+			debugLog("graph lazy sync ran in %s", time.Since(startStale))
+		}
+
 		if cached, ok := graph.GlobalGraphCache.Get(pool.Reader, cfg.ProjectID); ok {
 			return cached, nil
 		}
@@ -1230,7 +1240,7 @@ var (
 
 	s.AddTool(graphSyncTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		startSync := time.Now()
-		err := graph.SyncGraph(pool.Writer, cfg.ProjectID, cfg.ProjPath)
+		synced, err := graph.SyncGraphIfStale(pool.Writer, cfg.ProjectID, cfg.ProjPath)
 		debugLog("graph_sync rebuild took %s", time.Since(startSync))
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to sync graph: %v", err)), nil
@@ -1241,6 +1251,9 @@ var (
 		// Invalidate in-memory cache so the next sv_graph_query reloads fresh
 		// data from the rebuilt graph tables.
 		graph.GlobalGraphCache.Invalidate(cfg.ProjectID)
+		if !synced {
+			return mcp.NewToolResultText("Dependency graph is already up to date (no file changes detected)."), nil
+		}
 		return mcp.NewToolResultText("Dependency graph refreshed and synchronized successfully in SQLite."), nil
 	})
 
