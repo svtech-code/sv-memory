@@ -1073,5 +1073,23 @@
     "normalized_hash": "40842ed42491ac0b3c39b160c7310e8612d014b6c76eefef92e780dd5d00aeb5",
     "deleted_at": "0001-01-01T00:00:00Z",
     "created_at": "2026-07-31T01:31:50.235762-04:00"
+  },
+  {
+    "id": "7e77529e",
+    "project_id": "ce22c23ac33d7a36",
+    "category": "journal",
+    "what": "Pendientes de robustecimiento y release v0.1.0 tras renombrar module path",
+    "why": "El usuario pausó el trabajo. Cambios del module path y URLs quedaron staged (sin commitear) para que él los revisé. Hay pendientes acordados para la próxima sesión.",
+    "learned": "Estado actual: go.mod e imports renombrados a github.com/svtech-code/sv-memory (build/vet/tests OK), URLs corregidas en install.sh/README/README_ES/getting_started_guide. Cambios staged sin commit — el usuario hará el commit manual.",
+    "git_branch": "main",
+    "git_commit": "547f090",
+    "author": "Mario Sandoval (Sv Tech)",
+    "impact": "Commit previo deshecho con git reset --soft HEAD~1; cambios intactos en el index.",
+    "next_steps": "1) Fase seguridad: ampliar redactores (AWS AKIA, GitHub ghp_/github_pat_, GitLab glpat-, Slack xoxb-, Stripe sk_live_/sk_test_, Authorization Bearer, .env, sk-or-, secrets cortos) + tests. 2) Subir Go a 1.26.4 (3 vulns stdlib). 3) gitleaks scan historial. 4) Cobertura tests (cmd/tui/extractor/mcp) + CI. 5) comando sv-memory version. 6) Release v0.1.0 (GoReleaser, tags, badges).",
+    "session_id": "b32dab42",
+    "last_seen_at": "0001-01-01T00:00:00Z",
+    "normalized_hash": "aadd2a370ec88deced6fffe79f4fde2208ce2f3d06e68a78244cfd0ea7419f76",
+    "deleted_at": "0001-01-01T00:00:00Z",
+    "created_at": "2026-07-31T01:40:03.790885-04:00"
   }
 ]
