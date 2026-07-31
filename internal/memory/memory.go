@@ -23,6 +23,7 @@ type MemorySearchResult struct {
 	RevisionCount  int       `json:"revision_count,omitempty"`
 	DuplicateCount int       `json:"duplicate_count,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
+	Score          float64   `json:"score,omitempty"`
 }
 
 type Memory struct {
@@ -364,7 +365,8 @@ func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string
 		searchTerm = sanitizeFTS5Query(searchTerm)
 		query = `
 		SELECT m.id, m.category, m.what,
-			m.topic_key, m.revision_count, m.duplicate_count, m.created_at
+			m.topic_key, m.revision_count, m.duplicate_count, m.created_at,
+			bm25(memories_fts, 10.0, 5.0, 2.0) AS score
 		FROM memories m
 		JOIN memories_fts f ON m.rowid = f.rowid
 		WHERE m.project_id = ? AND memories_fts MATCH ? AND m.deleted_at IS NULL
@@ -395,7 +397,46 @@ func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string
 		return nil, fmt.Errorf("failed searching compact memories: %w", err)
 	}
 	defer rows.Close()
-	return scanCompactMemories(rows)
+
+	if searchTerm == "" {
+		return scanCompactMemories(rows)
+	}
+	return scanCompactMemoriesScored(rows)
+}
+
+// scanCompactMemoriesScored is the FTS5 variant of scanCompactMemories; it also
+// reads the BM25 score column so the agent can see per-result relevance.
+func scanCompactMemoriesScored(rows *sql.Rows) ([]*MemorySearchResult, error) {
+	var results []*MemorySearchResult
+	for rows.Next() {
+		var r MemorySearchResult
+		var createdAtStr string
+		var topicKey sql.NullString
+		var revisionCount, duplicateCount sql.NullInt64
+		var score sql.NullFloat64
+		err := rows.Scan(&r.ID, &r.Category, &r.What, &topicKey, &revisionCount, &duplicateCount, &createdAtStr, &score)
+		if err != nil {
+			return nil, fmt.Errorf("failed scanning compact memory row: %w", err)
+		}
+		r.TopicKey = topicKey.String
+		r.What = security.SanitizeText(r.What)
+		if revisionCount.Valid {
+			r.RevisionCount = int(revisionCount.Int64)
+		}
+		if duplicateCount.Valid {
+			r.DuplicateCount = int(duplicateCount.Int64)
+		}
+		if score.Valid {
+			r.Score = score.Float64
+		}
+		if t, err := parseTime(createdAtStr); err == nil {
+			r.CreatedAt = t
+		} else {
+			r.CreatedAt = time.Now()
+		}
+		results = append(results, &r)
+	}
+	return results, rows.Err()
 }
 
 func scanCompactMemories(rows *sql.Rows) ([]*MemorySearchResult, error) {
@@ -806,6 +847,11 @@ func memoryInsertConflictQuery() string {
 		created_at = excluded.created_at;`
 }
 
+// sanitizeFTS5Query tokenizes a raw user query into a safe FTS5 MATCH
+// expression. Every token is quoted (neutralizing operator words and special
+// characters) and tokens of two or more characters get a prefix wildcard (e.g.
+// "component" -> "component*") so inflections and word variants are matched
+// too. Empty input returns "".
 func sanitizeFTS5Query(term string) string {
 	tokens := strings.Fields(term)
 	if len(tokens) == 0 {
@@ -814,7 +860,11 @@ func sanitizeFTS5Query(term string) string {
 	quoted := make([]string, 0, len(tokens))
 	for _, t := range tokens {
 		cleaned := strings.ReplaceAll(t, `"`, ``)
-		quoted = append(quoted, `"`+cleaned+`"`)
+		if len([]rune(cleaned)) >= 2 {
+			quoted = append(quoted, `"`+cleaned+`"*`)
+		} else {
+			quoted = append(quoted, `"`+cleaned+`"`)
+		}
 	}
 	return strings.Join(quoted, " ")
 }

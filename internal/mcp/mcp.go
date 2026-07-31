@@ -594,13 +594,16 @@ var (
 		// Agent drills down with sv_mem_get for full content.
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("Found %d relevant project memories (use `sv_mem_get` for full content, `sv_mem_timeline` for context):\n\n", len(results)))
-		for _, r := range results {
+		for i, r := range results {
 			sb.WriteString(fmt.Sprintf("### [%s] %s (ID: %s)\n", strings.ToUpper(r.Category), r.What, r.ID))
 			if r.TopicKey != "" {
 				sb.WriteString(fmt.Sprintf("* **Topic:** `%s` (revision %d)\n", r.TopicKey, r.RevisionCount))
 			}
 			if r.DuplicateCount > 0 {
 				sb.WriteString(fmt.Sprintf("* **Duplicates:** %d\n", r.DuplicateCount))
+			}
+			if r.Score != 0 {
+				sb.WriteString(fmt.Sprintf("* **Relevance:** %.2f (rank %d)\n", r.Score, i+1))
 			}
 			sb.WriteString(fmt.Sprintf("* **Date:** %s\n", r.CreatedAt.Format("2006-01-02")))
 		}

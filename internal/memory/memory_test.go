@@ -974,12 +974,13 @@ func TestSanitizeFTS5Query(t *testing.T) {
 		want  string
 	}{
 		{"empty", "", ""},
-		{"normal phrase", "sv-memory protocol", `"sv-memory" "protocol"`},
-		{"column targeting chars", "memory: protocol", `"memory:" "protocol"`},
-		{"double quotes", `foo "bar"`, `"foo" "bar"`},
-		{"AND operator", "foo AND bar", `"foo" "AND" "bar"`},
-		{"special chars", `-WAL memory (`, `"-WAL" "memory" "("`},
-		{"multiple spaces", "foo   bar", `"foo" "bar"`},
+		{"normal phrase", "sv-memory protocol", `"sv-memory"* "protocol"*`},
+		{"column targeting chars", "memory: protocol", `"memory:"* "protocol"*`},
+		{"double quotes", `foo "bar"`, `"foo"* "bar"*`},
+		{"AND operator", "foo AND bar", `"foo"* "AND"* "bar"*`},
+		{"special chars", `-WAL memory (`, `"-WAL"* "memory"* "("`},
+		{"multiple spaces", "foo   bar", `"foo"* "bar"*`},
+		{"single char token stays exact", "a protocol", `"a" "protocol"*`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1037,6 +1038,61 @@ func TestFTS5WithSpecialChars(t *testing.T) {
 			// Should not error — may or may not find results
 			_ = results
 		})
+	}
+}
+
+func TestFTS5PrefixMatchingAndScore(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-prefix-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "test-prefix"
+	if err := db.RegisterProject(database, projectID, "Prefix Test", tempDir); err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	_, err = SaveMemory(database, &Memory{
+		ID: "pfx-1", ProjectID: projectID, Category: "standard",
+		What: "component card pattern", Why: "reusable UI components",
+		Learned: "always use the card component", CreatedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("failed to save memory: %v", err)
+	}
+	_, err = SaveMemory(database, &Memory{
+		ID: "pfx-2", ProjectID: projectID, Category: "decision",
+		What: "avoid component library", Why: "keep deps light",
+		Learned: "no heavy frameworks", CreatedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("failed to save memory: %v", err)
+	}
+
+	// Singular query must match the plural "components" in pfx-1 via prefix.
+	results, err := SearchMemoriesCompact(database, projectID, "component", "", 10, 0)
+	if err != nil {
+		t.Fatalf("search 'component': %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected prefix match for 'component' to find 'components'")
+	}
+	if results[0].ID != "pfx-1" {
+		t.Errorf("expected pfx-1 first, got %s", results[0].ID)
+	}
+	if results[0].Score == 0 {
+		t.Error("expected a non-zero BM25 score on FTS results")
+	}
+	if results[0].Score > 0 {
+		t.Errorf("expected negative BM25 score (lower is better), got %v", results[0].Score)
 	}
 }
 
