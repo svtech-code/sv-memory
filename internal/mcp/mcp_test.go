@@ -707,3 +707,60 @@ func TestSessionLifecycleAndJudges(t *testing.T) {
 		t.Errorf("delete failed: %v", err)
 	}
 }
+
+// TestAllToolsMatchesRegisteredTools is the guard test for the single source
+// of truth: every tool registered via NewTool/AddTool in NewServer MUST have a
+// matching entry in AllTools (used by the permission manager). It parses the
+// mcp.go source to collect the registered names instead of relying on a server
+// instance, keeping the test lightweight and independent of DB setup.
+func TestAllToolsMatchesRegisteredTools(t *testing.T) {
+	src, err := os.ReadFile("mcp.go")
+	if err != nil {
+		t.Fatalf("failed to read mcp.go: %v", err)
+	}
+
+	registered := map[string]bool{}
+	for _, line := range strings.Split(string(src), "\n") {
+		idx := strings.Index(line, `mcp.NewTool("`)
+		if idx == -1 {
+			continue
+		}
+		rest := line[idx+len(`mcp.NewTool("`):]
+		end := strings.Index(rest, `"`)
+		if end <= 0 {
+			continue
+		}
+		name := rest[:end]
+		if strings.HasPrefix(name, "sv_") || strings.HasPrefix(name, "sv_graph_") {
+			registered[name] = true
+		}
+	}
+
+	if len(registered) == 0 {
+		t.Fatal("no registered tools found in mcp.go — guard test is broken")
+	}
+
+	allTools := map[string]bool{}
+	seen := map[string]bool{}
+	for _, tool := range AllTools {
+		if seen[tool.Name] {
+			t.Errorf("duplicate entry in AllTools: %s", tool.Name)
+		}
+		seen[tool.Name] = true
+		if tool.Description == "" {
+			t.Errorf("AllTools entry %s has an empty description", tool.Name)
+		}
+		allTools[tool.Name] = true
+	}
+
+	for name := range registered {
+		if !allTools[name] {
+			t.Errorf("registered tool %s is missing from AllTools — add it to keep permissions in sync", name)
+		}
+	}
+	for name := range allTools {
+		if !registered[name] {
+			t.Errorf("AllTools entry %s is not registered in NewServer — remove it or register it", name)
+		}
+	}
+}

@@ -48,6 +48,49 @@ func debugLog(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "[sv-memory] "+format+"\n", args...)
 }
 
+// Tool describes a single MCP tool exposed by the sv-memory server.
+// AllTools is the single source of truth for the tool surface, reused by the
+// permission manager (sv-memory permissions / configure wizard) so the granted
+// allow-list always matches the tools actually registered by the MCP server.
+type Tool struct {
+	Name        string
+	Description string
+}
+
+// AllTools enumerates every tool the sv-memory MCP server exposes, with a
+// short human-readable description used for permission selection transparency.
+// Keep in sync with the NewTool/AddTool registrations in NewServer below;
+// AllToolsGuardTest in mcp_test.go enforces that every registered tool name
+// appears here.
+var AllTools = []Tool{
+	{Name: "sv_mem_save", Description: "Persist a decision, bugfix, journal, or standard to project memory (with optional topic_key upsert)."},
+	{Name: "sv_mem_suggest_topic_key", Description: "Generate a stable 'category/kebab-case' topic_key for upsert semantics."},
+	{Name: "sv_mem_session_start", Description: "Register a new coding session and load the Auto-Boot Context Bundle."},
+	{Name: "sv_mem_session_end", Description: "End the active session with a summary to enable context recovery."},
+	{Name: "sv_mem_session_summary", Description: "Save the session goal, discoveries, accomplished work, and next steps."},
+	{Name: "sv_mem_context", Description: "Recover the last completed session's goal, summary, and memories after compaction."},
+	{Name: "sv_mem_compact", Description: "Consolidate historical topic-key revisions and duplicates into clean summaries."},
+	{Name: "sv_mem_search", Description: "Search project memories with FTS5 BM25 ranking and category/path filters."},
+	{Name: "sv_mem_get", Description: "Retrieve the full content of a specific memory by ID."},
+	{Name: "sv_mem_timeline", Description: "Get chronological context around a specific memory observation."},
+	{Name: "sv_mem_judge", Description: "Create a relation between memories (supersedes, conflicts_with, relates_to)."},
+	{Name: "sv_mem_compare", Description: "Compare two memories side by side in a Markdown table."},
+	{Name: "sv_mem_review", Description: "List stale, duplicate, or consolidation-candidate memories."},
+	{Name: "sv_mem_stats", Description: "Get aggregate memory statistics per category and session counts."},
+	{Name: "sv_mem_current_project", Description: "Get the current project's ID and display name."},
+	{Name: "sv_mem_delete", Description: "Soft-delete (default) or hard-delete a memory."},
+	{Name: "sv_mem_capture_passive", Description: "Log lightweight observations (files modified, tests failing) without a save decision."},
+	{Name: "sv_mem_conflicts", Description: "List, scan, or ignore potential memory conflicts."},
+	{Name: "sv_graph_query", Description: "Query the dependency graph for a module, file, or package (returns Mermaid)."},
+	{Name: "sv_graph_path", Description: "Find the shortest dependency path between two nodes."},
+	{Name: "sv_graph_sync", Description: "Incrementally re-scan the codebase and rebuild the dependency graph."},
+	{Name: "sv_graph_explain", Description: "Explain a node's role, community, centrality, neighbors, and suggested questions."},
+	{Name: "sv_graph_god_nodes", Description: "List the most-connected hub nodes in the dependency graph."},
+	{Name: "sv_graph_surprising_connections", Description: "Find unexpected cross-community connections in the codebase."},
+	{Name: "sv_graph_viz", Description: "Generate an interactive HTML visualization of the dependency graph."},
+	{Name: "sv_graph_merge", Description: "Merge two project graphs into one (union-merge by node ID)."},
+}
+
 // StartServer starts the MCP server using stdio transport.
 // Reads use the pool's Reader so concurrent tool calls scale; writes (save)
 // go through the Writer to keep SQLite serialized under WAL.
