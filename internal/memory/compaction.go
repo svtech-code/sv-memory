@@ -83,7 +83,8 @@ func CompactMemories(db *sql.DB, projectID string) (*CompactionReport, error) {
 
 	for _, tk := range topicKeysToCompact {
 		memQuery := `
-		SELECT id, category, what, why, learned, where_path, revision_count, created_at
+		SELECT id, category, what, why, learned, where_path, git_branch, git_commit,
+			author, impact, errors_faced, next_steps, session_id, revision_count, created_at
 		FROM memories
 		WHERE project_id = ? AND topic_key = ? AND deleted_at IS NULL
 		ORDER BY created_at ASC`
@@ -98,10 +99,21 @@ func CompactMemories(db *sql.DB, projectID string) (*CompactionReport, error) {
 			var m Memory
 			var createdAtStr string
 			var wherePath, why, learned sql.NullString
-			if sErr := memRows.Scan(&m.ID, &m.Category, &m.What, &why, &learned, &wherePath, &m.RevisionCount, &createdAtStr); sErr == nil {
+			var gitBranch, gitCommit, author sql.NullString
+			var impact, errorsFaced, nextSteps, sessionID sql.NullString
+			if sErr := memRows.Scan(&m.ID, &m.Category, &m.What, &why, &learned, &wherePath,
+				&gitBranch, &gitCommit, &author, &impact, &errorsFaced, &nextSteps, &sessionID,
+				&m.RevisionCount, &createdAtStr); sErr == nil {
 				m.Why = why.String
 				m.Learned = learned.String
 				m.WherePath = wherePath.String
+				m.GitBranch = gitBranch.String
+				m.GitCommit = gitCommit.String
+				m.Author = author.String
+				m.Impact = impact.String
+				m.ErrorsFaced = errorsFaced.String
+				m.NextSteps = nextSteps.String
+				m.SessionID = sessionID.String
 				m.TopicKey = tk
 				group = append(group, &m)
 			}
@@ -139,6 +151,17 @@ func CompactMemories(db *sql.DB, projectID string) (*CompactionReport, error) {
 		consolidatedLearned := strings.Join(learnedParts, " | ")
 		newRev := maxRev + len(group)
 
+		// Pick the most recent entry that carries a session association so the
+		// consolidated memory keeps being discoverable by session context
+		// (sv_mem_context / Auto-Boot) after compaction. Falls back to the
+		// latest row when no entry has a session_id.
+		meta := latest
+		for _, m := range group {
+			if m.SessionID != "" {
+				meta = m
+			}
+		}
+
 		// Soft-delete older entries
 		now := time.Now()
 		for _, m := range group {
@@ -147,13 +170,18 @@ func CompactMemories(db *sql.DB, projectID string) (*CompactionReport, error) {
 			}
 		}
 
-		// Create clean unified memory
+		// Create clean unified memory, preserving session + metadata of the
+		// chosen source entry so session context recovery keeps working.
 		synthID := uuid.New().String()[:8]
 		insertStmt := `
-		INSERT INTO memories (id, project_id, category, what, why, where_path, learned, topic_key, revision_count, duplicate_count, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
+		INSERT INTO memories (id, project_id, category, what, why, where_path, learned,
+			git_branch, git_commit, author, impact, errors_faced, next_steps, session_id,
+			topic_key, revision_count, duplicate_count, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
 
-		_, insErr := tx.Exec(insertStmt, synthID, projectID, latest.Category, latest.What, consolidatedWhy, latest.WherePath, consolidatedLearned, tk, newRev, len(group))
+		_, insErr := tx.Exec(insertStmt, synthID, projectID, latest.Category, latest.What, consolidatedWhy,
+			latest.WherePath, consolidatedLearned, meta.GitBranch, meta.GitCommit, meta.Author,
+			meta.Impact, meta.ErrorsFaced, meta.NextSteps, meta.SessionID, tk, newRev, len(group))
 		if insErr == nil {
 			report.ProcessedTopics++
 			report.MemoriesCompacted += len(group)
