@@ -931,6 +931,51 @@ func promptConfirm(msg string) (bool, error) {
 	return input == "s" || input == "si" || input == "y" || input == "yes", nil
 }
 
+// promptPermissionSelect lists the available sv-memory MCP tools with a short
+// description each, so the user can grant permissions with full transparency.
+// Accepts a comma-separated list of numbers, 'all' for every tool, or 0/empty
+// for none. Returns the selected tool names.
+func promptPermissionSelect(title string, tools []mcp.Tool) ([]string, error) {
+	fmt.Printf("\n=== %s ===\n", title)
+	for i, t := range tools {
+		fmt.Printf("  %2d. %-30s %s\n", i+1, t.Name, t.Description)
+	}
+	fmt.Print("\nIngresa los números separados por coma (ej: 1,3,4), 'all' para todas, o 0 para ninguna: ")
+	reader := bufio.NewReader(os.Stdin)
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return nil, err
+	}
+	input = strings.TrimSpace(strings.ToLower(input))
+	if input == "" || input == "0" {
+		return nil, nil
+	}
+	if input == "all" {
+		names := make([]string, len(tools))
+		for i, t := range tools {
+			names[i] = t.Name
+		}
+		return names, nil
+	}
+	parts := strings.Split(input, ",")
+	selected := make([]string, 0, len(parts))
+	seen := make(map[int]bool)
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 1 || n > len(tools) {
+			fmt.Printf("  Opción inválida: %s, ignorada.\n", p)
+			continue
+		}
+		if seen[n] {
+			continue
+		}
+		seen[n] = true
+		selected = append(selected, tools[n-1].Name)
+	}
+	return selected, nil
+}
+
 var configureCmd = &cobra.Command{
 	Use:   "configure",
 	Short: "Configure local editor and CLI environments (Cursor, VS Code, Zed, Windsurf, Claude Code, OpenCode, Codex, Antigravity) with sv-memory",
@@ -1048,6 +1093,49 @@ var configureCmd = &cobra.Command{
 			fmt.Println()
 			for _, m := range manuals {
 				fmt.Printf("👉 %s:\n      %s\n\n", m.Name, m.ConfigPath)
+			}
+		}
+
+		// 4. Phase 4: Grant MCP tool permissions to the allow-listed platforms
+		// selected above (Antigravity, Claude Code). OpenCode and Codex use
+		// interactive approval and are skipped here.
+		var grantTargets []config.TargetTool
+		for _, tool := range selectedTools {
+			switch tool.ID {
+			case "antigravity", "claude-code":
+				grantTargets = append(grantTargets, tool)
+			}
+		}
+
+		if len(grantTargets) > 0 {
+			selected, err := promptPermissionSelect(
+				"FASE 4 · PERMISOS DE SV-MEMORY — selecciona las herramientas a autorizar",
+				mcp.AllTools,
+			)
+			if err != nil {
+				return err
+			}
+
+			if len(selected) == 0 {
+				fmt.Println("No se otorgarán permisos adicionales.")
+			} else {
+				fmt.Println("\n=== OTORGANDO PERMISOS ===")
+				for _, tool := range grantTargets {
+					res, err := perm.Grant(perm.Platform(tool.ID), selected, false)
+					if err != nil {
+						fmt.Printf("❌ %s: %v\n", tool.Name, err)
+						continue
+					}
+					if res.Skipped {
+						fmt.Printf("ℹ️  %s: %s\n", tool.Name, res.SkippedMsg)
+						continue
+					}
+					if len(res.Added) == 0 {
+						fmt.Printf("✅ %s: ya tenía %d permiso(s).\n", tool.Name, len(res.Present))
+						continue
+					}
+					fmt.Printf("✅ %s: %d permiso(s) otorgado(s) en %s\n", tool.Name, len(res.Added), res.ConfigPath)
+				}
 			}
 		}
 
