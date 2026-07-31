@@ -17,11 +17,11 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/svtech/sv-memory/internal/config"
-	"github.com/svtech/sv-memory/internal/db"
-	"github.com/svtech/sv-memory/internal/graph"
-	"github.com/svtech/sv-memory/internal/memory"
-	"github.com/svtech/sv-memory/internal/security"
+	"github.com/svtech-code/sv-memory/internal/config"
+	"github.com/svtech-code/sv-memory/internal/db"
+	"github.com/svtech-code/sv-memory/internal/graph"
+	"github.com/svtech-code/sv-memory/internal/memory"
+	"github.com/svtech-code/sv-memory/internal/security"
 	"github.com/spf13/viper"
 )
 

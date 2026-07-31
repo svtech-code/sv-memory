@@ -1,4 +1,4 @@
-module github.com/svtech/sv-memory
+module github.com/svtech-code/sv-memory
 
 go 1.26.3
 

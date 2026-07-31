@@ -95,7 +95,7 @@ flowchart TD
 Compilación en Go puro (sin requerir CGO):
 
 ```bash
-git clone https://github.com/svtech/sv-memory.git
+git clone https://github.com/svtech-code/sv-memory.git
 cd sv-memory
 go build -o sv-memory ./cmd/sv-memory
 sudo mv sv-memory /usr/local/bin/

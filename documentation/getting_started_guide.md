@@ -37,7 +37,7 @@ El ejecutable de `sv-memory` es un binario único en Go, completamente autoconte
 #### Compilación desde código fuente:
 ```bash
 # 1. Clonar el repositorio
-git clone https://github.com/svtech/sv-memory.git
+git clone https://github.com/svtech-code/sv-memory.git
 cd sv-memory
 
 # 2. Compilar el binario ejecutable

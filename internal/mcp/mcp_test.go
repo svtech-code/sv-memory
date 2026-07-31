@@ -11,8 +11,8 @@ import (
 	"time"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
-	"github.com/svtech/sv-memory/internal/config"
-	"github.com/svtech/sv-memory/internal/db"
+	"github.com/svtech-code/sv-memory/internal/config"
+	"github.com/svtech-code/sv-memory/internal/db"
 )
 
 func setupTestEnv(t *testing.T) (string, *db.Pool, *config.Config) {

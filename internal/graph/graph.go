@@ -9,8 +9,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/svtech/sv-memory/internal/graph/extractor"
-	"github.com/svtech/sv-memory/internal/graph/schema"
+	"github.com/svtech-code/sv-memory/internal/graph/extractor"
+	"github.com/svtech-code/sv-memory/internal/graph/schema"
 )
 
 // Node represents a vertex in the code dependency graph.

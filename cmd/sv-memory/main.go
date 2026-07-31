@@ -14,16 +14,16 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/svtech/sv-memory/internal/config"
-	"github.com/svtech/sv-memory/internal/db"
-	"github.com/svtech/sv-memory/internal/graph"
-	"github.com/svtech/sv-memory/internal/hook"
-	"github.com/svtech/sv-memory/internal/mcp"
-	"github.com/svtech/sv-memory/internal/memory"
-	"github.com/svtech/sv-memory/internal/perm"
-	"github.com/svtech/sv-memory/internal/protocol"
-	"github.com/svtech/sv-memory/internal/security"
-	"github.com/svtech/sv-memory/internal/tui"
+	"github.com/svtech-code/sv-memory/internal/config"
+	"github.com/svtech-code/sv-memory/internal/db"
+	"github.com/svtech-code/sv-memory/internal/graph"
+	"github.com/svtech-code/sv-memory/internal/hook"
+	"github.com/svtech-code/sv-memory/internal/mcp"
+	"github.com/svtech-code/sv-memory/internal/memory"
+	"github.com/svtech-code/sv-memory/internal/perm"
+	"github.com/svtech-code/sv-memory/internal/protocol"
+	"github.com/svtech-code/sv-memory/internal/security"
+	"github.com/svtech-code/sv-memory/internal/tui"
 )
 
 func withProject(fn func(cfg *config.Config, database *sql.DB) error) error {

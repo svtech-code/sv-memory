@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/svtech/sv-memory/internal/graph"
-	"github.com/svtech/sv-memory/internal/memory"
+	"github.com/svtech-code/sv-memory/internal/graph"
+	"github.com/svtech-code/sv-memory/internal/memory"
 )
 
 // RunTUI launches an interactive terminal interface for exploring project memories and graph health.

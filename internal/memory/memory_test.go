@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/svtech/sv-memory/internal/db"
+	"github.com/svtech-code/sv-memory/internal/db"
 )
 
 func TestListPruneConsolidateProjects(t *testing.T) {

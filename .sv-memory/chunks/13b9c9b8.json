@@ -1,0 +1,19 @@
+{
+  "id": "13b9c9b8",
+  "project_id": "ce22c23ac33d7a36",
+  "category": "journal",
+  "what": "Renombrado module path a github.com/svtech-code/sv-memory y corregidas URLs de instalación",
+  "why": "El remote real del repo es github.com/svtech-code/sv-memory, pero go.mod, install.sh, README y docs apuntaban a svtech/sv-memory (inconsistencia). Para preparar la release pública v0.1.0 se unificó todo a la org correcta.",
+  "learned": "Al renombrar un module path Go hay que actualizar go.mod (go mod edit -module) + todos los imports internos; verificar con go build y go test. Las rutas file:/// locales en docs no son URLs de repo y no se tocan.",
+  "git_branch": "main",
+  "git_commit": "9e37c6c",
+  "author": "Mario Sandoval (Sv Tech)",
+  "impact": "go build, go vet y go test ./... pasan limpios con el nuevo module path. install.sh, README.md, README_ES.md y getting_started_guide.md apuntan ahora a svtech-code/sv-memory.",
+  "errors_faced": "grep con clase de caracteres con guion '-' daba error de rango inválido (sk-[a-zA-Z0-9-_]) — corregido moviendo el guion al final.",
+  "next_steps": "Fase 1 de seguridad (redactores AWS/GH/Slack/Bearer/.env, tests, Go 1.26.4, gitleaks), luego cobertura de tests + CI, comando version, y release v0.1.0.",
+  "session_id": "b32dab42",
+  "last_seen_at": "0001-01-01T00:00:00Z",
+  "normalized_hash": "40842ed42491ac0b3c39b160c7310e8612d014b6c76eefef92e780dd5d00aeb5",
+  "deleted_at": "0001-01-01T00:00:00Z",
+  "created_at": "2026-07-31T01:31:50.235762-04:00"
+}

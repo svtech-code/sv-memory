@@ -12,7 +12,7 @@ import (
 	"unicode"
 
 	"github.com/google/uuid"
-	"github.com/svtech/sv-memory/internal/security"
+	"github.com/svtech-code/sv-memory/internal/security"
 )
 
 type MemorySearchResult struct {

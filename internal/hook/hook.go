@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/svtech/sv-memory/internal/protocol"
+	"github.com/svtech-code/sv-memory/internal/protocol"
 )
 
 // Mode controls hook strictness.

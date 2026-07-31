@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/svtech/sv-memory/internal/db"
-	"github.com/svtech/sv-memory/internal/graph/extractor"
+	"github.com/svtech-code/sv-memory/internal/db"
+	"github.com/svtech-code/sv-memory/internal/graph/extractor"
 )
 
 func TestMDSemanticExtractor(t *testing.T) {

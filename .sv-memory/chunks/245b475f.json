@@ -1,0 +1,20 @@
+{
+  "id": "245b475f",
+  "project_id": "ce22c23ac33d7a36",
+  "category": "journal",
+  "what": "Mejoras de rendimiento, memoria y consumo de tokens completadas (Piezas 1-5)",
+  "why": "Optimizaciones verificadas para que sv-memory sea un aporte de alto rendimiento",
+  "where_path": "internal/memory/compaction.go, internal/db/migrations.go, internal/memory/memory.go, internal/graph/cache.go, internal/graph/stale.go",
+  "learned": "Cada pieza requirio implementacion + tests + commit con confirmacion. Benchmark BFS en RAM ~0.8us; validacion cache ~9.7us.",
+  "git_branch": "main",
+  "git_commit": "9e37c6c",
+  "author": "Mario Sandoval (Sv Tech)",
+  "impact": "P1 compactacion preserva session_id (Auto-Boot). P2 edge IDs por proyecto (migracion v7). P3 FTS5 con prefijos + score BM25. P4 cache LRU real + benchmarks. P5 lazy sync con scan incremental.",
+  "next_steps": "Copiar binario nuevo a PATH, migrar DB (v7), graph rebuild en proyectos activos, reiniciar agy",
+  "topic_key": "journal/performance-optimizations-p1-p5",
+  "revision_count": 1,
+  "last_seen_at": "0001-01-01T00:00:00Z",
+  "normalized_hash": "6a54230b9dabd7eff6d8e4ea9345779ed4c3ae920fa3e2069600071cd6e0bea3",
+  "deleted_at": "0001-01-01T00:00:00Z",
+  "created_at": "2026-07-31T01:17:41.701312-04:00"
+}

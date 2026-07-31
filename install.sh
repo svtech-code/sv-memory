@@ -3,7 +3,7 @@
 set -e
 
 # Configuración del repositorio y binario
-REPO="svtech/sv-memory"
+REPO="svtech-code/sv-memory"
 BINARY="sv-memory"
 INSTALL_DIR="/usr/local/bin"
 

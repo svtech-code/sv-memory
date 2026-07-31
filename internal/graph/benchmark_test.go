@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/svtech/sv-memory/internal/db"
+	"github.com/svtech-code/sv-memory/internal/db"
 )
 
 func BenchmarkBetweennessCentrality(b *testing.B) {

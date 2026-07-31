@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/svtech/sv-memory/internal/mcp"
+	"github.com/svtech-code/sv-memory/internal/mcp"
 )
 
 // Platform identifies an AI assistant that consumes the sv-memory MCP server.
