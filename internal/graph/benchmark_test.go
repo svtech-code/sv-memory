@@ -457,3 +457,89 @@ func BenchmarkDetectCommunities(b *testing.B) {
 		g.DetectCommunities()
 	}
 }
+
+// BenchmarkGraphCacheGet measures the end-to-end cache lookup path (in-memory
+// hit + mtime validation query) for a graph cached in RAM.
+func BenchmarkGraphCacheGet(b *testing.B) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-bench-cache")
+	if err != nil {
+		b.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "bench.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		b.Fatalf("failed to init DB: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "bench-cache-proj"
+	if err := db.RegisterProject(database, projectID, "Cache Bench", tempDir); err != nil {
+		b.Fatalf("failed to register project: %v", err)
+	}
+
+	// Build a small in-memory graph and cache it with matching file metadata.
+	g := &InMemoryGraph{
+		Nodes: map[string]*Node{
+			"a.go": {ID: "a.go", Type: "file", Label: "a.go"},
+			"b.go": {ID: "b.go", Type: "file", Label: "b.go"},
+		},
+		EdgesBySource: map[string][]*Edge{
+			"a.go": {{ID: "a-b", SourceID: "a.go", TargetID: "b.go", RelationType: "imports"}},
+		},
+		EdgesByTarget: map[string][]*Edge{
+			"b.go": {{ID: "a-b", SourceID: "a.go", TargetID: "b.go", RelationType: "imports"}},
+		},
+		FanIn:  map[string]int{"b.go": 1},
+		FanOut: map[string]int{"a.go": 1},
+	}
+	if _, err := database.Exec("INSERT INTO graph_files_meta (project_id, path, mtime_ms, size) VALUES (?, 'a.go', 1000, 10), (?, 'b.go', 2000, 20)", projectID, projectID); err != nil {
+		b.Fatalf("failed inserting graph_files_meta: %v", err)
+	}
+
+	cache := NewGraphCache()
+	cache.Put(projectID, g, 2, 2000)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, ok := cache.Get(database, projectID); !ok {
+			b.Fatal("expected cache hit in benchmark")
+		}
+	}
+}
+
+// BenchmarkGraphQueryBFS measures the BFS dependency query on an in-memory
+// graph (the operation served by sv_graph_query after a cache hit).
+func BenchmarkGraphQueryBFS(b *testing.B) {
+	const nodes = 200
+	g := &InMemoryGraph{
+		Nodes:          make(map[string]*Node, nodes),
+		EdgesBySource:  make(map[string][]*Edge, nodes),
+		EdgesByTarget:  make(map[string][]*Edge, nodes),
+		FanIn:          make(map[string]int, nodes),
+		FanOut:         make(map[string]int, nodes),
+	}
+	for i := 0; i < nodes; i++ {
+		id := fmt.Sprintf("file%d.go", i)
+		g.Nodes[id] = &Node{ID: id, Type: "file", Label: id}
+		if i > 0 {
+			prev := fmt.Sprintf("file%d.go", i-1)
+			e := &Edge{ID: prev + "-" + id, SourceID: prev, TargetID: id, RelationType: "imports"}
+			g.EdgesBySource[prev] = append(g.EdgesBySource[prev], e)
+			g.EdgesByTarget[id] = append(g.EdgesByTarget[id], e)
+			g.FanIn[id]++
+			g.FanOut[prev]++
+		}
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sg := g.Query("file0.go", 5, "imports", "out", 50)
+		if sg == nil || len(sg.Nodes) == 0 {
+			b.Fatal("expected non-empty subgraph")
+		}
+	}
+}

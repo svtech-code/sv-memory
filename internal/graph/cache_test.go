@@ -69,3 +69,38 @@ func TestGraphCache(t *testing.T) {
 		t.Fatalf("expected cache miss after Clear()")
 	}
 }
+
+// TestGraphCacheLRUEviction verifies that the cache is a real fixed-capacity
+// LRU: once capacity is exceeded, the least-recently-used project is evicted.
+func TestGraphCacheLRUEviction(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_cache_lru.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	cache := NewGraphCache()
+	cache.lru.Resize(3)
+
+	g := &InMemoryGraph{Nodes: map[string]*Node{}}
+
+	// Add 4 projects; with capacity 3 the first one must be evicted.
+	for i := 1; i <= 4; i++ {
+		pid := "proj-" + string(rune('0'+i))
+		cache.Put(pid, g, 1, int64(i))
+	}
+
+	if cache.Len() != 3 {
+		t.Fatalf("expected cache Len 3 after exceeding capacity, got %d", cache.Len())
+	}
+	if _, ok := cache.lru.Get("proj-1"); ok {
+		t.Error("expected proj-1 to be evicted (LRU), but it is still present")
+	}
+	for _, id := range []string{"proj-2", "proj-3", "proj-4"} {
+		if _, ok := cache.lru.Get(id); !ok {
+			t.Errorf("expected %s to remain in cache, but it was evicted", id)
+		}
+	}
+}
