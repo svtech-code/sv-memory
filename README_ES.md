@@ -103,7 +103,7 @@ sudo mv sv-memory /usr/local/bin/
 
 ### 2. Configuración Interactiva (`sv-memory configure`)
 
-Configura editores, clientes CLI y hooks PreToolUse de manera automática:
+Configura editores y clientes CLI (servidores MCP) y otorga permisos de las herramientas MCP en la Fase 4:
 
 ```bash
 sv-memory configure
@@ -118,7 +118,28 @@ cd /ruta/a/tu-proyecto
 sv-memory init
 ```
 
-### 4. Exploración Interactiva en Terminal (`sv-memory tui`)
+### 4. Instalar Hooks PreToolUse (`sv-memory hooks install`)
+
+Ejecuta dentro de la raíz del proyecto para que los agentes consulten la memoria antes de leer archivos:
+
+```bash
+cd /ruta/a/tu-proyecto
+sv-memory hooks install --platform antigravity
+# modo strict: bloquea la primera lectura raw para forzar la búsqueda en memoria
+sv-memory hooks install --platform antigravity --strict
+```
+
+### 5. Reiniciar el Agente y Verificar
+
+Reinicia tu asistente de IA y confirma que todo quedó conectado:
+
+```bash
+sv-memory permissions status --platform antigravity   # Granted: 26 / 26
+sv-memory hooks status                                # antigravity: installed
+sv-memory diagnose
+```
+
+### 6. Exploración Interactiva en Terminal (`sv-memory tui`)
 
 Navega memorias, busca con BM25, revisa diagnósticos de salud del grafo y exporta notas:
 

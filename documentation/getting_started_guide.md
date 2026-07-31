@@ -17,13 +17,15 @@ Cuando trabajas con asistentes de IA en repositorios medianos o grandes, suceden
 
 ---
 
-## 🚀 Flujo de Inicio en 4 Pasos
+## 🚀 Flujo de Inicio en 5 Pasos
 
 ```mermaid
 flowchart TD
-    P1[Paso 1: Instalación del Binario Global] --> P2[Paso 2: Configuración de Editores con 'sv-memory configure']
+    P1[Paso 1: Instalación del Binario Global] --> P2[Paso 2: Configuración de Editores y CLIs con 'sv-memory configure']
     P2 --> P3[Paso 3: Inicialización del Proyecto con 'sv-memory init']
-    P3 --> P4[Paso 4: Flujo de Trabajo Diario con IA & TUI]
+    P3 --> P4[Paso 4: Instalación de Hooks con 'sv-memory hooks install']
+    P4 --> P5[Paso 5: Reinicio del Agente y Verificación]
+    P5 --> D[Flujo de Trabajo Diario con IA & TUI]
 ```
 
 ---
@@ -71,8 +73,6 @@ El asistente te guiará a través de fases interactivas en la terminal:
 > **¿Por qué este paso?**
 > Evita que tengas que editar manualmente archivos JSON de configuración complejos. Con un par de teclas en la terminal, todos tus editores quedan enlazados al servidor MCP de `sv-memory` y los permisos de las herramientas quedan otorgados con total transparencia.
 
-> **Hooks PreToolUse:** Los hooks `PreToolUse` (que redirigen a la IA a consultar la memoria del proyecto antes de leer archivos raw a ciegas) se instalan por separado con `sv-memory hooks install`.
-
 ---
 
 ### Paso 3: Inicialización dentro de tu Proyecto (`sv-memory init`)
@@ -93,7 +93,45 @@ sv-memory init
 
 ---
 
-### Paso 4: Flujo de Trabajo Diario (Agentes de IA y Uso Humano)
+### Paso 4: Instalación de Hooks PreToolUse (`sv-memory hooks install`)
+
+Ejecuta este paso **dentro de la raíz de tu proyecto** (los hooks se instalan en `.agents/` del proyecto, no de forma global):
+
+```bash
+cd /ruta/a/tu-proyecto
+sv-memory hooks install --platform antigravity
+```
+
+#### ¿Qué hace este comando?
+Crea `.agents/hooks.json` y `.agents/hooks/sv-memory.sh` para que el agente intercepte las lecturas de archivos (`view_file`, `grep_search`, `list_dir`) y consulte la memoria del proyecto antes de leer código a ciegas.
+
+Existen dos modos:
+
+| Modo | Comando | Comportamiento |
+| :--- | :--- | :--- |
+| **Soft** (por defecto) | `sv-memory hooks install --platform antigravity` | No bloquea nada. El "nudge" real lo hace el `AGENTS.md` inyectado en el Paso 3, que obliga al agente a consultar memoria. |
+| **Strict** | `sv-memory hooks install --platform antigravity --strict` | Bloquea la **primera** lectura de archivo de cada sesión, forzando al agente a ejecutar `sv_mem_search`/`sv_graph_query` antes de leer. |
+
+> Puedes cambiar de modo re-ejecutando el comando con o sin `--strict`.
+
+> **Por proyecto:** Repite este comando en cada repositorio donde trabajes con IA. Las plataformas soportadas son `claude-code`, `codex`, `antigravity` y `opencode` (omite `--platform` para instalarlo en todas).
+
+---
+
+### Paso 5: Reinicio del Agente y Verificación
+
+Cierra y vuelve a abrir tu asistente de IA para que cargue el MCP, los permisos y los hooks recién configurados. Luego verifica el estado:
+
+```bash
+cd /ruta/a/tu-proyecto
+sv-memory permissions status --platform antigravity   # Granted: 26 / 26
+sv-memory hooks status                                # antigravity: ✅ installed
+sv-memory diagnose                                    # 17 pass, 0 failures
+```
+
+---
+
+### Paso 6: Flujo de Trabajo Diario (Agentes de IA y Uso Humano)
 
 Una vez completados los pasos anteriores, ya estás listo para trabajar.
 
@@ -131,6 +169,7 @@ Desde la interfaz TUI puedes:
 | `sv-memory hooks install` | Instala hooks PreToolUse para consultar memoria antes de leer archivos | Al configurar Claude Code, Antigravity CLI u OpenCode |
 | `sv-memory permissions grant` | Otorga herramientas MCP en la allow-list del agente (`--all` o `--tool`) | Cuando el agente pide permiso en cada llamada MCP |
 | `sv-memory permissions status` | Muestra permisos MCP otorgados/faltantes por plataforma | Para auditar el estado de permisos de los agentes |
+| `sv-memory permissions revoke` | Elimina los permisos MCP de sv-memory conservando el resto | Si quieres quitar accesos de un agente |
 | `sv-memory tui` | Interfaz gráfica en terminal para consultar memorias | Cuando quieras explorar decisiones pasadas interactivamente |
 | `sv-memory sync` | Sincroniza SQLite con archivos Git `.sv-memory/chunks/` | Antes de hacer `git commit` o tras hacer `git pull` |
 | `sv-memory diagnose` | Chequeo de salud del sistema, permisos y BD | Si experimentas algún problema de conexión con la IA |

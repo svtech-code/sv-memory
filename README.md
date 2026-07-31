@@ -103,7 +103,7 @@ sudo mv sv-memory /usr/local/bin/
 
 ### 2. Interactive Setup (`sv-memory configure`)
 
-Configure editors, CLI clients, and PreToolUse hooks automatically:
+Configure editors and CLI clients (MCP servers), then grant MCP tool permissions in Phase 4:
 
 ```bash
 sv-memory configure
@@ -118,7 +118,28 @@ cd /path/to/your-project
 sv-memory init
 ```
 
-### 4. Interactive Terminal Exploration (`sv-memory tui`)
+### 4. Install PreToolUse Hooks (`sv-memory hooks install`)
+
+Run inside the project root so agents query memory before reading files:
+
+```bash
+cd /path/to/your-project
+sv-memory hooks install --platform antigravity
+# strict mode: block the first raw file read to force a memory search first
+sv-memory hooks install --platform antigravity --strict
+```
+
+### 5. Restart the Agent & Verify
+
+Restart your AI assistant, then confirm everything is wired up:
+
+```bash
+sv-memory permissions status --platform antigravity   # Granted: 26 / 26
+sv-memory hooks status                                # antigravity: installed
+sv-memory diagnose
+```
+
+### 6. Interactive Terminal Exploration (`sv-memory tui`)
 
 Browse memories, run BM25 search, check graph health diagnostics, and export notes:
 
