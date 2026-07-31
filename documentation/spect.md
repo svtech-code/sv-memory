@@ -63,7 +63,7 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 
 ## 4. CLI Commands & Workflow
 
-`sv-memory` provides **22 CLI commands** organized under Cobra's root and sub-commands:
+`sv-memory` provides CLI commands organized under Cobra's root and sub-commands:
 
 ### Core Commands
 
@@ -78,7 +78,7 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 
 #### 2. `sv-memory mcp`
 - Starts the JSON-RPC MCP server over `stdio` for agent consumption.
-- Registers all 25 MCP tools.
+- Registers all 26 MCP tools.
 - Maintains an in-memory graph cache for zero-SQL BFS traversals.
 - Debounces Git sync writes (500ms coalescing).
 
@@ -93,6 +93,14 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 
 #### 6. `sv-memory configure`
 - Interactive wizard for automatic/manual configurations of editors (Cursor, VS Code, Zed, Windsurf, OpenCode) and CLIs (Claude Code, Codex, Antigravity).
+- **Phase 4 (MCP Permissions):** Lists the 26 sv-memory MCP tools with descriptions and grants the selected allow-list entries to the allow-listed platforms chosen earlier (Antigravity CLI, Claude Code).
+
+#### 7. `sv-memory permissions`
+- `list`: shows the 26 sv-memory MCP tools with human-readable descriptions.
+- `grant --platform <p> [--all | --tool a,b] [--dry-run]`: writes allow-list entries (`mcp(sv-memory/<tool>)` for Antigravity, `mcp__sv-memory__<tool>` for Claude Code), preserving unrelated entries.
+- `revoke --platform <p> [--dry-run]`: removes sv-memory allow-list entries.
+- `status [--platform <p>]`: reports granted vs missing tools per platform.
+- OpenCode and Codex use interactive approval and are skipped (no static allow-list).
 
 #### 7. `sv-memory obsidian-export [-o output-dir]`
 - Exports all project memories to Markdown files inside the target folder (default `.obsidian-sv-memory`) structured as an Obsidian vault.
@@ -323,7 +331,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_relations_target ON memory_relations(proje
 
 ## 6. MCP Tools Definition
 
-`sv-memory` registers **25 MCP tools** for AI agents:
+`sv-memory` registers **26 MCP tools** for AI agents:
 
 ### 1. `sv_mem_save`
 Persist a key architectural decision, bug fix, progress journal, or standard guideline.
@@ -373,7 +381,12 @@ Recover context from the last completed session.
 - **Parameters:**
   - `limit` (string, optional): Max memories to retrieve (default `10`).
 
-### 7. `sv_mem_search` (Layer 1 — Progressive Disclosure)
+### 7. `sv_mem_compact`
+Trigger automatic memory compaction: consolidates historical topic-key revisions and duplicates into clean summary records.
+- **Parameters:**
+  - `session_id` (string, optional): Restrict compaction to a specific session.
+
+### 8. `sv_mem_search` (Layer 1 — Progressive Disclosure)
 FTS5-powered memory search. Returns only IDs, categories, dates, titles, and topic keys.
 - **Parameters:**
   - `query` (string, required): Keyword search terms.
@@ -381,20 +394,20 @@ FTS5-powered memory search. Returns only IDs, categories, dates, titles, and top
   - `limit` (string, optional): Max results (default `10`).
   - `offset` (string, optional): Pagination offset.
 
-### 8. `sv_mem_timeline` (Layer 2 — Progressive Disclosure)
+### 9. `sv_mem_timeline` (Layer 2 — Progressive Disclosure)
 Retrieve a chronological list of observations centered around a specific memory.
 - **Parameters:**
   - `observation_id` (string, required): Memory ID.
   - `before` (string, optional): Count of memories preceding (default `5`).
   - `after` (string, optional): Count of memories succeeding (default `5`).
 
-### 9. `sv_mem_get` (Layer 3 — Progressive Disclosure)
+### 10. `sv_mem_get` (Layer 3 — Progressive Disclosure)
 Retrieve all fields of a specific memory. Text fields are truncated beyond `max_chars`.
 - **Parameters:**
   - `id` (string, required): Memory ID.
   - `max_chars` (string, optional): Max characters per field (default `2000`).
 
-### 10. `sv_mem_judge`
+### 11. `sv_mem_judge`
 Create a relation (judgment) between two memories to maintain continuity or record conflicts.
 - **Parameters:**
   - `source_id` (string, required): Newer memory ID.
@@ -403,37 +416,37 @@ Create a relation (judgment) between two memories to maintain continuity or reco
   - `reason` (string, optional): Reasoning.
   - `judged_by` (string, optional): Judge identity (default `'agent'`).
 
-### 11. `sv_mem_compare`
+### 12. `sv_mem_compare`
 Compare two memories side-by-side in Markdown format.
 - **Parameters:**
   - `id1` (string, required): First memory ID.
   - `id2` (string, required): Second memory ID.
 
-### 12. `sv_mem_review`
+### 13. `sv_mem_review`
 Find memories needing maintenance (e.g. stale, excessive duplicate counts, consolidation candidates).
 - **Parameters:** None.
 
-### 13. `sv_mem_stats`
+### 14. `sv_mem_stats`
 Provides aggregate metrics (counts, breakdown by category).
 - **Parameters:** None.
 
-### 14. `sv_mem_current_project`
+### 15. `sv_mem_current_project`
 Retrieves the active project name, path, and ID.
 - **Parameters:** None.
 
-### 15. `sv_mem_delete`
+### 16. `sv_mem_delete`
 Deletes a memory. Soft-deletes by default; set `hard` to `'true'` to erase permanently.
 - **Parameters:**
   - `id` (string, required): Memory ID.
   - `hard` (string, optional): `'true'` for permanent delete.
 
-### 16. `sv_mem_capture_passive`
+### 17. `sv_mem_capture_passive`
 Logs a lightweight journal entry automatically (e.g., test outcomes, file changes).
 - **Parameters:**
   - `what` (string, required): Summary description.
   - `why` (string, required): Context or rationale.
 
-### 17. `sv_graph_query`
+### 18. `sv_graph_query`
 Queries structural relations using a Breadth-First Search (BFS). Returns a Mermaid diagram.
 - **Parameters:**
   - `path_or_node` (string, required): File path or module to center on.
@@ -441,41 +454,41 @@ Queries structural relations using a Breadth-First Search (BFS). Returns a Merma
   - `relation_type` (string, optional): Filter (e.g., `'imports'`, `'calls'`).
   - `direction` (string, optional): Traversal direction: `'in'` | `'out'` | `'all'` (default `'out'`).
 
-### 18. `sv_graph_path`
+### 19. `sv_graph_path`
 Finds the shortest dependency route between two graph nodes.
 - **Parameters:**
   - `source` (string, required): Source node ID.
   - `target` (string, required): Target node ID.
   - `max_hops` (string, optional): Hop limit (default `10`).
 
-### 19. `sv_graph_sync`
+### 20. `sv_graph_sync`
 Triggers an incremental scan of modified files to sync nodes/edges. Invalidates cache.
 - **Parameters:** None.
 
-### 20. `sv_mem_conflicts`
+### 21. `sv_mem_conflicts`
 Detects and surfaces conflicting memories with semantic overlap analysis.
 - **Parameters:** None.
 
-### 21. `sv_graph_explain`
+### 22. `sv_graph_explain`
 Outputs detailed information for a specific graph node: type, label, path, metadata, and fan-in/fan-out metrics.
 - **Parameters:**
   - `path_or_node` (string, required): File path or node ID.
 
-### 22. `sv_graph_god_nodes`
+### 23. `sv_graph_god_nodes`
 Identifies the most connected nodes in the graph based on betweenness centrality and degree. Returns a ranked list of god nodes with metrics.
 - **Parameters:**
   - `limit` (string, optional): Max results to return (default `10`).
 
-### 23. `sv_graph_surprising_connections`
+### 24. `sv_graph_surprising_connections`
 Finds non-obvious or unexpected dependency paths in the graph. Highlights structural anomalies that may indicate architectural concerns.
 - **Parameters:** None.
 
-### 24. `sv_graph_viz`
+### 25. `sv_graph_viz`
 Generates an interactive HTML visualization of the graph using vis.js with community coloring, physics simulation, node filtering, and tooltips.
 - **Parameters:**
   - `output` (string, optional): Output file path (default `graph.html`).
 
-### 25. `sv_graph_merge`
+### 26. `sv_graph_merge`
 Merges a JSON graph snapshot into the current project graph, upserting nodes and edges by ID.
 - **Parameters:**
   - `json` (string, required): JSON string containing nodes and edges arrays.

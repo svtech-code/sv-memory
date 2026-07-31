@@ -62,13 +62,16 @@ sv-memory configure
 ```
 
 #### ¿Qué hace este comando?
-El asistente te guiará a través de 3 fases interactivas en la terminal:
+El asistente te guiará a través de fases interactivas en la terminal:
 1. **Fase 1 (Editores GUI):** Te permite seleccionar editores como **Cursor**, **VS Code**, **Zed** o **Windsurf**. Registra automáticamente el servidor MCP en sus archivos de configuración de usuario (ej. `claude_desktop_config.json` o settings de Cursor).
 2. **Fase 2 (Asistentes de Terminal):** Te permite seleccionar clientes CLI como **Claude Code**, **Antigravity CLI (agy)** u **OpenCode**.
-3. **Fase 3 (Instalación de Hooks & Skills):** Instala los hooks `PreToolUse` (que redirigen a la IA a consultar la memoria del proyecto antes de leer archivos raw a ciegas).
+3. **Fase 3 (Confirmación y aplicación):** Muestra el resumen de herramientas seleccionadas y aplica las configuraciones automáticas o manuales.
+4. **Fase 4 (Permisos MCP):** Lista las **26 herramientas MCP de sv-memory con su descripción** para que selecciones cuáles autorizar (números separados por coma o `all` para todas). Otorga los permisos en las plataformas configuradas que usan allow-list estática (Antigravity CLI, Claude Code).
 
 > **¿Por qué este paso?**
-> Evita que tengas que editar manualmente archivos JSON de configuración complejos. Con un par de teclas en la terminal, todos tus editores quedan enlazados al servidor MCP de `sv-memory`.
+> Evita que tengas que editar manualmente archivos JSON de configuración complejos. Con un par de teclas en la terminal, todos tus editores quedan enlazados al servidor MCP de `sv-memory` y los permisos de las herramientas quedan otorgados con total transparencia.
+
+> **Hooks PreToolUse:** Los hooks `PreToolUse` (que redirigen a la IA a consultar la memoria del proyecto antes de leer archivos raw a ciegas) se instalan por separado con `sv-memory hooks install`.
 
 ---
 
@@ -123,8 +126,11 @@ Desde la interfaz TUI puedes:
 
 | Comando | Descripción | ¿Cuándo usarlo? |
 | :--- | :--- | :--- |
-| `sv-memory configure` | Asistente interactivo de instalación MCP | Al instalar por primera vez o agregar un nuevo editor |
+| `sv-memory configure` | Asistente interactivo de instalación MCP (incluye Fase 4 de permisos) | Al instalar por primera vez o agregar un nuevo editor |
 | `sv-memory init` | Inicializa el proyecto actual y crea `AGENTS.md` | Al comenzar a trabajar en un nuevo repositorio |
+| `sv-memory hooks install` | Instala hooks PreToolUse para consultar memoria antes de leer archivos | Al configurar Claude Code, Antigravity CLI u OpenCode |
+| `sv-memory permissions grant` | Otorga herramientas MCP en la allow-list del agente (`--all` o `--tool`) | Cuando el agente pide permiso en cada llamada MCP |
+| `sv-memory permissions status` | Muestra permisos MCP otorgados/faltantes por plataforma | Para auditar el estado de permisos de los agentes |
 | `sv-memory tui` | Interfaz gráfica en terminal para consultar memorias | Cuando quieras explorar decisiones pasadas interactivamente |
 | `sv-memory sync` | Sincroniza SQLite con archivos Git `.sv-memory/chunks/` | Antes de hacer `git commit` o tras hacer `git pull` |
 | `sv-memory diagnose` | Chequeo de salud del sistema, permisos y BD | Si experimentas algún problema de conexión con la IA |

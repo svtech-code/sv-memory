@@ -148,6 +148,10 @@ sv-memory tui
 | `sv-memory obsidian-export`        | **Exportación** | Exporta memorias a una bóveda de notas Markdown de Obsidian (`[[wikilinks]]`).          |
 | `sv-memory conflicts`              | **Memoria**     | Detecta superposiciones semánticas y conflictos entre memorias del proyecto.            |
 | `sv-memory hooks install`          | **Hooks**       | Instala hooks PreToolUse para Claude Code, Antigravity CLI y OpenCode.                  |
+| `sv-memory permissions list`       | **Permisos**    | Lista las 26 herramientas MCP de sv-memory con descripciones.                           |
+| `sv-memory permissions status`     | **Permisos**    | Muestra permisos MCP otorgados/faltantes por plataforma.                                |
+| `sv-memory permissions grant`      | **Permisos**    | Escribe allow-lists de herramientas MCP (`--all`/`--tool`, `--dry-run`) para Antigravity/Claude Code. |
+| `sv-memory permissions revoke`     | **Permisos**    | Elimina entradas de sv-memory de la allow-list conservando permisos no relacionados.    |
 
 ---
 
@@ -206,6 +210,39 @@ Añade el siguiente fragmento al archivo JSON de configuración MCP de tu client
   }
 }
 ```
+
+### Otorgar permisos a las herramientas MCP
+
+Algunos agentes (Antigravity CLI, Claude Code) usan una allow-list estática y piden
+aprobación en cada llamada a una herramienta MCP no listada. `sv-memory` puede
+gestionar esa allow-list automáticamente, ya sea desde el asistente `configure`
+(Fase 4) o de forma independiente:
+
+```bash
+# Muestra las 26 herramientas con descripciones
+sv-memory permissions list
+
+# Otorga las 26 herramientas a Antigravity CLI (usa --dry-run primero para previsualizar)
+sv-memory permissions grant --platform antigravity --all --dry-run
+sv-memory permissions grant --platform antigravity --all
+
+# Otorga un subconjunto
+sv-memory permissions grant --platform claude-code --tool sv_mem_search,sv_mem_get
+
+# Inspecciona el estado y revoca si es necesario
+sv-memory permissions status
+sv-memory permissions revoke --platform antigravity
+```
+
+- **Antigravity** escribe entradas `mcp(sv-memory/<tool>)` en `~/.gemini/antigravity-cli/settings.json`.
+- **Claude Code** escribe entradas `mcp__sv-memory__<tool>` en `~/.claude/settings.json`.
+- **OpenCode** y **Codex** usan aprobación interactiva y se omiten (sin allow-list estática).
+- Las entradas no relacionadas (p. ej. `command(npm run)`) siempre se conservan.
+- Reinicia tu asistente de IA tras otorgar permisos para que cargue los cambios.
+
+En el asistente `sv-memory configure`, la **Fase 4** muestra las 26 herramientas con
+su descripción para que selecciones cuáles autorizar (números separados por coma o
+`all` para todas) en las plataformas configuradas.
 
 ---
 

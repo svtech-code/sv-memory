@@ -148,6 +148,10 @@ sv-memory tui
 | `sv-memory obsidian-export`        | **Export**      | Exports memories into linked Obsidian Markdown notes (`[[wikilinks]]`).          |
 | `sv-memory conflicts`              | **Memory**      | Detects semantic overlap and memory conflicts across the project.                |
 | `sv-memory hooks install`          | **Hooks**       | Installs PreToolUse hooks for Claude Code, Antigravity CLI, and OpenCode.        |
+| `sv-memory permissions list`       | **Permissions** | Lists the 26 sv-memory MCP tools with descriptions.                              |
+| `sv-memory permissions status`     | **Permissions** | Shows granted/missing MCP permissions per platform.                              |
+| `sv-memory permissions grant`      | **Permissions** | Writes MCP tool allow-lists (`--all`/`--tool`, `--dry-run`) for Antigravity/Claude Code. |
+| `sv-memory permissions revoke`     | **Permissions** | Removes sv-memory allow-list entries, preserving unrelated permissions.          |
 
 ---
 
@@ -206,6 +210,34 @@ Add the following snippet to your client's MCP configuration JSON:
   }
 }
 ```
+
+### Granting MCP Tool Permissions
+
+Some agents (Antigravity CLI, Claude Code) use a static allow-list and prompt for
+approval on every unlisted MCP tool call. `sv-memory` can manage that allow-list
+for you, either from the `configure` wizard (Phase 4) or standalone:
+
+```bash
+# Show the 26 tools with descriptions
+sv-memory permissions list
+
+# Grant all 26 tools to Antigravity CLI (dry-run first to preview)
+sv-memory permissions grant --platform antigravity --all --dry-run
+sv-memory permissions grant --platform antigravity --all
+
+# Grant a subset
+sv-memory permissions grant --platform claude-code --tool sv_mem_search,sv_mem_get
+
+# Inspect state, then revoke if needed
+sv-memory permissions status
+sv-memory permissions revoke --platform antigravity
+```
+
+- **Antigravity** writes `mcp(sv-memory/<tool>)` entries into `~/.gemini/antigravity-cli/settings.json`.
+- **Claude Code** writes `mcp__sv-memory__<tool>` entries into `~/.claude/settings.json`.
+- **OpenCode** and **Codex** use interactive approval and are skipped (no static allow-list).
+- Unrelated entries (e.g. `command(npm run)`) are always preserved.
+- Restart your AI assistant after granting to load the new permissions.
 
 ---
 
