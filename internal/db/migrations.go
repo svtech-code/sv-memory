@@ -70,13 +70,14 @@ CREATE TABLE IF NOT EXISTS graph_nodes (
 );
 
 CREATE TABLE IF NOT EXISTS graph_edges (
-    id TEXT PRIMARY KEY,
+    id TEXT NOT NULL,
     project_id TEXT NOT NULL,
     source_id TEXT NOT NULL,
     target_id TEXT NOT NULL,
     relation_type TEXT NOT NULL,
     confidence TEXT NOT NULL DEFAULT 'EXTRACTED',
     source_location TEXT,
+    PRIMARY KEY(project_id, id),
     FOREIGN KEY(project_id, source_id) REFERENCES graph_nodes(project_id, id) ON DELETE CASCADE,
     FOREIGN KEY(project_id, target_id) REFERENCES graph_nodes(project_id, id) ON DELETE CASCADE,
     FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
@@ -139,6 +140,7 @@ var migrations = []migration{
 	{4, "add_graph_edge_columns", addGraphEdgeColumns},
 	{5, "add_memory_relation_columns", addMemoryRelationColumns},
 	{6, "create_post_indexes", createPostIndexes},
+	{7, "graph_edges_composite_pk", migrateGraphEdgesCompositePK},
 }
 
 func applyMigrations(db *sql.DB) error {
@@ -206,6 +208,98 @@ func migrateLegacyGraphSchema(db *sql.DB) error {
 		_, _ = db.Exec("DROP TABLE IF EXISTS graph_nodes")
 	}
 	return nil
+}
+
+// migrateGraphEdgesCompositePK rebuilds graph_edges with a composite primary
+// key (project_id, id) so edge IDs are scoped per project. Previously the id
+// column was a global PRIMARY KEY while edge IDs are generated as
+// "<sourcePath>-<targetID>-<relationType>" without a project scope; two
+// projects with identical relative paths collided and the second project's
+// edges were silently dropped by INSERT ... ON CONFLICT DO NOTHING.
+func migrateGraphEdgesCompositePK(db *sql.DB) error {
+	// Detect the legacy single-column PK shape (id INTEGER PRIMARY KEY or
+	// id TEXT PRIMARY KEY). If the table already uses the composite PK
+	// (e.g. brand-new installs created from the updated schema), skip.
+	pkInfo, err := tablePKInfo(db, "graph_edges")
+	if err != nil {
+		return err
+	}
+	if len(pkInfo) >= 2 {
+		return nil
+	}
+	if len(pkInfo) == 1 && pkInfo[0] != "id" {
+		return fmt.Errorf("unexpected primary key columns on graph_edges: %v", pkInfo)
+	}
+
+	// SQLite cannot alter a table's primary key, so rebuild it. Copy all
+	// existing rows; since ids collide across projects the source data may
+	// already be missing the losers, but no data is lost here.
+	if _, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS graph_edges_new (
+			id TEXT NOT NULL,
+			project_id TEXT NOT NULL,
+			source_id TEXT NOT NULL,
+			target_id TEXT NOT NULL,
+			relation_type TEXT NOT NULL,
+			confidence TEXT NOT NULL DEFAULT 'EXTRACTED',
+			source_location TEXT,
+			PRIMARY KEY(project_id, id),
+			FOREIGN KEY(project_id, source_id) REFERENCES graph_nodes(project_id, id) ON DELETE CASCADE,
+			FOREIGN KEY(project_id, target_id) REFERENCES graph_nodes(project_id, id) ON DELETE CASCADE,
+			FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+			UNIQUE(project_id, source_id, target_id, relation_type)
+		)`); err != nil {
+		return fmt.Errorf("failed creating graph_edges_new: %w", err)
+	}
+
+	if _, err := db.Exec(`
+		INSERT OR IGNORE INTO graph_edges_new (id, project_id, source_id, target_id, relation_type, confidence, source_location)
+		SELECT id, project_id, source_id, target_id, relation_type, confidence, source_location FROM graph_edges`); err != nil {
+		return fmt.Errorf("failed copying graph_edges: %w", err)
+	}
+
+	if _, err := db.Exec("DROP TABLE IF EXISTS graph_edges"); err != nil {
+		return fmt.Errorf("failed dropping legacy graph_edges: %w", err)
+	}
+	if _, err := db.Exec("ALTER TABLE graph_edges_new RENAME TO graph_edges"); err != nil {
+		return fmt.Errorf("failed renaming graph_edges_new: %w", err)
+	}
+
+	// Re-create the lookup indexes that lived on the legacy table.
+	for _, idx := range []string{
+		"CREATE INDEX IF NOT EXISTS idx_graph_edges_source ON graph_edges(project_id, source_id);",
+		"CREATE INDEX IF NOT EXISTS idx_graph_edges_target ON graph_edges(project_id, target_id);",
+	} {
+		if _, err := db.Exec(idx); err != nil {
+			return fmt.Errorf("failed recreating graph_edges index: %w", err)
+		}
+	}
+	return nil
+}
+
+// tablePKInfo returns the ordered list of PRIMARY KEY column names for a table.
+func tablePKInfo(db *sql.DB, table string) ([]string, error) {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var cols []string
+	for rows.Next() {
+		var cid int
+		var name string
+		var typeVal string
+		var notnull int
+		var dfltVal interface{}
+		var pk int
+		if err := rows.Scan(&cid, &name, &typeVal, &notnull, &dfltVal, &pk); err != nil {
+			return nil, err
+		}
+		if pk > 0 {
+			cols = append(cols, name)
+		}
+	}
+	return cols, rows.Err()
 }
 
 func columnExists(db *sql.DB, table, col string) (bool, error) {
