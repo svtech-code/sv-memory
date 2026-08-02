@@ -5,6 +5,9 @@ CMD_DIR=./cmd/sv-memory
 BUILD_DIR=bin
 RELEASE_DIR=dist
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
+VERSION ?= dev
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+LDFLAGS  := -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 
 .PHONY: all build test test-race lint fmt vet install clean bench release help
 
@@ -26,7 +29,7 @@ help:
 build:
 	@echo "Building $(BINARY_NAME)..."
 	@mkdir -p $(BUILD_DIR)
-	go build -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
+	go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
 
 test:
 	@echo "Running unit tests..."
@@ -58,7 +61,7 @@ install: build
 	go install $(CMD_DIR)
 
 release:
-	@echo "Cross-compiling release binaries..."
+	@echo "Cross-compiling release binaries (version: $(VERSION))..."
 	@mkdir -p $(RELEASE_DIR)/package
 	@for target in $(PLATFORMS); do \
 		os="$${target%/*}"; \
@@ -66,7 +69,7 @@ release:
 		ext=""; \
 		[ "$$os" = "windows" ] && ext=".exe"; \
 		echo "  building $$os/$$arch..."; \
-		GOOS="$$os" GOARCH="$$arch" CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$(RELEASE_DIR)/package/$(BINARY_NAME)$${ext}" $(CMD_DIR); \
+		GOOS="$$os" GOARCH="$$arch" CGO_ENABLED=0 go build -trimpath -ldflags="-s -w $(LDFLAGS)" -o "$(RELEASE_DIR)/package/$(BINARY_NAME)$${ext}" $(CMD_DIR); \
 		if [ "$$os" = "windows" ]; then \
 			(cd $(RELEASE_DIR)/package && zip -q "../$(BINARY_NAME)_$${os}_$${arch}.zip" "$(BINARY_NAME)$${ext}"); \
 		else \

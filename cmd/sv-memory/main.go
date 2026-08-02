@@ -4,11 +4,20 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/spf13/cobra"
 
 	"github.com/svtech-code/sv-memory/internal/config"
 	"github.com/svtech-code/sv-memory/internal/db"
+)
+
+// version and commit are injected at build time via -ldflags
+// (e.g. -X main.version=v0.1.0 -X main.commit=<short-sha>). They default to
+// "dev"/"unknown" for local builds.
+var (
+	version = "dev"
+	commit  = "unknown"
 )
 
 func withProject(fn func(cfg *config.Config, database *sql.DB) error) error {
@@ -34,6 +43,18 @@ var rootCmd = &cobra.Command{
 	Long:  `sv-memory is a CLI tool and Model Context Protocol (MCP) server that records architectural decisions, coding guidelines, and code graphs to prevent context amnesia in AI agents.`,
 }
 
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Show the sv-memory version",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Printf("sv-memory %s\n", version)
+		if commit != "unknown" && commit != "" {
+			fmt.Printf("commit: %s\n", commit)
+		}
+		fmt.Printf("go: %s %s/%s\n", runtime.Version(), runtime.GOOS, runtime.GOARCH)
+	},
+}
+
 func init() {
 	graphCmd.AddCommand(rebuildCmd)
 	graphCmd.AddCommand(graphPathCmd)
@@ -48,6 +69,7 @@ func init() {
 	graphVizCmd.Flags().Bool("open", true, "Open the visualization in the default browser automatically")
 
 	rootCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(tuiCmd)
 	rootCmd.AddCommand(diagnoseCmd)

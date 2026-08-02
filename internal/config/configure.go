@@ -12,10 +12,10 @@ import (
 
 // TargetTool represents an editor or CLI tool compatible with sv-memory.
 type TargetTool struct {
-	Name      string
-	Type      string // "editor" | "cli"
-	ID        string // "cursor" | "vscode" | "zed" | "windsurf" | "claude-code" | "opencode" | "codex" | "antigravity"
-	Auto      bool   // True if we can configure it automatically, False if manual instructions are needed
+	Name       string
+	Type       string // "editor" | "cli"
+	ID         string // "cursor" | "vscode" | "zed" | "windsurf" | "claude-code" | "opencode" | "codex" | "antigravity"
+	Auto       bool   // True if we can configure it automatically, False if manual instructions are needed
 	ConfigPath string
 }
 
@@ -224,7 +224,7 @@ func configureZed(configPath string, execPath string) error {
 		if err != nil {
 			return err
 		}
-		
+
 		cleanContent := stripComments(string(content))
 		_ = json.Unmarshal([]byte(cleanContent), &data)
 	}
@@ -376,7 +376,7 @@ func configureOpenCode(configPath string, execPath string) error {
 }
 
 // ShowBanner prints the SV Tech styled ASCII logo and version details.
-func ShowBanner() {
+func ShowBanner(version string) {
 	cHex := "\x1b[38;2;0;176;194m"
 	reset := "\x1b[39m"
 
@@ -413,7 +413,7 @@ func ShowBanner() {
 		fmt.Printf("%s║%s%s%s║%s\n", cHex, strings.Repeat(" ", left), text, strings.Repeat(" ", right), reset)
 	}
 
-	printCenter("Sv Memory  v1.0.0")
+	printCenter("Sv Memory  v" + version)
 	printCenter("Context Memory & Code Graph Builder")
 	printCenter("Prevent context amnesia in your workspace")
 

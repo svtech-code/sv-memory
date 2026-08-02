@@ -42,4 +42,4 @@ jobs:
         run: go test -race -cover ./...
 
       - name: Build
-        run: go build -trimpath -o /tmp/sv-memory-check ./cmd/sv-memory
+        run: go build -trimpath -ldflags="-X main.version=ci -X main.commit=${{ github.sha }}" -o /tmp/sv-memory-check ./cmd/sv-memory

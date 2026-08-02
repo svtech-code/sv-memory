@@ -1,13 +1,13 @@
 package main
 
 import (
-	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	"github.com/svtech-code/sv-memory/internal/config"
@@ -15,184 +15,97 @@ import (
 	"github.com/svtech-code/sv-memory/internal/perm"
 )
 
-func promptMultiSelect(title string, options []string) ([]string, error) {
-	fmt.Printf("\n=== %s ===\n", title)
-	for i, opt := range options {
-		fmt.Printf("  %2d. %s\n", i+1, opt)
+// toolLabel builds a display label for a TargetTool, e.g.
+// "Cursor (Autoconfiguración)" or "VS Code (Instrucciones manuales)".
+func toolLabel(t config.TargetTool) string {
+	mode := "Instrucciones manuales"
+	if t.Auto {
+		mode = "Autoconfiguración"
 	}
-	fmt.Print("\nIngresa los números separados por coma (ej: 1,3,4) o 0 para ninguno: ")
-	reader := bufio.NewReader(os.Stdin)
-	input, err := reader.ReadString('\n')
-	if err != nil {
-		return nil, err
-	}
-	input = strings.TrimSpace(input)
-	if input == "" || input == "0" {
-		return nil, nil
-	}
-	parts := strings.Split(input, ",")
-	selected := make([]string, 0, len(parts))
-	seen := make(map[int]bool)
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		n, err := strconv.Atoi(p)
-		if err != nil || n < 1 || n > len(options) {
-			fmt.Printf("  Opción inválida: %s, ignorada.\n", p)
-			continue
-		}
-		if seen[n] {
-			continue
-		}
-		seen[n] = true
-		selected = append(selected, options[n-1])
-	}
-	return selected, nil
-}
-
-func promptConfirm(msg string) (bool, error) {
-	fmt.Printf("%s (s/N): ", msg)
-	reader := bufio.NewReader(os.Stdin)
-	input, err := reader.ReadString('\n')
-	if err != nil {
-		return false, err
-	}
-	input = strings.TrimSpace(strings.ToLower(input))
-	return input == "s" || input == "si" || input == "y" || input == "yes", nil
-}
-
-// promptPermissionSelect lists the available sv-memory MCP tools with a short
-// description each, so the user can grant permissions with full transparency.
-// Accepts a comma-separated list of numbers, 'all' for every tool, or 0/empty
-// for none. Returns the selected tool names.
-func promptPermissionSelect(title string, tools []mcp.Tool) ([]string, error) {
-	fmt.Printf("\n=== %s ===\n", title)
-	for i, t := range tools {
-		fmt.Printf("  %2d. %-30s %s\n", i+1, t.Name, t.Description)
-	}
-	fmt.Print("\nIngresa los números separados por coma (ej: 1,3,4), 'all' para todas, o 0 para ninguna: ")
-	reader := bufio.NewReader(os.Stdin)
-	input, err := reader.ReadString('\n')
-	if err != nil {
-		return nil, err
-	}
-	input = strings.TrimSpace(strings.ToLower(input))
-	if input == "" || input == "0" {
-		return nil, nil
-	}
-	if input == "all" {
-		names := make([]string, len(tools))
-		for i, t := range tools {
-			names[i] = t.Name
-		}
-		return names, nil
-	}
-	parts := strings.Split(input, ",")
-	selected := make([]string, 0, len(parts))
-	seen := make(map[int]bool)
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		n, err := strconv.Atoi(p)
-		if err != nil || n < 1 || n > len(tools) {
-			fmt.Printf("  Opción inválida: %s, ignorada.\n", p)
-			continue
-		}
-		if seen[n] {
-			continue
-		}
-		seen[n] = true
-		selected = append(selected, tools[n-1].Name)
-	}
-	return selected, nil
+	return fmt.Sprintf("%s (%s)", t.Name, mode)
 }
 
 var configureCmd = &cobra.Command{
 	Use:   "configure",
 	Short: "Configure local editor and CLI environments (Cursor, VS Code, Zed, Windsurf, Claude Code, OpenCode, Codex, Antigravity) with sv-memory",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		config.ShowBanner()
+		config.ShowBanner(version)
 
 		// 1. Phase 1: Editors
 		predefinedEditors := config.GetPredefinedEditors()
-		editorOptions := make([]string, len(predefinedEditors))
+		editorLabels := make([]string, len(predefinedEditors))
 		editorMap := make(map[string]config.TargetTool)
 		for i, editor := range predefinedEditors {
-			mode := "Instrucciones manuales"
-			if editor.Auto {
-				mode = "Autoconfiguración"
-			}
-			label := fmt.Sprintf("%s (%s)", editor.Name, mode)
-			editorOptions[i] = label
+			label := toolLabel(editor)
+			editorLabels[i] = label
 			editorMap[label] = editor
 		}
 
-		var selectedEditorLabels []string
-		var err error
-		selectedEditorLabels, err = promptMultiSelect(
-			"CONFIGURACIÓN DE EDITORES DE CÓDIGO",
-			editorOptions,
-		)
-		if err != nil {
-			return err
-		}
-
-		var selectedTools []config.TargetTool
-		for _, label := range selectedEditorLabels {
-			selectedTools = append(selectedTools, editorMap[label])
-		}
-
-		fmt.Println()
-
 		// 2. Phase 2: CLIs
 		predefinedCLIs := config.GetPredefinedCLIs()
-		cliOptions := make([]string, len(predefinedCLIs))
+		cliLabels := make([]string, len(predefinedCLIs))
 		cliMap := make(map[string]config.TargetTool)
 		for i, cli := range predefinedCLIs {
-			mode := "Instrucciones manuales"
-			if cli.Auto {
-				mode = "Autoconfiguración"
-			}
-			label := fmt.Sprintf("%s (%s)", cli.Name, mode)
-			cliOptions[i] = label
+			label := toolLabel(cli)
+			cliLabels[i] = label
 			cliMap[label] = cli
 		}
 
-		var selectedCLILabels []string
-		selectedCLILabels, err = promptMultiSelect(
-			"CONFIGURACIÓN DE CLIs DE TERMINAL",
-			cliOptions,
+		var selectedEditors, selectedCLIs []string
+		var confirmed bool
+
+		// 3. Interactive form: Editors → CLIs → Confirmation.
+		// Arrow keys navigate, space toggles, enter advances, esc goes back.
+		form1 := huh.NewForm(
+			huh.NewGroup(
+				huh.NewMultiSelect[string]().
+					Title("Paso 1 de 4 — Editores de código").
+					Description("Selecciona con ESPACIO, navega con ↑/↓, Enter para continuar.").
+					Options(huh.NewOptions(editorLabels...)...).
+					Value(&selectedEditors),
+			).Title("EDITORES"),
+
+			huh.NewGroup(
+				huh.NewMultiSelect[string]().
+					Title("Paso 2 de 4 — CLIs de terminal").
+					Description("Selecciona con ESPACIO, navega con ↑/↓, Enter para continuar.").
+					Options(huh.NewOptions(cliLabels...)...).
+					Value(&selectedCLIs),
+			).Title("CLIs DE TERMINAL"),
+
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title("Paso 3 de 4 — Confirmación").
+					Description("¿Aplicar estos cambios y ver las instrucciones?").
+					Affirmative("Sí, aplicar").
+					Negative("No, cancelar").
+					Value(&confirmed),
+			).Title("CONFIRMACIÓN"),
 		)
-		if err != nil {
-			return err
+
+		if err := form1.Run(); err != nil {
+			if errors.Is(err, huh.ErrUserAborted) {
+				fmt.Println("\nOperación cancelada por el usuario.")
+				return nil
+			}
+			return fmt.Errorf("failed to run configure wizard: %w", err)
 		}
 
-		for _, label := range selectedCLILabels {
-			selectedTools = append(selectedTools, cliMap[label])
-		}
-
-		// 3. Phase 3: Summary and Confirmation
-		if len(selectedTools) == 0 {
-			fmt.Println("\nNo seleccionaste ninguna herramienta. Operación cancelada.")
+		if !confirmed {
+			fmt.Println("\nOperación cancelada por el usuario.")
 			return nil
 		}
 
-		fmt.Println("\n=== RESUMEN DE SELECCIÓN ===")
-		fmt.Println("Se configurarán las siguientes herramientas:")
-		for _, tool := range selectedTools {
-			mode := "Configuración manual"
-			if tool.Auto {
-				mode = "Configuración automática"
-			}
-			fmt.Printf(" * %s (%s)\n", tool.Name, mode)
+		var selectedTools []config.TargetTool
+		for _, label := range selectedEditors {
+			selectedTools = append(selectedTools, editorMap[label])
 		}
-		fmt.Println()
-
-		confirm, err := promptConfirm("¿Deseas aplicar estos cambios y ver las instrucciones?")
-		if err != nil {
-			return err
+		for _, label := range selectedCLIs {
+			selectedTools = append(selectedTools, cliMap[label])
 		}
 
-		if !confirm {
-			fmt.Println("Operación cancelada por el usuario.")
+		if len(selectedTools) == 0 {
+			fmt.Println("\nNo seleccionaste ninguna herramienta. Operación cancelada.")
 			return nil
 		}
 
@@ -225,7 +138,7 @@ var configureCmd = &cobra.Command{
 			}
 		}
 
-		// 4. Phase 4: Grant MCP tool permissions to the allow-listed platforms
+		// 4. Grant MCP tool permissions to the allow-listed platforms
 		// selected above (Antigravity, Claude Code). OpenCode and Codex use
 		// interactive approval and are skipped here.
 		var grantTargets []config.TargetTool
@@ -237,20 +150,37 @@ var configureCmd = &cobra.Command{
 		}
 
 		if len(grantTargets) > 0 {
-			selected, err := promptPermissionSelect(
-				"FASE 4 · PERMISOS DE SV-MEMORY — selecciona las herramientas a autorizar",
-				mcp.AllTools,
-			)
-			if err != nil {
-				return err
+			toolNames := make([]string, len(mcp.AllTools))
+			for i, t := range mcp.AllTools {
+				toolNames[i] = t.Name
 			}
 
-			if len(selected) == 0 {
-				fmt.Println("No se otorgarán permisos adicionales.")
+			var selectedPerms []string
+			form2 := huh.NewForm(
+				huh.NewGroup(
+					huh.NewMultiSelect[string]().
+						Title("Paso 4 de 4 — Permisos de herramientas MCP").
+						Description("Autoriza las herramientas para " + platformNames(grantTargets) + ". 'a' = todas, 'x' = ninguna.").
+						Options(huh.NewOptions(toolNames...)...).
+						Height(20).
+						Value(&selectedPerms),
+				).Title("PERMISOS DE SV-MEMORY"),
+			)
+
+			if err := form2.Run(); err != nil {
+				if errors.Is(err, huh.ErrUserAborted) {
+					fmt.Println("\nNo se otorgarán permisos adicionales.")
+					return nil
+				}
+				return fmt.Errorf("failed to run permissions wizard: %w", err)
+			}
+
+			if len(selectedPerms) == 0 {
+				fmt.Println("\nNo se otorgarán permisos adicionales.")
 			} else {
 				fmt.Println("\n=== OTORGANDO PERMISOS ===")
 				for _, tool := range grantTargets {
-					res, err := perm.Grant(perm.Platform(tool.ID), selected, false)
+					res, err := perm.Grant(perm.Platform(tool.ID), selectedPerms, false)
 					if err != nil {
 						fmt.Printf("❌ %s: %v\n", tool.Name, err)
 						continue
@@ -281,4 +211,13 @@ var configureCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+// platformNames joins the display names of the grant target tools.
+func platformNames(tools []config.TargetTool) string {
+	names := make([]string, len(tools))
+	for i, t := range tools {
+		names[i] = t.Name
+	}
+	return strings.Join(names, ", ")
 }

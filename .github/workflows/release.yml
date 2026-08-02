@@ -32,7 +32,8 @@ jobs:
             ext=""
             [ "$os" = "windows" ] && ext=".exe"
             echo "Building ${target}..."
-            GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
+            GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build -trimpath \
+              -ldflags="-s -w -X main.version=${{ github.ref_name }} -X main.commit=${{ github.sha }}" \
               -o "dist/package/sv-memory${ext}" ./cmd/sv-memory
             if [ "$os" = "windows" ]; then
               (cd dist/package && zip -q "../sv-memory_${os}_${arch}.zip" "sv-memory${ext}")

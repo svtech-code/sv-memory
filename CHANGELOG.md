@@ -3,6 +3,17 @@
 All notable changes follow [Conventional Commits](https://www.conventionalcommits.org/).
 Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automatically.
 
+## [Unreleased]
+
+### Added
+
+- `sv-memory version` command that prints the build version, commit, and Go runtime.
+  The version is injected at build time via `-ldflags`, so release binaries report the
+  tag they were built from.
+- Interactive `sv-memory configure` wizard built on `charmbracelet/huh`: arrow keys
+  navigate, space toggles multi-select, Enter advances, and Esc goes back between
+  steps. The banner now shows the real version instead of a hardcoded value.
+
 ## [v0.1.0] - 2026-08-02
 
 ### Added
