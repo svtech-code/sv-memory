@@ -3,9 +3,10 @@
 All notable changes follow [Conventional Commits](https://www.conventionalcommits.org/).
 Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automatically.
 
-## [Unreleased]
+## [v0.1.0] - 2026-08-02
 
 ### Added
+
 - CI pipeline (`.github/workflows/ci.yml`): `go vet`, tests with the race detector, and a
   build check on `ubuntu-latest` + `macos-latest`.
 - Release pipeline (`.github/workflows/release.yml`): cross-compiles macOS, Linux, and
@@ -18,10 +19,12 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 - `CHANGELOG.md` to track releases.
 
 ### Changed
+
 - READMEs and the getting-started guide now document the one-line `curl`/`iwr` install
   commands and the new no-`sudo` install location.
 
 ### Security
+
 - Generate memory/session/relation IDs with 64 bits of entropy (`newID()`) instead of a
   32-bit `uuid[:8]` prefix, preventing silent overwrites via `INSERT ... ON CONFLICT`.
 - Harden FTS5 search so quotes-only queries return zero results instead of raising a
@@ -30,7 +33,10 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
   `sv-memory save`.
 
 ### Performance
+
 - Make the memory conflict scan incremental (O(new memories × total) instead of O(N²)),
   cache tokenizations, and stop early once the insert budget is reached.
 - De-N+1 `sv_mem_review` (single grouped relation-count query) and surface review-worthy
   memories first, bounded by `default_review_limit`.
+
+[v0.1.0]: https://github.com/svtech-code/sv-memory/releases/tag/v0.1.0
