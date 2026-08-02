@@ -215,14 +215,10 @@ func (s *Server) handleCompare(ctx context.Context, req mcp.CallToolRequest) (*m
 }
 
 func (s *Server) handleReview(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	items, err := memory.ReviewMemories(s.pool.Reader, s.cfg.ProjectID)
+	reviewLimit := viper.GetInt("default_review_limit")
+	items, err := memory.ReviewMemories(s.pool.Reader, s.cfg.ProjectID, reviewLimit)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to review memories: %v", err)), nil
-	}
-
-	reviewLimit := viper.GetInt("default_review_limit")
-	if reviewLimit > 0 && len(items) > reviewLimit {
-		items = items[:reviewLimit]
 	}
 
 	stats, errStats := memory.ConflictStats(s.pool.Reader, s.cfg.ProjectID)

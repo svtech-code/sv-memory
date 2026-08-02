@@ -6,6 +6,27 @@ import (
 	"time"
 )
 
+// lastConflictScanAt returns the timestamp of the last applied conflict scan for
+// the project, or the zero time if no applied scan has run yet.
+func lastConflictScanAt(db *sql.DB, projectID string) time.Time {
+	var cutoffStr sql.NullString
+	err := db.QueryRow("SELECT last_conflict_scan_at FROM projects WHERE id = ?", projectID).Scan(&cutoffStr)
+	if err != nil || !cutoffStr.Valid || cutoffStr.String == "" {
+		return time.Time{}
+	}
+	if t, err := parseTime(cutoffStr.String); err == nil {
+		return t
+	}
+	return time.Time{}
+}
+
+// setLastConflictScanAt records that a conflict scan was applied, so future
+// scans only compare memories created afterwards instead of re-scanning every
+// pair from scratch.
+func setLastConflictScanAt(db *sql.DB, projectID string, t time.Time) error {
+	_, err := db.Exec("UPDATE projects SET last_conflict_scan_at = ? WHERE id = ?", t.Format(time.RFC3339), projectID)
+	return err
+}
 
 // ListConflicts returns all relations of type 'conflicts_with' for a project, optionally filtered by status.
 func ListConflicts(db *sql.DB, projectID string, status string) ([]*MemoryRelation, error) {
@@ -110,36 +131,80 @@ func ConflictStats(db *sql.DB, projectID string) (map[string]int, error) {
 	return stats, nil
 }
 
-// ScanConflicts performs pairwise Jaccard similarity analysis on project memories.
-// If similarity exceeds the threshold and no prior relation exists, it flags it as 'conflicts_with'.
+// ScanConflicts performs pairwise Jaccard similarity analysis on project
+// memories. If similarity exceeds the threshold and no prior relation exists, it
+// flags it as 'conflicts_with'.
+//
+// The scan is incremental: only memories created after the last *applied* scan
+// (projects.last_conflict_scan_at) are compared against the full memory set, so
+// repeated scans cost O(newMemories × totalMemories) instead of O(N²). The
+// cutoff only advances when apply=true and the scan completes without being
+// stopped early by maxInsert, so dry-runs remain repeatable and a partial scan
+// never silently skips memories.
 func ScanConflicts(db *sql.DB, projectID string, apply bool, maxInsert int, threshold float64) ([]*MemoryRelation, error) {
 	if threshold <= 0 {
 		threshold = 0.45 // Default threshold
 	}
 
-	// 1. Load all active memories
-	rows, err := db.Query("SELECT id, what, category, why, learned FROM memories WHERE project_id = ? AND deleted_at IS NULL", projectID)
+	// 1. Load all active memories with their creation time.
+	rows, err := db.Query("SELECT id, what, category, created_at FROM memories WHERE project_id = ? AND deleted_at IS NULL", projectID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch memories for scan: %w", err)
 	}
 	defer rows.Close()
 
 	type scanItem struct {
-		id       string
-		what     string
-		category string
+		id        string
+		what      string
+		category  string
+		createdAt time.Time
 	}
 
 	var items []scanItem
 	for rows.Next() {
 		var item scanItem
-		var why, learned string
-		if err := rows.Scan(&item.id, &item.what, &item.category, &why, &learned); err == nil {
+		var createdAtStr string
+		if err := rows.Scan(&item.id, &item.what, &item.category, &createdAtStr); err == nil {
+			item.createdAt, _ = parseTime(createdAtStr)
 			items = append(items, item)
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(items) < 2 {
+		return nil, nil
+	}
 
-	// 2. Load existing relations to avoid duplicate comparisons
+	// 2. Incremental filtering: mark which memories are new since the last
+	// applied scan. On the first scan (zero cutoff) everything is new.
+	cutoff := lastConflictScanAt(db, projectID)
+	newFlags := make([]bool, len(items))
+	newCount := 0
+	if !cutoff.IsZero() {
+		for i := range items {
+			if items[i].createdAt.After(cutoff) {
+				newFlags[i] = true
+				newCount++
+			}
+		}
+		if newCount == 0 {
+			return nil, nil // no new memories since the last applied scan
+		}
+	} else {
+		for i := range items {
+			newFlags[i] = true
+		}
+		newCount = len(items)
+	}
+
+	// 3. Cache tokenizations so each title is tokenized once, not once per pair.
+	tokens := make([][]string, len(items))
+	for i := range items {
+		tokens[i] = tokenizeTitle(items[i].what)
+	}
+
+	// 4. Load existing relations to avoid duplicate comparisons.
 	existing := make(map[string]bool)
 	relRows, err := db.Query("SELECT source_id, target_id FROM memory_relations WHERE project_id = ?", projectID)
 	if err == nil {
@@ -153,46 +218,45 @@ func ScanConflicts(db *sql.DB, projectID string, apply bool, maxInsert int, thre
 		}
 	}
 
-	// 3. Compare pairs
+	// 5. Compare candidate pairs (pairs involving at least one new memory).
 	var found []*MemoryRelation
 	insertedCount := 0
+	earlyStop := false
 
 	for i := 0; i < len(items); i++ {
 		for j := i + 1; j < len(items); j++ {
-			m1 := items[i]
-			m2 := items[j]
-
-			// Skip if already related
-			if existing[m1.id+":"+m2.id] {
+			if !newFlags[i] && !newFlags[j] {
+				continue
+			}
+			if existing[items[i].id+":"+items[j].id] {
 				continue
 			}
 
-			tokens1 := tokenizeTitle(m1.what)
-			tokens2 := tokenizeTitle(m2.what)
-			sim := jaccardSimilarity(tokens1, tokens2)
+			sim := jaccardSimilarity(tokens[i], tokens[j])
 
 			if sim >= threshold {
-				reason := fmt.Sprintf("High description similarity (%.0f%%) between %s and %s", sim*100, m1.id, m2.id)
+				reason := fmt.Sprintf("High description similarity (%.0f%%) between %s and %s", sim*100, items[i].id, items[j].id)
 				rel := &MemoryRelation{
 					ID:           newID(),
 					ProjectID:    projectID,
-					SourceID:     m1.id,
-					TargetID:     m2.id,
+					SourceID:     items[i].id,
+					TargetID:     items[j].id,
 					RelationType: "conflicts_with",
 					Status:       "pending",
 					Score:        sim,
 					Reason:       reason,
 					JudgedBy:     "system",
-					SourceWhat:   m1.what,
-					TargetWhat:   m2.what,
+					SourceWhat:   items[i].what,
+					TargetWhat:   items[j].what,
 					CreatedAt:    time.Now(),
 				}
 				found = append(found, rel)
 
-				// Apply insertions if requested
+				// Apply insertions if requested.
 				if apply {
 					if maxInsert > 0 && insertedCount >= maxInsert {
-						continue
+						earlyStop = true
+						break
 					}
 					_, err := db.Exec(
 						`INSERT INTO memory_relations (id, project_id, source_id, target_id, relation_type, status, score, reason, judged_by)
@@ -205,6 +269,16 @@ func ScanConflicts(db *sql.DB, projectID string, apply bool, maxInsert int, thre
 				}
 			}
 		}
+		if earlyStop {
+			break
+		}
+	}
+
+	// Only advance the scan cutoff when the results were persisted and the whole
+	// scan completed; a dry-run or a scan cut short by maxInsert must leave the
+	// cutoff untouched so nothing is skipped on the next run.
+	if apply && !earlyStop {
+		_ = setLastConflictScanAt(db, projectID, time.Now())
 	}
 
 	return found, nil

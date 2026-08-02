@@ -141,6 +141,7 @@ var migrations = []migration{
 	{5, "add_memory_relation_columns", addMemoryRelationColumns},
 	{6, "create_post_indexes", createPostIndexes},
 	{7, "graph_edges_composite_pk", migrateGraphEdgesCompositePK},
+	{8, "add_project_scan_meta", addProjectScanMeta},
 }
 
 func applyMigrations(db *sql.DB) error {
@@ -304,11 +305,12 @@ func tablePKInfo(db *sql.DB, table string) ([]string, error) {
 
 func columnExists(db *sql.DB, table, col string) (bool, error) {
 	allowed := map[string]bool{
-		"memories":          true,
-		"graph_edges":       true,
-		"graph_nodes":       true,
-		"memory_relations":  true,
-		"sessions":          true,
+		"memories":         true,
+		"graph_edges":      true,
+		"graph_nodes":      true,
+		"memory_relations": true,
+		"sessions":         true,
+		"projects":         true,
 	}
 	if !allowed[table] {
 		return false, fmt.Errorf("columnExists: unknown table %q", table)
@@ -418,6 +420,23 @@ func createPostIndexes(db *sql.DB) error {
 	for _, idx := range indexes {
 		if _, err := db.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create index %s: %w", idx, err)
+		}
+	}
+	return nil
+}
+
+// addProjectScanMeta adds per-project metadata used to make the pairwise
+// conflict scan incremental: last_conflict_scan_at records the timestamp of the
+// last applied scan, so subsequent scans only compare newly created memories
+// against the existing set instead of re-comparing every O(N²) pair.
+func addProjectScanMeta(db *sql.DB) error {
+	exists, err := columnExists(db, "projects", "last_conflict_scan_at")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		if _, err := db.Exec("ALTER TABLE projects ADD COLUMN last_conflict_scan_at DATETIME;"); err != nil {
+			return fmt.Errorf("failed to add column last_conflict_scan_at to projects: %w", err)
 		}
 	}
 	return nil

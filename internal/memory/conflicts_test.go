@@ -3,6 +3,7 @@ package memory
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/svtech-code/sv-memory/internal/db"
@@ -178,4 +179,82 @@ func TestJaccardSeparationValues(t *testing.T) {
 	// Let's check what sim1 and sim2 are:
 	t.Logf("sim1 (postgres users vs mongo replacement): %f", sim1)
 	t.Logf("sim2 (postgres users vs postgres logs): %f", sim2)
+}
+
+func TestScanConflictsIncremental(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-conflicts-incr")
+	if err != nil {
+		t.Fatalf("failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	database, err := db.InitDB(filepath.Join(tempDir, "test_storage.db"))
+	if err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "conflicts-incr-proj"
+	if err := db.RegisterProject(database, projectID, "Incr", tempDir); err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	save := func(what string) {
+		t.Helper()
+		if _, err := SaveMemory(database, &Memory{ProjectID: projectID, Category: "architecture", What: what, Why: "why", Learned: "learned"}); err != nil {
+			t.Fatalf("failed to save memory: %v", err)
+		}
+	}
+
+	save("Use PostgreSQL for users data storage")
+	save("Replace PostgreSQL users storage with MongoDB")
+
+	// 1. A dry-run scan must NOT advance the scan cutoff.
+	found, err := ScanConflicts(database, projectID, false, 0, 0.45)
+	if err != nil {
+		t.Fatalf("dry-run ScanConflicts failed: %v", err)
+	}
+	if len(found) == 0 {
+		t.Fatal("expected dry-run to detect the conflict")
+	}
+	if c := lastConflictScanAt(database, projectID); !c.IsZero() {
+		t.Error("dry-run scan must not advance the scan cutoff")
+	}
+
+	// 2. An applied scan inserts the relations and advances the cutoff.
+	applied, err := ScanConflicts(database, projectID, true, 5, 0.45)
+	if err != nil {
+		t.Fatalf("apply ScanConflicts failed: %v", err)
+	}
+	if len(applied) == 0 {
+		t.Fatal("expected apply scan to insert conflicts")
+	}
+	if c := lastConflictScanAt(database, projectID); c.IsZero() {
+		t.Error("applied scan should advance the scan cutoff")
+	}
+
+	// 3. Re-scanning with no new memories reports nothing new (incremental).
+	again, err := ScanConflicts(database, projectID, false, 0, 0.45)
+	if err != nil {
+		t.Fatalf("re-scan failed: %v", err)
+	}
+	if len(again) != 0 {
+		t.Errorf("expected no new conflicts on re-scan, got %d", len(again))
+	}
+
+	// 4. A new conflicting memory is compared against the full set, but the old
+	// (already reported) pair is not re-reported.
+	save("Replace PostgreSQL users storage with MySQL")
+	reported, err := ScanConflicts(database, projectID, false, 0, 0.45)
+	if err != nil {
+		t.Fatalf("incremental scan failed: %v", err)
+	}
+	if len(reported) != 2 {
+		t.Fatalf("expected 2 new conflicts involving the new memory, got %d", len(reported))
+	}
+	for _, rel := range reported {
+		if !strings.Contains(rel.SourceWhat, "MySQL") && !strings.Contains(rel.TargetWhat, "MySQL") {
+			t.Errorf("reported conflict %q vs %q does not involve the new memory", rel.SourceWhat, rel.TargetWhat)
+		}
+	}
 }

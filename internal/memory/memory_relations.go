@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -123,7 +124,40 @@ func CompareMemories(db *sql.DB, projectID, id1, id2 string) (string, error) {
 	return sb.String(), nil
 }
 
-func ReviewMemories(db *sql.DB, projectID string) ([]*MemoryReviewItem, error) {
+// ReviewMemories returns memories that may need attention (old, stale, high
+// duplicates, or consolidation candidates). The relation count for every
+// memory is fetched with a single grouped query instead of one COUNT per row,
+// and the result is ordered review-worthy first (needs-attention items, then by
+// age) and bounded by limit, so a small review surfaces the most relevant
+// candidates rather than the most recently created memories.
+func ReviewMemories(db *sql.DB, projectID string, limit int) ([]*MemoryReviewItem, error) {
+	// Relation counts in one grouped query (avoids an N+1 COUNT per memory).
+	// The rows must be fully consumed and closed before the next query on a
+	// single-connection DB (the writer pool has MaxOpenConns=1).
+	relCounts := make(map[string]int)
+	relRows, err := db.Query(`
+		SELECT mem_id, COUNT(*)
+		FROM (
+			SELECT source_id AS mem_id FROM memory_relations WHERE project_id = ?
+			UNION ALL
+			SELECT target_id AS mem_id FROM memory_relations WHERE project_id = ?
+		)
+		GROUP BY mem_id`, projectID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	for relRows.Next() {
+		var mid string
+		var n int
+		if err := relRows.Scan(&mid, &n); err == nil {
+			relCounts[mid] = n
+		}
+	}
+	relRows.Close()
+	if err := relRows.Err(); err != nil {
+		return nil, err
+	}
+
 	rows, err := db.Query(`
 		SELECT id, category, what, topic_key, revision_count, duplicate_count, created_at, last_seen_at
 		FROM memories
@@ -168,8 +202,7 @@ func ReviewMemories(db *sql.DB, projectID string) ([]*MemoryReviewItem, error) {
 			}
 		}
 
-		relCount, _ := CountRelations(db, projectID, r.Memory.ID)
-		r.RelationCount = relCount
+		r.RelationCount = relCounts[r.Memory.ID]
 
 		var reasons []string
 		if r.AgeDays > 30 {
@@ -191,5 +224,23 @@ func ReviewMemories(db *sql.DB, projectID string) ([]*MemoryReviewItem, error) {
 		r.Reason = strings.Join(reasons, "; ")
 		items = append(items, &r)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Prioritize memories that actually need attention, then by age, so the
+	// limited output surfaces stale/duplicate/consolidation candidates first.
+	sort.SliceStable(items, func(i, j int) bool {
+		ineed := items[i].Reason != "recent and healthy"
+		jneed := items[j].Reason != "recent and healthy"
+		if ineed != jneed {
+			return ineed
+		}
+		return items[i].AgeDays > items[j].AgeDays
+	})
+
+	if limit > 0 && len(items) > limit {
+		items = items[:limit]
+	}
+	return items, nil
 }
