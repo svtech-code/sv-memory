@@ -1,0 +1,12 @@
+{
+  "id": "bfe7ffcd",
+  "project_id": "ce22c23ac33d7a36",
+  "category": "journal",
+  "what": "Modularizado cmd/sv-memory/main.go: 1756 líneas a 119, dividido en 9 archivos de comandos (cmd_init, cmd_memory, cmd_projects, cmd_graph, cmd_configure, cmd_conflicts, cmd_hooks, cmd_permissions, cmd_config)",
+  "why": "Primera fase de la revisión de código solicitada por el usuario (modularización punto 1). main.go era un monolito de 1756 líneas.",
+  "learned": "Modularizado cmd/sv-memory/main.go: 1756 líneas a 119, dividido en 9 archivos de comandos (cmd_init, cmd_memory, cmd_projects, cmd_graph, cmd_configure, cmd_conflicts, cmd_hooks, cmd_permissions, cmd_config)",
+  "last_seen_at": "0001-01-01T00:00:00Z",
+  "normalized_hash": "3d23d13efc4f70e6f848317b710cb5fd69d1b0494db6bf1a17b2ef2b0372332b",
+  "deleted_at": "0001-01-01T00:00:00Z",
+  "created_at": "2026-08-01T22:06:34.024471-04:00"
+}
