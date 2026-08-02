@@ -1,0 +1,21 @@
+{
+  "id": "d45e2859",
+  "project_id": "ce22c23ac33d7a36",
+  "category": "journal",
+  "what": "Modularización MCP: mcp.go (1844 líneas) dividido en Server struct + handlers por dominio",
+  "why": "Segundo paso de la revisión solicitada. mcp.go era un monolito de 1844 líneas con 26 handlers de tools como closures de NewServer. Se refactorizó a un struct Server (pool, cfg, estado de debounce de git sync, lock de carga de grafo) con métodos compartidos (maybeSyncFromGit, scheduleSync, flushPendingSync, getOrLoadGraph, computeCentralityIfMissing) y handlers extraídos a archivos por dominio: tools_session.go, tools_save.go, tools_search.go, tools_judge.go, tools_graph.go (incluye helpers escapeMermaid, computeCommLabels, tokenBenchmark, commLabelStr). mcp.go quedó con Tool/AllTools, Server struct + estado, StartServer y NewServer (definiciones de tools + wiring a s.handleX).",
+  "where_path": "internal/mcp/",
+  "learned": "Restricción clave del guard test TestAllToolsMatchesRegisteredTools: parsea literalmente 'mcp.NewTool(' en el archivo mcp.go. Por eso las definiciones de tools y su registro deben permanecer en mcp.go (no moverse a los archivos tools_*.go) o habría que actualizar el test. Los handlers sí se extraen como métodos del Server sin romper el guard. Patrón: definir las tool definitions + AddTool(tool, s.handleX) en NewServer, y cada handler como método func (s *Server) handleX(ctx, req).",
+  "git_branch": "main",
+  "git_commit": "2f0a0dc",
+  "author": "Mario Sandoval (Sv Tech)",
+  "impact": "go build, go vet, gofmt y toda la suite go test ./... pasan; tests mcp con -race pasan incluido el guard TestAllToolsMatchesRegisteredTools. mcp.go reducido de 1844 a 548 líneas.",
+  "next_steps": "Frentes pendientes del review: (3) dividir internal/memory/memory.go (1363 líneas), luego arreglar vulnerabilidades (FTS5 injection, path filter, UUID entropía) y planear despliegue/CI.",
+  "session_id": "e6c448b8",
+  "topic_key": "journal/modularize-mcp-server",
+  "revision_count": 1,
+  "last_seen_at": "0001-01-01T00:00:00Z",
+  "normalized_hash": "93fa8d636747bf01288ac2d7df12fc54ad846df5274dd63fcab458e0fa67577e",
+  "deleted_at": "0001-01-01T00:00:00Z",
+  "created_at": "2026-08-01T22:15:25.545484-04:00"
+}
