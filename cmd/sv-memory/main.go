@@ -70,6 +70,7 @@ func init() {
 
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(tuiCmd)
 	rootCmd.AddCommand(diagnoseCmd)

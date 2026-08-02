@@ -13,6 +13,10 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 - Interactive `sv-memory configure` wizard built on `charmbracelet/huh`: arrow keys
   navigate, space toggles multi-select, Enter advances, and Esc goes back between
   steps. The banner now shows the real version instead of a hardcoded value.
+- `sv-memory update` command: checks GitHub Releases for a newer version, asks for
+  confirmation, downloads the platform binary, verifies its SHA-256 checksum against
+  `checksums.txt`, and atomically replaces the running executable (on Windows it
+  prints a manual `copy` command since the running .exe cannot be overwritten).
 
 ## [v0.1.0] - 2026-08-02
 
