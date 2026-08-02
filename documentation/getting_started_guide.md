@@ -63,6 +63,22 @@ sv-memory --help
 > **¿Por qué este paso?** 
 > Al ubicar el ejecutable en `~/.local/bin/` (una ruta estándar del PATH de usuario), cualquier herramienta de terminal o editor de código en tu sistema podrá invocar `sv-memory mcp` o ejecutar comandos de diagnóstico sin importar en qué directorio te encuentres. El instalador automático (`install.sh` / `install.ps1`) hace este paso por ti sin requerir `sudo`.
 
+#### Actualizar sv-memory:
+
+```bash
+sv-memory update
+```
+
+El comando busca la última release publicada en GitHub, la compara con tu versión actual
+(`sv-memory version`), y si hay una más nueva:
+
+1. Te muestra ambas versiones y **pide confirmación** antes de hacer nada.
+2. Descarga el binario correcto para tu sistema operativo y arquitectura.
+3. **Verifica su checksum SHA-256** contra el publicado en la release (protección contra descargas corruptas o manipuladas).
+4. Reemplaza el binario de forma atómica (en Windows te indica el comando manual, porque no puede sobrescribir un `.exe` en ejecución).
+
+> Tus memorias (BD SQLite en `~/.config/sv-memory/`) y la configuración de tus editores no se ven afectadas al actualizar — solo se reemplaza el binario.
+
 ---
 
 ### Paso 2: Configuración Interactiva de Editores y CLIs (`sv-memory configure`)
@@ -74,11 +90,12 @@ sv-memory configure
 ```
 
 #### ¿Qué hace este comando?
-El asistente te guiará a través de fases interactivas en la terminal:
+El asistente te guiará a través de fases interactivas en la terminal, navegables con las flechas `↑/↓`, selección múltiple con `ESPACIO`, `Enter` para avanzar, `Esc` para retroceder y `Ctrl+C` para salir:
+
 1. **Fase 1 (Editores GUI):** Te permite seleccionar editores como **Cursor**, **VS Code**, **Zed** o **Windsurf**. Registra automáticamente el servidor MCP en sus archivos de configuración de usuario (ej. `claude_desktop_config.json` o settings de Cursor).
 2. **Fase 2 (Asistentes de Terminal):** Te permite seleccionar clientes CLI como **Claude Code**, **Antigravity CLI (agy)** u **OpenCode**.
 3. **Fase 3 (Confirmación y aplicación):** Muestra el resumen de herramientas seleccionadas y aplica las configuraciones automáticas o manuales.
-4. **Fase 4 (Permisos MCP):** Lista las **26 herramientas MCP de sv-memory con su descripción** para que selecciones cuáles autorizar (números separados por coma o `all` para todas). Otorga los permisos en las plataformas configuradas que usan allow-list estática (Antigravity CLI, Claude Code).
+4. **Fase 4 (Permisos MCP):** Lista las **26 herramientas MCP de sv-memory** para que selecciones cuáles autorizar (con `a` seleccionas todas y `x` ninguna). Otorga los permisos en las plataformas configuradas que usan allow-list estática (Antigravity CLI, Claude Code).
 
 > **¿Por qué este paso?**
 > Evita que tengas que editar manualmente archivos JSON de configuración complejos. Con un par de teclas en la terminal, todos tus editores quedan enlazados al servidor MCP de `sv-memory` y los permisos de las herramientas quedan otorgados con total transparencia.

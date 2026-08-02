@@ -106,6 +106,16 @@ iwr -useb https://raw.githubusercontent.com/svtech-code/sv-memory/main/install.p
 > On macOS/Linux the binary is installed to `$HOME/.local/bin` (no `sudo` needed).
 > On Windows it is installed to `%LOCALAPPDATA%\sv-memory` and added to your user PATH.
 
+**Update to the latest version:**
+
+```bash
+sv-memory update
+```
+
+This checks GitHub Releases, downloads the binary for your platform, verifies its
+SHA-256 checksum, and replaces the running executable. Your memories and configuration
+are stored separately and are never affected by an update.
+
 **From source** (pure Go, no CGO required):
 
 ```bash
@@ -168,6 +178,8 @@ sv-memory tui
 | Command                            | Category        | Description                                                                              |
 | :--------------------------------- | :-------------- | :--------------------------------------------------------------------------------------- |
 | `sv-memory init`                   | **Project**     | Initializes repository, scans dependency graph, and injects `AGENTS.md`.                 |
+| `sv-memory version`                | **Info**        | Prints the current version, commit hash, and Go runtime.                                 |
+| `sv-memory update`                 | **Maintenance** | Checks for new releases, verifies the binary checksum (SHA-256), and auto-updates.       |
 | `sv-memory mcp`                    | **Server**      | Launches Model Context Protocol server over stdio for AI clients.                        |
 | `sv-memory tui`                    | **Interface**   | Launches interactive terminal user interface for memories and graph diagnostics.         |
 | `sv-memory configure`              | **Setup**       | Interactive terminal wizard to configure Cursor, Claude Code, agy, Zed, etc.             |

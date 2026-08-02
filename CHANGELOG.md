@@ -7,16 +7,28 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ### Added
 
+- `sv-memory update` command: checks GitHub Releases for a newer version, asks for
+  confirmation, downloads the platform binary, verifies its SHA-256 checksum against
+  `checksums.txt`, and atomically replaces the running executable (on Windows it
+  prints a manual `copy` command since the running .exe cannot be overwritten).
+
+### Changed
+
+- The `sv-memory configure` wizard now uses the SV Tech banner color (`#00B0C2`) for its
+  borders, titles, descriptions, selectors, and buttons while keeping the green
+  selection indicator. The Esc key now goes back to the previous step, and every screen
+  shows its keyboard shortcuts (including `Ctrl+C` to exit).
+
+## [v0.2.0] - 2026-08-02
+
+### Added
+
 - `sv-memory version` command that prints the build version, commit, and Go runtime.
   The version is injected at build time via `-ldflags`, so release binaries report the
   tag they were built from.
 - Interactive `sv-memory configure` wizard built on `charmbracelet/huh`: arrow keys
   navigate, space toggles multi-select, Enter advances, and Esc goes back between
   steps. The banner now shows the real version instead of a hardcoded value.
-- `sv-memory update` command: checks GitHub Releases for a newer version, asks for
-  confirmation, downloads the platform binary, verifies its SHA-256 checksum against
-  `checksums.txt`, and atomically replaces the running executable (on Windows it
-  prints a manual `copy` command since the running .exe cannot be overwritten).
 
 ## [v0.1.0] - 2026-08-02
 
@@ -55,3 +67,5 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
   memories first, bounded by `default_review_limit`.
 
 [v0.1.0]: https://github.com/svtech-code/sv-memory/releases/tag/v0.1.0
+[Unreleased]: https://github.com/svtech-code/sv-memory/compare/v0.2.0...main
+[v0.2.0]: https://github.com/svtech-code/sv-memory/releases/tag/v0.2.0

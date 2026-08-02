@@ -106,6 +106,16 @@ iwr -useb https://raw.githubusercontent.com/svtech-code/sv-memory/main/install.p
 > En macOS/Linux el binario se instala en `$HOME/.local/bin` (sin `sudo`).
 > En Windows se instala en `%LOCALAPPDATA%\sv-memory` y se agrega al PATH del usuario.
 
+**Actualizar a la última versión:**
+
+```bash
+sv-memory update
+```
+
+Esto busca la última release de GitHub, descarga el binario para tu plataforma, verifica su
+checksum SHA-256 y reemplaza el ejecutable en uso. Tus memorias y configuración se guardan
+por separado y nunca se ven afectadas por una actualización.
+
 **Desde el código fuente** (Go puro, sin requerir CGO):
 
 ```bash
@@ -168,6 +178,8 @@ sv-memory tui
 | Comando                            | Categoría       | Descripción                                                                                           |
 | :--------------------------------- | :-------------- | :---------------------------------------------------------------------------------------------------- |
 | `sv-memory init`                   | **Proyecto**    | Inicializa el repositorio, escanea el grafo de dependencias e inyecta `AGENTS.md`.                    |
+| `sv-memory version`                | **Información** | Muestra la versión actual, el hash del commit y el runtime de Go.                                    |
+| `sv-memory update`                 | **Mantenimiento** | Busca nuevas releases, verifica el checksum del binario (SHA-256) y se auto-actualiza.              |
 | `sv-memory mcp`                    | **Servidor**    | Inicia el servidor Model Context Protocol sobre stdio para clientes de IA.                            |
 | `sv-memory tui`                    | **Interfaz**    | Inicia la interfaz interactiva de terminal para explorar memorias y diagnósticos.                     |
 | `sv-memory configure`              | **Instalación** | Asistente interactivo en terminal para configurar Cursor, Claude Code, agy, Zed, etc.                 |
@@ -275,9 +287,9 @@ sv-memory permissions revoke --platform antigravity
 - Las entradas no relacionadas (p. ej. `command(npm run)`) siempre se conservan.
 - Reinicia tu asistente de IA tras otorgar permisos para que cargue los cambios.
 
-En el asistente `sv-memory configure`, la **Fase 4** muestra las 26 herramientas con
-su descripción para que selecciones cuáles autorizar (números separados por coma o
-`all` para todas) en las plataformas configuradas.
+En el asistente `sv-memory configure`, la **Fase 4** lista las 26 herramientas para que
+selecciones cuáles autorizar (con `a` seleccionas todas y `x` ninguna) en las plataformas
+configuradas.
 
 ---
 

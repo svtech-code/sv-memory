@@ -1313,5 +1313,26 @@
     "normalized_hash": "7e465bd6964ec4a5f14b34d6aa0d493c80ea21d6c8d7dca81b116282fbacd7fd",
     "deleted_at": "0001-01-01T00:00:00Z",
     "created_at": "2026-08-02T03:00:29.837363-04:00"
+  },
+  {
+    "id": "4d950edd",
+    "project_id": "ce22c23ac33d7a36",
+    "category": "journal",
+    "what": "Actualización de CHANGELOG y documentación para las features de v0.3.0 (update, theme/Esc, version)",
+    "why": "El usuario pidió actualizar el changelog, la documentación y los README con las funcionalidades nuevas de la próxima release v0.3.0.",
+    "where_path": "CHANGELOG.md, README.md, README_ES.md, documentation/getting_started_guide.md",
+    "learned": "Línea de tiempo de releases: v0.1.0 = instalación/CI/community files (commit 52c2956); v0.2.0 = wizard interactivo + version command (commit 2445b62, tag v0.2.0); Unreleased/v0.3.0 = update command (2053f38) + theme/Esc navigation (7c3bbca). La documentación tenía 2 refs a la UX antigua del wizard (números separados por coma / 'all' para todas) que quedaron obsoletas al pasar a huh (ahora a= todas, x= ninguna): estaban en documentation/getting_started_guide.md Fase 4 y README_ES.md sección de permisos. README.md en inglés ya era genérico. Recordar al actualizar docs del wizard: la UX actual es flechas ↑/↓, ESPACIO selecciona, Enter avanza, Esc retrocede, Ctrl+C salir, 'a'/'x' para todas/ninguna.",
+    "git_branch": "main",
+    "git_commit": "7c3bbca",
+    "author": "Mario Sandoval (Sv Tech)",
+    "impact": "CHANGELOG.md ahora separa correctamente las releases: se creó la sección [v0.2.0] (wizard interactivo + comando version, tag 2445b62) y [Unreleased] quedó solo con el comando update + theme/Esc del wizard. Se agregaron los comandos version y update a la tabla CLI de README.md y README_ES.md, secciones \"sv-memory update\" en el Inicio Rápido de ambos READMEs y en la guía getting_started_guide.md (con los 4 pasos del update: confirmación, descarga, checksum SHA-256, reemplazo), y se actualizó la Fase 4 del wizard (UX antigua de números por coma → selección interactiva con a/x). Se eliminaron todas las referencias a la UX antigua. Sin cambios de código Go, solo docs.",
+    "next_steps": "El usuario debe revisar los docs, committear (los 4 archivos de docs van junto con cmd_update.go, cmd_configure.go, main.go y Makefile/workflows para v0.3.0), pushear y luego taggear v0.3.0. Nota: el CHANGELOG ya tiene los links de v0.2.0 y Unreleased listos.",
+    "session_id": "e6c448b8",
+    "topic_key": "journal/docs-update-v030-features",
+    "revision_count": 1,
+    "last_seen_at": "0001-01-01T00:00:00Z",
+    "normalized_hash": "a6e764786d0e923da007e21cff13f41e00934e2746d278200d73f1dff56da900",
+    "deleted_at": "0001-01-01T00:00:00Z",
+    "created_at": "2026-08-02T03:06:07.125113-04:00"
   }
 ]
