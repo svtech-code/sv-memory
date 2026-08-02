@@ -57,6 +57,7 @@ func SearchMemoriesCompact(db *sql.DB, projectID string, searchTerm string, cate
 }
 
 func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string, category string, pathFilter string, limit int, offset int) ([]*MemorySearchResult, error) {
+	pathFilter = sanitizePathFilter(pathFilter)
 	var query string
 	var args []interface{}
 
@@ -79,6 +80,11 @@ func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string
 		query += " ORDER BY created_at DESC"
 	} else {
 		searchTerm = sanitizeFTS5Query(searchTerm)
+		// An empty sanitized query (e.g. only quotes) must not reach `MATCH ''`,
+		// which raises an FTS5 syntax error. Treat it as "no results".
+		if searchTerm == "" {
+			return nil, nil
+		}
 		query = `
 		SELECT m.id, m.category, m.what,
 			m.topic_key, m.revision_count, m.duplicate_count, m.created_at,
@@ -310,6 +316,7 @@ func SearchMemories(db *sql.DB, projectID string, searchTerm string, category st
 }
 
 func SearchMemoriesScoped(db *sql.DB, projectID string, searchTerm string, category string, pathFilter string, limit int) ([]*Memory, error) {
+	pathFilter = sanitizePathFilter(pathFilter)
 	var query string
 	var args []interface{}
 
@@ -333,6 +340,11 @@ func SearchMemoriesScoped(db *sql.DB, projectID string, searchTerm string, categ
 		query += " ORDER BY created_at DESC"
 	} else {
 		searchTerm = sanitizeFTS5Query(searchTerm)
+		// An empty sanitized query (e.g. only quotes) must not reach `MATCH ''`,
+		// which raises an FTS5 syntax error. Treat it as "no results".
+		if searchTerm == "" {
+			return nil, nil
+		}
 		query = `
 		SELECT m.id, m.project_id, m.category, m.what, m.why, m.where_path, m.learned,
 			m.git_branch, m.git_commit, m.author, m.impact, m.errors_faced, m.next_steps,
@@ -414,7 +426,10 @@ func SearchMemoriesScoped(db *sql.DB, projectID string, searchTerm string, categ
 // expression. Every token is quoted (neutralizing operator words and special
 // characters) and tokens of two or more characters get a prefix wildcard (e.g.
 // "component" -> "component*") so inflections and word variants are matched
-// too. Empty input returns "".
+// too. Tokens that reduce to nothing after quote-stripping (e.g. a query made
+// of only double quotes) are dropped; if no tokens survive, "" is returned and
+// callers must treat it as "no results" instead of running an empty FTS5 MATCH
+// expression, which raises an FTS5 syntax error.
 func sanitizeFTS5Query(term string) string {
 	tokens := strings.Fields(term)
 	if len(tokens) == 0 {
@@ -423,6 +438,9 @@ func sanitizeFTS5Query(term string) string {
 	quoted := make([]string, 0, len(tokens))
 	for _, t := range tokens {
 		cleaned := strings.ReplaceAll(t, `"`, ``)
+		if cleaned == "" {
+			continue
+		}
 		if len([]rune(cleaned)) >= 2 {
 			quoted = append(quoted, `"`+cleaned+`"*`)
 		} else {

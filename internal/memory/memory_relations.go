@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/svtech-code/sv-memory/internal/security"
 )
 
@@ -16,7 +14,7 @@ func SaveJudgment(db *sql.DB, projectID, sourceID, targetID, relationType, reaso
 	if sourceID == targetID {
 		return nil, errors.New("cannot create a relation between a memory and itself")
 	}
-	id := uuid.New().String()[:8]
+	id := newID()
 	now := time.Now()
 	reason = security.SanitizeText(reason)
 	judgedBy = security.SanitizeText(judgedBy)

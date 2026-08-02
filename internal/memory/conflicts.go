@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 
@@ -176,7 +174,7 @@ func ScanConflicts(db *sql.DB, projectID string, apply bool, maxInsert int, thre
 			if sim >= threshold {
 				reason := fmt.Sprintf("High description similarity (%.0f%%) between %s and %s", sim*100, m1.id, m2.id)
 				rel := &MemoryRelation{
-					ID:           uuid.New().String()[:8],
+					ID:           newID(),
 					ProjectID:    projectID,
 					SourceID:     m1.id,
 					TargetID:     m2.id,

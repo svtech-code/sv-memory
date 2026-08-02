@@ -10,8 +10,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/google/uuid"
-
 	"github.com/svtech-code/sv-memory/internal/security"
 )
 
@@ -194,7 +192,7 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 	}
 
 	if mem.ID == "" {
-		mem.ID = uuid.New().String()[:8]
+		mem.ID = newID()
 	}
 	if mem.CreatedAt.IsZero() {
 		mem.CreatedAt = now

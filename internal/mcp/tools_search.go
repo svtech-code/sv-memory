@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/svtech-code/sv-memory/internal/memory"
-	"github.com/svtech-code/sv-memory/internal/security"
 )
 
 func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -24,7 +23,6 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 	}
 	category := req.GetString("category", "")
 	pathFilter := req.GetString("path", "")
-	pathFilter = security.SanitizeSQLitePathFilter(pathFilter)
 	limitStr := req.GetString("limit", "10")
 	offsetStr := req.GetString("offset", "0")
 

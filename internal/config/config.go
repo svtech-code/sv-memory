@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -92,7 +94,7 @@ func WriteConfigKey(projPath string, key string, val interface{}, local bool) er
 	}
 
 	v.Set(key, val)
-	
+
 	// WriteConfig might fail if the file is new, fallback to WriteConfigAs
 	if err := v.WriteConfig(); err != nil {
 		if errWrite := v.WriteConfigAs(configPath); errWrite != nil {
@@ -116,11 +118,26 @@ func GetDBPath() (string, error) {
 	return filepath.Join(dbDir, "storage.db"), nil
 }
 
+// gitCommandTimeout bounds how long any git helper may wait before giving up.
+// Git runs on the hot path of every sv_mem_save; a hung git process (e.g. on a
+// locked or networked repository) must not block the CLI indefinitely.
+const gitCommandTimeout = 5 * time.Second
+
+// runGit executes a git command in projPath with a timeout and returns its
+// trimmed stdout. The timeout is applied via CommandContext so a stalled git
+// process is cancelled instead of blocking forever.
+func runGit(projPath string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitCommandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = projPath
+	out, err := cmd.Output()
+	return strings.TrimSpace(string(out)), err
+}
+
 // GetGitRoot executes a git command to find the root of the repository.
 func GetGitRoot(cwd string) (string, error) {
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-	cmd.Dir = cwd
-	out, err := cmd.Output()
+	out, err := runGit(cwd, "rev-parse", "--show-toplevel")
 	if err != nil {
 		// Fallback to current working directory if not a git repo
 		abs, errAbs := filepath.Abs(cwd)
@@ -129,7 +146,7 @@ func GetGitRoot(cwd string) (string, error) {
 		}
 		return abs, nil
 	}
-	return strings.TrimSpace(string(out)), nil
+	return out, nil
 }
 
 // GenerateProjectID generates a stable hash for a given project path.
@@ -177,39 +194,31 @@ func LoadConfig(cwd string) (*Config, error) {
 
 // GetGitBranch returns the current git branch name.
 func GetGitBranch(projPath string) string {
-	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
-	cmd.Dir = projPath
-	out, err := cmd.Output()
+	out, err := runGit(projPath, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(out))
+	return out
 }
 
 // GetGitCommit returns the current short git commit hash.
 func GetGitCommit(projPath string) string {
-	cmd := exec.Command("git", "rev-parse", "--short", "HEAD")
-	cmd.Dir = projPath
-	out, err := cmd.Output()
+	out, err := runGit(projPath, "rev-parse", "--short", "HEAD")
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(out))
+	return out
 }
 
 // GetGitAuthor returns the git configuration user name or email.
 func GetGitAuthor(projPath string) string {
-	cmd := exec.Command("git", "config", "user.name")
-	cmd.Dir = projPath
-	out, err := cmd.Output()
-	if err != nil || strings.TrimSpace(string(out)) == "" {
-		cmdEmail := exec.Command("git", "config", "user.email")
-		cmdEmail.Dir = projPath
-		outEmail, errEmail := cmdEmail.Output()
+	out, err := runGit(projPath, "config", "user.name")
+	if err != nil || out == "" {
+		outEmail, errEmail := runGit(projPath, "config", "user.email")
 		if errEmail != nil {
 			return ""
 		}
-		return strings.TrimSpace(string(outEmail))
+		return outEmail
 	}
-	return strings.TrimSpace(string(out))
+	return out
 }

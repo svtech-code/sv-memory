@@ -981,6 +981,9 @@ func TestSanitizeFTS5Query(t *testing.T) {
 		{"special chars", `-WAL memory (`, `"-WAL"* "memory"* "("`},
 		{"multiple spaces", "foo   bar", `"foo"* "bar"*`},
 		{"single char token stays exact", "a protocol", `"a" "protocol"*`},
+		{"only quotes produce empty query", `""`, ""},
+		{"triple quotes produce empty query", `"""`, ""},
+		{"mixed quotes and words", `foo """ bar`, `"foo"* "bar"*`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1096,4 +1099,64 @@ func TestFTS5PrefixMatchingAndScore(t *testing.T) {
 	}
 }
 
+func TestNewID(t *testing.T) {
+	if got := len(newID()); got != 16 {
+		t.Errorf("newID() length = %d, want 16", got)
+	}
+	seen := make(map[string]bool, 100000)
+	for i := 0; i < 100000; i++ {
+		id := newID()
+		if seen[id] {
+			t.Fatalf("newID() collision detected: %s", id)
+		}
+		seen[id] = true
+	}
+}
 
+func TestSearchQuotesOnlyDoesNotError(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-fts-quotes")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "test-fts-quotes"
+	if err := db.RegisterProject(database, projectID, "FTS Quotes Test", tempDir); err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	_, err = SaveMemory(database, &Memory{
+		ProjectID: projectID, Category: "test",
+		What: "some content", Why: "why", Learned: "learned",
+		CreatedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("failed to save memory: %v", err)
+	}
+
+	// Queries made only of quotes sanitize to "" and must not produce an FTS5
+	// syntax error from an empty MATCH expression.
+	for _, q := range []string{`""`, `"""`, `""" ""`} {
+		compact, err := SearchMemoriesCompact(database, projectID, q, "", 10, 0)
+		if err != nil {
+			t.Fatalf("SearchMemoriesCompact(%q) errored: %v", q, err)
+		}
+		if len(compact) != 0 {
+			t.Errorf("SearchMemoriesCompact(%q) = %d results, want 0", q, len(compact))
+		}
+		full, err := SearchMemories(database, projectID, q, "", 10)
+		if err != nil {
+			t.Fatalf("SearchMemories(%q) errored: %v", q, err)
+		}
+		if len(full) != 0 {
+			t.Errorf("SearchMemories(%q) = %d results, want 0", q, len(full))
+		}
+	}
+}

@@ -6,13 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/svtech-code/sv-memory/internal/security"
 )
 
 func StartSession(db *sql.DB, projectID, goal, directory string) (*Session, error) {
-	id := uuid.New().String()[:8]
+	id := newID()
 	now := time.Now()
 	_, err := db.Exec(
 		"INSERT INTO sessions (id, project_id, goal, directory, started_at, status) VALUES (?, ?, ?, ?, ?, 'active')",

@@ -7,8 +7,6 @@ import (
 	"log"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // CompactionReport summarizes the results of a memory auto-compaction run.
@@ -172,7 +170,7 @@ func CompactMemories(db *sql.DB, projectID string) (*CompactionReport, error) {
 
 		// Create clean unified memory, preserving session + metadata of the
 		// chosen source entry so session context recovery keeps working.
-		synthID := uuid.New().String()[:8]
+		synthID := newID()
 		insertStmt := `
 		INSERT INTO memories (id, project_id, category, what, why, where_path, learned,
 			git_branch, git_commit, author, impact, errors_faced, next_steps, session_id,

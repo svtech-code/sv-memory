@@ -3,7 +3,35 @@ package memory
 import (
 	"fmt"
 	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/svtech-code/sv-memory/internal/security"
 )
+
+// newID returns a 16-character lowercase hex identifier (64 bits of entropy)
+// derived from a random UUID. Short 8-character prefixes (32 bits) are too
+// prone to birthday collisions for a long-lived store: a collision would
+// silently overwrite an unrelated memory via the INSERT ... ON CONFLICT(id)
+// upsert used by SaveMemory. 16 hex chars matches the project ID convention.
+func newID() string {
+	return uuid.New().String()[:16]
+}
+
+// maxPathFilterLen bounds the length of the where_path LIKE filter so a
+// maliciously large value cannot build an unbounded LIKE pattern.
+const maxPathFilterLen = 200
+
+// sanitizePathFilter caps the input length and escapes SQL LIKE wildcards
+// (% and _) plus the escape character itself. It lives in the memory layer
+// (not the transport layer) so every caller of the search functions is
+// protected regardless of entry point.
+func sanitizePathFilter(input string) string {
+	if len(input) > maxPathFilterLen {
+		input = input[:maxPathFilterLen]
+	}
+	return security.SanitizeSQLitePathFilter(input)
+}
 
 func parseTime(s string) (time.Time, error) {
 	t, err := time.Parse(time.RFC3339, s)
