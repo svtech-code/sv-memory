@@ -1292,5 +1292,26 @@
     "normalized_hash": "219c50a4aa64e69ea12a113ee789c9a42c376701567737d3af85bfda5f919c38",
     "deleted_at": "0001-01-01T00:00:00Z",
     "created_at": "2026-08-02T02:48:06.847511-04:00"
+  },
+  {
+    "id": "5e13b297",
+    "project_id": "ce22c23ac33d7a36",
+    "category": "journal",
+    "what": "Theme del wizard en color del banner (#00B0C2) + Esc funcional para retroceder + hints visibles de cancelar",
+    "why": "El usuario pidió: (1) que los colores del CLI (bordes/botones/texto) sigan la convención del color del banner, manteniendo el verde de selección actual; (2) que Esc haga algo (antes no pasaba nada) y que se indique visiblemente cómo cancelar/salir en cada sección.",
+    "where_path": "cmd/sv-memory/cmd_configure.go",
+    "learned": "Arquitectura de navegación de huh v1.0.0: el form verifica f.keymap.Quit (linea ~558 form.go) ANTES de reenviar la tecla al grupo. Por eso NO se puede poner 'esc' en Quit Y en Prev a la vez: esc siempre cancelaría (Quit gana) y nunca retrocedería. Solución: 'esc' SOLO en MultiSelect.Prev y Confirm.Prev (vía km.MultiSelect.Prev = key.NewBinding(key.WithKeys(\"shift+tab\",\"esc\"))), Quit queda ctrl+c. Además, Prev se DESHABILITA en el primer grupo (SetEnabled(!p.IsFirst())), así que esc no hace nada en el paso 1 — se documenta con hint 'Ctrl+C salir'. Theme: partir de huh.ThemeCharm() (que da el ✓ verde de selección) y sobrescribir solo elementos estructurales (Base.BorderForeground, Title, Description, SelectSelector, MultiSelectSelector, Next/PrevIndicator, FocusedButton/BlurredButton) al cyan #00B0C2. Para chainear: NewForm(...).WithTheme(t).WithKeyMap(km).",
+    "git_branch": "main",
+    "git_commit": "2053f38",
+    "author": "Mario Sandoval (Sv Tech)",
+    "impact": "Wizard configure ahora usa theme personalizado con el cyan del banner (#00B0C2) para bordes/títulos/descripciones/selectores/botones, manteniendo el verde de selección (✓) de ThemeCharm. Esc ahora retrocede entre pasos (pasos 2-4) vía keymap personalizado; Ctrl+C sigue siendo el cancel global y se muestra visiblemente en cada descripción. go build/test -race/gofmt pasan. Dependencias bubbles y lipgloss pasaron a directas.",
+    "next_steps": "Probar interactivamente en la terminal del usuario: sv-memory configure → verificar que los bordes/títulos son cyan del banner, la selección sigue verde, Esc retrocede en pasos 2-4, Ctrl+C sale del paso 1, y los hints visibles. Luego committear junto con wizard/version/update para la release v0.3.0.",
+    "session_id": "e6c448b8",
+    "topic_key": "journal/configure-theme-esc-navigation",
+    "revision_count": 1,
+    "last_seen_at": "0001-01-01T00:00:00Z",
+    "normalized_hash": "7e465bd6964ec4a5f14b34d6aa0d493c80ea21d6c8d7dca81b116282fbacd7fd",
+    "deleted_at": "0001-01-01T00:00:00Z",
+    "created_at": "2026-08-02T03:00:29.837363-04:00"
   }
 ]

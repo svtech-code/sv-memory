@@ -7,13 +7,70 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
 	"github.com/svtech-code/sv-memory/internal/config"
 	"github.com/svtech-code/sv-memory/internal/mcp"
 	"github.com/svtech-code/sv-memory/internal/perm"
 )
+
+// bannerCyan is the brand color used by the SV Tech banner (#00B0C2).
+const bannerCyan = "#00B0C2"
+
+// configureTheme returns a huh theme that matches the SV Tech banner color.
+// The selection colors (green ✓ from ThemeCharm) are kept untouched so the
+// selected-option indicator stays green as before.
+func configureTheme() *huh.Theme {
+	t := huh.ThemeCharm()
+
+	cyan := lipgloss.Color(bannerCyan)
+	lightCyan := lipgloss.Color("#4FB8C4")
+
+	// Structural elements → banner cyan; selection stays green (from ThemeCharm).
+	t.Focused.Base = t.Focused.Base.BorderForeground(cyan)
+	t.Focused.Card = t.Focused.Base
+	t.Focused.Title = t.Focused.Title.Foreground(cyan).Bold(true)
+	t.Focused.NoteTitle = t.Focused.NoteTitle.Foreground(cyan).Bold(true)
+	t.Focused.Description = t.Focused.Description.Foreground(lightCyan)
+	t.Focused.SelectSelector = t.Focused.SelectSelector.Foreground(cyan)
+	t.Focused.MultiSelectSelector = t.Focused.MultiSelectSelector.Foreground(cyan)
+	t.Focused.NextIndicator = t.Focused.NextIndicator.Foreground(cyan)
+	t.Focused.PrevIndicator = t.Focused.PrevIndicator.Foreground(cyan)
+	t.Focused.FocusedButton = t.Focused.FocusedButton.Foreground(lipgloss.Color("#000000")).Background(cyan)
+	t.Focused.BlurredButton = t.Focused.BlurredButton.Foreground(cyan).Background(lipgloss.Color("#111111"))
+	t.Focused.TextInput.Cursor = t.Focused.TextInput.Cursor.Foreground(cyan)
+	t.Focused.TextInput.Prompt = t.Focused.TextInput.Prompt.Foreground(cyan)
+
+	t.Blurred = t.Focused
+	t.Blurred.Base = t.Focused.Base.BorderStyle(lipgloss.HiddenBorder())
+	t.Blurred.Card = t.Blurred.Base
+	t.Blurred.NextIndicator = lipgloss.NewStyle()
+	t.Blurred.PrevIndicator = lipgloss.NewStyle()
+
+	t.Group.Title = t.Focused.Title
+	t.Group.Description = t.Focused.Description
+	return t
+}
+
+// configureKeyMap binds the Esc key to go back to the previous step. Ctrl+C
+// remains the global cancel (huh default). Note: on the first step there is no
+// previous step, so Esc does nothing there — the on-screen hints tell the user
+// to use Ctrl+C to exit.
+func configureKeyMap() *huh.KeyMap {
+	km := huh.NewDefaultKeyMap()
+	km.MultiSelect.Prev = key.NewBinding(
+		key.WithKeys("shift+tab", "esc"),
+		key.WithHelp("esc", "back"),
+	)
+	km.Confirm.Prev = key.NewBinding(
+		key.WithKeys("shift+tab", "esc"),
+		key.WithHelp("esc", "back"),
+	)
+	return km
+}
 
 // toolLabel builds a display label for a TargetTool, e.g.
 // "Cursor (Autoconfiguración)" or "VS Code (Instrucciones manuales)".
@@ -60,7 +117,7 @@ var configureCmd = &cobra.Command{
 			huh.NewGroup(
 				huh.NewMultiSelect[string]().
 					Title("Paso 1 de 4 — Editores de código").
-					Description("Selecciona con ESPACIO, navega con ↑/↓, Enter para continuar.").
+					Description("ESPACIO selecciona · ↑/↓ navega · Enter avanza · Esc retrocede · Ctrl+C salir").
 					Options(huh.NewOptions(editorLabels...)...).
 					Value(&selectedEditors),
 			).Title("EDITORES"),
@@ -68,7 +125,7 @@ var configureCmd = &cobra.Command{
 			huh.NewGroup(
 				huh.NewMultiSelect[string]().
 					Title("Paso 2 de 4 — CLIs de terminal").
-					Description("Selecciona con ESPACIO, navega con ↑/↓, Enter para continuar.").
+					Description("ESPACIO selecciona · ↑/↓ navega · Enter avanza · Esc retrocede · Ctrl+C salir").
 					Options(huh.NewOptions(cliLabels...)...).
 					Value(&selectedCLIs),
 			).Title("CLIs DE TERMINAL"),
@@ -76,12 +133,12 @@ var configureCmd = &cobra.Command{
 			huh.NewGroup(
 				huh.NewConfirm().
 					Title("Paso 3 de 4 — Confirmación").
-					Description("¿Aplicar estos cambios y ver las instrucciones?").
+					Description("¿Aplicar estos cambios y ver las instrucciones?\n←/→ cambia · Enter confirma · Esc retrocede · Ctrl+C salir").
 					Affirmative("Sí, aplicar").
 					Negative("No, cancelar").
 					Value(&confirmed),
 			).Title("CONFIRMACIÓN"),
-		)
+		).WithTheme(configureTheme()).WithKeyMap(configureKeyMap())
 
 		if err := form1.Run(); err != nil {
 			if errors.Is(err, huh.ErrUserAborted) {
@@ -160,12 +217,12 @@ var configureCmd = &cobra.Command{
 				huh.NewGroup(
 					huh.NewMultiSelect[string]().
 						Title("Paso 4 de 4 — Permisos de herramientas MCP").
-						Description("Autoriza las herramientas para " + platformNames(grantTargets) + ". 'a' = todas, 'x' = ninguna.").
+						Description("Autoriza las herramientas para " + platformNames(grantTargets) + "\nESPACIO selecciona · a = todas · x = ninguna · Esc retrocede · Ctrl+C salir").
 						Options(huh.NewOptions(toolNames...)...).
 						Height(20).
 						Value(&selectedPerms),
 				).Title("PERMISOS DE SV-MEMORY"),
-			)
+			).WithTheme(configureTheme()).WithKeyMap(configureKeyMap())
 
 			if err := form2.Run(); err != nil {
 				if errors.Is(err, huh.ErrUserAborted) {
