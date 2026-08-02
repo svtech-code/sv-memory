@@ -2,7 +2,7 @@
   <img src="assets/logo.png" width="180" alt="sv-memory logo">
 </p>
 
-<h1 align="center">sv-memory — Persistent Memory & Code Graph for AI Agents</h1>
+<h1 align="center">Persistent Memory & Code Graph for AI Agents</h1>
 
 <p align="center">
   <b>Eliminate context amnesia for AI coding agents with persistent decision memories, FTS5 BM25 search, and sub-millisecond structural code graphs.</b>
@@ -165,28 +165,28 @@ sv-memory tui
 
 ## 💻 CLI Commands Reference
 
-| Command                            | Category        | Description                                                                      |
-| :--------------------------------- | :-------------- | :------------------------------------------------------------------------------- |
-| `sv-memory init`                   | **Project**     | Initializes repository, scans dependency graph, and injects `AGENTS.md`.         |
-| `sv-memory mcp`                    | **Server**      | Launches Model Context Protocol server over stdio for AI clients.                |
-| `sv-memory tui`                    | **Interface**   | Launches interactive terminal user interface for memories and graph diagnostics. |
-| `sv-memory configure`              | **Setup**       | Interactive terminal wizard to configure Cursor, Claude Code, agy, Zed, etc.     |
-| `sv-memory sync`                   | **Git Sync**    | Manual bidirectional sync between SQLite DB and `.sv-memory/chunks/*.json`.      |
-| `sv-memory diagnose`               | **Diagnostics** | Verifies DB connections, schema integrity, write permissions, and paths.         |
-| `sv-memory stats`                  | **Analytics**   | Displays project memory counts, 24h saves, active sessions, and relations.       |
-| `sv-memory graph rebuild`          | **Graph**       | Forces full rescan of codebase files and updates structural graph tables.        |
-| `sv-memory graph path <src> <tgt>` | **Graph**       | Finds shortest dependency path between two code nodes (up to 10 hops).           |
-| `sv-memory graph explain <node>`   | **Graph**       | Displays fan-in/fan-out, centrality, and metadata for a symbol or file.          |
-| `sv-memory graph communities`      | **Graph**       | Detects Leiden community clusters, god nodes, and bridge nodes.                  |
-| `sv-memory graph wiki`             | **Export**      | Generates Markdown wiki pages per Leiden community.                              |
-| `sv-memory graph viz`              | **Export**      | Generates interactive HTML visualization (`vis.js`).                             |
-| `sv-memory obsidian-export`        | **Export**      | Exports memories into linked Obsidian Markdown notes (`[[wikilinks]]`).          |
-| `sv-memory conflicts`              | **Memory**      | Detects semantic overlap and memory conflicts across the project.                |
-| `sv-memory hooks install`          | **Hooks**       | Installs PreToolUse hooks for Claude Code, Antigravity CLI, and OpenCode.        |
-| `sv-memory permissions list`       | **Permissions** | Lists the 26 sv-memory MCP tools with descriptions.                              |
-| `sv-memory permissions status`     | **Permissions** | Shows granted/missing MCP permissions per platform.                              |
+| Command                            | Category        | Description                                                                              |
+| :--------------------------------- | :-------------- | :--------------------------------------------------------------------------------------- |
+| `sv-memory init`                   | **Project**     | Initializes repository, scans dependency graph, and injects `AGENTS.md`.                 |
+| `sv-memory mcp`                    | **Server**      | Launches Model Context Protocol server over stdio for AI clients.                        |
+| `sv-memory tui`                    | **Interface**   | Launches interactive terminal user interface for memories and graph diagnostics.         |
+| `sv-memory configure`              | **Setup**       | Interactive terminal wizard to configure Cursor, Claude Code, agy, Zed, etc.             |
+| `sv-memory sync`                   | **Git Sync**    | Manual bidirectional sync between SQLite DB and `.sv-memory/chunks/*.json`.              |
+| `sv-memory diagnose`               | **Diagnostics** | Verifies DB connections, schema integrity, write permissions, and paths.                 |
+| `sv-memory stats`                  | **Analytics**   | Displays project memory counts, 24h saves, active sessions, and relations.               |
+| `sv-memory graph rebuild`          | **Graph**       | Forces full rescan of codebase files and updates structural graph tables.                |
+| `sv-memory graph path <src> <tgt>` | **Graph**       | Finds shortest dependency path between two code nodes (up to 10 hops).                   |
+| `sv-memory graph explain <node>`   | **Graph**       | Displays fan-in/fan-out, centrality, and metadata for a symbol or file.                  |
+| `sv-memory graph communities`      | **Graph**       | Detects Leiden community clusters, god nodes, and bridge nodes.                          |
+| `sv-memory graph wiki`             | **Export**      | Generates Markdown wiki pages per Leiden community.                                      |
+| `sv-memory graph viz`              | **Export**      | Generates interactive HTML visualization (`vis.js`).                                     |
+| `sv-memory obsidian-export`        | **Export**      | Exports memories into linked Obsidian Markdown notes (`[[wikilinks]]`).                  |
+| `sv-memory conflicts`              | **Memory**      | Detects semantic overlap and memory conflicts across the project.                        |
+| `sv-memory hooks install`          | **Hooks**       | Installs PreToolUse hooks for Claude Code, Antigravity CLI, and OpenCode.                |
+| `sv-memory permissions list`       | **Permissions** | Lists the 26 sv-memory MCP tools with descriptions.                                      |
+| `sv-memory permissions status`     | **Permissions** | Shows granted/missing MCP permissions per platform.                                      |
 | `sv-memory permissions grant`      | **Permissions** | Writes MCP tool allow-lists (`--all`/`--tool`, `--dry-run`) for Antigravity/Claude Code. |
-| `sv-memory permissions revoke`     | **Permissions** | Removes sv-memory allow-list entries, preserving unrelated permissions.          |
+| `sv-memory permissions revoke`     | **Permissions** | Removes sv-memory allow-list entries, preserving unrelated permissions.                  |
 
 ---
 
