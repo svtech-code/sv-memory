@@ -1,0 +1,3 @@
+# Default owner for all files: the project maintainer is auto-assigned as reviewer
+# on every pull request.
+* @msandoval-93

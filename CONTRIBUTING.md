@@ -2,6 +2,10 @@
 
 Thank you for your interest in contributing to **SV-Memory**! This guide outlines the workflow and standards to help you get started.
 
+> 💡 **Just want to install sv-memory?** Use the one-line installer:
+> `curl -fsSL https://raw.githubusercontent.com/svtech-code/sv-memory/main/install.sh | bash`
+> (Windows: `iwr -useb https://raw.githubusercontent.com/svtech-code/sv-memory/main/install.ps1 | iex`)
+
 ---
 
 ## 1. Branching Strategy & Workflow
@@ -17,6 +21,12 @@ We follow a simple feature-branch workflow:
     *   Push your branch to GitHub.
     *   Open a Pull Request (PR) against `main`.
     *   Ensure all tests pass before requesting review.
+
+> **Note for external contributors:** `main` is protected — direct pushes to it are
+> blocked. All changes must come through a pull request. Continuous Integration (CI)
+> runs `go vet`, `go test -race`, and a build check on Linux and macOS, and **must pass
+> green** before your PR can be merged. You do not need write access to contribute:
+> fork the repository, create a branch on your fork, and open a PR from there.
 
 ---
 
@@ -37,7 +47,7 @@ Format: `<type>(<scope>): <description>`
 
 ## 3. Development Environment & Makefile Targets
 
-We use a standard `Makefile` to manage development workflows. Ensure Go (v1.22+) is installed.
+We use a standard `Makefile` to manage development workflows. Ensure Go (v1.26+) is installed.
 
 ### Key Targets:
 *   **Build the binary:**
