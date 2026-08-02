@@ -2,6 +2,7 @@
 /sv-memory
 /sv-memory.exe
 /bin/
+/dist/
 *.exe~
 *.dll
 *.so

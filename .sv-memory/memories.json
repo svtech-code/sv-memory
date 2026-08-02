@@ -1208,5 +1208,26 @@
     "normalized_hash": "7ae6088190904f765dad80c6787c1011f767fbdaa0a700622354a8ea8626a578",
     "deleted_at": "0001-01-01T00:00:00Z",
     "created_at": "2026-08-01T23:44:05.821365-04:00"
+  },
+  {
+    "id": "b6bb5401",
+    "project_id": "ce22c23ac33d7a36",
+    "category": "journal",
+    "what": "Infraestructura de despliegue por curl: CI + release pipelines, install.sh sin sudo, install.ps1 para Windows",
+    "why": "Frente de despliegue de la revisión. Se creó la infraestructura para distribuir sv-memory por GitHub Releases con one-liners curl/iwr, sin sudo, cubriendo macOS/Linux/Windows.",
+    "where_path": ".github/, install.sh, install.ps1, Makefile, README*, CHANGELOG.md",
+    "learned": "Decisión de despliegue acordada con el usuario: distribución por curl/binarios precompilados en GitHub Releases, SIN sudo. install.sh → $HOME/.local/bin (macOS/Linux); install.ps1 → %LOCALAPPDATA%\\sv-memory + PATH de usuario (Windows). Matriz de release: linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64 (windows/arm64 y Homebrew descartados por ahora, bajo demanda). Estructura clave: el tarball debe contener exactamente 'sv-memory' y el zip 'sv-memory.exe' porque los installers extraen por nombre; el release.yml usa un dir dist/package para empaquetar con el nombre correcto. CI: Go 1.26 (única versión, porque go.mod exige 1.26.3; oldstable 1.25 no compilaría) × ubuntu+macos. Soporte de versión fijada via SV_MEMORY_VERSION env en ambos installers.",
+    "git_branch": "main",
+    "git_commit": "f8adaff",
+    "author": "Mario Sandoval (Sv Tech)",
+    "impact": "Verificado: make release cross-compila las 5 plataformas y genera sv-memory_\u003cos\u003e_\u003carch\u003e.tar.gz/.zip con el binario nombrado correctamente (sv-memory / sv-memory.exe, lo que esperan los installers). install.sh valida con sh -n y se probó el flujo de fallo (404 claro cuando no hay release). go build/vet/test pasan. La suite completa no se ve afectada (solo docs/scripts/workflows).",
+    "next_steps": "Pasos para publicar v0.1.0: (1) push a main → CI corre; (2) git tag v0.1.0 \u0026\u0026 git push origin v0.1.0 → release.yml genera 5 artifacts + checksums en GitHub Release; (3) probar install.sh y install.ps1 reales; (4) opcional: Go Report Card, anuncio. Futuro bajo demanda: windows/arm64, Homebrew tap, verificación de checksums en installers, firmado de binarios.",
+    "session_id": "e6c448b8",
+    "topic_key": "journal/deployment-curl-release-infra",
+    "revision_count": 1,
+    "last_seen_at": "0001-01-01T00:00:00Z",
+    "normalized_hash": "b5f30e0aae61ec46fc912442aa803bbf5d4d88911189578939ea2611b11c65f5",
+    "deleted_at": "0001-01-01T00:00:00Z",
+    "created_at": "2026-08-02T00:06:09.127931-04:00"
   }
 ]

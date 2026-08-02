@@ -11,6 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/Licencia-MIT-blue.svg" alt="Licencia"></a>
   <a href="https://golang.org/"><img src="https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go" alt="Versión Go"></a>
+  <a href="https://github.com/svtech-code/sv-memory/actions/workflows/ci.yml"><img src="https://github.com/svtech-code/sv-memory/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/Protocolo-MCP%20v1.0-purple.svg" alt="Protocolo MCP"></a>
   <a href="https://sqlite.org/"><img src="https://img.shields.io/badge/Almacenamiento-SQLite%20WAL%20%2B%20FTS5-003B57?logo=sqlite" alt="SQLite WAL"></a>
   <a href="README.md"><img src="https://img.shields.io/badge/Lang-English-blue.svg" alt="English Version"></a>
@@ -90,15 +91,28 @@ flowchart TD
 
 ## 📦 Inicio Rápido
 
-### 1. Instalación (Binario Global)
+### 1. Instalación
 
-Compilación en Go puro (sin requerir CGO):
+**Binario precompilado (recomendado)** — un único binario autocontenido para macOS, Linux y Windows:
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/svtech-code/sv-memory/main/install.sh | bash
+
+# Windows (PowerShell)
+iwr -useb https://raw.githubusercontent.com/svtech-code/sv-memory/main/install.ps1 | iex
+```
+
+> En macOS/Linux el binario se instala en `$HOME/.local/bin` (sin `sudo`).
+> En Windows se instala en `%LOCALAPPDATA%\sv-memory` y se agrega al PATH del usuario.
+
+**Desde el código fuente** (Go puro, sin requerir CGO):
 
 ```bash
 git clone https://github.com/svtech-code/sv-memory.git
 cd sv-memory
 go build -o sv-memory ./cmd/sv-memory
-sudo mv sv-memory /usr/local/bin/
+mv sv-memory ~/.local/bin/
 ```
 
 ### 2. Configuración Interactiva (`sv-memory configure`)
@@ -225,7 +239,7 @@ Añade el siguiente fragmento al archivo JSON de configuración MCP de tu client
 {
   "mcpServers": {
     "sv-memory": {
-      "command": "/usr/local/bin/sv-memory",
+      "command": "~/.local/bin/sv-memory",
       "args": ["mcp"]
     }
   }

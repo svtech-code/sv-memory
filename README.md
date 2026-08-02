@@ -11,6 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
   <a href="https://golang.org/"><img src="https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go" alt="Go Version"></a>
+  <a href="https://github.com/svtech-code/sv-memory/actions/workflows/ci.yml"><img src="https://github.com/svtech-code/sv-memory/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/MCP-Protocol%20v1.0-purple.svg" alt="MCP Protocol"></a>
   <a href="https://sqlite.org/"><img src="https://img.shields.io/badge/Storage-SQLite%20WAL%20%2B%20FTS5-003B57?logo=sqlite" alt="SQLite WAL"></a>
   <a href="README_ES.md"><img src="https://img.shields.io/badge/Lang-Espa%C3%B1ol-orange.svg" alt="Spanish Version"></a>
@@ -90,15 +91,28 @@ flowchart TD
 
 ## 📦 Getting Started
 
-### 1. Installation (Global Binary)
+### 1. Installation
 
-Compile pure Go executable (no CGO required):
+**Prebuilt binary (recommended)** — a single self-contained binary for macOS, Linux, and Windows:
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/svtech-code/sv-memory/main/install.sh | bash
+
+# Windows (PowerShell)
+iwr -useb https://raw.githubusercontent.com/svtech-code/sv-memory/main/install.ps1 | iex
+```
+
+> On macOS/Linux the binary is installed to `$HOME/.local/bin` (no `sudo` needed).
+> On Windows it is installed to `%LOCALAPPDATA%\sv-memory` and added to your user PATH.
+
+**From source** (pure Go, no CGO required):
 
 ```bash
 git clone https://github.com/svtech-code/sv-memory.git
 cd sv-memory
 go build -o sv-memory ./cmd/sv-memory
-sudo mv sv-memory /usr/local/bin/
+mv sv-memory ~/.local/bin/
 ```
 
 ### 2. Interactive Setup (`sv-memory configure`)
@@ -225,12 +239,15 @@ Add the following snippet to your client's MCP configuration JSON:
 {
   "mcpServers": {
     "sv-memory": {
-      "command": "/usr/local/bin/sv-memory",
+      "command": "~/.local/bin/sv-memory",
       "args": ["mcp"]
     }
   }
 }
 ```
+
+> Use the full path to your installed binary: `~/.local/bin/sv-memory` on macOS/Linux,
+> or `%LOCALAPPDATA%\sv-memory\sv-memory.exe` on Windows.
 
 ### Granting MCP Tool Permissions
 

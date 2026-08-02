@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Publish ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Cross-compile binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/package
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            os="${target%/*}"
+            arch="${target#*/}"
+            ext=""
+            [ "$os" = "windows" ] && ext=".exe"
+            echo "Building ${target}..."
+            GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
+              -o "dist/package/sv-memory${ext}" ./cmd/sv-memory
+            if [ "$os" = "windows" ]; then
+              (cd dist/package && zip -q "../sv-memory_${os}_${arch}.zip" "sv-memory${ext}")
+            else
+              tar -czf "dist/sv-memory_${os}_${arch}.tar.gz" -C dist/package "sv-memory${ext}"
+            fi
+            rm -f "dist/package/sv-memory${ext}"
+          done
+          rm -rf dist/package
+          cd dist
+          sha256sum sv-memory_* > checksums.txt
+          echo "--- dist artifacts ---"
+          ls -la
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

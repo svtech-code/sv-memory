@@ -3,8 +3,10 @@
 BINARY_NAME=sv-memory
 CMD_DIR=./cmd/sv-memory
 BUILD_DIR=bin
+RELEASE_DIR=dist
+PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
 
-.PHONY: all build test test-race lint fmt vet install clean bench help
+.PHONY: all build test test-race lint fmt vet install clean bench release help
 
 all: build
 
@@ -17,6 +19,7 @@ help:
 	@echo "  fmt          Format the codebase using gofmt"
 	@echo "  vet          Run go vet on the codebase"
 	@echo "  install      Install the binary to GOPATH/bin"
+	@echo "  release      Cross-compile release artifacts for all platforms into $(RELEASE_DIR)/"
 	@echo "  clean        Remove build artifacts"
 	@echo "  bench        Run benchmarks"
 
@@ -54,9 +57,32 @@ install: build
 	@echo "Installing $(BINARY_NAME) to GOPATH/bin..."
 	go install $(CMD_DIR)
 
+release:
+	@echo "Cross-compiling release binaries..."
+	@mkdir -p $(RELEASE_DIR)/package
+	@for target in $(PLATFORMS); do \
+		os="$${target%/*}"; \
+		arch="$${target#*/}"; \
+		ext=""; \
+		[ "$$os" = "windows" ] && ext=".exe"; \
+		echo "  building $$os/$$arch..."; \
+		GOOS="$$os" GOARCH="$$arch" CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$(RELEASE_DIR)/package/$(BINARY_NAME)$${ext}" $(CMD_DIR); \
+		if [ "$$os" = "windows" ]; then \
+			(cd $(RELEASE_DIR)/package && zip -q "../$(BINARY_NAME)_$${os}_$${arch}.zip" "$(BINARY_NAME)$${ext}"); \
+		else \
+			tar -czf "$(RELEASE_DIR)/$(BINARY_NAME)_$${os}_$${arch}.tar.gz" -C $(RELEASE_DIR)/package "$(BINARY_NAME)$${ext}"; \
+		fi; \
+		rm -f "$(RELEASE_DIR)/package/$(BINARY_NAME)$${ext}"; \
+	done
+	@rm -rf $(RELEASE_DIR)/package
+	@cd $(RELEASE_DIR) && shasum -a 256 $(BINARY_NAME)_* > checksums.txt
+	@echo "Release artifacts in ./$(RELEASE_DIR):"
+	@ls -la $(RELEASE_DIR)
+
 clean:
 	@echo "Cleaning build artifacts..."
 	rm -rf $(BUILD_DIR)
+	rm -rf $(RELEASE_DIR)
 	rm -f $(BINARY_NAME)
 
 bench:

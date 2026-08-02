@@ -34,6 +34,15 @@ flowchart TD
 
 El ejecutable de `sv-memory` es un binario único en Go, completamente autocontenido y sin dependencias externas (usa SQLite integrado en puro Go).
 
+#### Instalación con binario precompilado (recomendada):
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/svtech-code/sv-memory/main/install.sh | bash
+
+# Windows (PowerShell)
+iwr -useb https://raw.githubusercontent.com/svtech-code/sv-memory/main/install.ps1 | iex
+```
+
 #### Compilación desde código fuente:
 ```bash
 # 1. Clonar el repositorio
@@ -43,15 +52,16 @@ cd sv-memory
 # 2. Compilar el binario ejecutable
 go build -o sv-memory ./cmd/sv-memory
 
-# 3. Mover el binario a una ruta global del PATH
-sudo mv sv-memory /usr/local/bin/
+# 3. Mover el binario a una ruta global del PATH (sin sudo)
+mkdir -p ~/.local/bin
+mv sv-memory ~/.local/bin/
 
 # 4. Verificar la instalación
 sv-memory --help
 ```
 
 > **¿Por qué este paso?** 
-> Al ubicar el ejecutable en `/usr/local/bin/`, cualquier herramienta de terminal o editor de código en tu sistema podrá invocar `sv-memory mcp` o ejecutar comandos de diagnóstico sin importar en qué directorio te encuentres.
+> Al ubicar el ejecutable en `~/.local/bin/` (una ruta estándar del PATH de usuario), cualquier herramienta de terminal o editor de código en tu sistema podrá invocar `sv-memory mcp` o ejecutar comandos de diagnóstico sin importar en qué directorio te encuentres. El instalador automático (`install.sh` / `install.ps1`) hace este paso por ti sin requerir `sudo`.
 
 ---
 
