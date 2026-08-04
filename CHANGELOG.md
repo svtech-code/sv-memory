@@ -5,6 +5,36 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+## [v0.4.1] - 2026-08-04
+
+### Fixed
+
+- Graph cache now invalidates on any `mtime` change (including file restorations),
+  not just when the timestamp increases.
+- `ShortestPath` now respects the `max_hops` limit; path queries honor the hop bound.
+- Propagate cleanup errors in incremental graph sync (`updateFileMeta`, `upsertNode`)
+  and wiki export instead of silently ignoring them.
+- `sv-memory update` now compares versions semantically, preventing accidental
+  downgrades when the installed version is newer than the latest release.
+
+### Changed
+
+- Migrated `golangci-lint` to configuration v2 and pinned `v2.12.2` in CI.
+- Raised the `gocyclo` threshold to 30 and marked monolithic extractor/export
+  functions with justified `//nolint:gocyclo` comments.
+- Removed the `only-new-issues` lint gate: the full lint now runs on every build.
+- Aligned the release workflow Actions (`checkout@v7`, `setup-go@v7`) with CI.
+
+### Added
+
+- Behavioral tests for the TUI renderers/banner and CLI helpers (config,
+  permissions, and updater), raising global statement coverage to 63%.
+
+### Docs
+
+- Synchronized `documentation/spect.md`, READMEs, and CHANGELOG with the current
+  implementation.
+
 ## [v0.4.0] - 2026-08-03
 
 ### Added
@@ -97,4 +127,5 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 [v0.2.0]: https://github.com/svtech-code/sv-memory/releases/tag/v0.2.0
 [v0.3.0]: https://github.com/svtech-code/sv-memory/releases/tag/v0.3.0
 [v0.4.0]: https://github.com/svtech-code/sv-memory/releases/tag/v0.4.0
-[Unreleased]: https://github.com/svtech-code/sv-memory/compare/v0.4.0...main
+[v0.4.1]: https://github.com/svtech-code/sv-memory/releases/tag/v0.4.1
+[Unreleased]: https://github.com/svtech-code/sv-memory/compare/v0.4.1...main
