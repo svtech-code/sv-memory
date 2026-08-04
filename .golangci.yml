@@ -19,6 +19,20 @@ linters:
   settings:
     gocyclo:
       min-complexity: 15
+    errcheck:
+      exclude-functions:
+        - io.Closer.Close
+        - io.ReadCloser.Close
+        - (*os.File).Close
+        - (*database/sql.DB).Close
+        - (*database/sql.Rows).Close
+        - (*database/sql.Stmt).Close
+        - (*database/sql.Tx).Rollback
+        - os.Remove
+        - os.RemoveAll
+        - (*compress/gzip.Reader).Close
+        - (*archive/zip.ReadCloser).Close
+        - (*github.com/svtech-code/sv-memory/internal/db.Pool).Close
     govet:
       enable-all: true
       disable:

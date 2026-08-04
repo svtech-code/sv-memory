@@ -65,7 +65,7 @@ func fetchLatestRelease() (*releaseInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
 	}
@@ -88,7 +88,7 @@ func downloadFile(url, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download returned status %d", resp.StatusCode)
 	}
@@ -123,7 +123,7 @@ func fetchExpectedChecksum(tag, asset string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("checksums.txt returned status %d", resp.StatusCode)
 	}
@@ -289,16 +289,16 @@ func extractZipBinary(archivePath, dest string) error {
 		}
 		out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
 		if err != nil {
-			rc.Close()
+			_ = rc.Close()
 			return err
 		}
 		if _, err := io.Copy(out, rc); err != nil {
 			out.Close()
-			rc.Close()
+			_ = rc.Close()
 			return err
 		}
 		out.Close()
-		rc.Close()
+		_ = rc.Close()
 		return nil
 	}
 	return fmt.Errorf("no regular file found in zip")

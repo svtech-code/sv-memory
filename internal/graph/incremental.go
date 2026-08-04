@@ -83,7 +83,9 @@ func syncGraphFull(db *sql.DB, projectID string, projPath string) error {
 	}
 
 	// Store fresh file metadata for future incremental runs.
-	updateFileMeta(tx, projectID, wr.fileMeta)
+	if err := updateFileMeta(tx, projectID, wr.fileMeta); err != nil {
+		return err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return err
@@ -195,7 +197,9 @@ func trySyncGraphIncrementalFiltered(db *sql.DB, projectID string, projPath stri
 	// 3. Parse new+changed code files and insert nodes+edges.
 	codeEdges := parseFiles(projPath, wr.nodes, codeToParse, wr.fileContents)
 	for _, p := range codeToParse {
-		upsertNode(tx, projectID, wr.nodes[p])
+		if err := upsertNode(tx, projectID, wr.nodes[p]); err != nil {
+			return false, fmt.Errorf("failed upserting node %s: %w", p, err)
+		}
 		// Also upsert child symbol nodes (functions/classes) for this file.
 		prefix := p + ":"
 		for id, node := range wr.nodes {
@@ -328,11 +332,14 @@ func loadFileMeta(db *sql.DB, projectID string) (map[string]fileMetaEntry, error
 	return meta, rows.Err()
 }
 
-func updateFileMeta(tx *sql.Tx, projectID string, meta map[string]fileMetaEntry) {
+func updateFileMeta(tx *sql.Tx, projectID string, meta map[string]fileMetaEntry) error {
 	if len(meta) == 0 {
-		return
+		return nil
 	}
 	for path, m := range meta {
-		tx.Exec("INSERT OR REPLACE INTO graph_files_meta (project_id, path, mtime_ms, size) VALUES (?, ?, ?, ?)", projectID, path, m.mtimeMs, m.size)
+		if _, err := tx.Exec("INSERT OR REPLACE INTO graph_files_meta (project_id, path, mtime_ms, size) VALUES (?, ?, ?, ?)", projectID, path, m.mtimeMs, m.size); err != nil {
+			return fmt.Errorf("failed to update file metadata for %s: %w", path, err)
+		}
 	}
+	return nil
 }
