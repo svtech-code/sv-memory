@@ -1,165 +1,247 @@
 package tui
 
 import (
-	"bufio"
 	"database/sql"
 	"fmt"
-	"os"
 	"strings"
+
+	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/svtech-code/sv-memory/internal/graph"
 	"github.com/svtech-code/sv-memory/internal/memory"
 )
 
-// RunTUI launches an interactive terminal interface for exploring project memories and graph health.
+// bannerCyan is the brand color used by the SV Tech banner (#00B0C2). It
+// matches the theme used by `sv-memory configure` so both UIs look alike.
+const bannerCyan = "#00B0C2"
+
+// tuiTheme returns a huh theme that matches the SV Tech brand color, mirroring
+// configureTheme() in cmd/sv-memory so the interactive TUI and the configure
+// wizard share the same look.
+func tuiTheme() *huh.Theme {
+	t := huh.ThemeCharm()
+
+	cyan := lipgloss.Color(bannerCyan)
+	lightCyan := lipgloss.Color("#4FB8C4")
+
+	t.Focused.Base = t.Focused.Base.BorderForeground(cyan)
+	t.Focused.Card = t.Focused.Base
+	t.Focused.Title = t.Focused.Title.Foreground(cyan).Bold(true)
+	t.Focused.NoteTitle = t.Focused.NoteTitle.Foreground(cyan).Bold(true)
+	t.Focused.Description = t.Focused.Description.Foreground(lightCyan)
+	t.Focused.SelectSelector = t.Focused.SelectSelector.Foreground(cyan)
+	t.Focused.MultiSelectSelector = t.Focused.MultiSelectSelector.Foreground(cyan)
+	t.Focused.NextIndicator = t.Focused.NextIndicator.Foreground(cyan)
+	t.Focused.PrevIndicator = t.Focused.PrevIndicator.Foreground(cyan)
+	t.Focused.FocusedButton = t.Focused.FocusedButton.Foreground(lipgloss.Color("#000000")).Background(cyan)
+	t.Focused.BlurredButton = t.Focused.BlurredButton.Foreground(cyan).Background(lipgloss.Color("#111111"))
+
+	t.Blurred = t.Focused
+	t.Blurred.Base = t.Focused.Base.BorderStyle(lipgloss.HiddenBorder())
+	t.Blurred.Card = t.Blurred.Base
+
+	t.Group.Title = t.Focused.Title
+	t.Group.Description = t.Focused.Description
+	return t
+}
+
+// RunTUI launches an interactive terminal interface for exploring project
+// memories and graph health. The main menu is a huh select rendered in a loop;
+// each sub-screen is its own form. Ctrl+C aborts a sub-form (returning to the
+// menu) and quits the whole TUI from the main menu.
 func RunTUI(db *sql.DB, projectID, projPath string) error {
-	reader := bufio.NewReader(os.Stdin)
-
 	for {
-		fmt.Print("\033[H\033[2J") // Clear screen
-		fmt.Println("================================================================================")
-		fmt.Printf(" 🧠 SV-MEMORY INTERACTIVE TERMINAL (Project: %s)\n", projectID)
-		fmt.Println("================================================================================")
-		fmt.Println("  [1] List Recent Memories (Compact)")
-		fmt.Println("  [2] Search Memories (Keyword / FTS5 BM25)")
-		fmt.Println("  [3] Inspect Memory Details by ID")
-		fmt.Println("  [4] Run Graph Health Diagnostics")
-		fmt.Println("  [5] Export Obsidian Vault")
-		fmt.Println("  [6] Export Neo4j Cypher Script")
-		fmt.Println("  [q] Quit TUI")
-		fmt.Println("--------------------------------------------------------------------------------")
-		fmt.Print("Select an option > ")
-
-		input, err := reader.ReadString('\n')
-		if err != nil {
+		choice, err := mainMenu(projectID)
+		if err != nil || choice == "quit" {
 			return nil
 		}
-		choice := strings.TrimSpace(input)
-
 		switch choice {
-		case "1":
-			showRecentMemories(reader, db, projectID)
-		case "2":
-			searchMemoriesTUI(reader, db, projectID)
-		case "3":
-			inspectMemoryByID(reader, db, projectID)
-		case "4":
-			runDiagnosticsTUI(reader, db, projectID, projPath)
-		case "5":
-			exportObsidianTUI(reader, db, projectID, projPath)
-		case "6":
-			exportCypherTUI(reader, db, projectID, projPath)
-		case "q", "quit", "exit":
-			fmt.Println("\nExiting sv-memory TUI. Goodbye!")
-			return nil
-		default:
-			fmt.Println("Invalid choice. Press Enter to try again...")
-			_, _ = reader.ReadString('\n')
+		case "recent":
+			showRecentMemories(db, projectID)
+		case "search":
+			searchMemoriesTUI(db, projectID)
+		case "inspect":
+			inspectMemoryByID(db, projectID)
+		case "diagnostics":
+			runDiagnosticsTUI(db, projectID, projPath)
+		case "obsidian":
+			exportObsidianTUI(db, projectID, projPath)
+		case "cypher":
+			exportCypherTUI(db, projectID, projPath)
 		}
 	}
 }
 
-func showRecentMemories(reader *bufio.Reader, db *sql.DB, projectID string) {
-	fmt.Println("\n--- 🕒 Recent Memories (Top 15) ---")
+// mainMenu renders the top-level selection. Returning an error means the user
+// aborted with Ctrl+C, which the caller treats as "quit TUI".
+func mainMenu(projectID string) (string, error) {
+	var choice string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("SV-MEMORY INTERACTIVE TERMINAL").
+				Description(fmt.Sprintf("Project: %s", projectID)).
+				Options(
+					huh.NewOption("List Recent Memories (Compact)", "recent"),
+					huh.NewOption("Search Memories (Keyword / FTS5 BM25)", "search"),
+					huh.NewOption("Inspect Memory Details by ID", "inspect"),
+					huh.NewOption("Run Graph Health Diagnostics", "diagnostics"),
+					huh.NewOption("Export Obsidian Vault", "obsidian"),
+					huh.NewOption("Export Neo4j Cypher Script", "cypher"),
+					huh.NewOption("Quit TUI", "quit"),
+				).
+				Value(&choice),
+		).Title("MAIN MENU"),
+	).WithTheme(tuiTheme())
+	if err := form.Run(); err != nil {
+		return "", err
+	}
+	return choice, nil
+}
+
+// showNote renders a display-only screen. A lone note is blocking (Enter
+// submits) so it doubles as the "press Enter to return" affordance. On abort
+// (Ctrl+C) the error is ignored and control returns to the main menu. Long
+// content is truncated so it never overflows the terminal.
+func showNote(title, content string) {
+	if len(content) > 4000 {
+		content = content[:4000] + "\n\n… (contenido truncado para la vista)"
+	}
+	_ = huh.NewForm(
+		huh.NewGroup(
+			huh.NewNote().
+				Title(title).
+				Description(content).
+				Height(18).
+				Next(true).
+				NextLabel("Volver al menú principal"),
+		).Title("SV-MEMORY"),
+	).WithTheme(tuiTheme()).Run()
+}
+
+func showRecentMemories(db *sql.DB, projectID string) {
 	mems, err := memory.SearchMemoriesCompact(db, projectID, "", "", 15, 0)
-	if err != nil {
-		fmt.Printf("Error fetching memories: %v\n", err)
-	} else if len(mems) == 0 {
-		fmt.Println("No memories found in project.")
-	} else {
-		for i, m := range mems {
-			fmt.Printf("%2d. [%s] %s (ID: %s, %s)\n", i+1, strings.ToUpper(m.Category), m.What, m.ID, m.CreatedAt.Format("2006-01-02"))
-		}
-	}
-	fmt.Print("\nPress Enter to return to main menu...")
-	_, _ = reader.ReadString('\n')
+	showNote("Recent Memories", renderRecent(mems, err))
 }
 
-func searchMemoriesTUI(reader *bufio.Reader, db *sql.DB, projectID string) {
-	fmt.Print("\nEnter search query (or category filter like 'architecture'): ")
-	query, _ := reader.ReadString('\n')
+func searchMemoriesTUI(db *sql.DB, projectID string) {
+	var query string
+	if err := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Search Memories").
+				Description("Enter a search query (FTS5 BM25 keyword search).").
+				Value(&query),
+		).Title("SEARCH"),
+	).WithTheme(tuiTheme()).Run(); err != nil {
+		return // aborted → back to main menu
+	}
 	query = strings.TrimSpace(query)
-
 	if query == "" {
 		return
 	}
-
 	mems, err := memory.SearchMemoriesCompact(db, projectID, query, "", 10, 0)
-	if err != nil {
-		fmt.Printf("Error searching: %v\n", err)
-	} else if len(mems) == 0 {
-		fmt.Println("No matching memories found.")
-	} else {
-		fmt.Printf("\nFound %d matching memories:\n", len(mems))
-		for i, m := range mems {
-			fmt.Printf("%2d. [%s] %s (ID: %s)\n", i+1, strings.ToUpper(m.Category), m.What, m.ID)
-		}
-	}
-	fmt.Print("\nPress Enter to return to main menu...")
-	_, _ = reader.ReadString('\n')
+	showNote("Search Results", renderSearchResults(mems, err))
 }
 
-func inspectMemoryByID(reader *bufio.Reader, db *sql.DB, projectID string) {
-	fmt.Print("\nEnter Memory ID: ")
-	id, _ := reader.ReadString('\n')
+func inspectMemoryByID(db *sql.DB, projectID string) {
+	var id string
+	if err := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Inspect Memory Details").
+				Description("Enter a memory ID to view its full details.").
+				Value(&id),
+		).Title("INSPECT"),
+	).WithTheme(tuiTheme()).Run(); err != nil {
+		return // aborted → back to main menu
+	}
 	id = strings.TrimSpace(id)
-
 	if id == "" {
 		return
 	}
-
 	mem, err := memory.GetMemory(db, projectID, id)
-	if err != nil || mem == nil {
-		fmt.Printf("Memory ID '%s' not found.\n", id)
-	} else {
-		fmt.Println("\n--------------------------------------------------------------------------------")
-		fmt.Printf("📌 TITLE: %s\n", mem.What)
-		fmt.Printf("🏷️ CATEGORY: %s\n", strings.ToUpper(mem.Category))
-		fmt.Printf("🆔 ID: %s | Topic Key: %s\n", mem.ID, mem.TopicKey)
-		fmt.Printf("📅 Created: %s\n", mem.CreatedAt.Format("2006-01-02 15:04:05"))
-		if mem.WherePath != "" {
-			fmt.Printf("📁 File Path: %s\n", mem.WherePath)
-		}
-		fmt.Printf("\n❓ WHY:\n%s\n", mem.Why)
-		fmt.Printf("\n💡 LEARNED:\n%s\n", mem.Learned)
-		fmt.Println("--------------------------------------------------------------------------------")
-	}
-	fmt.Print("\nPress Enter to return to main menu...")
-	_, _ = reader.ReadString('\n')
+	showNote("Memory Details", renderMemoryDetail(mem, err))
 }
 
-func runDiagnosticsTUI(reader *bufio.Reader, db *sql.DB, projectID, projPath string) {
-	fmt.Println("\nRunning Graph Health Diagnostics...")
+func runDiagnosticsTUI(db *sql.DB, projectID, projPath string) {
 	report, err := graph.DiagnoseGraph(db, projectID, projPath)
+	content := ""
 	if err != nil {
-		fmt.Printf("Diagnostics error: %v\n", err)
+		content = fmt.Sprintf("Diagnostics error: %v", err)
 	} else {
-		fmt.Println("\n" + report.String())
+		content = report.String()
 	}
-	fmt.Print("\nPress Enter to return to main menu...")
-	_, _ = reader.ReadString('\n')
+	showNote("Graph Health Diagnostics", content)
 }
 
-func exportObsidianTUI(reader *bufio.Reader, db *sql.DB, projectID, projPath string) {
+func exportObsidianTUI(db *sql.DB, projectID, projPath string) {
 	outDir := "./obsidian_vault"
-	fmt.Printf("\nExporting Obsidian Vault to %s...\n", outDir)
 	if err := graph.ExportObsidianVault(db, projectID, outDir); err != nil {
-		fmt.Printf("Export failed: %v\n", err)
-	} else {
-		fmt.Printf("✅ Exported Obsidian Vault successfully to %s!\n", outDir)
+		showNote("Export Obsidian Vault", fmt.Sprintf("Export failed: %v", err))
+		return
 	}
-	fmt.Print("\nPress Enter to return to main menu...")
-	_, _ = reader.ReadString('\n')
+	showNote("Export Obsidian Vault", fmt.Sprintf("Exported Obsidian Vault successfully to %s!", outDir))
 }
 
-func exportCypherTUI(reader *bufio.Reader, db *sql.DB, projectID, projPath string) {
+func exportCypherTUI(db *sql.DB, projectID, projPath string) {
 	outFile := "./graph.cypher"
-	fmt.Printf("\nExporting Cypher script to %s...\n", outFile)
 	if err := graph.ExportCypher(db, projectID, outFile); err != nil {
-		fmt.Printf("Export failed: %v\n", err)
-	} else {
-		fmt.Printf("✅ Exported Cypher script successfully to %s!\n", outFile)
+		showNote("Export Cypher Script", fmt.Sprintf("Export failed: %v", err))
+		return
 	}
-	fmt.Print("\nPress Enter to return to main menu...")
-	_, _ = reader.ReadString('\n')
+	showNote("Export Cypher Script", fmt.Sprintf("Exported Cypher script successfully to %s!", outFile))
+}
+
+func renderRecent(mems []*memory.MemorySearchResult, err error) string {
+	var sb strings.Builder
+	if err != nil {
+		return fmt.Sprintf("Error fetching memories: %v", err)
+	}
+	if len(mems) == 0 {
+		return "No memories found in project."
+	}
+	fmt.Fprintf(&sb, "Found %d recent memories:\n\n", len(mems))
+	for i, m := range mems {
+		fmt.Fprintf(&sb, "%2d. [%s] %s (ID: %s, %s)\n",
+			i+1, strings.ToUpper(m.Category), m.What, m.ID, m.CreatedAt.Format("2006-01-02"))
+	}
+	return sb.String()
+}
+
+func renderSearchResults(mems []*memory.MemorySearchResult, err error) string {
+	var sb strings.Builder
+	if err != nil {
+		return fmt.Sprintf("Error searching: %v", err)
+	}
+	if len(mems) == 0 {
+		return "No matching memories found."
+	}
+	fmt.Fprintf(&sb, "Found %d matching memories:\n\n", len(mems))
+	for i, m := range mems {
+		fmt.Fprintf(&sb, "%2d. [%s] %s (ID: %s)\n", i+1, strings.ToUpper(m.Category), m.What, m.ID)
+	}
+	return sb.String()
+}
+
+func renderMemoryDetail(mem *memory.Memory, err error) string {
+	var sb strings.Builder
+	if err != nil || mem == nil {
+		sb.WriteString("Memory not found or error retrieving it.")
+		if err != nil {
+			fmt.Fprintf(&sb, "\nError: %v", err)
+		}
+		return sb.String()
+	}
+	fmt.Fprintf(&sb, "Title: %s\n", mem.What)
+	fmt.Fprintf(&sb, "Category: %s\n", strings.ToUpper(mem.Category))
+	fmt.Fprintf(&sb, "ID: %s | Topic: %s\n", mem.ID, mem.TopicKey)
+	fmt.Fprintf(&sb, "Created: %s\n", mem.CreatedAt.Format("2006-01-02 15:04:05"))
+	if mem.WherePath != "" {
+		fmt.Fprintf(&sb, "Path: %s\n", mem.WherePath)
+	}
+	fmt.Fprintf(&sb, "\nWhy:\n%s\n", mem.Why)
+	fmt.Fprintf(&sb, "\nLearned:\n%s\n", mem.Learned)
+	return sb.String()
 }
