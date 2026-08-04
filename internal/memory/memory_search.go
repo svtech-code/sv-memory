@@ -450,7 +450,11 @@ func sanitizeFTS5Query(term string) string {
 	return strings.Join(quoted, " ")
 }
 
-func GetTimeline(db *sql.DB, projectID, obsID string, before, after int) (previous, next []*Memory, err error) {
+// GetTimelineCompact is a token-efficient variant of the previous
+// GetTimeline: it only loads the columns needed to render a timeline line
+// (id, category, what, created_at) instead of the full memory row, so
+// timeline responses stay lean.
+func GetTimelineCompact(db *sql.DB, projectID, obsID string, before, after int) (previous, next []*MemorySearchResult, err error) {
 	var targetTime time.Time
 	var targetCreatedAt string
 	err = db.QueryRow("SELECT created_at FROM memories WHERE project_id = ? AND id = ?", projectID, obsID).Scan(&targetCreatedAt)
@@ -462,18 +466,35 @@ func GetTimeline(db *sql.DB, projectID, obsID string, before, after int) (previo
 		return nil, nil, err
 	}
 
+	scanCompact := func(rows *sql.Rows) ([]*MemorySearchResult, error) {
+		var results []*MemorySearchResult
+		for rows.Next() {
+			var r MemorySearchResult
+			var createdAtStr string
+			if err := rows.Scan(&r.ID, &r.Category, &r.What, &createdAtStr); err != nil {
+				return nil, fmt.Errorf("failed scanning timeline row: %w", err)
+			}
+			r.What = security.SanitizeText(r.What)
+			if t, err := parseTime(createdAtStr); err == nil {
+				r.CreatedAt = t
+			} else {
+				r.CreatedAt = time.Now()
+			}
+			results = append(results, &r)
+		}
+		return results, rows.Err()
+	}
+
 	if before > 0 {
 		rows, qErr := db.Query(`
-		SELECT id, project_id, category, what, why, where_path, learned,
-			git_branch, git_commit, author, impact, errors_faced, next_steps,
-			session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at
+		SELECT id, category, what, created_at
 		FROM memories WHERE project_id = ? AND created_at < ? AND id != ? AND deleted_at IS NULL
 		ORDER BY created_at DESC LIMIT ?`, projectID, targetTime.Format("2006-01-02 15:04:05"), obsID, before)
 		if qErr != nil {
 			return nil, nil, qErr
 		}
 		defer rows.Close()
-		previous, qErr = scanMemories(rows)
+		previous, qErr = scanCompact(rows)
 		if qErr != nil {
 			return nil, nil, qErr
 		}
@@ -484,16 +505,14 @@ func GetTimeline(db *sql.DB, projectID, obsID string, before, after int) (previo
 
 	if after > 0 {
 		rows, qErr := db.Query(`
-		SELECT id, project_id, category, what, why, where_path, learned,
-			git_branch, git_commit, author, impact, errors_faced, next_steps,
-			session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at
+		SELECT id, category, what, created_at
 		FROM memories WHERE project_id = ? AND created_at > ? AND id != ? AND deleted_at IS NULL
 		ORDER BY created_at ASC LIMIT ?`, projectID, targetTime.Format("2006-01-02 15:04:05"), obsID, after)
 		if qErr != nil {
 			return nil, nil, qErr
 		}
 		defer rows.Close()
-		next, qErr = scanMemories(rows)
+		next, qErr = scanCompact(rows)
 		if qErr != nil {
 			return nil, nil, qErr
 		}

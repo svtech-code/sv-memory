@@ -65,22 +65,27 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 		return mcp.NewToolResultText("No relevant project memories found matching the query."), nil
 	}
 
-	// Compact output — progressive disclosure: just IDs, titles, and metadata.
-	// Agent drills down with sv_mem_get for full content.
+	// Compact table output — progressive disclosure: one row per result with
+	// the essentials. Agent drills down with sv_mem_get for full content.
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Found %d relevant project memories (use `sv_mem_get` for full content, `sv_mem_timeline` for context):\n\n", len(results)))
+	sb.WriteString("| # | ID | Category | Title | Topic (rev) | Date | Score |\n")
+	sb.WriteString("|---|----|----------|-------|-------------|------|-------|\n")
 	for i, r := range results {
-		sb.WriteString(fmt.Sprintf("### [%s] %s (ID: %s)\n", strings.ToUpper(r.Category), r.What, r.ID))
-		if r.TopicKey != "" {
-			sb.WriteString(fmt.Sprintf("* **Topic:** `%s` (revision %d)\n", r.TopicKey, r.RevisionCount))
-		}
+		title := r.What
 		if r.DuplicateCount > 0 {
-			sb.WriteString(fmt.Sprintf("* **Duplicates:** %d\n", r.DuplicateCount))
+			title += fmt.Sprintf(" (dup: %d)", r.DuplicateCount)
 		}
+		topic := "-"
+		if r.TopicKey != "" {
+			topic = fmt.Sprintf("%s (rev %d)", r.TopicKey, r.RevisionCount)
+		}
+		score := "-"
 		if r.Score != 0 {
-			sb.WriteString(fmt.Sprintf("* **Relevance:** %.2f (rank %d)\n", r.Score, i+1))
+			score = fmt.Sprintf("%.2f", r.Score)
 		}
-		sb.WriteString(fmt.Sprintf("* **Date:** %s\n", r.CreatedAt.Format("2006-01-02")))
+		sb.WriteString(fmt.Sprintf("| %d | %s | %s | %s | %s | %s | %s |\n",
+			i+1, r.ID, strings.ToUpper(r.Category), escapeTableCell(title), escapeTableCell(topic), r.CreatedAt.Format("2006-01-02"), score))
 	}
 	// Token estimate for the response
 	responseText := sb.String()
@@ -88,6 +93,13 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 	sb.WriteString(fmt.Sprintf("\n*Response: ~%d tokens*", estTokens))
 
 	return mcp.NewToolResultText(sb.String()), nil
+}
+
+// escapeTableCell sanitizes a string for safe embedding in a markdown table
+// cell: pipes (which would break the row) are escaped and newlines collapsed.
+func escapeTableCell(s string) string {
+	s = strings.ReplaceAll(s, "|", "\\|")
+	return strings.ReplaceAll(s, "\n", " ")
 }
 
 func (s *Server) handleGet(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -166,7 +178,7 @@ func (s *Server) handleTimeline(ctx context.Context, req mcp.CallToolRequest) (*
 		after = 5
 	}
 
-	prev, next, err := memory.GetTimeline(s.pool.Reader, s.cfg.ProjectID, obsID, before, after)
+	prev, next, err := memory.GetTimelineCompact(s.pool.Reader, s.cfg.ProjectID, obsID, before, after)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to get timeline: %v", err)), nil
 	}

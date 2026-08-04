@@ -301,7 +301,7 @@ func (s *Server) getOrLoadGraph() (*graph.InMemoryGraph, error) {
 // maxFieldChars is the default maximum character count per text field in
 // sv_mem_get responses. When a field exceeds this limit it is truncated
 // with a "[truncated N chars]" suffix to keep token consumption bounded.
-const maxFieldChars = 2000
+const maxFieldChars = 1500
 
 // truncateField shortens a string to maxChars and appends a truncation
 // notice when the original length exceeds the limit.
