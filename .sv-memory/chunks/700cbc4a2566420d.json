@@ -1,0 +1,22 @@
+{
+  "id": "700cbc4a2566420d",
+  "project_id": "ce22c23ac33d7a36",
+  "category": "journal",
+  "what": "Backlog de lint reducido de 161 a 0 issues en 5 fases: gofmt/ineffassign/unused/staticcheck, errcheck con exclude-functions, govet shadow corregido, gocyclo umbral 30 + nolint, y retiro de only-new-issues en CI",
+  "why": "El lint completo reportaba 161 issues preexistentes (errcheck 50, govet/shadow 50, gocyclo 40, staticcheck 12, gofmt/ineffassign/unused/revive). Se acordó resolverlos fase por fase con un commit por fase y retirar el gate incremental only-new-issues al final.",
+  "where_path": ".golangci.yml, .github/workflows/ci.yml, cmd/sv-memory, internal/db, internal/graph, internal/mcp, internal/memory, internal/perm",
+  "learned": "golangci-lint v2 oculta issues por max-same-issues=3: al corregir los primeros emergen otros, por lo que hay que iterar hasta 0 y no fiarse del conteo inicial. Para shadow, renombrar la variable interna (scanErr, regErr, etc.) o usar err= en vez de err:=. Para cierres de limpieza, usar errcheck.exclude-functions con formatos (*package.Type).Method. Para monolitos grandes, subir gocyclo a 30 y añadir //nolint:gocyclo con justificación.",
+  "git_branch": "main",
+  "git_commit": "b2728f8",
+  "author": "Mario Sandoval (Sv Tech)",
+  "impact": "Lint completo con golangci-lint v2.12.2 en 0 issues. CI vuelve a validar todo el código (sin only-new-issues). go test ./... (11 paquetes), go test -race ./..., go vet ./... y git diff --check pasan. 31 archivos modificados.",
+  "errors_faced": "io.Closer.Close no cubría resp.Body.Close (tipo concreto interno), hubo que marcar explícitamente _ = en cmd_update.go. Varios bloques duplicados en sync.go exigieron contexto único para editar.",
+  "next_steps": "Revisar diff y crear los commits por fase (A ya existe: 782bfd1). Sugerencia: B fix(errcheck)..., C fix(govet)..., D refactor(gocyclo)..., E ci(workflow): remove only-new-issues gate. Luego continuar con punto 2 (cobertura TUI/CLI).",
+  "session_id": "4a1cc81f28ed4cd0",
+  "topic_key": "journal/lint-backlog-zero",
+  "revision_count": 1,
+  "last_seen_at": "0001-01-01T00:00:00Z",
+  "normalized_hash": "8afcf8a62b60347dac5e3549979d31f63d68436af44ce7ae3d553984659f1c18",
+  "deleted_at": "0001-01-01T00:00:00Z",
+  "created_at": "2026-08-04T01:24:13.371347-04:00"
+}

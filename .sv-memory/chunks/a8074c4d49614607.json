@@ -1,0 +1,22 @@
+{
+  "id": "a8074c4d49614607",
+  "project_id": "ce22c23ac33d7a36",
+  "category": "bugfix",
+  "what": "Corregida CI fallida por configuración golangci-lint v2 y caché duplicado de Go",
+  "why": "El workflow instalaba golangci-lint v2.12.2 con version: latest, pero .golangci.yml estaba en formato v1 y fallaba con unsupported version. Además setup-go ya restauraba el caché de Go y actions/cache intentaba restaurar las mismas rutas, produciendo tar Cannot open: File exists. Las Actions también emitían warnings por Node 20 obsoleto.",
+  "where_path": ".github/workflows/ci.yml, .golangci.yml",
+  "learned": "Para CI actual: migrar .golangci.yml a version 2 (default none, linters.settings, linters.exclusions.rules, formatters), usar setup-go como único dueño del caché, actualizar Actions a checkout/setup-go v7 y golangci action v9, y fijar golangci v2.12.2. Como existen 161 issues históricos de lint, usar only-new-issues=true como gate incremental sin ocultar el backlog.",
+  "git_branch": "main",
+  "git_commit": "e1d7862",
+  "author": "Mario Sandoval (Sv Tech)",
+  "impact": "Lint local incremental pasa con 0 issues usando v2.12.2; go test ./..., go test -race ./..., go vet ./... y git diff --check pasan. Se eliminaron los errores de configuración y caché que bloquearon el workflow.",
+  "errors_faced": "El lint completo carga correctamente pero reporta 161 issues preexistentes (errcheck, gocyclo, govet/shadow, gofmt, staticcheck, unused). No se abordó ese refactor masivo en esta corrección.",
+  "next_steps": "Subir el cambio y verificar nuevamente CI. Planificar una tarea separada para reducir progresivamente el backlog de 161 issues y eventualmente retirar only-new-issues.",
+  "session_id": "16faa2ee777c46ac",
+  "topic_key": "bugfix/ci-golangci-v2-cache-node24",
+  "revision_count": 1,
+  "last_seen_at": "0001-01-01T00:00:00Z",
+  "normalized_hash": "d810e83154fe24aa5177c3ec826a3c0f0657039e322219a75d8e1cdc454de378",
+  "deleted_at": "0001-01-01T00:00:00Z",
+  "created_at": "2026-08-04T00:46:58.165989-04:00"
+}
