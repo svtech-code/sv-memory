@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -112,3 +113,43 @@ func TestViperConfig(t *testing.T) {
 	}
 }
 
+func TestGitMetadata(t *testing.T) {
+	tempDir := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-q"},
+		{"config", "user.name", "Test User"},
+		{"config", "user.email", "test@example.com"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tempDir
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v (%s)", args, err, output)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "README.md"), []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "README.md"}, {"commit", "-q", "-m", "test"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tempDir
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v (%s)", args, err, output)
+		}
+	}
+
+	if branch := GetGitBranch(tempDir); branch == "" {
+		t.Error("GetGitBranch() returned an empty branch")
+	}
+	if commit := GetGitCommit(tempDir); commit == "" {
+		t.Error("GetGitCommit() returned an empty commit")
+	}
+	if author := GetGitAuthor(tempDir); author != "Test User" {
+		t.Errorf("GetGitAuthor() = %q, want Test User", author)
+	}
+}
+
+func TestWriteConfigKeyRequiresProjectForLocalConfig(t *testing.T) {
+	if err := WriteConfigKey("", "key", "value", true); err == nil {
+		t.Error("WriteConfigKey() expected an error for empty local project path")
+	}
+}

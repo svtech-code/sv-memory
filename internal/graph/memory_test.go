@@ -1,7 +1,10 @@
 package graph
 
 import (
+	"path/filepath"
 	"testing"
+
+	"github.com/svtech-code/sv-memory/internal/db"
 )
 
 func TestNodeBetweennessCentrality(t *testing.T) {
@@ -109,4 +112,116 @@ func TestNodeCommunityID(t *testing.T) {
 			t.Errorf("expected 0 for wrong type, got %d", got)
 		}
 	})
+}
+
+func TestInMemoryGraphTraversal(t *testing.T) {
+	g := &InMemoryGraph{
+		Nodes: map[string]*Node{
+			"a": {ID: "a", Label: "Alpha", Path: "src/a.go"},
+			"b": {ID: "b", Label: "Beta", Path: "src/b.go"},
+			"c": {ID: "c", Label: "Gamma", Path: "src/c.go"},
+		},
+		EdgesBySource: map[string][]*Edge{
+			"a": {{ID: "e1", SourceID: "a", TargetID: "b", RelationType: "imports"}},
+			"b": {{ID: "e2", SourceID: "b", TargetID: "c", RelationType: "calls"}},
+		},
+		EdgesByTarget: map[string][]*Edge{
+			"b": {{ID: "e1", SourceID: "a", TargetID: "b", RelationType: "imports"}},
+			"c": {{ID: "e2", SourceID: "b", TargetID: "c", RelationType: "calls"}},
+		},
+		FanIn:  map[string]int{"b": 1, "c": 1},
+		FanOut: map[string]int{"a": 1, "b": 1},
+	}
+
+	if got := g.FindNode("b"); got != "b" {
+		t.Errorf("FindNode exact match = %q, want b", got)
+	}
+	if got := g.FindNode("src/c.go"); got != "c" {
+		t.Errorf("FindNode path match = %q, want c", got)
+	}
+	if got := g.FindNode("Gamm"); got != "c" {
+		t.Errorf("FindNode fuzzy match = %q, want c", got)
+	}
+	if got := g.FindNode("missing"); got != "" {
+		t.Errorf("FindNode missing = %q, want empty", got)
+	}
+
+	if got := g.ShortestPath("a", "c", 2); len(got) != 3 {
+		t.Fatalf("ShortestPath = %v, want a->b->c", got)
+	}
+	if got := g.ShortestPath("a", "c", 1); got != nil {
+		t.Errorf("ShortestPath over hop limit = %v, want nil", got)
+	}
+	if got := g.ShortestPath("missing", "c", 2); got != nil {
+		t.Errorf("ShortestPath with missing start = %v, want nil", got)
+	}
+
+	if got := g.Query("b", 1, "", "out", 0); len(got.Nodes) != 2 || len(got.Edges) != 1 {
+		t.Errorf("out query = %d nodes/%d edges, want 2/1", len(got.Nodes), len(got.Edges))
+	}
+	if got := g.Query("b", 1, "imports", "in", 0); len(got.Nodes) != 2 || len(got.Edges) != 1 {
+		t.Errorf("filtered in query = %d nodes/%d edges, want 2/1", len(got.Nodes), len(got.Edges))
+	}
+	if got := g.Query("b", 1, "", "all", 0); len(got.Nodes) != 3 || len(got.Edges) != 2 {
+		t.Errorf("all query = %d nodes/%d edges, want 3/2", len(got.Nodes), len(got.Edges))
+	}
+	if got := g.Query("unknown", 1, "", "out", 0); len(got.Nodes) != 0 {
+		t.Errorf("unknown query = %d nodes, want 0", len(got.Nodes))
+	}
+}
+
+func TestComputeHubThreshold(t *testing.T) {
+	if got := (&InMemoryGraph{}).ComputeHubThreshold(); got != 50 {
+		t.Errorf("empty graph threshold = %d, want 50", got)
+	}
+
+	g := &InMemoryGraph{
+		Nodes:        map[string]*Node{"a": {}, "b": {}},
+		FanIn:        map[string]int{"a": 2},
+		FanOut:       map[string]int{"a": 3},
+		HubThreshold: 7,
+	}
+	if got := g.ComputeHubThreshold(); got != 7 {
+		t.Errorf("configured threshold = %d, want 7", got)
+	}
+
+	g.HubThreshold = 0
+	if got := g.ComputeHubThreshold(); got != 50 {
+		t.Errorf("minimum threshold = %d, want 50", got)
+	}
+}
+
+func TestLoadFullGraph(t *testing.T) {
+	database, err := db.InitDB(filepath.Join(t.TempDir(), "graph.db"))
+	if err != nil {
+		t.Fatalf("db.InitDB() error = %v", err)
+	}
+	defer database.Close()
+
+	const projectID = "load-graph-project"
+	if err := db.RegisterProject(database, projectID, "Load Graph", t.TempDir()); err != nil {
+		t.Fatalf("RegisterProject() error = %v", err)
+	}
+	_, err = database.Exec(`INSERT INTO graph_nodes (project_id, id, node_type, label, path, metadata)
+		VALUES (?, 'a', 'file', 'a.go', 'a.go', ?), (?, 'b', 'file', 'b.go', 'b.go', ?)
+	`, projectID, `{"language":"go"}`, projectID, `{}`)
+	if err != nil {
+		t.Fatalf("insert graph nodes error = %v", err)
+	}
+	_, err = database.Exec(`INSERT INTO graph_edges (id, project_id, source_id, target_id, relation_type, confidence, source_location)
+		VALUES ('edge-a-b', ?, 'a', 'b', 'imports', 'EXTRACTED', 'L1')`, projectID)
+	if err != nil {
+		t.Fatalf("insert graph edge error = %v", err)
+	}
+
+	loaded, err := LoadFullGraph(database, projectID)
+	if err != nil {
+		t.Fatalf("LoadFullGraph() error = %v", err)
+	}
+	if len(loaded.Nodes) != 2 || len(loaded.EdgesBySource["a"]) != 1 || loaded.FanOut["a"] != 1 || loaded.FanIn["b"] != 1 {
+		t.Errorf("loaded graph = nodes:%d edges:%d fanout:%d fanin:%d", len(loaded.Nodes), len(loaded.EdgesBySource["a"]), loaded.FanOut["a"], loaded.FanIn["b"])
+	}
+	if loaded.Nodes["a"].Metadata["language"] != "go" {
+		t.Errorf("loaded metadata = %#v, want language=go", loaded.Nodes["a"].Metadata)
+	}
 }

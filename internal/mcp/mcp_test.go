@@ -13,6 +13,7 @@ import (
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	"github.com/svtech-code/sv-memory/internal/config"
 	"github.com/svtech-code/sv-memory/internal/db"
+	"github.com/svtech-code/sv-memory/internal/memory"
 )
 
 func setupTestEnv(t *testing.T) (string, *db.Pool, *config.Config) {
@@ -177,6 +178,68 @@ func TestSaveMemoryHandler(t *testing.T) {
 	textResult4 := textContent(res4.Content[0])
 	if !strings.Contains(textResult4, "updated existing topic_key (revision: 2)") {
 		t.Errorf("expected updated message with revision 2, got: %s", textResult4)
+	}
+}
+
+func TestReadAndCompactMemoryHandlers(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	server := NewServer(pool, cfg)
+	ctx := context.Background()
+	first, err := memory.SaveMemory(pool.Writer, &memory.Memory{
+		ProjectID: cfg.ProjectID,
+		Category:  "journal",
+		What:      "First observation",
+		Why:       "First reason",
+		Learned:   "First lesson",
+	})
+	if err != nil {
+		t.Fatalf("failed to seed first memory: %v", err)
+	}
+	_, err = memory.SaveMemory(pool.Writer, &memory.Memory{
+		ProjectID: cfg.ProjectID,
+		Category:  "decision",
+		What:      "Second observation",
+		Why:       "Second reason",
+		Learned:   "Second lesson",
+	})
+	if err != nil {
+		t.Fatalf("failed to seed second memory: %v", err)
+	}
+
+	getTool := server.GetTool("sv_mem_get")
+	missingReq := mcpgo.CallToolRequest{}
+	missingReq.Params.Name = "sv_mem_get"
+	missingReq.Params.Arguments = map[string]any{"id": "missing"}
+	missing, err := getTool.Handler(ctx, missingReq)
+	if err != nil || !strings.Contains(textContent(missing.Content[0]), "not found") {
+		t.Fatalf("missing memory response = %v, err=%v", missing, err)
+	}
+	foundReq := mcpgo.CallToolRequest{}
+	foundReq.Params.Name = "sv_mem_get"
+	foundReq.Params.Arguments = map[string]any{"id": first.ID, "max_chars": "4"}
+	found, err := getTool.Handler(ctx, foundReq)
+	if err != nil || !strings.Contains(textContent(found.Content[0]), first.What[:4]) {
+		t.Fatalf("found memory response = %v, err=%v", found, err)
+	}
+
+	timelineTool := server.GetTool("sv_mem_timeline")
+	timelineReq := mcpgo.CallToolRequest{}
+	timelineReq.Params.Name = "sv_mem_timeline"
+	timelineReq.Params.Arguments = map[string]any{"observation_id": first.ID}
+	timeline, err := timelineTool.Handler(ctx, timelineReq)
+	if err != nil || !strings.Contains(textContent(timeline.Content[0]), "Timeline around") {
+		t.Fatalf("timeline response = %v, err=%v", timeline, err)
+	}
+
+	compactTool := server.GetTool("sv_mem_compact")
+	compactReq := mcpgo.CallToolRequest{}
+	compactReq.Params.Name = "sv_mem_compact"
+	compactReq.Params.Arguments = map[string]any{}
+	compact, err := compactTool.Handler(ctx, compactReq)
+	if err != nil || !strings.Contains(textContent(compact.Content[0]), "No duplicate") {
+		t.Fatalf("compact response = %v, err=%v", compact, err)
 	}
 }
 

@@ -78,6 +78,18 @@ func TestGraphCache(t *testing.T) {
 	if _, ok := cache.Get(database, projectID); ok {
 		t.Fatalf("expected cache miss after Clear()")
 	}
+
+	cache.Put(projectID, g, 1, 2000)
+	cache.Put("other-project", g, 1, 2000)
+	if len(cache.Entries()) != 2 {
+		t.Fatalf("expected two cache entries, got %d", len(cache.Entries()))
+	}
+	if removed := cache.InvalidateAll(); removed != 2 {
+		t.Errorf("InvalidateAll() removed %d entries, want 2", removed)
+	}
+	if cache.Len() != 0 {
+		t.Errorf("cache length after InvalidateAll() = %d, want 0", cache.Len())
+	}
 }
 
 // TestGraphCacheLRUEviction verifies that the cache is a real fixed-capacity

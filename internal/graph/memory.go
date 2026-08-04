@@ -16,7 +16,7 @@ type InMemoryGraph struct {
 	EdgesByTarget map[string][]*Edge
 	FanIn         map[string]int
 	FanOut        map[string]int
-	HubThreshold int
+	HubThreshold  int
 }
 
 func (g *InMemoryGraph) ComputeHubThreshold() int {
@@ -107,12 +107,18 @@ func (g *InMemoryGraph) ShortestPath(start, end string, maxHops int) []string {
 		return nil
 	}
 
-	queue := []string{start}
+	type queueItem struct {
+		id   string
+		hops int
+	}
+
+	queue := []queueItem{{id: start}}
 	parent := map[string]string{start: ""}
 
 	for len(queue) > 0 {
-		curr := queue[0]
+		item := queue[0]
 		queue = queue[1:]
+		curr := item.id
 
 		if curr == end {
 			path := []string{}
@@ -126,11 +132,14 @@ func (g *InMemoryGraph) ShortestPath(start, end string, maxHops int) []string {
 		if len(parent) > 10000 {
 			break // Safety limit
 		}
+		if maxHops > 0 && item.hops >= maxHops {
+			continue
+		}
 
 		for _, edge := range g.EdgesBySource[curr] {
 			if _, visited := parent[edge.TargetID]; !visited {
 				parent[edge.TargetID] = curr
-				queue = append(queue, edge.TargetID)
+				queue = append(queue, queueItem{id: edge.TargetID, hops: item.hops + 1})
 			}
 		}
 	}
