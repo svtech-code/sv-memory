@@ -41,7 +41,7 @@
 | 🧠 **Memory**        | **FTS5 BM25 & Scoping**    | SQLite Full-Text Search with BM25 relevance ranking and path-scoped directory filtering.                  |
 | ⚡ **Autonomy**      | **Auto-Boot Context**      | `sv_mem_session_start` delivers previous session summaries and key decisions in 1 tool call.              |
 | 🧹 **Maintenance**   | **Auto-Compaction Worker** | `sv_mem_compact` consolidates historical topic key revisions to keep storage ultra-lean.                  |
-| 🕸️ **Graph**         | **Sub-ms LRU Cache**       | Parses 15+ languages, Leiden communities, god nodes & bridge nodes with `<1ms` mtime-validated RAM cache. |
+| 🕸️ **Graph**         | **Sub-ms LRU Cache**       | Parses 18 languages, Leiden communities, god nodes & bridge nodes with `<1ms` mtime-validated RAM cache. |
 | 🔍 **Diagnostics**   | **Graph Health Gate**      | `DiagnoseGraph` detects dangling edges, orphan nodes, and unlinked Markdown/SQL AST entities.             |
 | 🎨 **Interfaces**    | **Interactive TUI**        | Terminal User Interface (`sv-memory tui`) for memory inspection, search, and graph diagnostics.           |
 | 📦 **Export**        | **Obsidian & Cypher**      | Exports to linked Markdown Obsidian Vaults (`[[wikilinks]]`) and Neo4j / FalkorDB Cypher scripts.         |
@@ -183,15 +183,24 @@ sv-memory tui
 | `sv-memory mcp`                    | **Server**      | Launches Model Context Protocol server over stdio for AI clients.                        |
 | `sv-memory tui`                    | **Interface**   | Launches interactive terminal user interface for memories and graph diagnostics.         |
 | `sv-memory configure`              | **Setup**       | Interactive terminal wizard to configure Cursor, Claude Code, agy, Zed, etc.             |
+| `sv-memory configure get/set/list` | **Setup**       | Reads/writes YAML config values globally or project-locally (`--local`).                 |
 | `sv-memory sync`                   | **Git Sync**    | Manual bidirectional sync between SQLite DB and `.sv-memory/chunks/*.json`.              |
 | `sv-memory diagnose`               | **Diagnostics** | Verifies DB connections, schema integrity, write permissions, and paths.                 |
 | `sv-memory stats`                  | **Analytics**   | Displays project memory counts, 24h saves, active sessions, and relations.               |
+| `sv-memory export [file]`          | **Export**      | Exports all non-deleted memories of the project to a portable JSON file.                 |
+| `sv-memory import <file>`          | **Import**      | Imports memories from a JSON file using upsert by ID.                                    |
+| `sv-memory delete session <id>`    | **Maintenance** | Deletes an empty session (fails if it contains memories).                                |
+| `sv-memory delete project <id>`    | **Maintenance** | Cascade-deletes a project's data (`--hard` removes it permanently).                      |
+| `sv-memory projects list`          | **Project**     | Lists all registered projects with memory/session counts.                                |
+| `sv-memory projects prune`         | **Project**     | Removes empty projects from the central registry.                                        |
+| `sv-memory projects consolidate`   | **Project**     | Merges a source project's data into a target project, then prunes the source.            |
 | `sv-memory graph rebuild`          | **Graph**       | Forces full rescan of codebase files and updates structural graph tables.                |
 | `sv-memory graph path <src> <tgt>` | **Graph**       | Finds shortest dependency path between two code nodes (up to 10 hops).                   |
 | `sv-memory graph explain <node>`   | **Graph**       | Displays fan-in/fan-out, centrality, and metadata for a symbol or file.                  |
 | `sv-memory graph communities`      | **Graph**       | Detects Leiden community clusters, god nodes, and bridge nodes.                          |
 | `sv-memory graph wiki`             | **Export**      | Generates Markdown wiki pages per Leiden community.                                      |
 | `sv-memory graph viz`              | **Export**      | Generates interactive HTML visualization (`vis.js`).                                     |
+| `sv-memory graph merge <a> <b>`    | **Graph**       | Union-merges two project graphs into a JSON snapshot.                                    |
 | `sv-memory obsidian-export`        | **Export**      | Exports memories into linked Obsidian Markdown notes (`[[wikilinks]]`).                  |
 | `sv-memory conflicts`              | **Memory**      | Detects semantic overlap and memory conflicts across the project.                        |
 | `sv-memory hooks install`          | **Hooks**       | Installs PreToolUse hooks for Claude Code, Antigravity CLI, and OpenCode.                |
@@ -237,7 +246,7 @@ sv-memory tui
 - **`sv_graph_god_nodes`**: Identifies highly-connected hub nodes.
 - **`sv_graph_surprising_connections`**: Finds unexpected or non-obvious dependencies.
 - **`sv_graph_viz`**: Generates interactive HTML visualization (`vis.js`).
-- **`sv_graph_merge`**: Merges a JSON graph snapshot into current graph.
+- **`sv_graph_merge`**: Union-merges two project graphs by node ID into a JSON snapshot.
 
 ---
 

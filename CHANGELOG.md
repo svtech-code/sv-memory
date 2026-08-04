@@ -5,6 +5,33 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+## [v0.4.0] - 2026-08-03
+
+### Added
+
+- TUI brand banner with the SV Memory logo, dynamic width, and centered text.
+- Configure wizard "shortcuts summary" step that documents the keyboard shortcuts,
+  and removal of the redundant "Cancel configuration (exit)" sentinel option
+  (cancellation is now `Ctrl+C` or the step-3 `No, cancel` confirmation).
+
+### Changed
+
+- Migrated the interactive TUI from `bufio` to `charmbracelet/huh`, aligning its
+  banner color and theme with the `configure` wizard.
+- Compacted `sv_mem_search` / `sv_mem_timeline` MCP output and lowered the default
+  `max_chars` to save tokens.
+
+### Fixed
+
+- Use pure hex IDs and migrate graph tables during project consolidation.
+
+### Performance
+
+- Cache git branch/commit/author metadata for 30s in `sv_mem_save` to avoid up to 4
+  git subprocess spawns per save.
+
+## [v0.3.0] - 2026-08-02
+
 ### Added
 
 - `sv-memory update` command: checks GitHub Releases for a newer version, asks for
@@ -67,5 +94,7 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
   memories first, bounded by `default_review_limit`.
 
 [v0.1.0]: https://github.com/svtech-code/sv-memory/releases/tag/v0.1.0
-[Unreleased]: https://github.com/svtech-code/sv-memory/compare/v0.2.0...main
 [v0.2.0]: https://github.com/svtech-code/sv-memory/releases/tag/v0.2.0
+[v0.3.0]: https://github.com/svtech-code/sv-memory/releases/tag/v0.3.0
+[v0.4.0]: https://github.com/svtech-code/sv-memory/releases/tag/v0.4.0
+[Unreleased]: https://github.com/svtech-code/sv-memory/compare/v0.4.0...main

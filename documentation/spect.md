@@ -7,7 +7,7 @@
 1. **Persistent Decision Memory:** Capturing non-obvious fixes, architectural decisions, coding standards, progress journals, discussions, Q&As, and ideas using SQLite + FTS5 full-text search.
 2. **Structural Knowledge Graph:** Mapping code entities (files, components, imports, dependencies) to provide structural context to LLM agents via directed dependency graphs.
 3. **Autonomous Agent Orchestration:** Injecting protocol rules into `AGENTS.md`, `.cursorrules`, or `.windsurfrules` so agents automatically query, record, and maintain context during coding sessions.
-4. **Team Collaboration:** Bidirectional Git-synced JSON (`.sv-memory/memories.json`) so the entire team shares context across clones.
+4. **Team Collaboration:** Bidirectional Git-synced JSON (`.sv-memory/chunks/*.json`, one file per memory) so the entire team shares context across clones.
 
 Developed under the **SVTech** ecosystem as a free, open-source tool for the developer community.
 
@@ -35,10 +35,10 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
        │         (~/.config/sv-memory/storage.db)                │
        └────────────────────────────────────────────────────────┘
                              │
-                   ┌─────────▼─────────┐
-                   │ .sv-memory/       │
-                   │  memories.json    │  ← Git-committed team sync
-                   └───────────────────┘
+        ┌─────────────────────────▼─────────┐
+        │ .sv-memory/chunks/                │
+        │  <memory-id>.json                 │  ← Git-committed team sync
+        └───────────────────────────────────┘
 ```
 
 ### Key Design Principles:
@@ -52,11 +52,15 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 
 ## 3. Technology Stack & Key Libraries
 
-- **Language:** Go 1.22+ (1.26.3 recommended)
+- **Language:** Go 1.22+ (1.26.3 required by `go.mod`)
 - **Storage Engine:** SQLite via `modernc.org/sqlite` (pure Go, no CGO, fully portable) with **FTS5** full-text search.
 - **Protocol Server:** MCP Go SDK (`github.com/mark3labs/mcp-go`, v0.57.0).
-- **CLI Framework:** `github.com/spf13/cobra` for command handling + `github.com/AlecAivazis/survey/v2` for interactive prompts.
-- **UUID Generation:** `github.com/google/uuid` (8-char short IDs).
+- **CLI Framework:** `github.com/spf13/cobra` for command handling.
+- **Interactive UIs:** `charmbracelet/huh` (configure wizard, TUI forms), `charmbracelet/bubbles` + `lipgloss` (TUI), `charmbracelet/bubbletea` (TUI runtime).
+- **Config:** `github.com/spf13/viper` (YAML global/local config with flag/env precedence).
+- **Graph Parsing:** `github.com/odvcencio/gotreesitter` (pure-Go tree-sitter bindings) with regex fallback for legacy/edge-case languages.
+- **Graph Cache:** `github.com/hashicorp/golang-lru/v2` (in-memory LRU graph cache).
+- **UUID Generation:** `github.com/google/uuid` (hex IDs with 64 bits of entropy via `newID()`).
 - **Security:** Regex-based redaction for OpenAI keys, Anthropic keys, Gemini keys, JWT tokens, RSA/EC private keys, DB connection strings, and generic secret patterns.
 
 ---
@@ -74,7 +78,7 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
   - If any exist: Injects or updates the `<!-- SV-MEMORY:START -->...<!-- SV-MEMORY:END -->` block.
   - If none exist: Creates `AGENTS.md` with the full protocol template.
 - Scans the project directory and performs an initial build of the knowledge graph.
-- Syncs memories from `.sv-memory/memories.json` (team-shared context).
+- Syncs memories from `.sv-memory/chunks/` (team-shared context).
 
 #### 2. `sv-memory mcp`
 - Starts the JSON-RPC MCP server over `stdio` for agent consumption.
@@ -82,81 +86,103 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 - Maintains an in-memory graph cache for zero-SQL BFS traversals.
 - Debounces Git sync writes (500ms coalescing).
 
-#### 3. `sv-memory diagnose`
+#### 3. `sv-memory version`
+- Prints the build version, commit, and Go runtime (`go`, `GOOS`/`GOARCH`).
+- The version is injected at build time via `-ldflags`, so release binaries report the tag they were built from.
+
+#### 4. `sv-memory update`
+- Checks GitHub Releases for a newer version, asks for confirmation, downloads the platform binary, verifies its SHA-256 checksum against `checksums.txt`, and atomically replaces the running executable (on Windows it prints a manual `copy` command since the running `.exe` cannot be overwritten).
+
+#### 5. `sv-memory diagnose`
 - Runs health checks verifying database connections, schemas, folders, write permissions, and active settings.
 
-#### 4. `sv-memory stats`
+#### 6. `sv-memory stats`
 - Displays project statistics: total memories, deleted memories, recent 24-hour saves, sessions count, active sessions, and relation counts.
 
-#### 5. `sv-memory sync`
-- Pulls from `.sv-memory/memories.json` and pushes local SQLite changes back to it.
+#### 7. `sv-memory sync`
+- Pulls from `.sv-memory/chunks/` and pushes local SQLite changes back to it (chunked per-memory JSON for conflict-free Git collaboration).
 
-#### 6. `sv-memory configure`
+#### 8. `sv-memory tui`
+- Launches an interactive Terminal UI (`charmbracelet/huh`/bubbletea) for memory inspection, BM25 search, graph diagnostics, Obsidian vault export, and Neo4j/FalkorDB Cypher export.
+
+#### 9. `sv-memory configure`
 - Interactive wizard for automatic/manual configurations of editors (Cursor, VS Code, Zed, Windsurf, OpenCode) and CLIs (Claude Code, Codex, Antigravity).
 - **Phase 4 (MCP Permissions):** Lists the 26 sv-memory MCP tools with descriptions and grants the selected allow-list entries to the allow-listed platforms chosen earlier (Antigravity CLI, Claude Code).
+- **Sub-commands** for reading/writing configuration (YAML, global `~/.sv-memory/config.yaml` or local `.sv-memory/config.yaml`):
+  - `sv-memory configure get <key>`: prints a single configuration value.
+  - `sv-memory configure set <key> <value> [--local]`: writes a value globally (default) or project-locally.
+  - `sv-memory configure list`: prints all active configuration values (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`).
 
-#### 7. `sv-memory permissions`
+#### 10. `sv-memory permissions`
 - `list`: shows the 26 sv-memory MCP tools with human-readable descriptions.
 - `grant --platform <p> [--all | --tool a,b] [--dry-run]`: writes allow-list entries (`mcp(sv-memory/<tool>)` for Antigravity, `mcp__sv-memory__<tool>` for Claude Code), preserving unrelated entries.
 - `revoke --platform <p> [--dry-run]`: removes sv-memory allow-list entries.
 - `status [--platform <p>]`: reports granted vs missing tools per platform.
 - OpenCode and Codex use interactive approval and are skipped (no static allow-list).
 
-#### 7. `sv-memory obsidian-export [-o output-dir]`
+#### 11. `sv-memory hooks`
+- `install [--strict] [--platform <p>]`: installs PreToolUse hooks (`.agents/hooks.json` + `.agents/hooks/sv-memory.sh`) so agents query memory before reading files. `--strict` blocks the first raw file read of each session. Default platform: all (`claude-code`, `codex`, `antigravity`, `opencode`).
+- `uninstall [--platform <p>]`: removes the hooks.
+- `status`: reports which platforms have hooks installed.
+
+#### 12. `sv-memory obsidian-export [-o output-dir]`
 - Exports all project memories to Markdown files inside the target folder (default `.obsidian-sv-memory`) structured as an Obsidian vault.
 
-#### 8. `sv-memory export [output-file]`
+#### 13. `sv-memory export [output-file]`
 - Exports all non-deleted memories for this project to a portable JSON file.
 
-#### 9. `sv-memory import <input-file>`
+#### 14. `sv-memory import <input-file>`
 - Imports memories from a JSON file using upsert by ID.
 
 ### Memory & Session Deletion Commands
 
-#### 10. `sv-memory delete session <session-id>`
+#### 15. `sv-memory delete session <session-id>`
 - Deletes an empty session (fails if the session contains associated memories).
 
-#### 11. `sv-memory delete project <project-id> [--hard]`
+#### 16. `sv-memory delete project <project-id> [--hard]`
 - Cascade-deletes all project data. Soft-deletes memories by default; `--hard` removes them permanently from SQLite.
 
 ### Project Registry Management
 
-#### 12. `sv-memory projects list`
+#### 17. `sv-memory projects list`
 - Lists all registered projects with their ID, name, path, memory counts, and session counts.
 
-#### 13. `sv-memory projects prune`
+#### 18. `sv-memory projects prune`
 - Prunes empty projects (those with 0 memories and 0 sessions) from the central SQLite registry.
 
-#### 14. `sv-memory projects consolidate <source-project-id> <target-project-id>`
+#### 19. `sv-memory projects consolidate <source-project-id> <target-project-id>`
 - Merges all memories and sessions from the source project into the target project, then prunes the source project.
 
 ### Code Graph Management
 
-#### 15. `sv-memory graph rebuild`
+#### 20. `sv-memory graph rebuild`
 - Forces a full code directory scan, rebuilding graph nodes and edges.
 
-#### 16. `sv-memory graph path <source> <target>`
+#### 21. `sv-memory graph path <source> <target>`
 - Computes and prints the shortest dependency path between two code nodes in the graph (up to 10 hops).
 
-#### 17. `sv-memory graph explain <node>`
+#### 22. `sv-memory graph explain <node>`
 - Outputs detailed information for a specific node: type, label, path, metadata JSON, and fan-in/fan-out metrics.
 
-#### 18. `sv-memory graph communities`
+#### 23. `sv-memory graph communities`
 - Runs Leiden community detection on the graph. Lists community clusters, their member nodes, centrality scores, and god nodes.
 
-#### 19. `sv-memory graph wiki [--output dir]`
+#### 24. `sv-memory graph wiki [--output dir]`
 - Exports Markdown wiki pages for each detected community, listing member files, centrality scores, and inter-community dependencies. Default output directory: `graph-wiki`.
 
-#### 20. `sv-memory graph viz [--output file]`
-- Generates an interactive HTML visualization using vis.js with community-colored physics simulation, node filtering, and tooltips. Default output: `graph.html`.
+#### 25. `sv-memory graph viz [--output file] [--open]`
+- Generates an interactive HTML visualization using vis.js with community-colored physics simulation, node filtering, and tooltips. Default output: `graph.html`. Opens in the browser by default (`--open=false` to skip).
 
-#### 21. `sv-memory graph merge <json-file>`
-- Merges a JSON graph snapshot into the current project graph, upserting nodes and edges by ID.
+#### 26. `sv-memory graph merge <project-id-a> <project-id-b> [-o output-file]`
+- Loads two project graphs and produces a union-merge by node ID, upserting nodes and edges into a JSON snapshot (default output: `merged-<a>-<b>.json`).
 
-### 7. Conflict Management
+### Conflict Management
 
-#### 22. `sv-memory conflicts`
-- Displays conflicting memories and detected semantic overlaps across the project.
+#### 27. `sv-memory conflicts`
+- `list [--status pending|judged|ignored] [--project P]`: displays conflicting memories and detected semantic overlaps.
+- `stats`: summarizes conflict relation counts by status.
+- `scan [--apply] [--dry-run] [--max-insert N] [--threshold T]`: runs incremental semantic-overlap scanning; by default reports without persisting (`--apply` saves the detected `potential_conflict` relations).
+- `ignore <relation-id>`: marks a detected conflict as ignored.
 
 ---
 
@@ -232,8 +258,9 @@ END;
 CREATE TABLE IF NOT EXISTS graph_nodes (
     project_id TEXT NOT NULL,
     id TEXT NOT NULL,
-    node_type TEXT NOT NULL,  -- 'file' | 'module' | 'component' |
-                             -- 'service' | 'function' | 'class'
+    node_type TEXT NOT NULL,  -- 'file' | 'document' | 'sql' | 'package' |
+                             -- 'function' | 'class' | 'module' | 'component' |
+                             -- 'service' | 'concept' | ...
     label TEXT NOT NULL,
     path TEXT NOT NULL,
     metadata TEXT,            -- JSON payload
@@ -243,13 +270,14 @@ CREATE TABLE IF NOT EXISTS graph_nodes (
 
 -- Graph Edges (Directed Relationships)
 CREATE TABLE IF NOT EXISTS graph_edges (
-    id TEXT PRIMARY KEY,
+    id TEXT NOT NULL,
     project_id TEXT NOT NULL,
     source_id TEXT NOT NULL,
     target_id TEXT NOT NULL,
-    relation_type TEXT NOT NULL,              -- 'imports' | 'calls' | 'depends_on' | 'rationale_for'
+    relation_type TEXT NOT NULL,              -- 'imports' | 'calls' | 'depends_on' | 'references' | 'rationale_for'
     confidence TEXT NOT NULL DEFAULT 'EXTRACTED', -- 'EXTRACTED' | 'INFERRED' | 'AMBIGUOUS'
     source_location TEXT,                     -- Line numbers/ranges
+    PRIMARY KEY(project_id, id),
     FOREIGN KEY(project_id, source_id) REFERENCES graph_nodes(project_id, id) ON DELETE CASCADE,
     FOREIGN KEY(project_id, target_id) REFERENCES graph_nodes(project_id, id) ON DELETE CASCADE,
     FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
@@ -285,7 +313,10 @@ CREATE TABLE IF NOT EXISTS memory_relations (
     project_id TEXT NOT NULL,
     source_id TEXT NOT NULL,
     target_id TEXT NOT NULL,
-    relation_type TEXT NOT NULL, -- 'supersedes' | 'conflicts_with' | 'relates_to'
+    relation_type TEXT NOT NULL, -- 'supersedes' | 'conflicts_with' | 'relates_to' |
+                                -- 'potential_conflict' (candidate found by scan)
+    status TEXT DEFAULT 'pending', -- 'pending' | 'judged' | 'ignored'
+    score REAL,                 -- Jaccard similarity for potential_conflict
     reason TEXT,
     judged_by TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -294,6 +325,9 @@ CREATE TABLE IF NOT EXISTS memory_relations (
     FOREIGN KEY(project_id, target_id) REFERENCES memories(project_id, id) ON DELETE CASCADE
 );
 ```
+
+> Note: in earlier databases the `status` and `score` columns are added idempotently
+> by the migration in `internal/db/migrations.go`.
 
 ### Performance Indexes
 
@@ -383,14 +417,14 @@ Recover context from the last completed session.
 
 ### 7. `sv_mem_compact`
 Trigger automatic memory compaction: consolidates historical topic-key revisions and duplicates into clean summary records.
-- **Parameters:**
-  - `session_id` (string, optional): Restrict compaction to a specific session.
+- **Parameters:** None.
 
 ### 8. `sv_mem_search` (Layer 1 — Progressive Disclosure)
 FTS5-powered memory search. Returns only IDs, categories, dates, titles, and topic keys.
 - **Parameters:**
   - `query` (string, required): Keyword search terms.
   - `category` (string, optional): Category filter.
+  - `path` (string, optional): Path/directory scope filter to narrow memories relevant to a specific file or directory.
   - `limit` (string, optional): Max results (default `10`).
   - `offset` (string, optional): Pagination offset.
 
@@ -451,8 +485,9 @@ Queries structural relations using a Breadth-First Search (BFS). Returns a Merma
 - **Parameters:**
   - `path_or_node` (string, required): File path or module to center on.
   - `depth` (string, optional): Hop distance (default `1`).
-  - `relation_type` (string, optional): Filter (e.g., `'imports'`, `'calls'`).
+  - `relation_type` (string, optional): Filter (e.g., `'imports'`, `'calls'`, `'depends_on'`).
   - `direction` (string, optional): Traversal direction: `'in'` | `'out'` | `'all'` (default `'out'`).
+  - `token_budget` (string, optional): Max tokens for the response; the response is truncated with a notice when exceeded (default `'0'` = unlimited).
 
 ### 19. `sv_graph_path`
 Finds the shortest dependency route between two graph nodes.
@@ -467,21 +502,27 @@ Triggers an incremental scan of modified files to sync nodes/edges. Invalidates 
 
 ### 21. `sv_mem_conflicts`
 Detects and surfaces conflicting memories with semantic overlap analysis.
-- **Parameters:** None.
+- **Parameters:**
+  - `action` (string, required): Action to perform: `list`, `scan`, or `ignore`.
+  - `status` (string, optional): Status filter for `list` (`pending`, `judged`, `ignored`).
+  - `relation_id` (string, optional): Required for `ignore`: the conflict relation ID to ignore.
+  - `threshold` (string, optional): Similarity threshold for `scan` (default `0.45`).
+  - `apply` (string, optional): For `scan`: `'true'` to save scanned conflicts to the database (default `'false'`).
 
 ### 22. `sv_graph_explain`
 Outputs detailed information for a specific graph node: type, label, path, metadata, and fan-in/fan-out metrics.
 - **Parameters:**
-  - `path_or_node` (string, required): File path or node ID.
+  - `node` (string, required): File path or node ID.
 
 ### 23. `sv_graph_god_nodes`
 Identifies the most connected nodes in the graph based on betweenness centrality and degree. Returns a ranked list of god nodes with metrics.
 - **Parameters:**
-  - `limit` (string, optional): Max results to return (default `10`).
+  - `top_n` (string, optional): Max results to return (default `10`).
 
 ### 24. `sv_graph_surprising_connections`
 Finds non-obvious or unexpected dependency paths in the graph. Highlights structural anomalies that may indicate architectural concerns.
-- **Parameters:** None.
+- **Parameters:**
+  - `limit` (string, optional): Max connections to return (default `10`).
 
 ### 25. `sv_graph_viz`
 Generates an interactive HTML visualization of the graph using vis.js with community coloring, physics simulation, node filtering, and tooltips.
@@ -489,9 +530,11 @@ Generates an interactive HTML visualization of the graph using vis.js with commu
   - `output` (string, optional): Output file path (default `graph.html`).
 
 ### 26. `sv_graph_merge`
-Merges a JSON graph snapshot into the current project graph, upserting nodes and edges by ID.
+Merges two project graphs into one (union-merge by node ID), upserting nodes and edges.
 - **Parameters:**
-  - `json` (string, required): JSON string containing nodes and edges arrays.
+  - `project_a` (string, required): First project ID.
+  - `project_b` (string, required): Second project ID.
+  - `output` (string, optional): Output JSON file path.
 
 ---
 
@@ -533,7 +576,7 @@ All replaced with `[REDACTED_SECRET]`. Key names in assignments are preserved.
 
 ## 8. Agent Protocol Template
 
-When initialized, `sv-memory` injects the following protocol block into `AGENTS.md`, `.cursorrules`, or `.windsurfrules`:
+When initialized, `sv-memory` injects the following protocol block into `AGENTS.md`, `.cursorrules`, or `.windsurfrules` (source of truth: `internal/protocol/protocol.go`):
 
 ```markdown
 <!-- SV-MEMORY:START -->
@@ -543,13 +586,16 @@ This project uses 'sv-memory' for persistent architectural memory, progress jour
 
 ## Mandatory Agent Workflow:
 
-1. **Context Initialization:** Before proposing or executing any changes:
+1. **Context Initialization (Search-Before-Work):** Before proposing or executing any changes, memory must be consulted first:
+   - Call 'sv_mem_session_start' at the beginning of work to open a session and receive the Auto-Boot Context Bundle (previous session summary + key decisions).
+   - Call 'sv_mem_search' with the topic keywords of the current task (feature, component, style, module) to check past decisions, standards, and solved bugs.
    - Call 'sv_mem_search' (e.g., filter category 'journal', 'postmortem', 'discussion', 'idea' or 'qa') to check the latest work logs, achievements, pending next steps, and past conversations, questions, or ideas.
    - Call 'sv_mem_search' (e.g., filter category 'architecture' or 'decision') to check past project decisions, standards, and solved bugs.
-   - **Proactive search:** On first user message referencing a project, feature, or problem, call 'sv_mem_search' with their keywords before responding.
+   - **Proactive search:** On first user message referencing a project, feature, or problem, call 'sv_mem_search' with their keywords before responding. Never answer from assumptions alone — memory first, code second.
+   - **After a context reset or compaction:** Call 'sv_mem_context' immediately to recover the last session state — goal, summary, and associated memories.
 
 2. **Session Lifecycle (Token Economization):**
-   - **Session start:** Call 'sv_mem_session_start' at the beginning of work to register a new session.
+   - **Session start:** Call 'sv_mem_session_start' at the beginning of work to register a new session and load the Auto-Boot Context Bundle.
    - **Associate saves:** Pass 'session_id' to 'sv_mem_save' to group memories under the active session. If omitted, the active session is auto-detected.
    - **Session summary:** Call 'sv_mem_session_summary' with goal, discoveries, accomplished, next steps, and files before closing.
    - **Session end:** Call 'sv_mem_session_end' to mark the session as completed.
@@ -565,7 +611,8 @@ This project uses 'sv-memory' for persistent architectural memory, progress jour
 4. **Topic Keys (Upsert Semantics):**
    - Use 'sv_mem_suggest_topic_key(category, what)' to generate a stable 'category/kebab-case' key.
    - Pass 'topic_key' to 'sv_mem_save' to enable upsert: saves to the same project+topic update in place (revision_count++) instead of creating a new record.
-   - Use topic keys for evolving topics (architecture decisions, long-running features, recurring patterns). Skip for one-off bugs or single facts.
+   - Use topic keys for evolving topics (architecture decisions, design systems, long-running features, recurring patterns). Skip for one-off bugs or single facts.
+   - **Convention:** Always kebab-case in English. Examples: 'standard/design-system', 'architecture/component-card', 'decision/use-bun-instead-of-npm', 'standard/workflow-git-commits', 'bugfix/tab-transition-absolute-position'.
 
 5. **Context Save (Session Compaction):** You MUST invoke 'sv_mem_save' to persist knowledge and compact the session context before finishing:
    - **Session Compaction:** At the end of every work session or major task, save a progress journal entry (category 'journal'): write a compacted summary of the conversation, key decisions made, code changes, and precise next steps. This serves as a lightweight checkpoint for future agents to resume context immediately.
@@ -573,10 +620,27 @@ This project uses 'sv-memory' for persistent architectural memory, progress jour
    - When fixing a complex/non-obvious bug (category 'bugfix').
    - When introducing or refactoring a design pattern/rule (category 'architecture' or 'decision').
    - When choosing to avoid a library/framework feature.
+   - **Passive capture:** Use 'sv_mem_capture_passive' to log lightweight observations (files modified, tests failing, small changes) without requiring an explicit save decision.
 
-6. **Graph Inspection:** Use 'sv_graph_query' to inspect module dependencies before deleting or restructuring code.
+6. **Memory Capture Guidelines (when to save what):**
+   Always persist design knowledge as structured memories with a topic_key, not just session journals:
 
-7. **Graph Refresh:** Execute 'sv_graph_sync' after adding major new files or modifying package structures.
+   | Situation | Category | topic_key example |
+   | :--- | :--- | :--- |
+   | Visual style / design system / CSS / Tailwind tokens | 'standard' | standard/design-system |
+   | Reusable component or UI pattern | 'architecture' | architecture/component-card |
+   | Workflow / methodology / build & dev process | 'standard' | standard/workflow-dev-process |
+   | Architectural decision made (and its rationale) | 'decision' | decision/... |
+   | Code convention / naming / folder structure | 'standard' | standard/code-conventions |
+   | Complex or non-obvious bug fixed | 'bugfix' | bugfix/... |
+   | Relevant Q&A with lasting value | 'qa' | qa/... |
+   | Rejected library or framework feature | 'decision' | decision/avoid-... |
+
+   **Golden rule:** when you define, change, or reuse a style, component, methodology, or convention, save it as 'standard' or 'architecture' with a topic_key. A journal is not a substitute — journals document progress, 'standard'/'architecture'/'decision' preserve the "how" and the "why" for future sessions.
+
+7. **Graph Inspection:** Use 'sv_graph_query' to inspect module dependencies before deleting or restructuring code.
+
+8. **Graph Refresh:** Execute 'sv_graph_sync' after adding major new files or modifying package structures.
 
 ## Repository Restrictions & Commit Standards:
 
@@ -593,26 +657,51 @@ This project uses 'sv-memory' for persistent architectural memory, progress jour
 sv-memory/
 ├── cmd/
 │   └── sv-memory/
-│       └── main.go              # Cobra Command registration, CLI execution & MCP Server
+│       ├── main.go              # Cobra root command registration, version & CLI execution
+│       ├── cmd_init.go          # init, mcp, tui subcommands
+│       ├── cmd_memory.go        # diagnose, stats, export, import, sync, obsidian-export
+│       ├── cmd_projects.go      # delete session/project, projects list/prune/consolidate
+│       ├── cmd_graph.go         # graph rebuild/path/explain/communities/wiki/viz/merge
+│       ├── cmd_conflicts.go     # conflicts list/stats/scan/ignore
+│       ├── cmd_configure.go     # interactive configure wizard
+│       ├── cmd_config.go        # configure get/set/list (viper YAML)
+│       ├── cmd_permissions.go   # permissions list/status/grant/revoke
+│       ├── cmd_hooks.go         # hooks install/uninstall/status
+│       └── cmd_update.go        # self-update command
 ├── internal/
-│   ├── config/                  # App paths, settings parsing, viper config & configure cmd
+│   ├── config/                  # App paths, settings parsing, viper config & configure wizard
 │   ├── db/                      # DB initialization, composite migrations, WAL pools & PRAGMAs
-│   ├── graph/                   # Code scanner, BFS query, community detection (Leiden),
-│   │                            # betweenness centrality, god nodes, HTML viz, wiki export,
-│   │                            # graph merge, surprising connections, incremental updates
-│   ├── mcp/                     # Server start, 25 handlers registration, in-memory graph cache
-│   ├── memory/                  # CRUD, sessions storage, dedup checks, Obsidian export
+│   ├── graph/                   # Code scanner, BFS query, Leiden communities, betweenness
+│   │   │                        # centrality, god nodes, HTML viz, wiki export, graph merge,
+│   │   │                        # surprising connections, incremental updates, stale checks
+│   │   ├── extractor/           # tree-sitter extractor, regex fallback, markdown semantics
+│   │   └── schema/              # Node/Edge structs
+│   ├── hook/                    # PreToolUse hooks generation & templates
+│   ├── mcp/                     # Server start, 26 tool handlers, in-memory graph cache
+│   ├── memory/                  # CRUD, sessions storage, dedup, conflicts, compaction,
+│   │                            # chunked git sync, Obsidian/Cypher export, stats
+│   ├── perm/                    # MCP tool allow-list management (antigravity/claude-code)
 │   ├── protocol/                # AGENTS.md / editor rules injection
-│   └── security/                # Regex secrets sanitizer
+│   ├── security/                # Regex secrets sanitizer
+│   └── tui/                     # Interactive terminal UI (charmbracelet/huh + bubbletea)
 ├── documentation/
 │   ├── requirement.md           # Product constraints
-│   └── spect.md                 # This specification
+│   ├── spect.md                 # This specification
+│   └── getting_started_guide.md # Step-by-step installation & onboarding guide
 ├── AGENTS.md                    # Injected protocols block (committed)
+├── CHANGELOG.md                 # Release notes
+├── CONTRIBUTING.md              # Contribution guidelines
+├── SECURITY.md                  # Vulnerability reporting policy
+├── CODE_OF_CONDUCT.md           # Community code of conduct
+├── Makefile                     # build/test/lint/vet/install targets
+├── .golangci.yml                # Linter configuration
+├── .github/workflows/           # CI + release pipelines
+├── install.sh                   # Unix setup script
+├── install.ps1                  # Windows setup script
 ├── .sv-memory/
-│   └── memories.json            # Portable team-shared memory export (committed)
+│   └── chunks/                  # Portable team-shared per-memory JSON (committed)
 ├── go.mod
 ├── go.sum
-├── install.sh                   # Unix setup script
 └── README.md                    # Core project introduction
 ```
 
@@ -620,23 +709,27 @@ sv-memory/
 
 ## 10. Language Support for Dependency Graph
 
+Parsing uses **tree-sitter** (`gotreesitter`) for the primary languages, with a regex fallback for the rest. The scanner also handles `Markdown` (headings, code blocks, wikilinks) and `SQL`.
+
 | Language | Extensions | Import Detection Mechanism |
 |---|---|---|
-| Go | `.go` | `import "path"` |
-| Python | `.py` | `import x`, `from x import y` |
-| JavaScript | `.js`, `.jsx` | `import ... from`, `require()`, `import()` |
-| TypeScript | `.ts`, `.tsx` | `import ... from`, `require()`, `import()` |
-| Astro | `.astro` | Frontmatter imports block (`import ...`) |
-| HTML | `.html` | Script src tags, link stylesheet tags |
-| CSS | `.css` | `@import 'path'`, `@import url(...)` |
-| PHP | `.php` | `include`, `require`, `use Namespace` |
-| Bash | `.sh` | `source`, `. script.sh` |
-| Lua | `.lua` | `require()`, `dofile()`, `loadfile()` |
-| Ruby | `.rb` | `require`, `load`, `require_relative` |
-| Rust | `.rs` | `use path`, `mod path`, `extern crate` |
-| Java | `.java` | `import package` |
-| Vue | `.vue` | `<script>` block imports |
-| Svelte | `.svelte` | `<script>` block imports |
+| Go | `.go` | tree-sitter (`import "path"`) |
+| Python | `.py` | tree-sitter (`import x`, `from x import y`) |
+| JavaScript | `.js`, `.jsx` | tree-sitter (`import ... from`, `require()`, `import()`) |
+| TypeScript | `.ts`, `.tsx` | tree-sitter (types, generics, type annotations) |
+| PHP | `.php` | tree-sitter (`use Namespace`, `include`, `require`) |
+| Rust | `.rs` | tree-sitter (`use path`, `mod path`, `extern crate`) |
+| Ruby | `.rb` | tree-sitter (`require`, `load`, `require_relative`) |
+| Java | `.java` | tree-sitter (`import package`) |
+| HTML | `.html` | tree-sitter (script src, link stylesheet) |
+| CSS | `.css` | tree-sitter (`@import 'path'`, `@import url(...)`) |
+| Bash | `.sh` | tree-sitter (`source`, `. script.sh`) |
+| Astro | `.astro` | regex (frontmatter imports block) |
+| Vue | `.vue` | regex (`<script>` block imports) |
+| Svelte | `.svelte` | regex (`<script>` block imports) |
+| Lua | `.lua` | regex (`require()`, `dofile()`, `loadfile()`) |
+| Markdown | `.md` | regex + semantic parser (headings, code blocks, wikilinks) |
+| SQL | `.sql` | scanner-level (table/column references) |
 
 ---
 
@@ -663,9 +756,11 @@ To maintain coherence across long-term agent interactions, `sv-memory` includes 
   - `supersedes`: A newer decision overrides an old guideline (deactivates or flags the target memory).
   - `conflicts_with`: Two decisions explicitly contradict each other. Flagged for manual review.
   - `relates_to`: Loose association between memories (e.g. standard relates to bugfix).
+  - `potential_conflict`: A candidate detected by the incremental scan, initially with `status='pending'`.
 - **Conflict Lifecycle:**
-  1. **Detection:** When a save is triggered without a topic key, a background heuristic scanner runs `sv_mem_compare` and computes a Jaccard/FTS overlap. If high semantic overlap exists with different rules, a `conflicts_with` relation is registered.
-  2. **Surfacing:** Use `sv_mem_conflicts` (MCP tool) or `sv-memory conflicts` (CLI) to display detected semantic overlaps and conflicting memories across the project. Calling `sv_mem_review` also highlights pending conflicts.
+  1. **Detection:** Run `sv-memory conflicts scan` (CLI) or `sv_mem_conflicts` with `action=scan` (MCP). The scan is incremental (O(new memories × total) instead of O(N²)), caches tokenizations, and inserts at most `--max-insert N` (default 100) relations. By default it only reports; `--apply` (or `apply='true'`) persists the detected `potential_conflict` relations.
+  2. **Review:** `sv-memory conflicts list` / `sv_mem_conflicts` with `action=list` displays pending conflicts. Calling `sv_mem_review` also highlights pending conflicts.
+  3. **Resolution:** Judge the pair with `sv_mem_judge` (promoting to `supersedes`/`conflicts_with`/`relates_to`) or mark it as reviewed/ignored with `sv-memory conflicts ignore <relation-id>` (or `action=ignore`).
 
 ---
 
@@ -698,5 +793,5 @@ Code entities and memory observations are mapped onto a unified directed graph s
 
 ---
 
-*Specification v3 — reflecting the full implementation as of July 2026.*
+*Specification v3 — reflecting the full implementation as of August 2026.*
 
