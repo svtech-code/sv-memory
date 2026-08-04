@@ -56,10 +56,8 @@ func configureTheme() *huh.Theme {
 }
 
 // configureKeyMap binds the Esc key to go back to the previous step. Ctrl+C
-// remains the global cancel (huh default) and carries a Spanish help label for
-// the footer. Note: on the first step there is no previous step, so Esc does
-// nothing there — the shortcuts summary shown in the final step tells the user
-// to use Ctrl+C to exit.
+// remains the global cancel (huh default) and carries a Spanish help label.
+// Note: on the first step there is no previous step, so Esc does nothing there.
 func configureKeyMap() *huh.KeyMap {
 	km := huh.NewDefaultKeyMap()
 	km.Quit = key.NewBinding(
@@ -75,16 +73,6 @@ func configureKeyMap() *huh.KeyMap {
 		key.WithHelp("esc", "retroceder"),
 	)
 	return km
-}
-
-// shortcutsNote returns a display-only note with the wizard's keybindings,
-// rendered as the final step of each form so the individual fields can keep a
-// clean, hint-free description. It also surfaces Ctrl+C, which huh's automatic
-// footer never shows (Quit is handled at the form level, not per field).
-func shortcutsNote() *huh.Note {
-	return huh.NewNote().
-		Title("Atajos de teclado").
-		Description("↑/↓ navega · ESPACIO/x selecciona · Enter avanza · Esc retrocede · Ctrl+C salir")
 }
 
 // toolLabel builds a display label for a TargetTool, e.g.
@@ -126,38 +114,36 @@ var configureCmd = &cobra.Command{
 		var selectedEditors, selectedCLIs []string
 		var confirmed bool
 
-		// 3. Interactive form: Editors → CLIs → Confirmation → shortcuts.
-		// Each field keeps a clean, hint-free description; the keybindings are
-		// shown once in the final "Atajos de teclado" step.
+		// 3. Interactive form: Editors → CLIs → Confirmation. The Confirm
+		// step's "No, cancelar" exits immediately without any further screen.
+		editorOptions := huh.NewOptions(editorLabels...)
+		cliOptions := huh.NewOptions(cliLabels...)
+
 		form1 := huh.NewForm(
 			huh.NewGroup(
 				huh.NewMultiSelect[string]().
-					Title("\n\nPaso 1 de 4 — Editores de código").
+					Title("\nPaso 1 de 4 — Editores de código").
 					Description("\nSelecciona los editores de código a configurar.").
-					Options(huh.NewOptions(editorLabels...)...).
+					Options(editorOptions...).
 					Value(&selectedEditors),
 			).Title("EDITORES"),
 
 			huh.NewGroup(
 				huh.NewMultiSelect[string]().
-					Title("\n\nPaso 2 de 4 — CLIs de terminal").
+					Title("\nPaso 2 de 4 — CLIs de terminal").
 					Description("\nSelecciona las CLIs de terminal a configurar.").
-					Options(huh.NewOptions(cliLabels...)...).
+					Options(cliOptions...).
 					Value(&selectedCLIs),
 			).Title("CLIs DE TERMINAL"),
 
 			huh.NewGroup(
 				huh.NewConfirm().
-					Title("\n\nPaso 3 de 4 — Confirmación").
+					Title("\nPaso 3 de 4 — Confirmación").
 					Description("\n¿Aplicar estos cambios y ver las instrucciones?").
 					Affirmative("Sí, aplicar").
 					Negative("No, cancelar").
 					Value(&confirmed),
 			).Title("CONFIRMACIÓN"),
-
-			huh.NewGroup(
-				shortcutsNote(),
-			).Title("ATAJOS DE TECLADO"),
 		).WithTheme(configureTheme()).WithKeyMap(configureKeyMap())
 
 		if err := form1.Run(); err != nil {
@@ -233,19 +219,16 @@ var configureCmd = &cobra.Command{
 			}
 
 			var selectedPerms []string
+			permOptions := huh.NewOptions(toolNames...)
 			form2 := huh.NewForm(
 				huh.NewGroup(
 					huh.NewMultiSelect[string]().
-						Title("\n\nPaso 4 de 4 — Permisos de herramientas MCP").
-						Description("\nAutoriza las herramientas para "+platformNames(grantTargets)+".").
-						Options(huh.NewOptions(toolNames...)...).
+						Title("\nPaso 4 de 4 — Permisos de herramientas MCP").
+						Description("\nAutoriza las herramientas para " + platformNames(grantTargets) + ".").
+						Options(permOptions...).
 						Height(20).
 						Value(&selectedPerms),
 				).Title("PERMISOS DE SV-MEMORY"),
-
-				huh.NewGroup(
-					shortcutsNote(),
-				).Title("ATAJOS DE TECLADO"),
 			).WithTheme(configureTheme()).WithKeyMap(configureKeyMap())
 
 			if err := form2.Run(); err != nil {
