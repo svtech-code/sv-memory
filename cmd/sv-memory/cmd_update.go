@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -139,6 +140,102 @@ func fetchExpectedChecksum(tag, asset string) (string, error) {
 	return "", fmt.Errorf("asset %s not found in checksums.txt", asset)
 }
 
+type releaseVersion struct {
+	major      int
+	minor      int
+	patch      int
+	preRelease []string
+}
+
+func parseReleaseVersion(raw string) (releaseVersion, error) {
+	value := strings.TrimPrefix(strings.TrimSpace(raw), "v")
+	value = strings.SplitN(value, "+", 2)[0]
+	parts := strings.SplitN(value, "-", 2)
+	core := strings.Split(parts[0], ".")
+	if len(core) != 3 {
+		return releaseVersion{}, fmt.Errorf("version %q must use major.minor.patch", raw)
+	}
+
+	values := [3]int{}
+	for i, part := range core {
+		if part == "" {
+			return releaseVersion{}, fmt.Errorf("version %q contains an empty component", raw)
+		}
+		value, err := strconv.Atoi(part)
+		if err != nil || value < 0 {
+			return releaseVersion{}, fmt.Errorf("version %q contains an invalid numeric component", raw)
+		}
+		values[i] = value
+	}
+
+	parsed := releaseVersion{major: values[0], minor: values[1], patch: values[2]}
+	if len(parts) == 2 {
+		if parts[1] == "" {
+			return releaseVersion{}, fmt.Errorf("version %q contains an empty prerelease", raw)
+		}
+		for _, identifier := range strings.Split(parts[1], ".") {
+			if identifier == "" {
+				return releaseVersion{}, fmt.Errorf("version %q contains an empty prerelease identifier", raw)
+			}
+			parsed.preRelease = append(parsed.preRelease, identifier)
+		}
+	}
+	return parsed, nil
+}
+
+func compareReleaseVersions(current, latest string) (int, error) {
+	left, err := parseReleaseVersion(current)
+	if err != nil {
+		return 0, err
+	}
+	right, err := parseReleaseVersion(latest)
+	if err != nil {
+		return 0, err
+	}
+
+	for _, pair := range [][2]int{{left.major, right.major}, {left.minor, right.minor}, {left.patch, right.patch}} {
+		if pair[0] < pair[1] {
+			return -1, nil
+		}
+		if pair[0] > pair[1] {
+			return 1, nil
+		}
+	}
+
+	if len(left.preRelease) == 0 && len(right.preRelease) > 0 {
+		return 1, nil
+	}
+	if len(left.preRelease) > 0 && len(right.preRelease) == 0 {
+		return -1, nil
+	}
+	for i := 0; i < len(left.preRelease) && i < len(right.preRelease); i++ {
+		leftID, rightID := left.preRelease[i], right.preRelease[i]
+		leftNum, leftErr := strconv.Atoi(leftID)
+		rightNum, rightErr := strconv.Atoi(rightID)
+		switch {
+		case leftErr == nil && rightErr == nil && leftNum < rightNum:
+			return -1, nil
+		case leftErr == nil && rightErr == nil && leftNum > rightNum:
+			return 1, nil
+		case leftErr == nil && rightErr != nil:
+			return -1, nil
+		case leftErr != nil && rightErr == nil:
+			return 1, nil
+		case leftID < rightID:
+			return -1, nil
+		case leftID > rightID:
+			return 1, nil
+		}
+	}
+	if len(left.preRelease) < len(right.preRelease) {
+		return -1, nil
+	}
+	if len(left.preRelease) > len(right.preRelease) {
+		return 1, nil
+	}
+	return 0, nil
+}
+
 // extractTarBinary copies the single regular file of a tarball to dest.
 func extractTarBinary(archivePath, dest string) error {
 	f, err := os.Open(archivePath)
@@ -240,11 +337,13 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	latest := strings.TrimPrefix(rel.TagName, "v")
-	current := strings.TrimPrefix(version, "v")
 	fmt.Printf("Latest release:  %s\n", rel.TagName)
 
-	if latest == current {
+	comparison, err := compareReleaseVersions(version, rel.TagName)
+	if err != nil {
+		return fmt.Errorf("could not compare versions: %w", err)
+	}
+	if comparison >= 0 {
 		fmt.Println()
 		fmt.Printf("sv-memory is already up to date (%s).\n", version)
 		return nil

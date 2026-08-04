@@ -60,7 +60,7 @@ func (c *GraphCache) Get(db *sql.DB, projectID string) (*InMemoryGraph, bool) {
 		return entry.graph, true
 	}
 
-	if currentCount.Int64 != int64(entry.fileCount) || currentMaxMtime.Int64 > entry.maxMtimeMs {
+	if currentCount.Int64 != int64(entry.fileCount) || currentMaxMtime.Int64 != entry.maxMtimeMs {
 		c.Invalidate(projectID)
 		return nil, false
 	}
@@ -102,4 +102,3 @@ func (c *GraphCache) InvalidateAll() int {
 	c.Clear()
 	return n
 }
-

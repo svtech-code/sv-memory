@@ -62,7 +62,17 @@ func TestGraphCache(t *testing.T) {
 		t.Fatalf("expected cache miss after file deletion, got hit")
 	}
 
-	// 7. Test manual clear
+	// 7. A restored file may have an older mtime while keeping the same count.
+	// The cache must not retain the graph from before the restoration.
+	_, _ = database.Exec("INSERT INTO graph_files_meta (project_id, path, mtime_ms, size) VALUES (?, 'file.go', 1500, 100)", projectID)
+	cache.Put(projectID, g, 1, 2000)
+	_, _ = database.Exec("UPDATE graph_files_meta SET mtime_ms = 1000 WHERE project_id = ?", projectID)
+	restoredG, ok := cache.Get(database, projectID)
+	if ok || restoredG != nil {
+		t.Fatalf("expected cache miss after mtime decreased, got hit")
+	}
+
+	// 8. Test manual clear
 	cache.Put(projectID, g, 1, 2000)
 	cache.Clear()
 	if _, ok := cache.Get(database, projectID); ok {
