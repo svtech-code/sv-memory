@@ -149,13 +149,13 @@ func ReviewMemories(db *sql.DB, projectID string, limit int) ([]*MemoryReviewIte
 	for relRows.Next() {
 		var mid string
 		var n int
-		if err := relRows.Scan(&mid, &n); err == nil {
+		if scanErr := relRows.Scan(&mid, &n); scanErr == nil {
 			relCounts[mid] = n
 		}
 	}
 	relRows.Close()
-	if err := relRows.Err(); err != nil {
-		return nil, err
+	if rowsErr := relRows.Err(); rowsErr != nil {
+		return nil, rowsErr
 	}
 
 	rows, err := db.Query(`

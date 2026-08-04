@@ -45,8 +45,8 @@ func ImportJSON(db *sql.DB, projectID, filePath string) (int, error) {
 	}
 
 	var memories []*Memory
-	if err := json.Unmarshal(data, &memories); err != nil {
-		return 0, fmt.Errorf("failed to parse import JSON: %w", err)
+	if unmarshalErr := json.Unmarshal(data, &memories); unmarshalErr != nil {
+		return 0, fmt.Errorf("failed to parse import JSON: %w", unmarshalErr)
 	}
 
 	if len(memories) == 0 {
@@ -123,8 +123,8 @@ func ExportObsidian(db *sql.DB, projectID, projPath, outputDir string) error {
 	}
 
 	vaultDir := filepath.Join(projPath, outputDir)
-	if err := os.MkdirAll(vaultDir, 0755); err != nil {
-		return fmt.Errorf("failed to create vault directory: %w", err)
+	if mkErr := os.MkdirAll(vaultDir, 0755); mkErr != nil {
+		return fmt.Errorf("failed to create vault directory: %w", mkErr)
 	}
 
 	var fileNodes []exportObsidianNode
@@ -314,6 +314,8 @@ func makeRelativeLink(sourceNodePath, targetNodePath, targetSymbol, label, relat
 }
 
 // writeObsidianCodeFile writes a file node as an Obsidian markdown file with its symbols and edges.
+//
+//nolint:gocyclo // many render branches per node kind; refactor later
 func writeObsidianCodeFile(vaultDir string, fn exportObsidianNode, symbolNodesByFile map[string][]exportObsidianNode, edgesBySource, edgesByTarget map[string][]exportObsidianEdge, nodesMap map[string]exportObsidianNode) error {
 	filePath := filepath.Join(vaultDir, "code", fn.id+".md")
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {

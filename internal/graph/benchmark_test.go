@@ -43,7 +43,7 @@ func BenchmarkBetweennessCentrality(b *testing.B) {
 	}
 
 	for name, content := range files {
-		err := os.WriteFile(filepath.Join(tempDir, name), []byte(content), 0644)
+		err = os.WriteFile(filepath.Join(tempDir, name), []byte(content), 0644)
 		if err != nil {
 			b.Fatalf("failed writing %s: %v", name, err)
 		}
@@ -93,7 +93,7 @@ func BenchmarkLeidenCommunityDetection(b *testing.B) {
 
 	for i := 0; i < 50; i++ {
 		content := fmt.Sprintf(`package main; import "./mod%d"; func fn%d() {}`, i%10, i)
-		err := os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("file%d.go", i)), []byte(content), 0644)
+		err = os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("file%d.go", i)), []byte(content), 0644)
 		if err != nil {
 			b.Fatalf("failed writing file%d.go: %v", i, err)
 		}
@@ -143,7 +143,7 @@ func BenchmarkGraphLoadFull(b *testing.B) {
 
 	for i := 0; i < 500; i++ {
 		content := fmt.Sprintf(`package main; import "./mod%d"; func fn%d() {}`, i%20, i)
-		err := os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("f%d.go", i)), []byte(content), 0644)
+		err = os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("f%d.go", i)), []byte(content), 0644)
 		if err != nil {
 			b.Fatalf("failed writing f%d.go: %v", i, err)
 		}
@@ -186,7 +186,7 @@ func BenchmarkSyncGraphFull(b *testing.B) {
 
 	for i := 0; i < 200; i++ {
 		content := fmt.Sprintf(`package main; import "./mod%d"; func fn%d() {}`, i%10, i)
-		err := os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("f%d.go", i)), []byte(content), 0644)
+		err = os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("f%d.go", i)), []byte(content), 0644)
 		if err != nil {
 			b.Fatalf("failed writing f%d.go: %v", i, err)
 		}
@@ -233,7 +233,7 @@ func BenchmarkSyncGraphIncremental(b *testing.B) {
 
 	for i := 0; i < 100; i++ {
 		content := fmt.Sprintf(`package main; import "./mod%d"; func fn%d() {}`, i%5, i)
-		err := os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("f%d.go", i)), []byte(content), 0644)
+		err = os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("f%d.go", i)), []byte(content), 0644)
 		if err != nil {
 			b.Fatalf("failed writing f%d.go: %v", i, err)
 		}
@@ -293,18 +293,18 @@ func BenchmarkSyncGraphIfStale(b *testing.B) {
 	}
 
 	projectID := "bench-ifstale"
-	if err := db.RegisterProject(database, projectID, "Bench IfStale", tempDir); err != nil {
+	if err = db.RegisterProject(database, projectID, "Bench IfStale", tempDir); err != nil {
 		b.Fatalf("failed to register project: %v", err)
 	}
 
 	for i := 0; i < 100; i++ {
 		content := fmt.Sprintf(`package main; import "./mod%d"; func fn%d() {}`, i%5, i)
-		if err := os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("f%d.go", i)), []byte(content), 0644); err != nil {
+		if err = os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("f%d.go", i)), []byte(content), 0644); err != nil {
 			b.Fatalf("failed writing f%d.go: %v", i, err)
 		}
 	}
 
-	if err := SyncGraph(database, projectID, tempDir); err != nil {
+	if err = SyncGraph(database, projectID, tempDir); err != nil {
 		b.Fatalf("failed initial sync: %v", err)
 	}
 	database.Close()
@@ -317,22 +317,22 @@ func BenchmarkSyncGraphIfStale(b *testing.B) {
 		}
 
 		// Clean case: no changes → cheap mtime probe only.
-		if _, err := SyncGraphIfStale(database, projectID, tempDir); err != nil {
-			b.Fatalf("SyncGraphIfStale clean: %v", err)
+		if _, syncErr := SyncGraphIfStale(database, projectID, tempDir); syncErr != nil {
+			b.Fatalf("SyncGraphIfStale clean: %v", syncErr)
 		}
 
 		// Change one file → incremental refresh restricted to that file.
 		content := fmt.Sprintf(`package main; import "./mod%d"; func fn%d() {}`, i%5, 9999+i)
-		if err := os.WriteFile(filepath.Join(tempDir, "f0.go"), []byte(content), 0644); err != nil {
+		if err = os.WriteFile(filepath.Join(tempDir, "f0.go"), []byte(content), 0644); err != nil {
 			b.Fatalf("failed writing f0.go: %v", err)
 		}
-		if _, err := SyncGraphIfStale(database, projectID, tempDir); err != nil {
-			b.Fatalf("SyncGraphIfStale changed: %v", err)
+		if _, syncErr := SyncGraphIfStale(database, projectID, tempDir); syncErr != nil {
+			b.Fatalf("SyncGraphIfStale changed: %v", syncErr)
 		}
 
 		// Restore for next iteration.
 		content = fmt.Sprintf(`package main; import "./mod%d"; func fn0() {}`, i%5)
-		if err := os.WriteFile(filepath.Join(tempDir, "f0.go"), []byte(content), 0644); err != nil {
+		if err = os.WriteFile(filepath.Join(tempDir, "f0.go"), []byte(content), 0644); err != nil {
 			b.Fatalf("failed restoring f0.go: %v", err)
 		}
 
@@ -376,7 +376,7 @@ def func_%d():
 ### Subsection
 Even deeper.
 `, i, i)
-		err := os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("doc%d.md", i)), []byte(md), 0644)
+		err = os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("doc%d.md", i)), []byte(md), 0644)
 		if err != nil {
 			b.Fatalf("failed writing doc%d.md: %v", i, err)
 		}
@@ -443,7 +443,7 @@ CREATE VIEW active_users_%d AS SELECT * FROM users_%d WHERE active = 1;
 
 CREATE TYPE priority_%d AS ENUM ('low', 'medium', 'high');
 `, i, i, i, i, i, i, i, i)
-		err := os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("schema_%d.sql", i)), []byte(sql), 0644)
+		err = os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("schema_%d.sql", i)), []byte(sql), 0644)
 		if err != nil {
 			b.Fatalf("failed writing schema_%d.sql: %v", i, err)
 		}
@@ -494,7 +494,7 @@ func BenchmarkDetectCommunities(b *testing.B) {
 			dep = (i + 1) % 200
 		}
 		content := fmt.Sprintf(`package main; import "./f%d"; func fn%d() {}`, dep, i)
-		err := os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("f%d.go", i)), []byte(content), 0644)
+		err = os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("f%d.go", i)), []byte(content), 0644)
 		if err != nil {
 			b.Fatalf("failed writing f%d.go: %v", i, err)
 		}

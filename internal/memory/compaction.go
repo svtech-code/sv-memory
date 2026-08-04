@@ -20,6 +20,8 @@ type CompactionReport struct {
 
 // CompactMemories consolidates multiple entries or high-revision histories under the same topic_key
 // into clean, unified summary records, soft-deleting older historical entries.
+//
+//nolint:gocyclo // consolidation logic spans many merge branches; refactor later
 func CompactMemories(db *sql.DB, projectID string) (*CompactionReport, error) {
 	report := &CompactionReport{
 		ProjectID: projectID,

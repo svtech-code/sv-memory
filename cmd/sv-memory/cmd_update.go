@@ -377,8 +377,8 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 	downloadURL := fmt.Sprintf("%s/%s/%s", updateDownloadURL, rel.TagName, asset)
 	archivePath := filepath.Join(tmpDir, asset)
-	if err := downloadFile(downloadURL, archivePath); err != nil {
-		fmt.Printf("⚠️  Download failed: %v\n", err)
+	if dlErr := downloadFile(downloadURL, archivePath); dlErr != nil {
+		fmt.Printf("⚠️  Download failed: %v\n", dlErr)
 		fmt.Println("Manual update recommended: https://github.com/svtech-code/sv-memory/releases")
 		return nil
 	}
@@ -403,12 +403,12 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		newBin += ".exe"
 	}
 	if runtime.GOOS == "windows" {
-		if err := extractZipBinary(archivePath, newBin); err != nil {
-			return fmt.Errorf("could not extract archive: %w", err)
+		if zipErr := extractZipBinary(archivePath, newBin); zipErr != nil {
+			return fmt.Errorf("could not extract archive: %w", zipErr)
 		}
 	} else {
-		if err := extractTarBinary(archivePath, newBin); err != nil {
-			return fmt.Errorf("could not extract archive: %w", err)
+		if tarErr := extractTarBinary(archivePath, newBin); tarErr != nil {
+			return fmt.Errorf("could not extract archive: %w", tarErr)
 		}
 	}
 

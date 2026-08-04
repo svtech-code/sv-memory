@@ -57,13 +57,13 @@ func LoadFullGraph(db *sql.DB, projectID string) (*InMemoryGraph, error) {
 	for nRows.Next() {
 		var n Node
 		var metaStr string
-		if err := nRows.Scan(&n.ID, &n.Type, &n.Label, &n.Path, &metaStr); err == nil {
+		if scanErr := nRows.Scan(&n.ID, &n.Type, &n.Label, &n.Path, &metaStr); scanErr == nil {
 			_ = json.Unmarshal([]byte(metaStr), &n.Metadata)
 			nodeMap[n.ID] = &n
 		}
 	}
-	if err := nRows.Err(); err != nil {
-		return nil, err
+	if rowsErr := nRows.Err(); rowsErr != nil {
+		return nil, rowsErr
 	}
 
 	edgesBySrc := make(map[string][]*Edge)

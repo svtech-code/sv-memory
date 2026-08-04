@@ -16,6 +16,7 @@ import (
 	"github.com/svtech-code/sv-memory/internal/security"
 )
 
+//nolint:gocyclo // BFS query renders many report branches; refactor later
 func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	pathOrNode, err := req.RequireString("path_or_node")
 	if err != nil {
@@ -24,7 +25,7 @@ func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) 
 	depthStr := req.GetString("depth", "1")
 	depth := 1
 	if depthStr != "" {
-		if d, err := strconv.Atoi(depthStr); err == nil {
+		if d, convErr := strconv.Atoi(depthStr); convErr == nil {
 			depth = d
 		}
 	}
@@ -39,7 +40,7 @@ func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) 
 	tokenBudgetStr := req.GetString("token_budget", "0")
 	tokenBudget := 0
 	if tokenBudgetStr != "" {
-		if t, err := strconv.Atoi(tokenBudgetStr); err == nil && t > 0 {
+		if t, convErr := strconv.Atoi(tokenBudgetStr); convErr == nil && t > 0 {
 			tokenBudget = t
 		}
 	}
@@ -191,7 +192,7 @@ func (s *Server) handleGraphPath(ctx context.Context, req mcp.CallToolRequest) (
 	}
 	maxHopsStr := req.GetString("max_hops", "10")
 	maxHops := 10
-	if d, err := strconv.Atoi(maxHopsStr); err == nil {
+	if d, convErr := strconv.Atoi(maxHopsStr); convErr == nil {
 		maxHops = d
 	}
 
@@ -265,6 +266,7 @@ func (s *Server) handleGraphSync(ctx context.Context, req mcp.CallToolRequest) (
 	return mcp.NewToolResultText("Dependency graph refreshed and synchronized successfully in SQLite."), nil
 }
 
+//nolint:gocyclo // rich node explanation renderer; refactor later
 func (s *Server) handleGraphExplain(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	nodeName, err := req.RequireString("node")
 	if err != nil {

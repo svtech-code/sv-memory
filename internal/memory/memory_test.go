@@ -221,11 +221,11 @@ func TestExportImportJSON(t *testing.T) {
 	// Save some memories
 	mem1 := &Memory{ID: "e-1", ProjectID: projectID, Category: "architecture", What: "Arch 1", Why: "why1", Learned: "l1", CreatedAt: time.Now()}
 	mem2 := &Memory{ID: "e-2", ProjectID: projectID, Category: "decision", What: "Dec 2", Why: "why2", Learned: "l2", CreatedAt: time.Now()}
-	if _, err := SaveMemory(database, mem1); err != nil {
-		t.Fatalf("failed saving mem1: %v", err)
+	if _, saveErr := SaveMemory(database, mem1); saveErr != nil {
+		t.Fatalf("failed saving mem1: %v", saveErr)
 	}
-	if _, err := SaveMemory(database, mem2); err != nil {
-		t.Fatalf("failed saving mem2: %v", err)
+	if _, saveErr := SaveMemory(database, mem2); saveErr != nil {
+		t.Fatalf("failed saving mem2: %v", saveErr)
 	}
 
 	// Export to JSON
@@ -239,8 +239,8 @@ func TestExportImportJSON(t *testing.T) {
 	}
 
 	// Delete from DB
-	if _, err := database.Exec("DELETE FROM memories WHERE project_id = ?", projectID); err != nil {
-		t.Fatalf("failed clearing memories: %v", err)
+	if _, execErr := database.Exec("DELETE FROM memories WHERE project_id = ?", projectID); execErr != nil {
+		t.Fatalf("failed clearing memories: %v", execErr)
 	}
 
 	var count int
@@ -478,8 +478,8 @@ func TestGitSync(t *testing.T) {
 	}
 
 	for _, m := range mems {
-		if _, err := SaveMemory(database, m); err != nil {
-			t.Fatalf("failed saving memory: %v", err)
+		if _, saveErr := SaveMemory(database, m); saveErr != nil {
+			t.Fatalf("failed saving memory: %v", saveErr)
 		}
 	}
 
@@ -490,7 +490,7 @@ func TestGitSync(t *testing.T) {
 	}
 
 	syncFilePath := filepath.Join(tempDir, ".sv-memory", "memories.json")
-	if _, err := os.Stat(syncFilePath); os.IsNotExist(err) {
+	if _, statErr := os.Stat(syncFilePath); os.IsNotExist(statErr) {
 		t.Fatal("expected .sv-memory/memories.json file to be created")
 	}
 
@@ -501,8 +501,8 @@ func TestGitSync(t *testing.T) {
 	}
 
 	var readMems []*Memory
-	if err := json.Unmarshal(data, &readMems); err != nil {
-		t.Fatalf("failed to unmarshal JSON: %v", err)
+	if unmarshalErr := json.Unmarshal(data, &readMems); unmarshalErr != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", unmarshalErr)
 	}
 
 	if len(readMems) != 2 {
@@ -747,14 +747,14 @@ func TestGetStats(t *testing.T) {
 	mem2 := &Memory{ID: "s-2", ProjectID: projectID, Category: "architecture", What: "Arch 2", Why: "why2", Learned: "l2", CreatedAt: time.Now()}
 	mem3 := &Memory{ID: "s-3", ProjectID: projectID, Category: "bugfix", What: "Bug 1", Why: "why3", Learned: "l3", CreatedAt: time.Now()}
 
-	if _, err := SaveMemory(database, mem1); err != nil {
-		t.Fatalf("failed saving mem1: %v", err)
+	if _, saveErr := SaveMemory(database, mem1); saveErr != nil {
+		t.Fatalf("failed saving mem1: %v", saveErr)
 	}
-	if _, err := SaveMemory(database, mem2); err != nil {
-		t.Fatalf("failed saving mem2: %v", err)
+	if _, saveErr := SaveMemory(database, mem2); saveErr != nil {
+		t.Fatalf("failed saving mem2: %v", saveErr)
 	}
-	if _, err := SaveMemory(database, mem3); err != nil {
-		t.Fatalf("failed saving mem3: %v", err)
+	if _, saveErr := SaveMemory(database, mem3); saveErr != nil {
+		t.Fatalf("failed saving mem3: %v", saveErr)
 	}
 
 	// Start a session
@@ -821,8 +821,8 @@ func TestExportObsidian(t *testing.T) {
 		Learned:   "Injecting interface controllers",
 		CreatedAt: time.Now(),
 	}
-	if _, err := SaveMemory(database, mem1); err != nil {
-		t.Fatalf("failed saving memory: %v", err)
+	if _, saveErr := SaveMemory(database, mem1); saveErr != nil {
+		t.Fatalf("failed saving memory: %v", saveErr)
 	}
 
 	// 2. Insert mock structural graph nodes
@@ -860,7 +860,7 @@ func TestExportObsidian(t *testing.T) {
 
 	// 5. Verify memory note exists
 	memFilePath := filepath.Join(vaultPath, "mem-1234.md")
-	if _, err := os.Stat(memFilePath); os.IsNotExist(err) {
+	if _, statErr := os.Stat(memFilePath); os.IsNotExist(statErr) {
 		t.Fatalf("expected memory note to exist at %s", memFilePath)
 	}
 	memContent, err := os.ReadFile(memFilePath)
@@ -873,7 +873,7 @@ func TestExportObsidian(t *testing.T) {
 
 	// 6. Verify code note exists
 	codeFilePath := filepath.Join(vaultPath, "code", "main.go.md")
-	if _, err := os.Stat(codeFilePath); os.IsNotExist(err) {
+	if _, statErr := os.Stat(codeFilePath); os.IsNotExist(statErr) {
 		t.Fatalf("expected code note to exist at %s", codeFilePath)
 	}
 	codeContent, err := os.ReadFile(codeFilePath)
@@ -892,7 +892,7 @@ func TestExportObsidian(t *testing.T) {
 
 	// 7. Verify package note exists
 	pkgFilePath := filepath.Join(vaultPath, "code", "packages", "pkg_lodash.md")
-	if _, err := os.Stat(pkgFilePath); os.IsNotExist(err) {
+	if _, statErr := os.Stat(pkgFilePath); os.IsNotExist(statErr) {
 		t.Fatalf("expected package note to exist at %s", pkgFilePath)
 	}
 	pkgContent, err := os.ReadFile(pkgFilePath)
@@ -935,8 +935,8 @@ func TestAutoBootBundleAndScopedSearch(t *testing.T) {
 		SessionID: sess.ID,
 		CreatedAt: time.Now(),
 	}
-	if _, err := SaveMemory(database, mem); err != nil {
-		t.Fatalf("failed to save memory: %v", err)
+	if _, saveErr := SaveMemory(database, mem); saveErr != nil {
+		t.Fatalf("failed to save memory: %v", saveErr)
 	}
 
 	// 2. Test GetAutoBootBundle
@@ -1010,8 +1010,8 @@ func TestFTS5WithSpecialChars(t *testing.T) {
 	defer database.Close()
 
 	projectID := "test-fts"
-	if err := db.RegisterProject(database, projectID, "FTS Test", tempDir); err != nil {
-		t.Fatalf("failed to register project: %v", err)
+	if regErr := db.RegisterProject(database, projectID, "FTS Test", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
 	}
 
 	_, err = SaveMemory(database, &Memory{
@@ -1059,8 +1059,8 @@ func TestFTS5PrefixMatchingAndScore(t *testing.T) {
 	defer database.Close()
 
 	projectID := "test-prefix"
-	if err := db.RegisterProject(database, projectID, "Prefix Test", tempDir); err != nil {
-		t.Fatalf("failed to register project: %v", err)
+	if regErr := db.RegisterProject(database, projectID, "Prefix Test", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
 	}
 
 	_, err = SaveMemory(database, &Memory{
@@ -1128,8 +1128,8 @@ func TestSearchQuotesOnlyDoesNotError(t *testing.T) {
 	defer database.Close()
 
 	projectID := "test-fts-quotes"
-	if err := db.RegisterProject(database, projectID, "FTS Quotes Test", tempDir); err != nil {
-		t.Fatalf("failed to register project: %v", err)
+	if regErr := db.RegisterProject(database, projectID, "FTS Quotes Test", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
 	}
 
 	_, err = SaveMemory(database, &Memory{

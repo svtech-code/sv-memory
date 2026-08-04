@@ -195,14 +195,14 @@ func TestScanConflictsIncremental(t *testing.T) {
 	defer database.Close()
 
 	projectID := "conflicts-incr-proj"
-	if err := db.RegisterProject(database, projectID, "Incr", tempDir); err != nil {
-		t.Fatalf("failed to register project: %v", err)
+	if regErr := db.RegisterProject(database, projectID, "Incr", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
 	}
 
 	save := func(what string) {
 		t.Helper()
-		if _, err := SaveMemory(database, &Memory{ProjectID: projectID, Category: "architecture", What: what, Why: "why", Learned: "learned"}); err != nil {
-			t.Fatalf("failed to save memory: %v", err)
+		if _, saveErr := SaveMemory(database, &Memory{ProjectID: projectID, Category: "architecture", What: what, Why: "why", Learned: "learned"}); saveErr != nil {
+			t.Fatalf("failed to save memory: %v", saveErr)
 		}
 	}
 

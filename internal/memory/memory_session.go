@@ -140,9 +140,9 @@ func GetSessionContext(db *sql.DB, projectID string) (string, error) {
 		return "", err
 	}
 	if session == nil {
-		mems, err := SearchMemories(db, projectID, "", "", 5)
-		if err != nil {
-			return "", err
+		mems, searchErr := SearchMemories(db, projectID, "", "", 5)
+		if searchErr != nil {
+			return "", searchErr
 		}
 		if len(mems) == 0 {
 			return "No previous session context found for this project.", nil

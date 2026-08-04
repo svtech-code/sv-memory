@@ -55,6 +55,8 @@ func NewRegexExtractor() *RegexExtractor {
 }
 
 // Extract parses the file content using regex patterns to find symbols and imports.
+//
+//nolint:gocyclo // monolithic dispatch across many languages; refactor later
 func (r *RegexExtractor) Extract(content []byte, relPath, ext string) ([]Symbol, []string, error) {
 	lines := strings.Split(string(content), "\n")
 	var symbols []Symbol
@@ -504,6 +506,8 @@ func extractSQLSymbols(lines []string) ([]Symbol, []string) {
 }
 
 // extractSQLColumns attempts to parse column definitions from a CREATE TABLE body.
+//
+//nolint:gocyclo // complex DDL parsing; refactor later
 func extractSQLColumns(content []byte, createTableMatch string) []map[string]string {
 	// Find the opening parenthesis after CREATE TABLE ... (
 	startIdx := strings.Index(createTableMatch, "(")

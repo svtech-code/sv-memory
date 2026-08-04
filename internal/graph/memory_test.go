@@ -199,8 +199,8 @@ func TestLoadFullGraph(t *testing.T) {
 	defer database.Close()
 
 	const projectID = "load-graph-project"
-	if err := db.RegisterProject(database, projectID, "Load Graph", t.TempDir()); err != nil {
-		t.Fatalf("RegisterProject() error = %v", err)
+	if regErr := db.RegisterProject(database, projectID, "Load Graph", t.TempDir()); regErr != nil {
+		t.Fatalf("RegisterProject() error = %v", regErr)
 	}
 	_, err = database.Exec(`INSERT INTO graph_nodes (project_id, id, node_type, label, path, metadata)
 		VALUES (?, 'a', 'file', 'a.go', 'a.go', ?), (?, 'b', 'file', 'b.go', 'b.go', ?)

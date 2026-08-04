@@ -80,8 +80,8 @@ func TestDiagnoseAndExport(t *testing.T) {
 	defer database.Close()
 
 	projectID := "proj-diag"
-	if err := db.RegisterProject(database, projectID, "Diag Project", tempDir); err != nil {
-		t.Fatalf("failed to register project: %v", err)
+	if regErr := db.RegisterProject(database, projectID, "Diag Project", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
 	}
 
 	// Insert dummy nodes & edges
@@ -107,17 +107,17 @@ func TestDiagnoseAndExport(t *testing.T) {
 
 	// 2. Test ExportObsidianVault
 	obsidianDir := filepath.Join(tempDir, "obsidian_vault")
-	if err := ExportObsidianVault(database, projectID, obsidianDir); err != nil {
-		t.Fatalf("failed ExportObsidianVault: %v", err)
+	if exportErr := ExportObsidianVault(database, projectID, obsidianDir); exportErr != nil {
+		t.Fatalf("failed ExportObsidianVault: %v", exportErr)
 	}
-	if _, err := os.Stat(filepath.Join(obsidianDir, "nodes")); os.IsNotExist(err) {
+	if _, statErr := os.Stat(filepath.Join(obsidianDir, "nodes")); os.IsNotExist(statErr) {
 		t.Errorf("expected obsidian nodes folder to exist")
 	}
 
 	// 3. Test ExportCypher
 	cypherPath := filepath.Join(tempDir, "graph.cypher")
-	if err := ExportCypher(database, projectID, cypherPath); err != nil {
-		t.Fatalf("failed ExportCypher: %v", err)
+	if cypherErr := ExportCypher(database, projectID, cypherPath); cypherErr != nil {
+		t.Fatalf("failed ExportCypher: %v", cypherErr)
 	}
 	cypherContent, err := os.ReadFile(cypherPath)
 	if err != nil {

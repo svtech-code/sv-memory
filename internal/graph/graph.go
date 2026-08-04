@@ -102,13 +102,13 @@ func parseSymbols(relPath, ext string, content []byte) ([]*Node, map[string]inte
 		if !isStructural && !isValidSymbolName(sym.Name) {
 			continue
 		}
-		meta := map[string]interface{}{
+		symMeta := map[string]interface{}{
 			"line":     sym.Line,
 			"exported": sym.Exported,
 		}
 		// Carry over any extra metadata from the extractor
 		for k, v := range sym.Metadata {
-			meta[k] = v
+			symMeta[k] = v
 		}
 		// For code_blocks without explicit name, use line-based identifier
 		nodeID := relPath + ":" + sym.Name
@@ -120,7 +120,7 @@ func parseSymbols(relPath, ext string, content []byte) ([]*Node, map[string]inte
 			Type:     sym.Type,
 			Label:    sym.Name,
 			Path:     relPath,
-			Metadata: meta,
+			Metadata: symMeta,
 		})
 	}
 	if len(rationales) > 0 {
@@ -130,6 +130,7 @@ func parseSymbols(relPath, ext string, content []byte) ([]*Node, map[string]inte
 	return symbolNodes, meta
 }
 
+//nolint:gocyclo // long denylist of invalid symbol characters; refactor later
 func isValidSymbolName(name string) bool {
 	if name == "" {
 		return false

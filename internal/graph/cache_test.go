@@ -17,8 +17,8 @@ func TestGraphCache(t *testing.T) {
 	defer database.Close()
 
 	projectID := "proj-cache"
-	if err := db.RegisterProject(database, projectID, "Cache Proj", tempDir); err != nil {
-		t.Fatalf("failed to register project: %v", err)
+	if regErr := db.RegisterProject(database, projectID, "Cache Proj", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
 	}
 
 	// Insert meta record with mtime 1000

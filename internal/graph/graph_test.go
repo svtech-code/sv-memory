@@ -1333,16 +1333,16 @@ func TestDetectStaleFiles(t *testing.T) {
 	defer database.Close()
 
 	projectID := "prog-stale-test"
-	if err := db.RegisterProject(database, projectID, "Stale Test", tempDir); err != nil {
-		t.Fatalf("failed to register project: %v", err)
+	if regErr := db.RegisterProject(database, projectID, "Stale Test", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
 	}
 
 	// a.js unchanged, b.js will be modified.
 	os.WriteFile(filepath.Join(tempDir, "a.js"), []byte("export const a = 1;"), 0644)
 	os.WriteFile(filepath.Join(tempDir, "b.js"), []byte("export const b = 1;"), 0644)
 
-	if err := SyncGraph(database, projectID, tempDir); err != nil {
-		t.Fatalf("initial SyncGraph failed: %v", err)
+	if syncErr := SyncGraph(database, projectID, tempDir); syncErr != nil {
+		t.Fatalf("initial SyncGraph failed: %v", syncErr)
 	}
 
 	// No changes yet → report must be clean.
@@ -1404,14 +1404,14 @@ func TestSyncGraphIfStale(t *testing.T) {
 	defer database.Close()
 
 	projectID := "prog-ifstale-test"
-	if err := db.RegisterProject(database, projectID, "IfStale Test", tempDir); err != nil {
-		t.Fatalf("failed to register project: %v", err)
+	if regErr := db.RegisterProject(database, projectID, "IfStale Test", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
 	}
 
 	os.WriteFile(filepath.Join(tempDir, "a.js"), []byte(`import b from './b';`), 0644)
 	os.WriteFile(filepath.Join(tempDir, "b.js"), []byte("export const b = 1;"), 0644)
-	if err := SyncGraph(database, projectID, tempDir); err != nil {
-		t.Fatalf("initial SyncGraph failed: %v", err)
+	if syncErr := SyncGraph(database, projectID, tempDir); syncErr != nil {
+		t.Fatalf("initial SyncGraph failed: %v", syncErr)
 	}
 
 	// Clean → SyncGraphIfStale must be a no-op.

@@ -107,6 +107,8 @@ func trySyncGraphIncremental(db *sql.DB, projectID string, projPath string) (boo
 // for symbols; every other supported file is still registered as a file node
 // via its mtime/size so import resolution stays intact. This avoids re-reading
 // the whole project when only a few files changed.
+//
+//nolint:gocyclo // incremental sync orchestrates many branches; refactor later
 func trySyncGraphIncrementalFiltered(db *sql.DB, projectID string, projPath string, readOnly map[string]bool) (bool, error) {
 	wr, err := scanFilesFiltered(projPath, readOnly)
 	if err != nil {

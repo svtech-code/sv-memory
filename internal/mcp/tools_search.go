@@ -28,7 +28,7 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 
 	limit := 10
 	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil {
+		if l, convErr := strconv.Atoi(limitStr); convErr == nil {
 			limit = l
 		}
 	}
@@ -40,7 +40,7 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 
 	offset := 0
 	if offsetStr != "" {
-		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
+		if o, convErr := strconv.Atoi(offsetStr); convErr == nil && o >= 0 {
 			offset = o
 		}
 	}
@@ -110,7 +110,7 @@ func (s *Server) handleGet(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 	maxChars := maxFieldChars
 	maxCharsStr := req.GetString("max_chars", "")
 	if maxCharsStr != "" {
-		if m, err := strconv.Atoi(maxCharsStr); err == nil && m >= 0 {
+		if m, convErr := strconv.Atoi(maxCharsStr); convErr == nil && m >= 0 {
 			maxChars = m
 		}
 	}

@@ -100,11 +100,11 @@ func TestGrantMergeAllTools(t *testing.T) {
 	defer os.Setenv("HOME", home)
 
 	configPath := filepath.Join(dir, ".gemini", "antigravity-cli", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
+	if mkErr := os.MkdirAll(filepath.Dir(configPath), 0755); mkErr != nil {
+		t.Fatalf("mkdir: %v", mkErr)
 	}
-	if err := os.WriteFile(configPath, []byte(`{"permissions":{"allow":["command(npm run)"]}}`), 0644); err != nil {
-		t.Fatalf("write: %v", err)
+	if writeErr := os.WriteFile(configPath, []byte(`{"permissions":{"allow":["command(npm run)"]}}`), 0644); writeErr != nil {
+		t.Fatalf("write: %v", writeErr)
 	}
 
 	// Grant all tools.
@@ -209,11 +209,11 @@ func TestClaudeCodeFormat(t *testing.T) {
 	defer os.Setenv("HOME", home)
 
 	configPath := filepath.Join(dir, ".claude", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
+	if mkErr := os.MkdirAll(filepath.Dir(configPath), 0755); mkErr != nil {
+		t.Fatalf("mkdir: %v", mkErr)
 	}
-	if err := os.WriteFile(configPath, []byte(`{"permissions":{"allow":[]}}`), 0644); err != nil {
-		t.Fatalf("write: %v", err)
+	if writeErr := os.WriteFile(configPath, []byte(`{"permissions":{"allow":[]}}`), 0644); writeErr != nil {
+		t.Fatalf("write: %v", writeErr)
 	}
 
 	res, err := Grant(PlatformClaudeCode, []string{"sv_mem_search", "sv_mem_save"}, false)

@@ -32,7 +32,7 @@ func TestInitDBAndRegisterProject(t *testing.T) {
 	tables := make(map[string]bool)
 	for rows.Next() {
 		var name string
-		if err := rows.Scan(&name); err == nil {
+		if scanErr := rows.Scan(&name); scanErr == nil {
 			tables[name] = true
 		}
 	}
@@ -130,10 +130,10 @@ func TestMigrateGraphEdgesCompositePK(t *testing.T) {
 	defer database.Close()
 
 	// Simulate a legacy DB: rebuild graph_edges with the old single-column PK.
-	if _, err := database.Exec("DROP TABLE IF EXISTS graph_edges"); err != nil {
-		t.Fatalf("drop legacy edges: %v", err)
+	if _, dropErr := database.Exec("DROP TABLE IF EXISTS graph_edges"); dropErr != nil {
+		t.Fatalf("drop legacy edges: %v", dropErr)
 	}
-	if _, err := database.Exec(`
+	if _, createErr := database.Exec(`
 		CREATE TABLE graph_edges (
 			id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL,
@@ -142,8 +142,8 @@ func TestMigrateGraphEdgesCompositePK(t *testing.T) {
 			relation_type TEXT NOT NULL,
 			confidence TEXT NOT NULL DEFAULT 'EXTRACTED',
 			source_location TEXT
-		)`); err != nil {
-		t.Fatalf("create legacy edges: %v", err)
+		)`); createErr != nil {
+		t.Fatalf("create legacy edges: %v", createErr)
 	}
 
 	// Register two projects and matching nodes so FKs hold.
@@ -151,17 +151,17 @@ func TestMigrateGraphEdgesCompositePK(t *testing.T) {
 		{"proj-A", "/proj/A"},
 		{"proj-B", "/proj/B"},
 	} {
-		if err := RegisterProject(database, p.id, p.path, p.path); err != nil {
-			t.Fatalf("register %s: %v", p.id, err)
+		if regErr := RegisterProject(database, p.id, p.path, p.path); regErr != nil {
+			t.Fatalf("register %s: %v", p.id, regErr)
 		}
 		for _, n := range []struct{ id, label, path string }{
 			{"main.go", "main", "/proj/main.go"},
 			{"utils.go", "utils", "/proj/utils.go"},
 		} {
-			if _, err := database.Exec(
+			if _, execErr := database.Exec(
 				"INSERT OR IGNORE INTO graph_nodes (id, project_id, node_type, label, path, metadata) VALUES (?, ?, 'file', ?, ?, '{}')",
-				n.id, p.id, n.label, n.path); err != nil {
-				t.Fatalf("insert node: %v", err)
+				n.id, p.id, n.label, n.path); execErr != nil {
+				t.Fatalf("insert node: %v", execErr)
 			}
 		}
 	}
@@ -170,28 +170,28 @@ func TestMigrateGraphEdgesCompositePK(t *testing.T) {
 	// the id (main.go-utils.go-imports) collides across projects: inserting
 	// proj-B's edge violates the global UNIQUE/PK on id.
 	edgeID := "main.go-utils.go-imports"
-	if _, err := database.Exec(`
+	if _, execErr := database.Exec(`
 		INSERT INTO graph_edges (id, project_id, source_id, target_id, relation_type, confidence)
-		VALUES (?, 'proj-A', 'main.go', 'utils.go', 'imports', 'EXTRACTED')`, edgeID); err != nil {
-		t.Fatalf("insert legacy edge for proj-A: %v", err)
+		VALUES (?, 'proj-A', 'main.go', 'utils.go', 'imports', 'EXTRACTED')`, edgeID); execErr != nil {
+		t.Fatalf("insert legacy edge for proj-A: %v", execErr)
 	}
-	if _, err := database.Exec(`
+	if _, execErr := database.Exec(`
 		INSERT INTO graph_edges (id, project_id, source_id, target_id, relation_type, confidence)
-		VALUES (?, 'proj-B', 'main.go', 'utils.go', 'imports', 'EXTRACTED')`, edgeID); err == nil {
+		VALUES (?, 'proj-B', 'main.go', 'utils.go', 'imports', 'EXTRACTED')`, edgeID); execErr == nil {
 		t.Error("expected legacy schema to reject the colliding edge id for proj-B")
 	}
 
 	var legacyCount int
-	if err := database.QueryRow("SELECT COUNT(*) FROM graph_edges").Scan(&legacyCount); err != nil {
-		t.Fatalf("count legacy edges: %v", err)
+	if scanErr := database.QueryRow("SELECT COUNT(*) FROM graph_edges").Scan(&legacyCount); scanErr != nil {
+		t.Fatalf("count legacy edges: %v", scanErr)
 	}
 	if legacyCount != 1 {
 		t.Fatalf("expected 1 legacy edge (second project dropped), got %d", legacyCount)
 	}
 
 	// Now run the migration and re-verify PK shape + insert without collision.
-	if err := migrateGraphEdgesCompositePK(database); err != nil {
-		t.Fatalf("migrateGraphEdgesCompositePK: %v", err)
+	if migrateErr := migrateGraphEdgesCompositePK(database); migrateErr != nil {
+		t.Fatalf("migrateGraphEdgesCompositePK: %v", migrateErr)
 	}
 
 	pk, err := tablePKInfo(database, "graph_edges")

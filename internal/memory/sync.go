@@ -125,8 +125,8 @@ func SyncFromGitChunked(db *sql.DB, projectID string, projPath string) error {
 			return fmt.Errorf("failed to read chunk %s: %w", entry.Name(), err)
 		}
 		var mem Memory
-		if err := json.Unmarshal(data, &mem); err != nil {
-			return fmt.Errorf("failed to parse chunk %s: %w", entry.Name(), err)
+		if unmarshalErr := json.Unmarshal(data, &mem); unmarshalErr != nil {
+			return fmt.Errorf("failed to parse chunk %s: %w", entry.Name(), unmarshalErr)
 		}
 		mem.ProjectID = projectID
 		createdAt := mem.CreatedAt
@@ -176,12 +176,12 @@ func SyncToGit(db *sql.DB, projectID string, projPath string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(syncDir, 0755); err != nil {
-		return fmt.Errorf("failed to create sync directory: %w", err)
+	if mkErr := os.MkdirAll(syncDir, 0755); mkErr != nil {
+		return fmt.Errorf("failed to create sync directory: %w", mkErr)
 	}
 
-	if err := os.MkdirAll(chunkDir, 0755); err != nil {
-		return fmt.Errorf("failed to create chunks directory: %w", err)
+	if mkErr := os.MkdirAll(chunkDir, 0755); mkErr != nil {
+		return fmt.Errorf("failed to create chunks directory: %w", mkErr)
 	}
 	existingChunks := make(map[string]bool)
 	entries, err := os.ReadDir(chunkDir)
@@ -193,18 +193,18 @@ func SyncToGit(db *sql.DB, projectID string, projPath string) error {
 		}
 	}
 	for _, mem := range memories {
-		data, err := json.MarshalIndent(mem, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal chunk %s: %w", mem.ID, err)
+		data, marshalErr := json.MarshalIndent(mem, "", "  ")
+		if marshalErr != nil {
+			return fmt.Errorf("failed to marshal chunk %s: %w", mem.ID, marshalErr)
 		}
 		chunkPath := filepath.Join(chunkDir, mem.ID+".json")
 		tmpPath := chunkPath + ".tmp"
-		if err := os.WriteFile(tmpPath, data, 0644); err != nil {
-			return fmt.Errorf("failed to write chunk %s: %w", mem.ID, err)
+		if writeErr := os.WriteFile(tmpPath, data, 0644); writeErr != nil {
+			return fmt.Errorf("failed to write chunk %s: %w", mem.ID, writeErr)
 		}
-		if err := os.Rename(tmpPath, chunkPath); err != nil {
+		if renameErr := os.Rename(tmpPath, chunkPath); renameErr != nil {
 			os.Remove(tmpPath)
-			return fmt.Errorf("failed to rename chunk %s: %w", mem.ID, err)
+			return fmt.Errorf("failed to rename chunk %s: %w", mem.ID, renameErr)
 		}
 		delete(existingChunks, mem.ID)
 	}
@@ -259,8 +259,8 @@ func SyncFromGit(db *sql.DB, projectID string, projPath string) error {
 	}
 
 	var memories []*Memory
-	if err := json.Unmarshal(data, &memories); err != nil {
-		return fmt.Errorf("failed to parse memories JSON: %w", err)
+	if unmarshalErr := json.Unmarshal(data, &memories); unmarshalErr != nil {
+		return fmt.Errorf("failed to parse memories JSON: %w", unmarshalErr)
 	}
 
 	tx, err := db.Begin()

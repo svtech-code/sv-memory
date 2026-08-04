@@ -12,6 +12,7 @@ func NewMDSemanticExtractor() *MDSemanticExtractor {
 	return &MDSemanticExtractor{}
 }
 
+//nolint:gocyclo // markdown parser handles many element kinds; refactor later
 func (e *MDSemanticExtractor) Extract(content []byte, relPath, ext string) ([]Symbol, []string, error) {
 	lines := strings.Split(string(content), "\n")
 	var symbols []Symbol

@@ -296,6 +296,7 @@ func parsePython(root *gotreesitter.Node, lang *gotreesitter.Language, content [
 	return symbols, imports
 }
 
+//nolint:gocyclo // large AST dispatch for JS/TS; refactor later
 func parseJavascript(root *gotreesitter.Node, lang *gotreesitter.Language, content []byte) ([]Symbol, []string) {
 	var symbols []Symbol
 	var imports []string

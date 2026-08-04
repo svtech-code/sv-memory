@@ -123,8 +123,8 @@ func SyncGraphIfStale(db *sql.DB, projectID string, projPath string) (bool, erro
 	}
 
 	if stale.NeedsFull {
-		if err := syncGraphFull(db, projectID, projPath); err != nil {
-			return true, err
+		if syncErr := syncGraphFull(db, projectID, projPath); syncErr != nil {
+			return true, syncErr
 		}
 		return true, nil
 	}

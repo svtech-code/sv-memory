@@ -136,10 +136,10 @@ func PruneProjects(db *sql.DB) ([]string, error) {
 // moved memories and sessions.
 func ConsolidateProjects(db *sql.DB, sourceID, targetID string) (movedMemories int, movedSessions int, err error) {
 	var srcName, tgtName string
-	if err := db.QueryRow("SELECT name FROM projects WHERE id=?", sourceID).Scan(&srcName); err != nil {
+	if srcErr := db.QueryRow("SELECT name FROM projects WHERE id=?", sourceID).Scan(&srcName); srcErr != nil {
 		return 0, 0, fmt.Errorf("source project %s not found", sourceID)
 	}
-	if err := db.QueryRow("SELECT name FROM projects WHERE id=?", targetID).Scan(&tgtName); err != nil {
+	if tgtErr := db.QueryRow("SELECT name FROM projects WHERE id=?", targetID).Scan(&tgtName); tgtErr != nil {
 		return 0, 0, fmt.Errorf("target project %s not found", targetID)
 	}
 
@@ -282,7 +282,7 @@ func RunDiagnostics(db *sql.DB, projectID, projPath, dbPath string) []Diagnostic
 			add("chunk_directory", "pass", fmt.Sprintf("Chunk directory exists with %d JSON files", jsonCount))
 		}
 	} else if os.IsNotExist(err) {
-		if _, err := os.Stat(filepath.Join(projPath, ".sv-memory", "memories.json")); err == nil {
+		if _, legacyErr := os.Stat(filepath.Join(projPath, ".sv-memory", "memories.json")); legacyErr == nil {
 			add("chunk_directory", "warn", "Using legacy memories.json (no chunk directory)")
 		} else {
 			add("chunk_directory", "warn", "No sync directory found — run 'sv-memory sync' after first save")

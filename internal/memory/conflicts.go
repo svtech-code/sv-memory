@@ -164,13 +164,13 @@ func ScanConflicts(db *sql.DB, projectID string, apply bool, maxInsert int, thre
 	for rows.Next() {
 		var item scanItem
 		var createdAtStr string
-		if err := rows.Scan(&item.id, &item.what, &item.category, &createdAtStr); err == nil {
+		if scanErr := rows.Scan(&item.id, &item.what, &item.category, &createdAtStr); scanErr == nil {
 			item.createdAt, _ = parseTime(createdAtStr)
 			items = append(items, item)
 		}
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, rowsErr
 	}
 	if len(items) < 2 {
 		return nil, nil

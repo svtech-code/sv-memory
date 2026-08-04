@@ -51,13 +51,13 @@ var configSetCmd = &cobra.Command{
 			val = valStr == "true"
 		case "conflict_threshold":
 			var f float64
-			if _, err := fmt.Sscanf(valStr, "%f", &f); err != nil {
+			if _, scanErr := fmt.Sscanf(valStr, "%f", &f); scanErr != nil {
 				return fmt.Errorf("value %q must be a float", valStr)
 			}
 			val = f
 		case "default_review_limit":
 			var i int
-			if _, err := fmt.Sscanf(valStr, "%d", &i); err != nil {
+			if _, scanErr := fmt.Sscanf(valStr, "%d", &i); scanErr != nil {
 				return fmt.Errorf("value %q must be an integer", valStr)
 			}
 			val = i

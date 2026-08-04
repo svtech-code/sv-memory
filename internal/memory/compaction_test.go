@@ -18,8 +18,8 @@ func TestCompactMemories(t *testing.T) {
 	defer database.Close()
 
 	projectID := "proj-compact"
-	if err := db.RegisterProject(database, projectID, "Compact Proj", tempDir); err != nil {
-		t.Fatalf("failed to register project: %v", err)
+	if regErr := db.RegisterProject(database, projectID, "Compact Proj", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
 	}
 
 	// Case 1: Multiple entries inserted for topic_key "architecture/database-wal"
@@ -78,8 +78,8 @@ func TestCompactMemoriesPreservesSessionID(t *testing.T) {
 	defer database.Close()
 
 	projectID := "proj-compact-session"
-	if err := db.RegisterProject(database, projectID, "Compact Session Proj", tempDir); err != nil {
-		t.Fatalf("failed to register project: %v", err)
+	if regErr := db.RegisterProject(database, projectID, "Compact Session Proj", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
 	}
 
 	// Two entries under the same topic_key; only the older one carries a

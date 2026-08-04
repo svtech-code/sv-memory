@@ -38,7 +38,7 @@ func (s *Server) handleSave(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 
 	// Auto-associate with active session if no explicit session_id provided
 	if sessionID == "" {
-		if active, err := memory.GetActiveSession(s.pool.Writer, s.cfg.ProjectID); err == nil && active != nil {
+		if active, actErr := memory.GetActiveSession(s.pool.Writer, s.cfg.ProjectID); actErr == nil && active != nil {
 			sessionID = active.ID
 		}
 	}
@@ -128,7 +128,7 @@ func (s *Server) handleCapturePassive(ctx context.Context, req mcp.CallToolReque
 
 	// Auto-associate with active session
 	sessionID := ""
-	if active, err := memory.GetActiveSession(s.pool.Writer, s.cfg.ProjectID); err == nil && active != nil {
+	if active, actErr := memory.GetActiveSession(s.pool.Writer, s.cfg.ProjectID); actErr == nil && active != nil {
 		sessionID = active.ID
 	}
 
