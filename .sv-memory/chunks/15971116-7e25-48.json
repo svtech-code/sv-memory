@@ -1,0 +1,18 @@
+{
+  "id": "15971116-7e25-48",
+  "project_id": "ce22c23ac33d7a36",
+  "category": "journal",
+  "what": "Removida la opción cancelar configuración del wizard configure",
+  "why": "El usuario confirmó que la opción fallaba y prefirió eliminarla por completo en lugar de arreglarla; Ctrl+C y el paso Confirmación 'No, cancelar' siguen disponible\ns como flujo de cancelación.",
+  "where_path": "cmd/sv-memory/cmd_configure.go",
+  "learned": "Para cancelar en el wizard configure solo se usa hus.ErrUserAborted (Ctrl+C) y el paso 3 (Confirm 'No, cancelar'); no añadir opciones centinela en listas MultiSelect.",
+  "git_branch": "main",
+  "git_commit": "7ce64fc",
+  "author": "Mario Sandoval (Sv Tech)",
+  "impact": "Eliminadas cancelOptionValue, cancelOption(), wantsCancel(), filterCancel() y sus usos; opciones de las listas vuelven a huh.NewOptions directo. go build/vet/gofmt/test verdes; binario ./sv-memory recompilado.",
+  "session_id": "2eeee2eb-1c83-4b",
+  "last_seen_at": "0001-01-01T00:00:00Z",
+  "normalized_hash": "adc547ea56291c67c3a9eeade5a4bb1c4fa8b38b538392bf6369f894e2307544",
+  "deleted_at": "0001-01-01T00:00:00Z",
+  "created_at": "2026-08-03T22:14:29.222766-04:00"
+}

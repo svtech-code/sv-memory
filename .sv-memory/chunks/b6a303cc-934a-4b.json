@@ -1,0 +1,18 @@
+{
+  "id": "b6a303cc-934a-4b",
+  "project_id": "ce22c23ac33d7a36",
+  "category": "journal",
+  "what": "TUI: banner SV Memory, separadores cian y tema alineado con configure",
+  "why": "El usuario pidió que la TUI luzca como configure: banner con título SV Memory y subtítulo Context Memory \u0026 Code Graph Builder, líneas separadoras cian alrededor del menú, y el mismo estilo de selector. La opción Quit TUI se mantuvo tal cual porque huh no permite colorear una sola opción y el usuario aceptó dejarla como está.",
+  "where_path": "internal/tui/tui.go",
+  "learned": "huh no soporta color por opción individual en Select; cuando el usuario pide estilos solo posibles por tema/opción, evaluar si es factible y si no, ofrecer dejarlo como está. El tema TUI debe replicar configureTheme (TextInput.Cursor/Prompt cian, Blurred.NextIndicator/PrevIndicator ocultos).",
+  "git_branch": "main",
+  "git_commit": "652fa3b",
+  "author": "Mario Sandoval (Sv Tech)",
+  "impact": "Añadido showBannerTUI() (caja ASCII con logo SV Tech, título SV Memory, subtítulos), separador tuiSep (línea ━ x72 cian) impreso antes del loop del menú y al salir, y completadas las líneas faltantes del tema. go build/vet/gofmt/test verdes, binario recompilado.",
+  "session_id": "2eeee2eb-1c83-4b",
+  "last_seen_at": "0001-01-01T00:00:00Z",
+  "normalized_hash": "87065a6d2e4af53723b1b50a82d3da23efc0d5586a2fa056d04cfd7a4239a4de",
+  "deleted_at": "0001-01-01T00:00:00Z",
+  "created_at": "2026-08-03T22:25:55.451826-04:00"
+}

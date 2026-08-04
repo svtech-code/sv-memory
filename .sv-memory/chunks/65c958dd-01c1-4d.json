@@ -1,0 +1,18 @@
+{
+  "id": "65c958dd-01c1-4d",
+  "project_id": "ce22c23ac33d7a36",
+  "category": "journal",
+  "what": "TUI banner: logo SV MEMORY (ancho dinámico), sin separador bajo banner, saltos tras títulos",
+  "why": "El usuario pidió quitar la línea separadora que quedaba bajo el banner (estaba de más), añadir un salto de línea tras 'MAIN MENU' y otro tras 'SV-MEMORY INTERACTIVE TERMINAL', y reemplazar el ASCII 'SV  TECH' por 'SV MEMORY' con el mismo estilo. El logo nuevo lo pegó el usuario directamente (77 chars de ancho).",
+  "where_path": "internal/tui/tui.go",
+  "learned": "El logo ASCII mide 77 chars, más ancho que el banner de configure (66). showBannerTUI usa ancho dinámico (contentW = logoW + pad) en lugar de boxW fijo. En títulos huh, un '\\n' al final del string agrega un salto de línea visible tras el título.",
+  "git_branch": "main",
+  "git_commit": "652fa3b",
+  "author": "Mario Sandoval (Sv Tech)",
+  "impact": "Banner con logo SV MEMORY y caja dinámica, eliminado tuiSep bajo banner (solo queda en salida), mainMenu con Title 'SV-MEMORY INTERACTIVE TERMINAL\\n' + Description '\\nProject...' y grupo Title 'MAIN MENU\\n'. go build/vet/gofmt/test verdes, binario recompilado.",
+  "session_id": "2eeee2eb-1c83-4b",
+  "last_seen_at": "0001-01-01T00:00:00Z",
+  "normalized_hash": "3eca27f99ff444c01439b8337d4505f80bcb827f34c5856ea60d0942ba22229f",
+  "deleted_at": "0001-01-01T00:00:00Z",
+  "created_at": "2026-08-03T22:36:51.217424-04:00"
+}
