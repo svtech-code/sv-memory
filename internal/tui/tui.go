@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -36,10 +37,14 @@ func tuiTheme() *huh.Theme {
 	t.Focused.PrevIndicator = t.Focused.PrevIndicator.Foreground(cyan)
 	t.Focused.FocusedButton = t.Focused.FocusedButton.Foreground(lipgloss.Color("#000000")).Background(cyan)
 	t.Focused.BlurredButton = t.Focused.BlurredButton.Foreground(cyan).Background(lipgloss.Color("#111111"))
+	t.Focused.TextInput.Cursor = t.Focused.TextInput.Cursor.Foreground(cyan)
+	t.Focused.TextInput.Prompt = t.Focused.TextInput.Prompt.Foreground(cyan)
 
 	t.Blurred = t.Focused
 	t.Blurred.Base = t.Focused.Base.BorderStyle(lipgloss.HiddenBorder())
 	t.Blurred.Card = t.Blurred.Base
+	t.Blurred.NextIndicator = lipgloss.NewStyle()
+	t.Blurred.PrevIndicator = lipgloss.NewStyle()
 
 	t.Group.Title = t.Focused.Title
 	t.Group.Description = t.Focused.Description
@@ -51,6 +56,7 @@ func tuiTheme() *huh.Theme {
 // each sub-screen is its own form. Ctrl+C aborts a sub-form (returning to the
 // menu) and quits the whole TUI from the main menu.
 func RunTUI(db *sql.DB, projectID, projPath string) error {
+	showBannerTUI()
 	for {
 		choice, err := mainMenu(projectID)
 		if err != nil || choice == "quit" {
@@ -73,6 +79,59 @@ func RunTUI(db *sql.DB, projectID, projPath string) error {
 	}
 }
 
+// showBannerTUI prints the SV Tech styled ASCII logo in a box, mirroring the
+// banner shown by `sv-memory configure`.
+func showBannerTUI() {
+	cHex := "\x1b[38;2;0;176;194m"
+	reset := "\x1b[39m"
+
+	logo := []string{
+		"███████╗██╗   ██╗    ███╗   ███╗███████╗███╗   ███╗ ██████╗ ██████╗ ██╗   ██╗",
+		"██╔════╝██║   ██║    ████╗ ████║██╔════╝████╗ ████║██╔═══██╗██╔══██╗╚██╗ ██╔╝",
+		"███████╗██║   ██║    ██╔████╔██║█████╗  ██╔████╔██║██║   ██║██████╔╝ ╚████╔╝ ",
+		"╚════██║╚██╗ ██╔╝    ██║╚██╔╝██║██╔══╝  ██║╚██╔╝██║██║   ██║██╔══██╗  ╚██╔╝  ",
+		"███████║ ╚████╔╝     ██║ ╚═╝ ██║███████╗██║ ╚═╝ ██║╚██████╔╝██║  ██║   ██║   ",
+		"╚══════╝  ╚═══╝      ╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝ ",
+	}
+
+	logoW := 77
+	for _, line := range logo {
+		if w := utf8.RuneCountInString(strings.TrimRight(line, " ")); w > logoW {
+			logoW = w
+		}
+	}
+	pad := 4
+	contentW := logoW + pad
+
+	topEdge := "╔" + strings.Repeat("═", contentW) + "╗"
+	bottomEdge := "╚" + strings.Repeat("═", contentW) + "╝"
+	emptyLine := "║" + strings.Repeat(" ", contentW) + "║"
+
+	fmt.Println(cHex + topEdge + reset)
+	fmt.Println(cHex + emptyLine + reset)
+
+	for _, line := range logo {
+		lineRunes := utf8.RuneCountInString(line)
+		fmt.Printf("%s║  %s%s  ║%s\n", cHex, line, strings.Repeat(" ", logoW-lineRunes), reset)
+	}
+
+	fmt.Println(cHex + emptyLine + reset)
+
+	printCenter := func(text string) {
+		pad := contentW - len(text)
+		left := pad / 2
+		right := pad - left
+		fmt.Printf("%s║%s%s%s║%s\n", cHex, strings.Repeat(" ", left), text, strings.Repeat(" ", right), reset)
+	}
+
+	printCenter("Context Memory & Code Graph Builder")
+	printCenter("Prevent context amnesia in your workspace")
+
+	fmt.Println(cHex + emptyLine + reset)
+	fmt.Println(cHex + bottomEdge + reset)
+	fmt.Println()
+}
+
 // mainMenu renders the top-level selection. Returning an error means the user
 // aborted with Ctrl+C, which the caller treats as "quit TUI".
 func mainMenu(projectID string) (string, error) {
@@ -80,8 +139,8 @@ func mainMenu(projectID string) (string, error) {
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("SV-MEMORY INTERACTIVE TERMINAL").
-				Description(fmt.Sprintf("Project: %s", projectID)).
+				Title("SV-MEMORY INTERACTIVE TERMINAL\n").
+				Description(fmt.Sprintf("\nProject: %s", projectID)).
 				Options(
 					huh.NewOption("List Recent Memories (Compact)", "recent"),
 					huh.NewOption("Search Memories (Keyword / FTS5 BM25)", "search"),
@@ -92,7 +151,7 @@ func mainMenu(projectID string) (string, error) {
 					huh.NewOption("Quit TUI", "quit"),
 				).
 				Value(&choice),
-		).Title("MAIN MENU"),
+		).Title("MAIN MENU\n"),
 	).WithTheme(tuiTheme())
 	if err := form.Run(); err != nil {
 		return "", err

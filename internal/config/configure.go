@@ -413,7 +413,7 @@ func ShowBanner(version string) {
 		fmt.Printf("%s║%s%s%s║%s\n", cHex, strings.Repeat(" ", left), text, strings.Repeat(" ", right), reset)
 	}
 
-	printCenter("Sv Memory  v" + version)
+	printCenter("SV Memory")
 	printCenter("Context Memory & Code Graph Builder")
 	printCenter("Prevent context amnesia in your workspace")
 
