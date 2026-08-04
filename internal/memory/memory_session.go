@@ -150,24 +150,24 @@ func GetSessionContext(db *sql.DB, projectID string) (string, error) {
 		var sb strings.Builder
 		sb.WriteString("No recorded sessions. Most recent memories:\n\n")
 		for _, m := range mems {
-			sb.WriteString(fmt.Sprintf("- [%s] **%s** (ID: %s, %s)\n",
-				strings.ToUpper(m.Category), m.What, m.ID, m.CreatedAt.Format("2006-01-02")))
+			fmt.Fprintf(&sb, "- [%s] **%s** (ID: %s, %s)\n",
+				strings.ToUpper(m.Category), m.What, m.ID, m.CreatedAt.Format("2006-01-02"))
 		}
 		return sb.String(), nil
 	}
 
 	var sb strings.Builder
 	sb.WriteString("## Previous Session Context\n\n")
-	sb.WriteString(fmt.Sprintf("**Session ID:** %s\n", session.ID))
-	sb.WriteString(fmt.Sprintf("**Started:** %s\n", session.StartedAt.Format("2006-01-02 15:04")))
+	fmt.Fprintf(&sb, "**Session ID:** %s\n", session.ID)
+	fmt.Fprintf(&sb, "**Started:** %s\n", session.StartedAt.Format("2006-01-02 15:04"))
 	if !session.EndedAt.IsZero() {
-		sb.WriteString(fmt.Sprintf("**Ended:** %s\n", session.EndedAt.Format("2006-01-02 15:04")))
+		fmt.Fprintf(&sb, "**Ended:** %s\n", session.EndedAt.Format("2006-01-02 15:04"))
 	}
 	if session.Goal != "" {
-		sb.WriteString(fmt.Sprintf("**Goal:** %s\n", session.Goal))
+		fmt.Fprintf(&sb, "**Goal:** %s\n", session.Goal)
 	}
 	if session.Summary != "" {
-		sb.WriteString(fmt.Sprintf("**Summary:** %s\n", session.Summary))
+		fmt.Fprintf(&sb, "**Summary:** %s\n", session.Summary)
 	}
 
 	mems, err := SearchMemoriesBySessionCompact(db, projectID, session.ID, 10)
@@ -175,10 +175,10 @@ func GetSessionContext(db *sql.DB, projectID string) (string, error) {
 		return "", err
 	}
 	if len(mems) > 0 {
-		sb.WriteString(fmt.Sprintf("\n**Memories saved (%d):**\n", len(mems)))
+		fmt.Fprintf(&sb, "\n**Memories saved (%d):**\n", len(mems))
 		for _, m := range mems {
-			sb.WriteString(fmt.Sprintf("- [%s] **%s** (ID: %s)\n",
-				strings.ToUpper(m.Category), m.What, m.ID))
+			fmt.Fprintf(&sb, "- [%s] **%s** (ID: %s)\n",
+				strings.ToUpper(m.Category), m.What, m.ID)
 		}
 	}
 	return sb.String(), nil

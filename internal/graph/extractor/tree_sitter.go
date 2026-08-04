@@ -187,10 +187,10 @@ func parseGo(root *gotreesitter.Node, lang *gotreesitter.Language, content []byt
 			var name string
 			for i := 0; i < n.ChildCount(); i++ {
 				child := n.Child(i)
-				t := child.Type(lang)
-				if t == "type_identifier" {
+				switch t := child.Type(lang); t {
+				case "type_identifier":
 					name = child.Text(content)
-				} else if t == "struct_type" || t == "interface_type" {
+				case "struct_type", "interface_type":
 					isStruct = true
 				}
 			}
@@ -701,13 +701,13 @@ func parseCss(root *gotreesitter.Node, lang *gotreesitter.Language, content []by
 		case "import_statement":
 			for i := 0; i < n.ChildCount(); i++ {
 				child := n.Child(i)
-				t := child.Type(lang)
-				if t == "string_value" || t == "string" {
+				switch t := child.Type(lang); t {
+				case "string_value", "string":
 					path := strings.Trim(child.Text(content), `"'()`)
 					if path != "" {
 						imports = append(imports, path)
 					}
-				} else if t == "call_expression" {
+				case "call_expression":
 					for j := 0; j < child.ChildCount(); j++ {
 						arg := child.Child(j)
 						if arg.Type(lang) == "arguments" {

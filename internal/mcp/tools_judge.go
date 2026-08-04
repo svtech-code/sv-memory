@@ -60,8 +60,8 @@ func (s *Server) handleConflicts(ctx context.Context, req mcp.CallToolRequest) (
 		var sb strings.Builder
 		sb.WriteString("## Surfaced Conflicts\n\n")
 		for _, c := range list {
-			sb.WriteString(fmt.Sprintf("- **ID:** %s | **Status:** %s | **Score:** %.2f\n  - A: %s\n  - B: %s\n",
-				c.ID, c.Status, c.Score, c.SourceWhat, c.TargetWhat))
+			fmt.Fprintf(&sb, "- **ID:** %s | **Status:** %s | **Score:** %.2f\n  - A: %s\n  - B: %s\n",
+				c.ID, c.Status, c.Score, c.SourceWhat, c.TargetWhat)
 		}
 		return mcp.NewToolResultText(sb.String()), nil
 
@@ -83,10 +83,10 @@ func (s *Server) handleConflicts(ctx context.Context, req mcp.CallToolRequest) (
 			return mcp.NewToolResultText("No potential conflicts detected."), nil
 		}
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("Found %d potential conflict(s):\n\n", len(found)))
+		fmt.Fprintf(&sb, "Found %d potential conflict(s):\n\n", len(found))
 		for _, c := range found {
-			sb.WriteString(fmt.Sprintf("- **ID:** %s | **Score:** %.2f\n  - A: %s\n  - B: %s\n",
-				c.ID, c.Score, c.SourceWhat, c.TargetWhat))
+			fmt.Fprintf(&sb, "- **ID:** %s | **Score:** %.2f\n  - A: %s\n  - B: %s\n",
+				c.ID, c.Score, c.SourceWhat, c.TargetWhat)
 		}
 		if apply {
 			sb.WriteString("\nConflicts successfully saved to database (status: pending).")

@@ -39,12 +39,11 @@ var (
 	luaImportRegex     = regexp.MustCompile(`(?m)(?:require|dofile|loadfile)\s*\(?\s*['"]([^'"]+)['"]\s*\)?`)
 
 	// SQL patterns
-	sqlCreateTableRegex  = regexp.MustCompile(`(?mi)(?:CREATE\s+(?:TEMP(?:ORARY)?\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:(\w+)\.)?(\w+)\s*\()`)
-	sqlCreateViewRegex   = regexp.MustCompile(`(?mi)(?:CREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMP(?:ORARY)?\s+)?VIEW\s+(?:(\w+)\.)?(\w+)\s+AS\s+)`)
-	sqlAlterFKRegex      = regexp.MustCompile(`(?mi)(?:ALTER\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+ADD\s+(?:CONSTRAINT\s+\w+\s+)?FOREIGN\s+KEY\s*\(([^)]+)\)\s*REFERENCES\s+(?:(\w+)\.)?(\w+)\s*\(([^)]+)\))`)
-	sqlCreateIndexRegex  = regexp.MustCompile(`(?mi)CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?(?:(\w+)\.)?(\w+)\s+ON\s+(?:ONLY\s+)?(?:(\w+)\.)?(\w+)\s*\(`)
-	sqlCreateTypeRegex   = regexp.MustCompile(`(?mi)(?:CREATE\s+TYPE\s+(?:(\w+)\.)?(\w+)\s+AS\s+ENUM\s*\(([^)]+)\))`)
-	sqlColumnDefRegex    = regexp.MustCompile(`(?m)^\s*(\w+)\s+(\w+(?:\s*\([^)]*\))?)\s*(.*?)(?:,|$)`)
+	sqlCreateTableRegex = regexp.MustCompile(`(?mi)(?:CREATE\s+(?:TEMP(?:ORARY)?\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:(\w+)\.)?(\w+)\s*\()`)
+	sqlCreateViewRegex  = regexp.MustCompile(`(?mi)(?:CREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMP(?:ORARY)?\s+)?VIEW\s+(?:(\w+)\.)?(\w+)\s+AS\s+)`)
+	sqlAlterFKRegex     = regexp.MustCompile(`(?mi)(?:ALTER\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+ADD\s+(?:CONSTRAINT\s+\w+\s+)?FOREIGN\s+KEY\s*\(([^)]+)\)\s*REFERENCES\s+(?:(\w+)\.)?(\w+)\s*\(([^)]+)\))`)
+	sqlCreateIndexRegex = regexp.MustCompile(`(?mi)CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?(?:(\w+)\.)?(\w+)\s+ON\s+(?:ONLY\s+)?(?:(\w+)\.)?(\w+)\s*\(`)
+	sqlCreateTypeRegex  = regexp.MustCompile(`(?mi)(?:CREATE\s+TYPE\s+(?:(\w+)\.)?(\w+)\s+AS\s+ENUM\s*\(([^)]+)\))`)
 )
 
 // RegexExtractor implements legacy regex-based extraction.

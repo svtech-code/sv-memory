@@ -144,10 +144,10 @@ func (g *InMemoryGraph) writeWikiCommunity(outputDir string, cID int, members []
 }
 
 type crossEdge struct {
-	sourceLabel      string
-	targetLabel      string
-	targetCommLabel  string
-	relationType     string
+	sourceLabel     string
+	targetLabel     string
+	targetCommLabel string
+	relationType    string
 }
 
 func (g *InMemoryGraph) collectCrossCommunityEdges(cID int, members []string, communities map[string]int) []crossEdge {

@@ -467,8 +467,8 @@ Text.
 `,
 			wantFuncs:   nil,
 			wantClasses: nil,
-			wantSects:  []string{"Main Title", "Section One", "Section Two with Code", "Deep Section"},
-			wantTables: nil,
+			wantSects:   []string{"Main Title", "Section One", "Section Two with Code", "Deep Section"},
+			wantTables:  nil,
 		},
 		{
 			name: "sql tables and views",
@@ -488,8 +488,8 @@ CREATE TYPE mood AS ENUM ('happy', 'sad', 'neutral');
 `,
 			wantFuncs:   nil,
 			wantClasses: nil,
-			wantSects:  nil,
-			wantTables: []string{"users", "active_users", "idx_users_email", "mood"},
+			wantSects:   nil,
+			wantTables:  []string{"users", "active_users", "idx_users_email", "mood"},
 		},
 	}
 

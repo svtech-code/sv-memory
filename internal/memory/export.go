@@ -158,7 +158,6 @@ func ExportObsidian(db *sql.DB, projectID, projPath, outputDir string) error {
 		}
 	}
 
-	var edges []exportObsidianEdge
 	edgesBySource := make(map[string][]exportObsidianEdge)
 	edgesByTarget := make(map[string][]exportObsidianEdge)
 
@@ -168,7 +167,6 @@ func ExportObsidian(db *sql.DB, projectID, projPath, outputDir string) error {
 		for edgeRows.Next() {
 			var e exportObsidianEdge
 			if errScan := edgeRows.Scan(&e.sourceID, &e.targetID, &e.relType, &e.confidence, &e.sourceLoc); errScan == nil {
-				edges = append(edges, e)
 				edgesBySource[e.sourceID] = append(edgesBySource[e.sourceID], e)
 				edgesByTarget[e.targetID] = append(edgesByTarget[e.targetID], e)
 			}

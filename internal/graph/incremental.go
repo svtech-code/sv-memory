@@ -123,7 +123,7 @@ func trySyncGraphIncrementalFiltered(db *sql.DB, projectID string, projPath stri
 	}
 
 	// Classify files as unchanged, new, changed, or deleted.
-	var unchanged, toParse, deleted []string
+	var toParse, deleted []string
 	for _, p := range wr.fileList {
 		cur := wr.fileMeta[p]
 		prev, exists := oldMeta[p]
@@ -131,8 +131,6 @@ func trySyncGraphIncrementalFiltered(db *sql.DB, projectID string, projPath stri
 			toParse = append(toParse, p)
 		} else if cur.mtimeMs != prev.mtimeMs || cur.size != prev.size {
 			toParse = append(toParse, p)
-		} else {
-			unchanged = append(unchanged, p)
 		}
 	}
 	for p := range oldMeta {

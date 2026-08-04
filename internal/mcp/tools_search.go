@@ -68,7 +68,7 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 	// Compact table output — progressive disclosure: one row per result with
 	// the essentials. Agent drills down with sv_mem_get for full content.
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Found %d relevant project memories (use `sv_mem_get` for full content, `sv_mem_timeline` for context):\n\n", len(results)))
+	fmt.Fprintf(&sb, "Found %d relevant project memories (use `sv_mem_get` for full content, `sv_mem_timeline` for context):\n\n", len(results))
 	sb.WriteString("| # | ID | Category | Title | Topic (rev) | Date | Score |\n")
 	sb.WriteString("|---|----|----------|-------|-------------|------|-------|\n")
 	for i, r := range results {
@@ -84,13 +84,13 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 		if r.Score != 0 {
 			score = fmt.Sprintf("%.2f", r.Score)
 		}
-		sb.WriteString(fmt.Sprintf("| %d | %s | %s | %s | %s | %s | %s |\n",
-			i+1, r.ID, strings.ToUpper(r.Category), escapeTableCell(title), escapeTableCell(topic), r.CreatedAt.Format("2006-01-02"), score))
+		fmt.Fprintf(&sb, "| %d | %s | %s | %s | %s | %s | %s |\n",
+			i+1, r.ID, strings.ToUpper(r.Category), escapeTableCell(title), escapeTableCell(topic), r.CreatedAt.Format("2006-01-02"), score)
 	}
 	// Token estimate for the response
 	responseText := sb.String()
 	estTokens := len(responseText) / 4
-	sb.WriteString(fmt.Sprintf("\n*Response: ~%d tokens*", estTokens))
+	fmt.Fprintf(&sb, "\n*Response: ~%d tokens*", estTokens)
 
 	return mcp.NewToolResultText(sb.String()), nil
 }
@@ -124,41 +124,41 @@ func (s *Server) handleGet(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("### [%s] %s (ID: %s)\n", strings.ToUpper(mem.Category), mem.What, mem.ID))
-	sb.WriteString(fmt.Sprintf("* **Why:** %s\n", truncateField(mem.Why, maxChars)))
-	sb.WriteString(fmt.Sprintf("* **Rule / Learned:** %s\n", truncateField(mem.Learned, maxChars)))
+	fmt.Fprintf(&sb, "### [%s] %s (ID: %s)\n", strings.ToUpper(mem.Category), mem.What, mem.ID)
+	fmt.Fprintf(&sb, "* **Why:** %s\n", truncateField(mem.Why, maxChars))
+	fmt.Fprintf(&sb, "* **Rule / Learned:** %s\n", truncateField(mem.Learned, maxChars))
 	if mem.WherePath != "" {
-		sb.WriteString(fmt.Sprintf("* **Path:** `%s`\n", mem.WherePath))
+		fmt.Fprintf(&sb, "* **Path:** `%s`\n", mem.WherePath)
 	}
 	if mem.TopicKey != "" {
-		sb.WriteString(fmt.Sprintf("* **Topic:** `%s` (revision %d)\n", mem.TopicKey, mem.RevisionCount))
+		fmt.Fprintf(&sb, "* **Topic:** `%s` (revision %d)\n", mem.TopicKey, mem.RevisionCount)
 	}
 	if mem.DuplicateCount > 0 {
-		sb.WriteString(fmt.Sprintf("* **Duplicates:** %d\n", mem.DuplicateCount))
+		fmt.Fprintf(&sb, "* **Duplicates:** %d\n", mem.DuplicateCount)
 	}
 	if mem.GitBranch != "" {
-		sb.WriteString(fmt.Sprintf("* **Branch:** `%s`\n", mem.GitBranch))
+		fmt.Fprintf(&sb, "* **Branch:** `%s`\n", mem.GitBranch)
 	}
 	if mem.GitCommit != "" {
-		sb.WriteString(fmt.Sprintf("* **Commit:** `%s`\n", mem.GitCommit))
+		fmt.Fprintf(&sb, "* **Commit:** `%s`\n", mem.GitCommit)
 	}
 	if mem.Author != "" {
-		sb.WriteString(fmt.Sprintf("* **Author:** `%s`\n", mem.Author))
+		fmt.Fprintf(&sb, "* **Author:** `%s`\n", mem.Author)
 	}
 	if mem.Impact != "" {
-		sb.WriteString(fmt.Sprintf("* **What went well / Impact:** %s\n", truncateField(mem.Impact, maxChars)))
+		fmt.Fprintf(&sb, "* **What went well / Impact:** %s\n", truncateField(mem.Impact, maxChars))
 	}
 	if mem.ErrorsFaced != "" {
-		sb.WriteString(fmt.Sprintf("* **Roadblocks / Errors faced:** %s\n", truncateField(mem.ErrorsFaced, maxChars)))
+		fmt.Fprintf(&sb, "* **Roadblocks / Errors faced:** %s\n", truncateField(mem.ErrorsFaced, maxChars))
 	}
 	if mem.NextSteps != "" {
-		sb.WriteString(fmt.Sprintf("* **Next steps / Pending:** %s\n", truncateField(mem.NextSteps, maxChars)))
+		fmt.Fprintf(&sb, "* **Next steps / Pending:** %s\n", truncateField(mem.NextSteps, maxChars))
 	}
-	sb.WriteString(fmt.Sprintf("* **Date:** %s\n", mem.CreatedAt.Format("2006-01-02")))
+	fmt.Fprintf(&sb, "* **Date:** %s\n", mem.CreatedAt.Format("2006-01-02"))
 	// Token estimate
 	responseText := sb.String()
 	estTokens := len(responseText) / 4
-	sb.WriteString(fmt.Sprintf("* **Estimated tokens:** ~%d\n", estTokens))
+	fmt.Fprintf(&sb, "* **Estimated tokens:** ~%d\n", estTokens)
 	return mcp.NewToolResultText(sb.String()), nil
 }
 
@@ -184,13 +184,13 @@ func (s *Server) handleTimeline(ctx context.Context, req mcp.CallToolRequest) (*
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("## Timeline around observation `%s`\n\n", obsID))
+	fmt.Fprintf(&sb, "## Timeline around observation `%s`\n\n", obsID)
 
 	if len(prev) > 0 {
 		sb.WriteString("### Before:\n")
 		for _, m := range prev {
-			sb.WriteString(fmt.Sprintf("- [%s] **%s** (ID: %s, %s)\n",
-				strings.ToUpper(m.Category), m.What, m.ID, m.CreatedAt.Format("2006-01-02 15:04")))
+			fmt.Fprintf(&sb, "- [%s] **%s** (ID: %s, %s)\n",
+				strings.ToUpper(m.Category), m.What, m.ID, m.CreatedAt.Format("2006-01-02 15:04"))
 		}
 	}
 	if len(next) > 0 {
@@ -199,8 +199,8 @@ func (s *Server) handleTimeline(ctx context.Context, req mcp.CallToolRequest) (*
 		}
 		sb.WriteString("### After:\n")
 		for _, m := range next {
-			sb.WriteString(fmt.Sprintf("- [%s] **%s** (ID: %s, %s)\n",
-				strings.ToUpper(m.Category), m.What, m.ID, m.CreatedAt.Format("2006-01-02 15:04")))
+			fmt.Fprintf(&sb, "- [%s] **%s** (ID: %s, %s)\n",
+				strings.ToUpper(m.Category), m.What, m.ID, m.CreatedAt.Format("2006-01-02 15:04"))
 		}
 	}
 	if len(prev) == 0 && len(next) == 0 {
@@ -244,29 +244,29 @@ func (s *Server) handleReview(ctx context.Context, req mcp.CallToolRequest) (*mc
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("## Memory Review — %d memories\n", len(items)))
+	fmt.Fprintf(&sb, "## Memory Review — %d memories\n", len(items))
 	if pendingConflicts > 0 {
-		sb.WriteString(fmt.Sprintf("**⚠ Potential Conflicts:** There are %d pending memory conflict(s). Run 'sv-memory conflicts list' to review.\n\n", pendingConflicts))
+		fmt.Fprintf(&sb, "**⚠ Potential Conflicts:** There are %d pending memory conflict(s). Run 'sv-memory conflicts list' to review.\n\n", pendingConflicts)
 	} else {
 		sb.WriteString("\n")
 	}
 
 	for _, item := range items {
-		sb.WriteString(fmt.Sprintf("### [%s] %s (ID: %s)\n", strings.ToUpper(item.Memory.Category), item.Memory.What, item.Memory.ID))
-		sb.WriteString(fmt.Sprintf("* **Status:** %s\n", item.Reason))
-		sb.WriteString(fmt.Sprintf("* **Age:** %d days", item.AgeDays))
+		fmt.Fprintf(&sb, "### [%s] %s (ID: %s)\n", strings.ToUpper(item.Memory.Category), item.Memory.What, item.Memory.ID)
+		fmt.Fprintf(&sb, "* **Status:** %s\n", item.Reason)
+		fmt.Fprintf(&sb, "* **Age:** %d days", item.AgeDays)
 		if item.LastSeenDays > 0 {
-			sb.WriteString(fmt.Sprintf(", last seen %d days ago", item.LastSeenDays))
+			fmt.Fprintf(&sb, ", last seen %d days ago", item.LastSeenDays)
 		}
 		sb.WriteString("\n")
 		if item.DuplicateCount > 0 {
-			sb.WriteString(fmt.Sprintf("* **Duplicates:** %d\n", item.DuplicateCount))
+			fmt.Fprintf(&sb, "* **Duplicates:** %d\n", item.DuplicateCount)
 		}
 		if item.RevisionCount > 0 {
-			sb.WriteString(fmt.Sprintf("* **Revisions:** %d\n", item.RevisionCount))
+			fmt.Fprintf(&sb, "* **Revisions:** %d\n", item.RevisionCount)
 		}
 		if item.RelationCount > 0 {
-			sb.WriteString(fmt.Sprintf("* **Relations:** %d\n", item.RelationCount))
+			fmt.Fprintf(&sb, "* **Relations:** %d\n", item.RelationCount)
 		}
 		if item.NeedsConsolidation {
 			sb.WriteString("* **⚠ Needs consolidation** (many revisions)\n")
@@ -274,6 +274,6 @@ func (s *Server) handleReview(ctx context.Context, req mcp.CallToolRequest) (*mc
 		sb.WriteString("\n")
 	}
 	estTokens := sb.Len() / 4
-	sb.WriteString(fmt.Sprintf("*Response: ~%d tokens*\n", estTokens))
+	fmt.Fprintf(&sb, "*Response: ~%d tokens*\n", estTokens)
 	return mcp.NewToolResultText(sb.String()), nil
 }

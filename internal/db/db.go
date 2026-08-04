@@ -3,20 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
-	"os"
-	"strconv"
 )
-
-func debugEnabled() bool {
-	v := os.Getenv("SV_MEMORY_DEBUG")
-	if v == "" {
-		return false
-	}
-	if b, err := strconv.ParseBool(v); err == nil {
-		return b
-	}
-	return true
-}
 
 func InitDB(dbPath string) (*sql.DB, error) {
 	db, err := openDBWithTuning(dbPath, true)

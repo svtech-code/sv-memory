@@ -43,11 +43,11 @@ func ExportObsidianVault(db *sql.DB, projectID, outputDir string) error {
 		filePath := filepath.Join(nodesDir, safeFileName)
 
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("# %s\n\n", n.label))
-		sb.WriteString(fmt.Sprintf("- **Node ID:** `%s`\n", n.id))
-		sb.WriteString(fmt.Sprintf("- **Type:** `%s`\n", n.nType))
+		fmt.Fprintf(&sb, "# %s\n\n", n.label)
+		fmt.Fprintf(&sb, "- **Node ID:** `%s`\n", n.id)
+		fmt.Fprintf(&sb, "- **Type:** `%s`\n", n.nType)
 		if n.pathStr != "" {
-			sb.WriteString(fmt.Sprintf("- **Path:** `%s`\n", n.pathStr))
+			fmt.Fprintf(&sb, "- **Path:** `%s`\n", n.pathStr)
 		}
 		sb.WriteString("\n## Connected Edges\n\n")
 
@@ -58,7 +58,7 @@ func ExportObsidianVault(db *sql.DB, projectID, outputDir string) error {
 				var targetID, relType string
 				if eScan := edgeRows.Scan(&targetID, &relType); eScan == nil {
 					targetFile := sanitizeFilename(targetID)
-					sb.WriteString(fmt.Sprintf("- -[%s]-> [[%s]]\n", relType, targetFile))
+					fmt.Fprintf(&sb, "- -[%s]-> [[%s]]\n", relType, targetFile)
 				}
 			}
 			edgeRows.Close()
@@ -76,12 +76,12 @@ func ExportObsidianVault(db *sql.DB, projectID, outputDir string) error {
 			if mScan := memRows.Scan(&id, &cat, &what, &why, &learned, &createdAt); mScan == nil {
 				filePath := filepath.Join(memDir, id+".md")
 				var sb strings.Builder
-				sb.WriteString(fmt.Sprintf("# %s\n\n", what))
-				sb.WriteString(fmt.Sprintf("- **Memory ID:** `%s`\n", id))
-				sb.WriteString(fmt.Sprintf("- **Category:** `%s`\n", strings.ToUpper(cat)))
-				sb.WriteString(fmt.Sprintf("- **Created:** `%s`\n\n", createdAt))
-				sb.WriteString(fmt.Sprintf("### Why\n%s\n\n", why))
-				sb.WriteString(fmt.Sprintf("### Learned\n%s\n", learned))
+				fmt.Fprintf(&sb, "# %s\n\n", what)
+				fmt.Fprintf(&sb, "- **Memory ID:** `%s`\n", id)
+				fmt.Fprintf(&sb, "- **Category:** `%s`\n", strings.ToUpper(cat))
+				fmt.Fprintf(&sb, "- **Created:** `%s`\n\n", createdAt)
+				fmt.Fprintf(&sb, "### Why\n%s\n\n", why)
+				fmt.Fprintf(&sb, "### Learned\n%s\n", learned)
 				_ = os.WriteFile(filePath, []byte(sb.String()), 0644)
 			}
 		}
@@ -93,7 +93,7 @@ func ExportObsidianVault(db *sql.DB, projectID, outputDir string) error {
 // ExportCypher exports the graph nodes and edges as Cypher statements for Neo4j / FalkorDB.
 func ExportCypher(db *sql.DB, projectID, outputPath string) error {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("// Cypher Export for sv-memory project %s\n", projectID))
+	fmt.Fprintf(&sb, "// Cypher Export for sv-memory project %s\n", projectID)
 	sb.WriteString("// Compatible with Neo4j and FalkorDB\n\n")
 
 	// 1. Export Nodes
@@ -109,7 +109,7 @@ func ExportCypher(db *sql.DB, projectID, outputPath string) error {
 			cleanID := escapeCypherStr(id)
 			cleanLabel := escapeCypherStr(label)
 			cleanType := sanitizeCypherLabel(nType)
-			sb.WriteString(fmt.Sprintf("CREATE (:Node:%s {id: \"%s\", label: \"%s\", path: \"%s\"});\n", cleanType, cleanID, cleanLabel, escapeCypherStr(pathStr)))
+			fmt.Fprintf(&sb, "CREATE (:Node:%s {id: \"%s\", label: \"%s\", path: \"%s\"});\n", cleanType, cleanID, cleanLabel, escapeCypherStr(pathStr))
 		}
 	}
 
@@ -123,7 +123,7 @@ func ExportCypher(db *sql.DB, projectID, outputPath string) error {
 			var srcID, tgtID, relType string
 			if eScan := edgeRows.Scan(&srcID, &tgtID, &relType); eScan == nil {
 				cleanRel := sanitizeCypherLabel(relType)
-				sb.WriteString(fmt.Sprintf("MATCH (a:Node {id: \"%s\"}), (b:Node {id: \"%s\"}) CREATE (a)-[:%s]->(b);\n", escapeCypherStr(srcID), escapeCypherStr(tgtID), cleanRel))
+				fmt.Fprintf(&sb, "MATCH (a:Node {id: \"%s\"}), (b:Node {id: \"%s\"}) CREATE (a)-[:%s]->(b);\n", escapeCypherStr(srcID), escapeCypherStr(tgtID), cleanRel)
 			}
 		}
 	}

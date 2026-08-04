@@ -6,14 +6,14 @@ import (
 )
 
 type leidenState struct {
-	n          int
-	nodeIDs    []string
-	nodeIndex  map[string]int
-	community  []int
-	tot        []float64
-	m          float64
-	gamma      float64
-	rng        *rand.Rand
+	n         int
+	nodeIDs   []string
+	nodeIndex map[string]int
+	community []int
+	tot       []float64
+	m         float64
+	gamma     float64
+	rng       *rand.Rand
 }
 
 func newLeidenState(g *InMemoryGraph) *leidenState {

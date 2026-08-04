@@ -14,7 +14,7 @@ type Edge struct {
 	ID             string `json:"id"`
 	SourceID       string `json:"source_id"`
 	TargetID       string `json:"target_id"`
-	RelationType   string `json:"relation_type"`   // 'imports' | 'calls' | 'depends_on' | 'potential_conflict'
-	Confidence     string `json:"confidence"`       // 'EXTRACTED' | 'INFERRED' | 'AMBIGUOUS'
+	RelationType   string `json:"relation_type"`             // 'imports' | 'calls' | 'depends_on' | 'potential_conflict'
+	Confidence     string `json:"confidence"`                // 'EXTRACTED' | 'INFERRED' | 'AMBIGUOUS'
 	SourceLocation string `json:"source_location,omitempty"` // line number or empty
 }

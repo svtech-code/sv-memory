@@ -14,10 +14,10 @@ import (
 // that never reads file contents, so the agent can decide whether a graph
 // refresh is needed without paying for a full rescan.
 type StaleReport struct {
-	Changed     []string // files added or modified (mtime/size differ)
-	Deleted     []string // files tracked in the DB but missing on disk
-	NeedsFull   bool     // true when a full rebuild is required (no prior meta or excessive churn)
-	HasChanges  bool     // true when Changed/Deleted is non-empty
+	Changed    []string // files added or modified (mtime/size differ)
+	Deleted    []string // files tracked in the DB but missing on disk
+	NeedsFull  bool     // true when a full rebuild is required (no prior meta or excessive churn)
+	HasChanges bool     // true when Changed/Deleted is non-empty
 }
 
 // DetectStaleFiles walks the project doing only os.Stat per file (no content

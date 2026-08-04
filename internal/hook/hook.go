@@ -168,13 +168,13 @@ func (e *HookEngine) installClaudeCode() ([]string, error) {
 		_ = json.Unmarshal(existing, &settings)
 	}
 
-	hooksRaw, _ := settings["hooks"]
+	hooksRaw := settings["hooks"]
 	hooks, _ := hooksRaw.(map[string]interface{})
 	if hooks == nil {
 		hooks = make(map[string]interface{})
 	}
 
-	preToolUseRaw, _ := hooks["preToolUse"]
+	preToolUseRaw := hooks["preToolUse"]
 	preToolUse, _ := preToolUseRaw.(map[string]interface{})
 	if preToolUse == nil {
 		preToolUse = make(map[string]interface{})
@@ -214,7 +214,7 @@ func (e *HookEngine) uninstallClaudeCode() ([]string, error) {
 		settings := make(map[string]interface{})
 		_ = json.Unmarshal(existing, &settings)
 
-		hooksRaw, _ := settings["hooks"]
+		hooksRaw := settings["hooks"]
 		hooks, _ := hooksRaw.(map[string]interface{})
 		if hooks != nil {
 			delete(hooks, "preToolUse")
@@ -251,13 +251,13 @@ func (e *HookEngine) claudeCodeInstalled() bool {
 		return false
 	}
 
-	hooksRaw, _ := settings["hooks"]
+	hooksRaw := settings["hooks"]
 	hooks, _ := hooksRaw.(map[string]interface{})
 	if hooks == nil {
 		return false
 	}
 
-	preToolUseRaw, _ := hooks["preToolUse"]
+	preToolUseRaw := hooks["preToolUse"]
 	preToolUse, _ := preToolUseRaw.(map[string]interface{})
 	if preToolUse == nil {
 		return false

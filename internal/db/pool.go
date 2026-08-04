@@ -46,7 +46,7 @@ func NewDBPool(dbPath string) (*Pool, error) {
 
 func openDBWithTuning(dbPath string, isWriter bool) (*sql.DB, error) {
 	pragmaParams := "_pragma=foreign_keys(ON)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=temp_store(MEMORY)&_pragma=cache_size(-20000)&_pragma=mmap_size(268435456)&_pragma=busy_timeout(5000)"
-	dsn := dbPath
+	var dsn string
 	if !isWriter {
 		dsn = "file:" + dbPath + "?mode=ro&" + pragmaParams
 	} else {

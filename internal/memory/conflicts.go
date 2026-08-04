@@ -195,7 +195,6 @@ func ScanConflicts(db *sql.DB, projectID string, apply bool, maxInsert int, thre
 		for i := range items {
 			newFlags[i] = true
 		}
-		newCount = len(items)
 	}
 
 	// 3. Cache tokenizations so each title is tokenized once, not once per pair.

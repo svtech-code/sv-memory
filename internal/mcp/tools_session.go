@@ -23,7 +23,7 @@ func (s *Server) handleSessionStart(ctx context.Context, req mcp.CallToolRequest
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Session started (ID: %s). Use sv_mem_save with session_id=\"%s\" to associate memories, then sv_mem_session_end to close.\n\n", session.ID, session.ID))
+	fmt.Fprintf(&sb, "Session started (ID: %s). Use sv_mem_save with session_id=\"%s\" to associate memories, then sv_mem_session_end to close.\n\n", session.ID, session.ID)
 
 	autoBundle, bundleErr := memory.GetAutoBootBundle(s.pool.Reader, s.cfg.ProjectID)
 	if bundleErr == nil && autoBundle != "" {
@@ -90,20 +90,20 @@ func (s *Server) handleStats(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("## Memory Statistics for %s\n\n", s.cfg.ProjName))
-	sb.WriteString(fmt.Sprintf("**Total memories:** %d\n", stats.TotalMemories))
-	sb.WriteString(fmt.Sprintf("**Deleted memories:** %d\n", stats.DeletedMemories))
-	sb.WriteString(fmt.Sprintf("**Recent (24h):** %d\n", stats.Recent24h))
-	sb.WriteString(fmt.Sprintf("**Total sessions:** %d\n", stats.TotalSessions))
-	sb.WriteString(fmt.Sprintf("**Active sessions:** %d\n", stats.ActiveSessions))
-	sb.WriteString(fmt.Sprintf("**Total relations:** %d\n", stats.TotalRelations))
+	fmt.Fprintf(&sb, "## Memory Statistics for %s\n\n", s.cfg.ProjName)
+	fmt.Fprintf(&sb, "**Total memories:** %d\n", stats.TotalMemories)
+	fmt.Fprintf(&sb, "**Deleted memories:** %d\n", stats.DeletedMemories)
+	fmt.Fprintf(&sb, "**Recent (24h):** %d\n", stats.Recent24h)
+	fmt.Fprintf(&sb, "**Total sessions:** %d\n", stats.TotalSessions)
+	fmt.Fprintf(&sb, "**Active sessions:** %d\n", stats.ActiveSessions)
+	fmt.Fprintf(&sb, "**Total relations:** %d\n", stats.TotalRelations)
 	if len(stats.ByCategory) > 0 {
 		sb.WriteString("\n**By category:**\n")
 		for cat, count := range stats.ByCategory {
-			sb.WriteString(fmt.Sprintf("- %s: **%d**\n", cat, count))
+			fmt.Fprintf(&sb, "- %s: **%d**\n", cat, count)
 		}
 	}
-	sb.WriteString(fmt.Sprintf("\n*Response: ~%d tokens*", sb.Len()/4))
+	fmt.Fprintf(&sb, "\n*Response: ~%d tokens*", sb.Len()/4)
 	return mcp.NewToolResultText(sb.String()), nil
 }
 

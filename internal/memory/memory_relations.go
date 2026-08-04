@@ -101,23 +101,23 @@ func CompareMemories(db *sql.DB, projectID, id1, id2 string) (string, error) {
 	sb.WriteString("## Memory Comparison\n\n")
 	sb.WriteString("| Field | Memory 1 | Memory 2 |\n")
 	sb.WriteString("|-------|----------|----------|\n")
-	sb.WriteString(fmt.Sprintf("| **ID** | `%s` | `%s` |\n", m1.ID, m2.ID))
-	sb.WriteString(fmt.Sprintf("| **Category** | `%s` | `%s` |\n", m1.Category, m2.Category))
-	sb.WriteString(fmt.Sprintf("| **What** | %s | %s |\n", m1.What, m2.What))
-	sb.WriteString(fmt.Sprintf("| **Why** | %s | %s |\n", m1.Why, m2.Why))
-	sb.WriteString(fmt.Sprintf("| **Learned** | %s | %s |\n", m1.Learned, m2.Learned))
+	fmt.Fprintf(&sb, "| **ID** | `%s` | `%s` |\n", m1.ID, m2.ID)
+	fmt.Fprintf(&sb, "| **Category** | `%s` | `%s` |\n", m1.Category, m2.Category)
+	fmt.Fprintf(&sb, "| **What** | %s | %s |\n", m1.What, m2.What)
+	fmt.Fprintf(&sb, "| **Why** | %s | %s |\n", m1.Why, m2.Why)
+	fmt.Fprintf(&sb, "| **Learned** | %s | %s |\n", m1.Learned, m2.Learned)
 	if m1.WherePath != "" || m2.WherePath != "" {
-		sb.WriteString(fmt.Sprintf("| **Path** | `%s` | `%s` |\n", m1.WherePath, m2.WherePath))
+		fmt.Fprintf(&sb, "| **Path** | `%s` | `%s` |\n", m1.WherePath, m2.WherePath)
 	}
 	if m1.TopicKey != "" || m2.TopicKey != "" {
-		sb.WriteString(fmt.Sprintf("| **Topic** | `%s` | `%s` |\n", m1.TopicKey, m2.TopicKey))
+		fmt.Fprintf(&sb, "| **Topic** | `%s` | `%s` |\n", m1.TopicKey, m2.TopicKey)
 	}
-	sb.WriteString(fmt.Sprintf("| **Date** | %s | %s |\n", m1.CreatedAt.Format("2006-01-02"), m2.CreatedAt.Format("2006-01-02")))
+	fmt.Fprintf(&sb, "| **Date** | %s | %s |\n", m1.CreatedAt.Format("2006-01-02"), m2.CreatedAt.Format("2006-01-02"))
 
 	rels, _ := GetRelations(db, projectID, id1)
 	for _, r := range rels {
 		if (r.SourceID == id1 && r.TargetID == id2) || (r.SourceID == id2 && r.TargetID == id1) {
-			sb.WriteString(fmt.Sprintf("\n**Existing relation:** `%s` — %s\n", r.RelationType, r.Reason))
+			fmt.Fprintf(&sb, "\n**Existing relation:** `%s` — %s\n", r.RelationType, r.Reason)
 			break
 		}
 	}

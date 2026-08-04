@@ -10,14 +10,14 @@ import (
 
 // GraphDiagnosticReport summarizes integrity issues found in the structural code graph.
 type GraphDiagnosticReport struct {
-	TotalNodes     int      `json:"total_nodes"`
-	TotalEdges     int      `json:"total_edges"`
-	DanglingEdges  int      `json:"dangling_edges"`
-	OrphanNodes    int      `json:"orphan_nodes"`
-	SelfLoops      int      `json:"self_loops"`
-	MissingFiles   int      `json:"missing_files"`
-	IssuesSummary  []string `json:"issues_summary"`
-	IsHealthy      bool     `json:"is_healthy"`
+	TotalNodes    int      `json:"total_nodes"`
+	TotalEdges    int      `json:"total_edges"`
+	DanglingEdges int      `json:"dangling_edges"`
+	OrphanNodes   int      `json:"orphan_nodes"`
+	SelfLoops     int      `json:"self_loops"`
+	MissingFiles  int      `json:"missing_files"`
+	IssuesSummary []string `json:"issues_summary"`
+	IsHealthy     bool     `json:"is_healthy"`
 }
 
 // DiagnoseGraph performs a health check on the SQLite graph tables for a project.
@@ -91,19 +91,19 @@ func DiagnoseGraph(db *sql.DB, projectID, projPath string) (*GraphDiagnosticRepo
 func (r *GraphDiagnosticReport) String() string {
 	var sb strings.Builder
 	sb.WriteString("### 🏥 Graph Health Diagnostics\n\n")
-	sb.WriteString(fmt.Sprintf("- **Total Nodes:** %d\n", r.TotalNodes))
-	sb.WriteString(fmt.Sprintf("- **Total Edges:** %d\n", r.TotalEdges))
-	sb.WriteString(fmt.Sprintf("- **Dangling Edges:** %d\n", r.DanglingEdges))
-	sb.WriteString(fmt.Sprintf("- **Orphan Nodes:** %d\n", r.OrphanNodes))
-	sb.WriteString(fmt.Sprintf("- **Self Loops:** %d\n", r.SelfLoops))
-	sb.WriteString(fmt.Sprintf("- **Missing Files:** %d\n", r.MissingFiles))
+	fmt.Fprintf(&sb, "- **Total Nodes:** %d\n", r.TotalNodes)
+	fmt.Fprintf(&sb, "- **Total Edges:** %d\n", r.TotalEdges)
+	fmt.Fprintf(&sb, "- **Dangling Edges:** %d\n", r.DanglingEdges)
+	fmt.Fprintf(&sb, "- **Orphan Nodes:** %d\n", r.OrphanNodes)
+	fmt.Fprintf(&sb, "- **Self Loops:** %d\n", r.SelfLoops)
+	fmt.Fprintf(&sb, "- **Missing Files:** %d\n", r.MissingFiles)
 
 	if r.IsHealthy {
 		sb.WriteString("\n**Status:** ✅ Graph is healthy! No integrity issues found.\n")
 	} else {
 		sb.WriteString("\n**Status:** ⚠️ Graph health warnings detected:\n")
 		for _, issue := range r.IssuesSummary {
-			sb.WriteString(fmt.Sprintf("  - %s\n", issue))
+			fmt.Fprintf(&sb, "  - %s\n", issue)
 		}
 	}
 	return sb.String()

@@ -30,15 +30,15 @@ func BenchmarkBetweennessCentrality(b *testing.B) {
 	}
 
 	files := map[string]string{
-		"main.go":     `package main; import "fmt"; func main() { fmt.Println("hello") }`,
-		"utils.go":    `package main; func helper() {}`,
-		"api.go":      `package main; import "./utils"; func handler() { helper() }`,
-		"db.go":       `package main; import "./utils"; func query() { helper() }`,
-		"auth.go":     `package main; import "./db"; func login() { query() }`,
-		"routes.go":   `package main; import "./auth"; import "./api"; func setup() { login(); handler() }`,
-		"config.go":   `package main; func loadConfig() {}`,
-		"logger.go":   `package main; import "fmt"; func log() { fmt.Println("log") }`,
-		"metrics.go":  `package main; import "./logger"; func track() { log() }`,
+		"main.go":       `package main; import "fmt"; func main() { fmt.Println("hello") }`,
+		"utils.go":      `package main; func helper() {}`,
+		"api.go":        `package main; import "./utils"; func handler() { helper() }`,
+		"db.go":         `package main; import "./utils"; func query() { helper() }`,
+		"auth.go":       `package main; import "./db"; func login() { query() }`,
+		"routes.go":     `package main; import "./auth"; import "./api"; func setup() { login(); handler() }`,
+		"config.go":     `package main; func loadConfig() {}`,
+		"logger.go":     `package main; import "fmt"; func log() { fmt.Println("log") }`,
+		"metrics.go":    `package main; import "./logger"; func track() { log() }`,
 		"middleware.go": `package main; import "./auth"; import "./logger"; func mw() { login(); log() }`,
 	}
 
@@ -579,11 +579,11 @@ func BenchmarkGraphCacheGet(b *testing.B) {
 func BenchmarkGraphQueryBFS(b *testing.B) {
 	const nodes = 200
 	g := &InMemoryGraph{
-		Nodes:          make(map[string]*Node, nodes),
-		EdgesBySource:  make(map[string][]*Edge, nodes),
-		EdgesByTarget:  make(map[string][]*Edge, nodes),
-		FanIn:          make(map[string]int, nodes),
-		FanOut:         make(map[string]int, nodes),
+		Nodes:         make(map[string]*Node, nodes),
+		EdgesBySource: make(map[string][]*Edge, nodes),
+		EdgesByTarget: make(map[string][]*Edge, nodes),
+		FanIn:         make(map[string]int, nodes),
+		FanOut:        make(map[string]int, nodes),
 	}
 	for i := 0; i < nodes; i++ {
 		id := fmt.Sprintf("file%d.go", i)

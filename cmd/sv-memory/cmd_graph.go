@@ -111,10 +111,7 @@ var graphExplainCmd = &cobra.Command{
 		fmt.Printf("Fan-in:   %d, Fan-out: %d\n\n", fanIn, fanOut)
 
 		// God node evaluation
-		isGod := false
-		if fanIn > 10 || fanOut > 10 || bc > 50.0 {
-			isGod = true
-		}
+		isGod := fanIn > 10 || fanOut > 10 || bc > 50.0
 		fmt.Print("Architectural Role: ")
 		if isGod {
 			fmt.Println("⚠️  Potential God Node / Hub")

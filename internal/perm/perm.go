@@ -150,14 +150,14 @@ type Result struct {
 
 // StatusReport describes the current permission state for a platform.
 type StatusReport struct {
-	Platform   Platform
-	Name       string
+	Platform    Platform
+	Name        string
 	AllowListed bool
-	ConfigPath string
-	Configured bool
-	Granted    []string
-	Missing    []string
-	Message    string
+	ConfigPath  string
+	Configured  bool
+	Granted     []string
+	Missing     []string
+	Message     string
 }
 
 // Grant writes allow-list entries for the given tools into the platform's

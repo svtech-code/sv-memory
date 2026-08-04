@@ -75,15 +75,15 @@ func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) 
 	commLabels := computeCommLabels(g)
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("## Code Sub-Graph for '%s' (Depth: %d)\n\n", pathOrNode, depth))
+	fmt.Fprintf(&sb, "## Code Sub-Graph for '%s' (Depth: %d)\n\n", pathOrNode, depth)
 
 	sb.WriteString("### Nodes in Sub-graph:\n")
 	for _, node := range subGraph.Nodes {
 		cID := graph.NodeCommunityID(node)
 		bc := graph.NodeBetweennessCentrality(node)
 		commStr := commLabelStr(cID, commLabels)
-		sb.WriteString(fmt.Sprintf("- **%s** (`%s`): %s (fan-in: %d, fan-out: %d, community: %s, BC: %.2f)\n",
-			node.Label, node.ID, node.Type, g.FanIn[node.ID], g.FanOut[node.ID], commStr, bc))
+		fmt.Fprintf(&sb, "- **%s** (`%s`): %s (fan-in: %d, fan-out: %d, community: %s, BC: %.2f)\n",
+			node.Label, node.ID, node.Type, g.FanIn[node.ID], g.FanOut[node.ID], commStr, bc)
 	}
 	sb.WriteString("\n")
 
@@ -99,7 +99,7 @@ func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) 
 		sb.WriteString("### Potential God Nodes:\n")
 		for _, id := range godNodes {
 			bc := graph.NodeBetweennessCentrality(g.Nodes[id])
-			sb.WriteString(fmt.Sprintf("- **%s** (fan-in: %d, fan-out: %d, BC: %.2f)\n", g.Nodes[id].Label, g.FanIn[id], g.FanOut[id], bc))
+			fmt.Fprintf(&sb, "- **%s** (fan-in: %d, fan-out: %d, BC: %.2f)\n", g.Nodes[id].Label, g.FanIn[id], g.FanOut[id], bc)
 		}
 		sb.WriteString("\n")
 	}
@@ -112,9 +112,9 @@ func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) 
 			tgtEscaped := escapeMermaid(edge.TargetID)
 
 			if edge.RelationType == "imports" {
-				sb.WriteString(fmt.Sprintf("    %s -->|imports| %s\n", srcEscaped, tgtEscaped))
+				fmt.Fprintf(&sb, "    %s -->|imports| %s\n", srcEscaped, tgtEscaped)
 			} else {
-				sb.WriteString(fmt.Sprintf("    %s -->|%s| %s\n", srcEscaped, edge.RelationType, tgtEscaped))
+				fmt.Fprintf(&sb, "    %s -->|%s| %s\n", srcEscaped, edge.RelationType, tgtEscaped)
 			}
 		}
 
@@ -123,7 +123,7 @@ func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) 
 			if cID > 0 {
 				nodeEscaped := escapeMermaid(node.ID)
 				color := commColors[(cID-1)%len(commColors)]
-				sb.WriteString(fmt.Sprintf("    style %s fill:%s,stroke:#333,stroke-width:1px\n", nodeEscaped, color))
+				fmt.Fprintf(&sb, "    style %s fill:%s,stroke:#333,stroke-width:1px\n", nodeEscaped, color)
 			}
 		}
 
@@ -146,10 +146,10 @@ func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) 
 		total := extracted + inferred + ambiguous
 		if total > 0 {
 			sb.WriteString("\n### Edge Confidence Breakdown:\n")
-			sb.WriteString(fmt.Sprintf("- **EXTRACTED:** %d (%d%%) — explicit in source\n", extracted, extracted*100/total))
-			sb.WriteString(fmt.Sprintf("- **INFERRED:** %d (%d%%) — derived by resolution\n", inferred, inferred*100/total))
+			fmt.Fprintf(&sb, "- **EXTRACTED:** %d (%d%%) — explicit in source\n", extracted, extracted*100/total)
+			fmt.Fprintf(&sb, "- **INFERRED:** %d (%d%%) — derived by resolution\n", inferred, inferred*100/total)
 			if ambiguous > 0 {
-				sb.WriteString(fmt.Sprintf("- **AMBIGUOUS:** %d (%d%%) — uncertain\n", ambiguous, ambiguous*100/total))
+				fmt.Fprintf(&sb, "- **AMBIGUOUS:** %d (%d%%) — uncertain\n", ambiguous, ambiguous*100/total)
 			}
 		}
 	} else {
@@ -302,27 +302,27 @@ func (s *Server) handleGraphExplain(ctx context.Context, req mcp.CallToolRequest
 	fanOut := g.FanOut[nID]
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("## Structural Explanation of Node: `%s`\n\n", node.Label))
-	sb.WriteString(fmt.Sprintf("- **Node ID:** `%s`\n", node.ID))
-	sb.WriteString(fmt.Sprintf("- **Type:** `%s`\n", node.Type))
+	fmt.Fprintf(&sb, "## Structural Explanation of Node: `%s`\n\n", node.Label)
+	fmt.Fprintf(&sb, "- **Node ID:** `%s`\n", node.ID)
+	fmt.Fprintf(&sb, "- **Type:** `%s`\n", node.Type)
 	if node.Path != "" {
-		sb.WriteString(fmt.Sprintf("- **Path:** `%s`\n", node.Path))
+		fmt.Fprintf(&sb, "- **Path:** `%s`\n", node.Path)
 	}
 
 	if node.Metadata != nil {
 		if lang, ok := node.Metadata["language"]; ok {
-			sb.WriteString(fmt.Sprintf("- **Language:** `%v`\n", lang))
+			fmt.Fprintf(&sb, "- **Language:** `%v`\n", lang)
 		}
 		if loc, ok := node.Metadata["loc"]; ok {
-			sb.WriteString(fmt.Sprintf("- **Lines of Code (LOC):** `%v`\n", loc))
+			fmt.Fprintf(&sb, "- **Lines of Code (LOC):** `%v`\n", loc)
 		}
 	}
 
 	sb.WriteString("\n### 📊 Network Metrics:\n")
-	sb.WriteString(fmt.Sprintf("- **Community:** `%s`\n", commLabelStr(cID, commLabels)))
-	sb.WriteString(fmt.Sprintf("- **Betweenness Centrality (BC):** `%.2f`\n", bc))
-	sb.WriteString(fmt.Sprintf("- **Fan-In (Dependents):** `%d`\n", fanIn))
-	sb.WriteString(fmt.Sprintf("- **Fan-Out (Dependencies):** `%d`\n", fanOut))
+	fmt.Fprintf(&sb, "- **Community:** `%s`\n", commLabelStr(cID, commLabels))
+	fmt.Fprintf(&sb, "- **Betweenness Centrality (BC):** `%.2f`\n", bc)
+	fmt.Fprintf(&sb, "- **Fan-In (Dependents):** `%d`\n", fanIn)
+	fmt.Fprintf(&sb, "- **Fan-Out (Dependencies):** `%d`\n", fanOut)
 
 	// God node evaluation
 	isGod := false
@@ -342,9 +342,9 @@ func (s *Server) handleGraphExplain(ctx context.Context, req mcp.CallToolRequest
 
 	sb.WriteString("\n### 🧠 Architectural Role:\n")
 	if isGod {
-		sb.WriteString(fmt.Sprintf("⚠️ **Potential God Node/Hub:** This node plays a central role in the codebase due to:\n"))
+		sb.WriteString("⚠️ **Potential God Node/Hub:** This node plays a central role in the codebase due to:\n")
 		for _, r := range reasons {
-			sb.WriteString(fmt.Sprintf("  - %s\n", r))
+			fmt.Fprintf(&sb, "  - %s\n", r)
 		}
 		sb.WriteString("Refactoring this node could have significant ripple effects. Consider splitting its responsibilities.\n")
 	} else if fanIn == 0 && fanOut > 0 {
@@ -407,7 +407,7 @@ func (s *Server) handleGraphExplain(ctx context.Context, req mcp.CallToolRequest
 				if conf == "" {
 					conf = "EXTRACTED"
 				}
-				sb.WriteString(fmt.Sprintf("- `%s` (relation: `%s`, confidence: `%s`)\n", tgtNode.Label, e.RelationType, conf))
+				fmt.Fprintf(&sb, "- `%s` (relation: `%s`, confidence: `%s`)\n", tgtNode.Label, e.RelationType, conf)
 			}
 		}
 	} else {
@@ -439,14 +439,14 @@ func (s *Server) handleGraphExplain(ctx context.Context, req mcp.CallToolRequest
 	}
 
 	sb.WriteString("\n### ❓ Suggested Questions to ask Antigravity about this node:\n")
-	sb.WriteString(fmt.Sprintf("1. \"What is the primary responsibility of `%s`?\"\n", node.Label))
-	sb.WriteString(fmt.Sprintf("2. \"Are there any architectural patterns or guidelines used inside `%s`?\"\n", node.Label))
+	fmt.Fprintf(&sb, "1. \"What is the primary responsibility of `%s`?\"\n", node.Label)
+	fmt.Fprintf(&sb, "2. \"Are there any architectural patterns or guidelines used inside `%s`?\"\n", node.Label)
 	if isGod {
-		sb.WriteString(fmt.Sprintf("3. \"How can we refactor or break down the God node `%s` into smaller modules?\"\n", node.Label))
+		fmt.Fprintf(&sb, "3. \"How can we refactor or break down the God node `%s` into smaller modules?\"\n", node.Label)
 	} else if fanIn > 0 {
-		sb.WriteString(fmt.Sprintf("3. \"Who are the main dependents of `%s` and how would a change here affect them?\"\n", node.Label))
+		fmt.Fprintf(&sb, "3. \"Who are the main dependents of `%s` and how would a change here affect them?\"\n", node.Label)
 	} else {
-		sb.WriteString(fmt.Sprintf("3. \"Show me the source code implementation details of `%s`.\"\n", node.Label))
+		fmt.Fprintf(&sb, "3. \"Show me the source code implementation details of `%s`.\"\n", node.Label)
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil
@@ -510,7 +510,7 @@ func (s *Server) handleGodNodes(ctx context.Context, req mcp.CallToolRequest) (*
 	commLabels := computeCommLabels(g)
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("## Top %d God Nodes (Most Connected)\n\n", topN))
+	fmt.Fprintf(&sb, "## Top %d God Nodes (Most Connected)\n\n", topN)
 	sb.WriteString("Ranked by total degree (fan-in + fan-out). High-degree nodes are architectural hubs.\n\n")
 	sb.WriteString("| Rank | Label | Type | Degree | Fan-In | Fan-Out | BC | Community |\n")
 	sb.WriteString("|------|-------|------|--------|--------|---------|----|-----------|\n")
@@ -521,8 +521,8 @@ func (s *Server) handleGodNodes(ctx context.Context, req mcp.CallToolRequest) (*
 		} else if label, ok := commLabels[r.comm]; ok {
 			commStr = fmt.Sprintf("%s (%d)", label, r.comm)
 		}
-		sb.WriteString(fmt.Sprintf("| %d | **%s** | `%s` | %d | %d | %d | %.2f | %s |\n",
-			i+1, r.node.Label, r.node.Type, r.degree, g.FanIn[r.id], g.FanOut[r.id], r.bc, commStr))
+		fmt.Fprintf(&sb, "| %d | **%s** | `%s` | %d | %d | %d | %.2f | %s |\n",
+			i+1, r.node.Label, r.node.Type, r.degree, g.FanIn[r.id], g.FanOut[r.id], r.bc, commStr)
 	}
 	sb.WriteString("\n*Use `sv_graph_explain` on any node for deeper analysis.*\n")
 
@@ -535,7 +535,7 @@ func (s *Server) handleGodNodes(ctx context.Context, req mcp.CallToolRequest) (*
 		sb.WriteString("\n" + benchmark + "\n")
 	}
 
-	sb.WriteString(fmt.Sprintf("\n*Response: ~%d tokens*", sb.Len()/4))
+	fmt.Fprintf(&sb, "\n*Response: ~%d tokens*", sb.Len()/4)
 
 	return mcp.NewToolResultText(sb.String()), nil
 }
@@ -576,7 +576,7 @@ func (s *Server) handleSurprisingConnections(ctx context.Context, req mcp.CallTo
 	commLabels := computeCommLabels(g, centrality)
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("## Surprising Connections (Top %d)\n\n", len(conns)))
+	fmt.Fprintf(&sb, "## Surprising Connections (Top %d)\n\n", len(conns))
 	sb.WriteString("Cross-community bridges that link otherwise separate parts of the codebase.\n\n")
 
 	sb.WriteString("| Rank | Source | Target | Edge Type | Surprise Score | Communities |\n")
@@ -584,12 +584,12 @@ func (s *Server) handleSurprisingConnections(ctx context.Context, req mcp.CallTo
 	for i, c := range conns {
 		srcComm := commLabelStr(c.SrcCommunity, commLabels)
 		dstComm := commLabelStr(c.DstCommunity, commLabels)
-		sb.WriteString(fmt.Sprintf("| %d | **%s** | **%s** | `%s` | %.2f | %s ↔ %s |\n",
-			i+1, c.SourceLabel, c.TargetLabel, c.EdgeType, c.SurpriseScore, srcComm, dstComm))
+		fmt.Fprintf(&sb, "| %d | **%s** | **%s** | `%s` | %.2f | %s ↔ %s |\n",
+			i+1, c.SourceLabel, c.TargetLabel, c.EdgeType, c.SurpriseScore, srcComm, dstComm)
 	}
 
 	sb.WriteString("\n*Higher surprise score means a more unexpected bridge between communities.*\n")
-	sb.WriteString(fmt.Sprintf("\n*Response: ~%d tokens*", sb.Len()/4))
+	fmt.Fprintf(&sb, "\n*Response: ~%d tokens*", sb.Len()/4)
 
 	return mcp.NewToolResultText(sb.String()), nil
 }

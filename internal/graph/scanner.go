@@ -79,7 +79,6 @@ func EnsureMemoryIgnore(projPath string) (bool, error) {
 	return false, nil
 }
 
-
 func (m *gitignoreMatcher) loadFile(path string) {
 	f, err := os.Open(path)
 	if err != nil {

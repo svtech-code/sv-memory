@@ -85,7 +85,7 @@ func TestSanitizeText(t *testing.T) {
 			if !strings.Contains(output, tc.mustFind) {
 				t.Errorf("expected output to contain %q, but got: %q", tc.mustFind, output)
 			}
-			
+
 			// Verify the original sensitive values are NOT present anymore
 			if tc.name == "OpenAI Key" && strings.Contains(output, "sk-A1") {
 				t.Error("OpenAI key value was not fully redacted")

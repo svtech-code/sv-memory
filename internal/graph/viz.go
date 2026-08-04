@@ -8,13 +8,13 @@ import (
 )
 
 type vizNode struct {
-	ID        string  `json:"id"`
-	Label     string  `json:"label"`
-	Title     string  `json:"title"`
-	Group     int     `json:"group"`
-	Value     float64 `json:"value"`
-	Shape     string  `json:"shape"`
-	Size      int     `json:"size"`
+	ID    string  `json:"id"`
+	Label string  `json:"label"`
+	Title string  `json:"title"`
+	Group int     `json:"group"`
+	Value float64 `json:"value"`
+	Shape string  `json:"shape"`
+	Size  int     `json:"size"`
 }
 
 type vizEdge struct {
@@ -27,27 +27,6 @@ type vizEdge struct {
 
 func (g *InMemoryGraph) ExportHTML(w io.Writer, comms map[string]int, commLabels map[int]string) error {
 	centrality := g.BetweennessCentrality()
-
-	minBC, maxBC := 1.0, 1.0
-	first := true
-	for _, bc := range centrality {
-		if first {
-			minBC = bc
-			maxBC = bc
-			first = false
-		} else {
-			if bc < minBC {
-				minBC = bc
-			}
-			if bc > maxBC {
-				maxBC = bc
-			}
-		}
-	}
-	bcRange := maxBC - minBC
-	if bcRange < 1 {
-		bcRange = 1
-	}
 
 	var nodes []vizNode
 	nodeIDs := make([]string, 0, len(g.Nodes))

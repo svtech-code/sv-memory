@@ -257,5 +257,3 @@ func main() {}
 		t.Error("unexpected regular comment extracted as rationale")
 	}
 }
-
-

@@ -194,11 +194,11 @@ func UpdateCommunitiesAndCentrality(db *sql.DB, projectID string) error {
 }
 
 type CommunityInfo struct {
-	ID          int
-	Label       string
-	NodeCount   int
-	TopNodeID   string
-	TopNodeLabel string
+	ID            int
+	Label         string
+	NodeCount     int
+	TopNodeID     string
+	TopNodeLabel  string
 	AvgCentrality float64
 }
 

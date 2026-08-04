@@ -131,14 +131,6 @@ func isExternalPkg(imp string) bool {
 	return true
 }
 
-func getFileSize(path string) int64 {
-	stat, err := os.Stat(path)
-	if err != nil {
-		return 0
-	}
-	return stat.Size()
-}
-
 // extractCallEdges identifies call relationships (functions calling other functions/classes)
 // within the project by scanning function body source code.
 func extractCallEdges(projPath string, nodes map[string]*Node, fileContents map[string][]byte) []*Edge {
