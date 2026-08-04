@@ -8,7 +8,6 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/svtech-code/sv-memory/internal/config"
 	"github.com/svtech-code/sv-memory/internal/memory"
 )
 
@@ -44,6 +43,10 @@ func (s *Server) handleSave(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 		}
 	}
 
+	// Git metadata is cached for gitCacheTTL to avoid shelling out to git on
+	// every save (up to 4 subprocesses per call in the worst case).
+	gitMeta := s.cachedGitMetadata()
+
 	mem := &memory.Memory{
 		ProjectID:   s.cfg.ProjectID,
 		Category:    category,
@@ -51,9 +54,9 @@ func (s *Server) handleSave(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 		Why:         why,
 		WherePath:   wherePath,
 		Learned:     learned,
-		GitBranch:   config.GetGitBranch(s.cfg.ProjPath),
-		GitCommit:   config.GetGitCommit(s.cfg.ProjPath),
-		Author:      config.GetGitAuthor(s.cfg.ProjPath),
+		GitBranch:   gitMeta.branch,
+		GitCommit:   gitMeta.commit,
+		Author:      gitMeta.author,
 		Impact:      impact,
 		ErrorsFaced: errorsFaced,
 		NextSteps:   nextSteps,

@@ -114,6 +114,43 @@ type Server struct {
 
 	// Serializes concurrent graph loads (double-checked via GlobalGraphCache).
 	graphMu sync.Mutex
+
+	// Git metadata cache: branch/commit/author are read with shell-outs to
+	// `git` (up to 4 subprocesses per call via the author email fallback).
+	// Caching them collapses that to one batch per gitCacheTTL window.
+	gitCacheMu sync.Mutex
+	gitCache   gitMetadata
+	gitCacheAt time.Time
+}
+
+// gitMetadata holds the branch, short commit, and author read from git for a
+// project. Used to avoid shelling out to git on every sv_mem_save.
+type gitMetadata struct {
+	branch string
+	commit string
+	author string
+}
+
+// gitCacheTTL bounds how long a cached git metadata read is considered fresh.
+const gitCacheTTL = 30 * time.Second
+
+// cachedGitMetadata returns the project's git branch, commit, and author,
+// refreshing them at most once every gitCacheTTL. All three values are read in
+// a single batch so a TTL miss still costs only one burst of git calls, and a
+// TTL hit costs zero.
+func (s *Server) cachedGitMetadata() gitMetadata {
+	s.gitCacheMu.Lock()
+	defer s.gitCacheMu.Unlock()
+	if !s.gitCacheAt.IsZero() && time.Since(s.gitCacheAt) < gitCacheTTL {
+		return s.gitCache
+	}
+	s.gitCache = gitMetadata{
+		branch: config.GetGitBranch(s.cfg.ProjPath),
+		commit: config.GetGitCommit(s.cfg.ProjPath),
+		author: config.GetGitAuthor(s.cfg.ProjPath),
+	}
+	s.gitCacheAt = time.Now()
+	return s.gitCache
 }
 
 // syncPathStat returns the path + mtime of the signal file/dir to watch:
