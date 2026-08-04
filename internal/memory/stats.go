@@ -11,13 +11,13 @@ import (
 
 // Stats holds aggregate statistics about project memories.
 type Stats struct {
-	TotalMemories    int            `json:"total_memories"`
-	DeletedMemories  int            `json:"deleted_memories"`
-	ByCategory       map[string]int `json:"by_category"`
-	TotalSessions    int            `json:"total_sessions"`
-	ActiveSessions   int            `json:"active_sessions"`
-	TotalRelations   int            `json:"total_relations"`
-	Recent24h        int            `json:"recent_24h"`
+	TotalMemories   int            `json:"total_memories"`
+	DeletedMemories int            `json:"deleted_memories"`
+	ByCategory      map[string]int `json:"by_category"`
+	TotalSessions   int            `json:"total_sessions"`
+	ActiveSessions  int            `json:"active_sessions"`
+	TotalRelations  int            `json:"total_relations"`
+	Recent24h       int            `json:"recent_24h"`
 }
 
 // DiagnosticsResult holds a single diagnostic check outcome.
@@ -165,6 +165,18 @@ func ConsolidateProjects(db *sql.DB, sourceID, targetID string) (movedMemories i
 
 	if _, err := tx.Exec("UPDATE memory_relations SET project_id=? WHERE project_id=?", targetID, sourceID); err != nil {
 		return 0, 0, fmt.Errorf("failed to move relations: %w", err)
+	}
+
+	if _, err := tx.Exec("UPDATE graph_nodes SET project_id=? WHERE project_id=?", targetID, sourceID); err != nil {
+		return 0, 0, fmt.Errorf("failed to move graph nodes: %w", err)
+	}
+
+	if _, err := tx.Exec("UPDATE graph_edges SET project_id=? WHERE project_id=?", targetID, sourceID); err != nil {
+		return 0, 0, fmt.Errorf("failed to move graph edges: %w", err)
+	}
+
+	if _, err := tx.Exec("UPDATE graph_files_meta SET project_id=? WHERE project_id=?", targetID, sourceID); err != nil {
+		return 0, 0, fmt.Errorf("failed to move graph file metadata: %w", err)
 	}
 
 	if _, err := tx.Exec("DELETE FROM projects WHERE id=?", sourceID); err != nil {

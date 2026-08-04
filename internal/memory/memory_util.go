@@ -2,6 +2,7 @@ package memory
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -10,12 +11,13 @@ import (
 )
 
 // newID returns a 16-character lowercase hex identifier (64 bits of entropy)
-// derived from a random UUID. Short 8-character prefixes (32 bits) are too
-// prone to birthday collisions for a long-lived store: a collision would
-// silently overwrite an unrelated memory via the INSERT ... ON CONFLICT(id)
-// upsert used by SaveMemory. 16 hex chars matches the project ID convention.
+// derived from a random UUID with the hyphens stripped. Short 8-character
+// prefixes (32 bits) are too prone to birthday collisions for a long-lived
+// store: a collision would silently overwrite an unrelated memory via the
+// INSERT ... ON CONFLICT(id) upsert used by SaveMemory. 16 hex chars matches
+// the project ID convention.
 func newID() string {
-	return uuid.New().String()[:16]
+	return strings.ReplaceAll(uuid.New().String(), "-", "")[:16]
 }
 
 // maxPathFilterLen bounds the length of the where_path LIKE filter so a
