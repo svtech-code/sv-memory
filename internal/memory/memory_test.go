@@ -1345,3 +1345,130 @@ func TestSearchQuotesOnlyDoesNotError(t *testing.T) {
 		}
 	}
 }
+
+func TestSyncToGitIncremental(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_incremental.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-incremental"
+	if err := db.RegisterProject(database, projectID, "Incremental Proj", tempDir); err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// Baseline: one memory, first (full) sync.
+	m1 := &Memory{ID: "inc-1", ProjectID: projectID, Category: "standard", What: "Baseline rule", Why: "Stable", TopicKey: "standard/baseline", CreatedAt: time.Now().Add(-time.Hour)}
+	if _, err := SaveMemory(database, m1); err != nil {
+		t.Fatalf("failed to save baseline: %v", err)
+	}
+	if err := SyncToGit(database, projectID, tempDir); err != nil {
+		t.Fatalf("failed baseline SyncToGit: %v", err)
+	}
+
+	chunkDir := filepath.Join(tempDir, ".sv-memory", "chunks")
+	baseline, err := os.ReadDir(chunkDir)
+	if err != nil {
+		t.Fatalf("failed reading chunks: %v", err)
+	}
+	if len(baseline) != 1 {
+		t.Fatalf("expected 1 chunk after baseline sync, got %d", len(baseline))
+	}
+	baseChunk, err := os.ReadFile(filepath.Join(chunkDir, "inc-1.json"))
+	if err != nil {
+		t.Fatalf("failed reading baseline chunk: %v", err)
+	}
+
+	// Update the same memory via its topic_key: memory count is unchanged, so
+	// the incremental path runs and only the changed chunk is rewritten.
+	if _, err := SaveMemory(database, &Memory{
+		ProjectID: projectID, Category: "standard", What: "Baseline rule v2", Why: "Evolving",
+		TopicKey: "standard/baseline", CreatedAt: time.Now().Add(-time.Hour),
+	}); err != nil {
+		t.Fatalf("failed to update baseline via topic_key: %v", err)
+	}
+	if err := SyncToGit(database, projectID, tempDir); err != nil {
+		t.Fatalf("failed incremental SyncToGit: %v", err)
+	}
+
+	after, err := os.ReadDir(chunkDir)
+	if err != nil {
+		t.Fatalf("failed reading chunks after incremental: %v", err)
+	}
+	if len(after) != 1 {
+		t.Fatalf("expected 1 chunk after incremental sync, got %d", len(after))
+	}
+
+	// The chunk content must reflect the updated title.
+	chunk1, err := os.ReadFile(filepath.Join(chunkDir, "inc-1.json"))
+	if err != nil {
+		t.Fatalf("failed reading inc-1 chunk: %v", err)
+	}
+	if strings.Contains(string(chunk1), "Baseline rule v2") && string(chunk1) == string(baseChunk) {
+		t.Errorf("expected chunk to be rewritten with new title, but content unchanged")
+	}
+
+	// memories.json must always reflect the full set.
+	syncData, err := os.ReadFile(filepath.Join(tempDir, ".sv-memory", "memories.json"))
+	if err != nil {
+		t.Fatalf("failed reading memories.json: %v", err)
+	}
+	var all []*Memory
+	if err := json.Unmarshal(syncData, &all); err != nil {
+		t.Fatalf("failed to unmarshal memories.json: %v", err)
+	}
+	if len(all) != 1 {
+		t.Errorf("expected memories.json to contain 1 memory, got %d", len(all))
+	}
+	if all[0].What != "Baseline rule v2" {
+		t.Errorf("expected updated title in memories.json, got %s", all[0].What)
+	}
+}
+
+func TestSyncToGitRemovesOrphanChunks(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_orphans.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-orphans"
+	if err := db.RegisterProject(database, projectID, "Orphans Proj", tempDir); err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	for _, id := range []string{"or-1", "or-2"} {
+		if _, err := SaveMemory(database, &Memory{ID: id, ProjectID: projectID, Category: "standard", What: "Rule " + id, CreatedAt: time.Now()}); err != nil {
+			t.Fatalf("failed to save %s: %v", id, err)
+		}
+	}
+	if err := SyncToGit(database, projectID, tempDir); err != nil {
+		t.Fatalf("failed baseline SyncToGit: %v", err)
+	}
+
+	// Soft-delete one memory: its chunk must be removed on the next sync even
+	// though the underlying row count (with deleted_at) is unchanged.
+	if err := DeleteMemory(database, projectID, "or-1", false); err != nil {
+		t.Fatalf("failed to soft-delete: %v", err)
+	}
+	if err := SyncToGit(database, projectID, tempDir); err != nil {
+		t.Fatalf("failed SyncToGit after delete: %v", err)
+	}
+
+	chunkDir := filepath.Join(tempDir, ".sv-memory", "chunks")
+	entries, err := os.ReadDir(chunkDir)
+	if err != nil {
+		t.Fatalf("failed reading chunks: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 remaining chunk after soft-delete, got %d", len(entries))
+	}
+	if entries[0].Name() != "or-2.json" {
+		t.Errorf("expected only or-2.json to remain, got %s", entries[0].Name())
+	}
+}

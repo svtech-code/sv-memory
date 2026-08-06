@@ -17,8 +17,8 @@ var (
 )
 
 type syncCacheEntry struct {
-	memoryCount int
-	fileMtim    time.Time
+	memoryCount  int
+	lastSyncTime time.Time
 }
 
 func chunkedSyncDir(projPath string) string {
@@ -27,7 +27,7 @@ func chunkedSyncDir(projPath string) string {
 
 func countMemories(db *sql.DB, projectID string) (int, error) {
 	var n int
-	err := db.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ?", projectID).Scan(&n)
+	err := db.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ? AND deleted_at IS NULL", projectID).Scan(&n)
 	return n, err
 }
 
@@ -36,9 +36,30 @@ func searchAllMemories(db *sql.DB, projectID string) ([]*Memory, error) {
 		SELECT id, project_id, category, what, why, where_path, learned,
 			git_branch, git_commit, author, impact, errors_faced, next_steps,
 			session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at
-		FROM memories WHERE project_id = ?
+		FROM memories WHERE project_id = ? AND deleted_at IS NULL
 		ORDER BY created_at ASC
 	`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanMemories(rows)
+}
+
+// searchChangedMemories returns only the memories inserted or updated after
+// lastSync, so the chunked Git sync can rewrite just the changed chunk files
+// instead of the whole set. New inserts are found via created_at; topic-key
+// updates and duplicate touches advance last_seen_at, which is also checked.
+func searchChangedMemories(db *sql.DB, projectID string, lastSync time.Time) ([]*Memory, error) {
+	rows, err := db.Query(`
+		SELECT id, project_id, category, what, why, where_path, learned,
+			git_branch, git_commit, author, impact, errors_faced, next_steps,
+			session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at
+		FROM memories WHERE project_id = ? AND deleted_at IS NULL AND (
+			created_at > ? OR (last_seen_at IS NOT NULL AND last_seen_at > ?)
+		)
+		ORDER BY created_at ASC
+	`, projectID, lastSync.Format("2006-01-02 15:04:05"), lastSync.Format("2006-01-02 15:04:05"))
 	if err != nil {
 		return nil, err
 	}
@@ -153,36 +174,37 @@ func SyncToGit(db *sql.DB, projectID string, projPath string) error {
 	syncFile := filepath.Join(syncDir, "memories.json")
 	chunkDir := chunkedSyncDir(projPath)
 
-	count, err := countMemories(db, projectID)
-	if err != nil {
-		return err
-	}
-
 	syncCacheMu.Lock()
 	info := lastWriteInfo[projectID]
-	currentMtim := time.Time{}
-	if fi, statErr := os.Stat(chunkDir); statErr == nil {
-		currentMtim = fi.ModTime()
-	} else if fi, statErr := os.Stat(syncFile); statErr == nil {
-		currentMtim = fi.ModTime()
-	}
-	if count == info.memoryCount && currentMtim.Equal(info.fileMtim) {
-		syncCacheMu.Unlock()
-		return nil
-	}
 	syncCacheMu.Unlock()
 
-	memories, err := searchAllMemories(db, projectID)
-	if err != nil {
-		return err
-	}
 	if mkErr := os.MkdirAll(syncDir, 0755); mkErr != nil {
 		return fmt.Errorf("failed to create sync directory: %w", mkErr)
 	}
-
 	if mkErr := os.MkdirAll(chunkDir, 0755); mkErr != nil {
 		return fmt.Errorf("failed to create chunks directory: %w", mkErr)
 	}
+
+	// Full set: used for memories.json and to tell live chunks from orphans.
+	full, err := searchAllMemories(db, projectID)
+	if err != nil {
+		return err
+	}
+
+	// When a previous sync exists, only rewrite chunks whose memory changed
+	// (new insert or last_seen_at advanced). Otherwise write everything.
+	writeSet := full
+	if !info.lastSyncTime.IsZero() {
+		if changed, cErr := searchChangedMemories(db, projectID, info.lastSyncTime); cErr == nil {
+			writeSet = changed
+		}
+	}
+
+	// No inserts, updates, or deletions since the last sync: skip all I/O.
+	if len(writeSet) == 0 && countNonDeleted(db, projectID, len(full)) {
+		return nil
+	}
+
 	existingChunks := make(map[string]bool)
 	entries, err := os.ReadDir(chunkDir)
 	if err == nil {
@@ -192,7 +214,8 @@ func SyncToGit(db *sql.DB, projectID string, projPath string) error {
 			}
 		}
 	}
-	for _, mem := range memories {
+
+	for _, mem := range writeSet {
 		data, marshalErr := json.Marshal(mem)
 		if marshalErr != nil {
 			return fmt.Errorf("failed to marshal chunk %s: %w", mem.ID, marshalErr)
@@ -208,11 +231,19 @@ func SyncToGit(db *sql.DB, projectID string, projPath string) error {
 		}
 		delete(existingChunks, mem.ID)
 	}
+
+	// Remove chunks whose memory no longer exists (soft-deleted or pruned).
+	activeIDs := make(map[string]bool, len(full))
+	for _, m := range full {
+		activeIDs[m.ID] = true
+	}
 	for id := range existingChunks {
-		os.Remove(filepath.Join(chunkDir, id+".json"))
+		if !activeIDs[id] {
+			os.Remove(filepath.Join(chunkDir, id+".json"))
+		}
 	}
 
-	data, err := json.Marshal(memories)
+	data, err := json.Marshal(full)
 	if err != nil {
 		return fmt.Errorf("failed to marshal memories JSON: %w", err)
 	}
@@ -225,21 +256,22 @@ func SyncToGit(db *sql.DB, projectID string, projPath string) error {
 		return fmt.Errorf("failed to rename temp file: %w", err)
 	}
 
-	signalPath := chunkDir
-	if fi, statErr := os.Stat(signalPath); statErr == nil {
-		syncCacheMu.Lock()
-		lastWriteInfo[projectID] = syncCacheEntry{
-			memoryCount: count,
-			fileMtim:    fi.ModTime(),
-		}
-		syncCacheMu.Unlock()
-	} else {
-		syncCacheMu.Lock()
-		delete(lastWriteInfo, projectID)
-		syncCacheMu.Unlock()
+	syncCacheMu.Lock()
+	lastWriteInfo[projectID] = syncCacheEntry{
+		memoryCount:  len(full),
+		lastSyncTime: time.Now(),
 	}
+	syncCacheMu.Unlock()
 
 	return nil
+}
+
+// countNonDeleted reports whether the live memory count matches the loaded
+// set, used to skip a sync that has nothing to do. When counts differ the
+// caller must proceed (deletions need orphan cleanup).
+func countNonDeleted(db *sql.DB, projectID string, expected int) bool {
+	n, err := countMemories(db, projectID)
+	return err == nil && n == expected
 }
 
 func SyncFromGit(db *sql.DB, projectID string, projPath string) error {
