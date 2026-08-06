@@ -967,6 +967,72 @@ func TestAutoBootBundleAndScopedSearch(t *testing.T) {
 	}
 }
 
+func TestAutoBootBundleFullSessionFlow(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_autoboot_flow.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-autoboot-flow"
+	if err := db.RegisterProject(database, projectID, "AutoBoot Flow Proj", tempDir); err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// Session 1: full lifecycle with architecture + decision memories.
+	sess1, err := StartSession(database, projectID, "Refactor database module", tempDir)
+	if err != nil {
+		t.Fatalf("failed to start session 1: %v", err)
+	}
+
+	mems := []*Memory{
+		{ID: "mem-flow-1", ProjectID: projectID, Category: "architecture", What: "Use SQLite WAL mode", Why: "Improve concurrency", WherePath: "internal/db/pool.go", Learned: "WAL avoids writer locks", SessionID: sess1.ID, CreatedAt: time.Now().Add(-3 * time.Hour)},
+		{ID: "mem-flow-2", ProjectID: projectID, Category: "architecture", What: "Adopt Bun as package manager", Why: "Faster installs", WherePath: ".github", Learned: "Bun is deterministic", SessionID: sess1.ID, CreatedAt: time.Now().Add(-2 * time.Hour)},
+		{ID: "mem-flow-3", ProjectID: projectID, Category: "decision", What: "Keep JSON over NDJSON", Why: "Backwards compatibility", Learned: "JSON stays for legacy commits", SessionID: sess1.ID, CreatedAt: time.Now().Add(-1 * time.Hour)},
+	}
+	for _, m := range mems {
+		if _, saveErr := SaveMemory(database, m); saveErr != nil {
+			t.Fatalf("failed to save memory %s: %v", m.ID, saveErr)
+		}
+	}
+
+	if err := SaveSessionSummary(database, sess1.ID, "Refactor database module", "Discovered WAL + Bun", "Wrote session flow", "Add edge case tests", "internal/memory/memory_session.go"); err != nil {
+		t.Fatalf("failed to save session summary: %v", err)
+	}
+	if err := EndSession(database, sess1.ID, "Completed refactor session"); err != nil {
+		t.Fatalf("failed to end session 1: %v", err)
+	}
+
+	// Session 2: starting a new session should surface session 1 context.
+	if _, err := StartSession(database, projectID, "New feature task", tempDir); err != nil {
+		t.Fatalf("failed to start session 2: %v", err)
+	}
+
+	bundle, err := GetAutoBootBundle(database, projectID)
+	if err != nil {
+		t.Fatalf("failed to get autoboot bundle: %v", err)
+	}
+
+	assertions := map[string]string{
+		"## Previous Session Context":    "previous session section header",
+		"**Session ID:** " + sess1.ID:     "session 1 ID",
+		"**Goal:** Refactor database module": "session 1 goal",
+		"**Summary:** Completed refactor session": "session 1 summary",
+		"**Memories saved (3):**":         "session 1 memory list",
+		"**Key Architectural Decisions:**": "architectural decisions section",
+		"Use SQLite WAL mode":             "architecture memory title",
+		"Keep JSON over NDJSON":           "decision memory title",
+		"*Why:* Improve concurrency":      "architecture why rationale",
+	}
+	for want, desc := range assertions {
+		if !strings.Contains(bundle, want) {
+			t.Errorf("autoboot bundle missing %s (expected substring %q), got:\n%s", desc, want, bundle)
+		}
+	}
+}
+
 func TestSanitizeFTS5Query(t *testing.T) {
 	tests := []struct {
 		name  string
