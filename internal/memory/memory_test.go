@@ -1033,6 +1033,104 @@ func TestAutoBootBundleFullSessionFlow(t *testing.T) {
 	}
 }
 
+func TestGetSessionContextEdgeCases(t *testing.T) {
+	t.Run("new project without sessions or memories", func(t *testing.T) {
+		database, err := db.InitDB(filepath.Join(t.TempDir(), "edge_new.db"))
+		if err != nil {
+			t.Fatalf("failed to init db: %v", err)
+		}
+		defer database.Close()
+
+		projectID := "proj-edge-new"
+		if err := db.RegisterProject(database, projectID, "Edge New Proj", t.TempDir()); err != nil {
+			t.Fatalf("failed to register project: %v", err)
+		}
+
+		ctx, err := GetSessionContext(database, projectID)
+		if err != nil {
+			t.Fatalf("failed GetSessionContext: %v", err)
+		}
+		if ctx != "No previous session context found for this project." {
+			t.Errorf("expected empty-project message, got: %s", ctx)
+		}
+	})
+
+	t.Run("active session is treated as nonexistent", func(t *testing.T) {
+		database, err := db.InitDB(filepath.Join(t.TempDir(), "edge_active.db"))
+		if err != nil {
+			t.Fatalf("failed to init db: %v", err)
+		}
+		defer database.Close()
+
+		projectID := "proj-edge-active"
+		tempDir := t.TempDir()
+		if err := db.RegisterProject(database, projectID, "Edge Active Proj", tempDir); err != nil {
+			t.Fatalf("failed to register project: %v", err)
+		}
+
+		// An unclosed session must not be surfaced as previous context.
+		if _, err := StartSession(database, projectID, "Unfinished work", tempDir); err != nil {
+			t.Fatalf("failed to start session: %v", err)
+		}
+		if _, err := SaveMemory(database, &Memory{
+			ProjectID: projectID, Category: "journal", What: "Ongoing notes",
+			CreatedAt: time.Now(),
+		}); err != nil {
+			t.Fatalf("failed to save memory: %v", err)
+		}
+
+		ctx, err := GetSessionContext(database, projectID)
+		if err != nil {
+			t.Fatalf("failed GetSessionContext: %v", err)
+		}
+		if !strings.Contains(ctx, "No recorded sessions. Most recent memories:") {
+			t.Errorf("expected fallback to recent memories for active-only session, got: %s", ctx)
+		}
+		if !strings.Contains(ctx, "Ongoing notes") {
+			t.Errorf("expected recent memory listed in fallback, got: %s", ctx)
+		}
+	})
+
+	t.Run("bundle omits decisions when none exist", func(t *testing.T) {
+		database, err := db.InitDB(filepath.Join(t.TempDir(), "edge_nodecisions.db"))
+		if err != nil {
+			t.Fatalf("failed to init db: %v", err)
+		}
+		defer database.Close()
+
+		projectID := "proj-edge-nodecisions"
+		tempDir := t.TempDir()
+		if err := db.RegisterProject(database, projectID, "Edge No Decisions Proj", tempDir); err != nil {
+			t.Fatalf("failed to register project: %v", err)
+		}
+
+		sess, err := StartSession(database, projectID, "Journal only session", tempDir)
+		if err != nil {
+			t.Fatalf("failed to start session: %v", err)
+		}
+		if _, err := SaveMemory(database, &Memory{
+			ProjectID: projectID, Category: "journal", What: "Work log entry",
+			SessionID: sess.ID, CreatedAt: time.Now(),
+		}); err != nil {
+			t.Fatalf("failed to save memory: %v", err)
+		}
+		if err := EndSession(database, sess.ID, "Finished logging"); err != nil {
+			t.Fatalf("failed to end session: %v", err)
+		}
+
+		bundle, err := GetAutoBootBundle(database, projectID)
+		if err != nil {
+			t.Fatalf("failed GetAutoBootBundle: %v", err)
+		}
+		if !strings.Contains(bundle, "## Previous Session Context") {
+			t.Errorf("expected session context in bundle, got:\n%s", bundle)
+		}
+		if strings.Contains(bundle, "**Key Architectural Decisions:**") {
+			t.Errorf("expected no architectural decisions section when only journal memories exist, got:\n%s", bundle)
+		}
+	})
+}
+
 func TestSanitizeFTS5Query(t *testing.T) {
 	tests := []struct {
 		name  string
