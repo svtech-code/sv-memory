@@ -254,11 +254,11 @@ func (s *Server) handleGraphSync(ctx context.Context, req mcp.CallToolRequest) (
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to sync graph: %v", err)), nil
 	}
-	// Pre-calculate communities and centrality during manual sync
-	_ = graph.UpdateCommunitiesAndCentrality(s.pool.Writer, s.cfg.ProjectID)
 
 	// Invalidate in-memory cache so the next sv_graph_query reloads fresh
-	// data from the rebuilt graph tables.
+	// data from the rebuilt graph tables. Communities and betweenness
+	// centrality are computed lazily by sv_graph_explain / sv_graph_god_nodes
+	// when they are missing, so sync itself stays cheap.
 	graph.GlobalGraphCache.Invalidate(s.cfg.ProjectID)
 	if !synced {
 		return mcp.NewToolResultText("Dependency graph is already up to date (no file changes detected)."), nil
