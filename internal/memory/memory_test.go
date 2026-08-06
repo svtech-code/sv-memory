@@ -987,14 +987,22 @@ func TestAutoBootBundleFullSessionFlow(t *testing.T) {
 		t.Fatalf("failed to start session 1: %v", err)
 	}
 
-	mems := []*Memory{
+	// Session 1 memories: these appear in the session context section and must
+	// NOT be repeated in the per-category sections (dedup).
+	sessMems := []*Memory{
 		{ID: "mem-flow-1", ProjectID: projectID, Category: "architecture", What: "Use SQLite WAL mode", Why: "Improve concurrency", WherePath: "internal/db/pool.go", Learned: "WAL avoids writer locks", SessionID: sess1.ID, CreatedAt: time.Now().Add(-4 * time.Hour)},
-		{ID: "mem-flow-2", ProjectID: projectID, Category: "architecture", What: "Adopt Bun as package manager", Why: "Faster installs", WherePath: ".github", Learned: "Bun is deterministic", SessionID: sess1.ID, CreatedAt: time.Now().Add(-3 * time.Hour)},
-		{ID: "mem-flow-3", ProjectID: projectID, Category: "decision", What: "Keep JSON over NDJSON", Why: "Backwards compatibility", Learned: "JSON stays for legacy commits", SessionID: sess1.ID, CreatedAt: time.Now().Add(-2 * time.Hour)},
-		{ID: "mem-flow-4", ProjectID: projectID, Category: "standard", What: "Use Conventional Commits in Spanish", Why: "Team convention", SessionID: sess1.ID, CreatedAt: time.Now().Add(-90 * time.Minute)},
-		{ID: "mem-flow-5", ProjectID: projectID, Category: "bugfix", What: "Fix empty FTS5 query crash", Why: "Sanitize empty tokens", SessionID: sess1.ID, CreatedAt: time.Now().Add(-30 * time.Minute)},
+		{ID: "mem-flow-3", ProjectID: projectID, Category: "decision", What: "Keep JSON over NDJSON", Why: "Backwards compatibility", Learned: "JSON stays for legacy commits", SessionID: sess1.ID, CreatedAt: time.Now().Add(-3 * time.Hour)},
+		{ID: "mem-flow-5", ProjectID: projectID, Category: "bugfix", What: "Fix empty FTS5 query crash", Why: "Sanitize empty tokens", SessionID: sess1.ID, CreatedAt: time.Now().Add(-2 * time.Hour)},
 	}
-	for _, m := range mems {
+	// Extra memories outside the session so the per-category sections have
+	// content even after session IDs are deduped.
+	extraMems := []*Memory{
+		{ID: "mem-extra-1", ProjectID: projectID, Category: "architecture", What: "Adopt Bun as package manager", Why: "Faster installs", CreatedAt: time.Now().Add(-90 * time.Minute)},
+		{ID: "mem-extra-2", ProjectID: projectID, Category: "decision", What: "Use typed constants", Why: "Avoid magic strings", CreatedAt: time.Now().Add(-80 * time.Minute)},
+		{ID: "mem-extra-3", ProjectID: projectID, Category: "standard", What: "Use Conventional Commits in Spanish", Why: "Team convention", CreatedAt: time.Now().Add(-70 * time.Minute)},
+		{ID: "mem-extra-4", ProjectID: projectID, Category: "bugfix", What: "Fix index out of range", Why: "Guard empty slice", CreatedAt: time.Now().Add(-60 * time.Minute)},
+	}
+	for _, m := range append(sessMems, extraMems...) {
 		if _, saveErr := SaveMemory(database, m); saveErr != nil {
 			t.Fatalf("failed to save memory %s: %v", m.ID, saveErr)
 		}
@@ -1022,20 +1030,27 @@ func TestAutoBootBundleFullSessionFlow(t *testing.T) {
 		"**Session ID:** " + sess1.ID:     "session 1 ID",
 		"**Goal:** Refactor database module": "session 1 goal",
 		"**Summary:** Completed refactor session": "session 1 summary",
-		"**Memories saved (5):**":         "session 1 memory list",
+		"**Memories saved (3):**":         "session 1 memory list",
 		"**Key Architectural Decisions:**": "architectural decisions section",
-		"Use SQLite WAL mode":             "architecture memory title",
-		"Keep JSON over NDJSON":           "decision memory title",
-		"*Why:* Improve concurrency":      "architecture why rationale",
+		"Adopt Bun as package manager":    "architecture memory title",
+		"Use typed constants":             "decision memory title",
+		"*Why:* Faster installs":          "architecture why rationale",
 		"**Standards & Conventions:**":    "standards section",
 		"Use Conventional Commits in Spanish": "standard memory title",
 		"**Recent Work & Known Issues:**": "recent work section",
-		"Fix empty FTS5 query crash":      "bugfix memory title",
+		"Fix index out of range":          "bugfix memory title",
+		"Use SQLite WAL mode":             "session architecture memory listed in session context",
 	}
 	for want, desc := range assertions {
 		if !strings.Contains(bundle, want) {
 			t.Errorf("autoboot bundle missing %s (expected substring %q), got:\n%s", desc, want, bundle)
 		}
+	}
+
+	// Dedup: a memory shown in the previous-session section must not repeat
+	// its rationale under Key Architectural Decisions.
+	if strings.Contains(bundle, "*Why:* Improve concurrency") {
+		t.Errorf("expected session memory deduped from decisions section, got:\n%s", bundle)
 	}
 }
 

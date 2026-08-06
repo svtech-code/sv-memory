@@ -188,29 +188,39 @@ func GetAutoBootBundle(db *sql.DB, projectID string) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("### 🚀 Auto-Boot Context Bundle\n\n")
 
+	// Collect IDs already shown in the previous-session section so the
+	// per-category sections below don't repeat them (dedup).
+	shown := map[string]bool{}
 	sessCtx, err := GetSessionContext(db, projectID)
 	if err == nil && sessCtx != "" && !strings.HasPrefix(sessCtx, "No previous session") {
 		sb.WriteString(sessCtx)
 		sb.WriteString("\n\n")
+		if last, lErr := GetLastSession(db, projectID); lErr == nil && last != nil {
+			if mems, mErr := SearchMemoriesBySessionCompact(db, projectID, last.ID, 10); mErr == nil {
+				for _, m := range mems {
+					shown[m.ID] = true
+				}
+			}
+		}
 	}
 
 	writeBundleSection(&sb, db, projectID, "Key Architectural Decisions", `
 		SELECT id, category, what, why
 		FROM memories
 		WHERE project_id = ? AND category IN ('architecture', 'decision') AND deleted_at IS NULL
-		ORDER BY created_at DESC LIMIT 3`, true)
+		ORDER BY created_at DESC LIMIT 3`, true, shown)
 
 	writeBundleSection(&sb, db, projectID, "Standards & Conventions", `
 		SELECT id, category, what, why
 		FROM memories
 		WHERE project_id = ? AND category = 'standard' AND deleted_at IS NULL
-		ORDER BY created_at DESC LIMIT 2`, false)
+		ORDER BY created_at DESC LIMIT 2`, false, shown)
 
 	writeBundleSection(&sb, db, projectID, "Recent Work & Known Issues", `
 		SELECT id, category, what, why
 		FROM memories
 		WHERE project_id = ? AND category IN ('bugfix', 'journal') AND deleted_at IS NULL
-		ORDER BY created_at DESC LIMIT 2`, false)
+		ORDER BY created_at DESC LIMIT 2`, false, shown)
 
 	return strings.TrimSpace(sb.String()), nil
 }
@@ -218,7 +228,8 @@ func GetAutoBootBundle(db *sql.DB, projectID string) (string, error) {
 // writeBundleSection appends a titled, compact list of memories to the
 // Auto-Boot bundle. When withWhy is false only the title is shown to keep
 // the bundle token-efficient; the agent can drill down with sv_mem_get.
-func writeBundleSection(sb *strings.Builder, db *sql.DB, projectID, title, query string, withWhy bool) {
+// IDs in exclude are skipped to avoid repeating session-listed memories.
+func writeBundleSection(sb *strings.Builder, db *sql.DB, projectID, title, query string, withWhy bool, exclude map[string]bool) {
 	rows, err := db.Query(query, projectID)
 	if err != nil {
 		return
@@ -228,6 +239,9 @@ func writeBundleSection(sb *strings.Builder, db *sql.DB, projectID, title, query
 	for rows.Next() {
 		var id, cat, what, why string
 		if err := rows.Scan(&id, &cat, &what, &why); err != nil {
+			continue
+		}
+		if exclude[id] {
 			continue
 		}
 		if withWhy {
