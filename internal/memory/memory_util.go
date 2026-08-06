@@ -61,6 +61,17 @@ func nullTime(t time.Time) interface{} {
 	return t
 }
 
+// truncateText shortens s to maxChars (by runes to avoid splitting UTF-8
+// sequences) and appends a notice when it was cut, keeping compact renders
+// (Auto-Boot bundle, search expansion) token-efficient.
+func truncateText(s string, maxChars int) string {
+	if maxChars <= 0 || len([]rune(s)) <= maxChars {
+		return s
+	}
+	runes := []rune(s)
+	return string(runes[:maxChars]) + fmt.Sprintf("... [truncated %d chars]", len(runes)-maxChars)
+}
+
 func memoryInsertConflictQuery() string {
 	return `
 	INSERT INTO memories (id, project_id, category, what, why, where_path, learned, git_branch, git_commit, author, impact, errors_faced, next_steps, session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at)

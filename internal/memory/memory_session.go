@@ -225,6 +225,11 @@ func GetAutoBootBundle(db *sql.DB, projectID string) (string, error) {
 	return strings.TrimSpace(sb.String()), nil
 }
 
+// bundleWhyChars caps the rationale shown per memory in the Auto-Boot bundle
+// when withWhy is true, so long rationales don't bloat the session-start
+// response. The agent can drill down with sv_mem_get for full content.
+const bundleWhyChars = 300
+
 // writeBundleSection appends a titled, compact list of memories to the
 // Auto-Boot bundle. When withWhy is false only the title is shown to keep
 // the bundle token-efficient; the agent can drill down with sv_mem_get.
@@ -245,6 +250,7 @@ func writeBundleSection(sb *strings.Builder, db *sql.DB, projectID, title, query
 			continue
 		}
 		if withWhy {
+			why = truncateText(why, bundleWhyChars)
 			items = append(items, fmt.Sprintf("- **[%s] %s** (ID: %s)\n  *Why:* %s", strings.ToUpper(cat), what, id, why))
 		} else {
 			items = append(items, fmt.Sprintf("- **[%s] %s** (ID: %s)", strings.ToUpper(cat), what, id))
