@@ -1,0 +1,187 @@
+package mcp
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	mcpgo "github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/svtech-code/sv-memory/internal/graph"
+)
+
+func TestGraphExplainHandler(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	writeMockCodeFiles(t, tempDir)
+
+	server := NewServer(pool, cfg)
+	explainTool := server.GetTool("sv_graph_explain")
+	if explainTool == nil {
+		t.Fatal("sv_graph_explain tool not registered")
+	}
+	ctx := context.Background()
+
+	req := mcpgo.CallToolRequest{}
+	req.Params.Name = "sv_graph_explain"
+	req.Params.Arguments = map[string]any{
+		"node": "index.js",
+	}
+
+	res, err := explainTool.Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("sv_graph_explain failed: %v", err)
+	}
+	out := textContent(res.Content[0])
+
+	assertions := map[string]string{
+		"Structural Explanation": "section header",
+		"index.js":               "resolved node label",
+		"Network Metrics":        "metrics section",
+		"Fan-In":                 "fan-in metric",
+		"Fan-Out":                "fan-out metric",
+		"Neighbors":              "neighbors section",
+	}
+	for want, desc := range assertions {
+		if !strings.Contains(out, want) {
+			t.Errorf("sv_graph_explain missing %s (expected %q), got:\n%s", desc, want, out)
+		}
+	}
+}
+
+func TestGraphExplainNodeNotFound(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	writeMockCodeFiles(t, tempDir)
+
+	server := NewServer(pool, cfg)
+	explainTool := server.GetTool("sv_graph_explain")
+	ctx := context.Background()
+
+	req := mcpgo.CallToolRequest{}
+	req.Params.Name = "sv_graph_explain"
+	req.Params.Arguments = map[string]any{
+		"node": "does-not-exist.go",
+	}
+
+	res, err := explainTool.Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("sv_graph_explain failed: %v", err)
+	}
+	out := textContent(res.Content[0])
+	if !strings.Contains(out, "Could not find node") {
+		t.Errorf("expected not-found message, got: %s", out)
+	}
+}
+
+func TestGraphGodNodesHandler(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	writeMockCodeFiles(t, tempDir)
+
+	server := NewServer(pool, cfg)
+	godNodesTool := server.GetTool("sv_graph_god_nodes")
+	if godNodesTool == nil {
+		t.Fatal("sv_graph_god_nodes tool not registered")
+	}
+	ctx := context.Background()
+
+	req := mcpgo.CallToolRequest{}
+	req.Params.Name = "sv_graph_god_nodes"
+	req.Params.Arguments = map[string]any{
+		"top_n": "5",
+	}
+
+	res, err := godNodesTool.Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("sv_graph_god_nodes failed: %v", err)
+	}
+	out := textContent(res.Content[0])
+
+	// index.js is the only hub (it imports utils and Button), so it must rank.
+	if !strings.Contains(out, "God Nodes") {
+		t.Errorf("expected god nodes table header, got:\n%s", out)
+	}
+	if !strings.Contains(out, "index.js") {
+		t.Errorf("expected index.js ranked as top node, got:\n%s", out)
+	}
+	if !strings.Contains(out, "| Rank |") {
+		t.Errorf("expected markdown table header, got:\n%s", out)
+	}
+}
+
+func TestEscapeMermaid(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "plain", in: "index.js", want: `"index.js"`},
+		{name: "backslash", in: `a\b`, want: `"a/b"`},
+		{name: "spaces", in: "my file.go", want: `"my file.go"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := escapeMermaid(tt.in); got != tt.want {
+				t.Errorf("escapeMermaid(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCommLabelStr(t *testing.T) {
+	tests := []struct {
+		name   string
+		commID int
+		labels map[int]string
+		want   string
+	}{
+		{name: "zero community", commID: 0, labels: nil, want: "none"},
+		{name: "with label", commID: 2, labels: map[int]string{2: "core"}, want: "core (ID 2)"},
+		{name: "unknown community", commID: 3, labels: nil, want: "community_3"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := commLabelStr(tt.commID, tt.labels); got != tt.want {
+				t.Errorf("commLabelStr(%d) = %q, want %q", tt.commID, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTokenBenchmark(t *testing.T) {
+	t.Run("empty nodes returns empty", func(t *testing.T) {
+		if got := tokenBenchmark(nil, 50); got != "" {
+			t.Errorf("expected empty benchmark for no nodes, got: %q", got)
+		}
+	})
+
+	t.Run("estimates savings from loc metadata", func(t *testing.T) {
+		nodes := []*graph.Node{
+			{ID: "a", Metadata: map[string]interface{}{"loc": float64(100)}},
+		}
+		got := tokenBenchmark(nodes, 50)
+		if !strings.Contains(got, "Token savings") || !strings.Contains(got, "400 tokens") {
+			t.Errorf("unexpected benchmark output: %q", got)
+		}
+	})
+
+	t.Run("defaults to 50 loc without metadata", func(t *testing.T) {
+		nodes := []*graph.Node{{ID: "a"}}
+		got := tokenBenchmark(nodes, 25)
+		// 50 LOC * 4 = 200 raw tokens vs 25 response tokens.
+		if !strings.Contains(got, "Token savings") || !strings.Contains(got, "200 tokens") {
+			t.Errorf("unexpected benchmark output: %q", got)
+		}
+	})
+
+	t.Run("zero response tokens returns empty", func(t *testing.T) {
+		nodes := []*graph.Node{{ID: "a", Metadata: map[string]interface{}{"loc": float64(100)}}}
+		if got := tokenBenchmark(nodes, 0); got != "" {
+			t.Errorf("expected empty benchmark for zero response tokens, got: %q", got)
+		}
+	})
+}
