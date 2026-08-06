@@ -1,0 +1,21 @@
+{
+  "id": "ba3023db702d45c2",
+  "project_id": "ce22c23ac33d7a36",
+  "category": "journal",
+  "what": "Pendientes de la próxima sesión: verificar release v0.4.1 publicada, probar sv-memory update end-to-end, validar Auto-Boot Context Bundle, y features futuras opcionales",
+  "why": "Se preparó y publicó la release v0.4.1 (commit 13169b3 ci(workflow): align release actions and prepare v0.4.1). Al cierre de sesión el workflow Release v0.4.1 seguía in_progress y la release aún no aparecía en GitHub. Se acordó registrar pendientes para retomar sin perder el hilo.",
+  "learned": "Antes de cerrar una sesión que prepara una release, verificar con gh run list y gh release view; si el workflow sigue in_progress, dejarlo como pendiente de verificación en la próxima sesión. Los archivos .sv-memory (memories.json + chunks) quedaron sin commitear por decisión del usuario.",
+  "git_branch": "main",
+  "git_commit": "13169b3",
+  "author": "Mario Sandoval (Sv Tech)",
+  "impact": "Estado al cierre: tag v0.4.1 creado, CI en main verde, workflow Release in_progress, release aún no visible en GitHub. Cobertura global 63%, lint 0 issues.",
+  "errors_faced": "gh release view v0.4.1 devolvió 'release not found' porque el workflow de publicación aún no terminaba.",
+  "next_steps": "1) Verificar que el workflow Release v0.4.1 termine en verde y que existan los 5 binarios + checksums.txt. 2) Probar sv-memory version -\u003e v0.4.1 y sv-memory update end-to-end desde una versión anterior. 3) Validar Auto-Boot Context Bundle tras cierre de sesión real. 4) Features futuras opcionales: cobertura en internal/graph/schema y funciones interactivas de TUI; validar utilidad de sv_graph_explain/sv_graph_god_nodes. 5) Decidir si commitear archivos .sv-memory pendientes.",
+  "session_id": "2f0fc633158541f4",
+  "topic_key": "journal/release-v041-pending-verification",
+  "revision_count": 1,
+  "last_seen_at": "0001-01-01T00:00:00Z",
+  "normalized_hash": "8a864d57850e50ddc21d590582b59730646b8850080e5c74a00304251a23ff2f",
+  "deleted_at": "0001-01-01T00:00:00Z",
+  "created_at": "2026-08-04T01:56:24.120829-04:00"
+}
