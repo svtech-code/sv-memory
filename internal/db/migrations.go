@@ -142,6 +142,7 @@ var migrations = []migration{
 	{6, "create_post_indexes", createPostIndexes},
 	{7, "graph_edges_composite_pk", migrateGraphEdgesCompositePK},
 	{8, "add_project_scan_meta", addProjectScanMeta},
+	{9, "add_session_index", addSessionIndex},
 }
 
 func applyMigrations(db *sql.DB) error {
@@ -438,6 +439,16 @@ func addProjectScanMeta(db *sql.DB) error {
 		if _, err := db.Exec("ALTER TABLE projects ADD COLUMN last_conflict_scan_at DATETIME;"); err != nil {
 			return fmt.Errorf("failed to add column last_conflict_scan_at to projects: %w", err)
 		}
+	}
+	return nil
+}
+
+// addSessionIndex indexes memories by (project_id, session_id), which is the
+// lookup used by GetActiveSession on every sv_mem_save to auto-associate
+// memories with the running session. Without it each save scans the table.
+func addSessionIndex(db *sql.DB) error {
+	if _, err := db.Exec("CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(project_id, session_id);"); err != nil {
+		return fmt.Errorf("failed to create idx_memories_session: %w", err)
 	}
 	return nil
 }
