@@ -62,11 +62,11 @@ type Tool struct {
 var AllTools = []Tool{
 	{Name: "sv_mem_save", Description: "Persist a decision, bugfix, journal, or standard to project memory (with optional topic_key upsert)."},
 	{Name: "sv_mem_suggest_topic_key", Description: "Generate a stable 'category/kebab-case' topic_key for upsert semantics."},
-	{Name: "sv_mem_session_start", Description: "Register a new coding session and load the Auto-Boot Context Bundle."},
+	{Name: "sv_mem_session_start", Description: "Register a new coding session and receive the Auto-Boot Context Bundle (previous session summary, key decisions, standards, recent bugfixes, journals)."},
 	{Name: "sv_mem_session_end", Description: "End the active session with a summary to enable context recovery."},
 	{Name: "sv_mem_session_summary", Description: "Save the session goal, discoveries, accomplished work, and next steps."},
-	{Name: "sv_mem_context", Description: "Recover the last completed session's goal, summary, and memories after compaction."},
-	{Name: "sv_mem_compact", Description: "Consolidate historical topic-key revisions and duplicates into clean summaries."},
+	{Name: "sv_mem_context", Description: "Recover the last completed session's goal, summary, and associated memories after compaction."},
+	{Name: "sv_mem_compact", Description: "Consolidate historical topic-key revisions and duplicates into clean summaries. Call periodically or after many upserts to keep search fast."},
 	{Name: "sv_mem_search", Description: "Search project memories with FTS5 BM25 ranking and category/path filters."},
 	{Name: "sv_mem_get", Description: "Retrieve the full content of a specific memory by ID."},
 	{Name: "sv_mem_timeline", Description: "Get chronological context around a specific memory observation."},
@@ -80,8 +80,8 @@ var AllTools = []Tool{
 	{Name: "sv_mem_conflicts", Description: "List, scan, or ignore potential memory conflicts."},
 	{Name: "sv_graph_query", Description: "Query the dependency graph for a module, file, or package (returns Mermaid)."},
 	{Name: "sv_graph_path", Description: "Find the shortest dependency path between two nodes."},
-	{Name: "sv_graph_sync", Description: "Incrementally re-scan the codebase and rebuild the dependency graph."},
-	{Name: "sv_graph_explain", Description: "Explain a node's role, community, centrality, neighbors, and suggested questions."},
+	{Name: "sv_graph_sync", Description: "Incrementally re-scan the codebase and rebuild the dependency graph. Call after adding major files or restructuring packages."},
+	{Name: "sv_graph_explain", Description: "Explain a node's role, community, centrality, neighbors, and suggested questions. Use before refactoring or deleting a file."},
 	{Name: "sv_graph_god_nodes", Description: "List the most-connected hub nodes in the dependency graph."},
 	{Name: "sv_graph_surprising_connections", Description: "Find unexpected cross-community connections in the codebase."},
 	{Name: "sv_graph_viz", Description: "Generate an interactive HTML visualization of the dependency graph."},
@@ -401,7 +401,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 3. Tool: sv_mem_session_start
 	sessionStartTool := mcp.NewTool("sv_mem_session_start",
-		mcp.WithDescription("Register the start of a new coding session. Call this at the beginning of a work session to enable session grouping and post-compaction context recovery."),
+		mcp.WithDescription("Register the start of a new coding session and receive an Auto-Boot Context Bundle: previous session summary, key architectural decisions, standards, recent bugfixes, and last journals. Call this at the beginning of every work session to enable session grouping and post-compaction context recovery."),
 		mcp.WithString("goal", mcp.Description("Optional goal or objective for this session")),
 		mcp.WithString("directory", mcp.Description("Optional working directory (auto-detected from repo if omitted)")),
 	)
@@ -429,14 +429,14 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 6. Tool: sv_mem_context
 	contextTool := mcp.NewTool("sv_mem_context",
-		mcp.WithDescription("Recover context from the last completed session. Call this after a compaction or context reset to resume work. Returns the last session's goal, summary, and associated memories."),
+		mcp.WithDescription("Recover context from the last completed session. Call this first after a compaction or context reset to resume work. Returns the last session's goal, summary, and up to the given number of associated memories."),
 		mcp.WithString("limit", mcp.Description("Optional limit of memories to include (default '10')")),
 	)
 	ms.AddTool(contextTool, s.handleContext)
 
 	// 7. Tool: sv_mem_compact
 	compactTool := mcp.NewTool("sv_mem_compact",
-		mcp.WithDescription("Trigger automatic memory compaction for the project. Consolidates historical topic key revisions and duplicates into clean, high-quality summary records to keep search fast and token usage minimal."),
+		mcp.WithDescription("Trigger automatic memory compaction for the project. Consolidates historical topic key revisions and duplicates into clean, high-quality summary records to keep search fast and token usage minimal. Call periodically or after many topic-key upserts."),
 	)
 	ms.AddTool(compactTool, s.handleCompact)
 
@@ -543,7 +543,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 20. Tool: sv_graph_sync
 	graphSyncTool := mcp.NewTool("sv_graph_sync",
-		mcp.WithDescription("Trigger a re-scan of code folder to rebuild graph"),
+		mcp.WithDescription("Incrementally re-scan the codebase and rebuild the dependency graph. Call after adding major new files, creating new packages, or modifying package structures and imports. Communities and centrality are computed lazily on demand."),
 	)
 	ms.AddTool(graphSyncTool, s.handleGraphSync)
 
@@ -560,7 +560,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 22. Tool: sv_graph_explain
 	graphExplainTool := mcp.NewTool("sv_graph_explain",
-		mcp.WithDescription("Explain a node's structural role, community, centrality metrics, neighbors, and suggest questions."),
+		mcp.WithDescription("Explain a node's structural role, community, centrality metrics, neighbors, and suggested questions. Use before refactoring, deleting, or restructuring a file/module to understand its impact — richer than sv_graph_query for a single node."),
 		mcp.WithString("node", mcp.Required(), mcp.Description("The node ID (file path, package, class, or function name) to explain")),
 	)
 	ms.AddTool(graphExplainTool, s.handleGraphExplain)
