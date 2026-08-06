@@ -285,6 +285,9 @@ func TestSearchMemoryHandler(t *testing.T) {
 	if !strings.Contains(textResult1, "BUGFIX") || !strings.Contains(textResult1, "ARCHITECTURE") || !strings.Contains(textResult1, "STANDARD") {
 		t.Errorf("expected search results to find matching entries, got: %s", textResult1)
 	}
+	if !strings.Contains(textResult1, "Top result (expanded)") || !strings.Contains(textResult1, "Reason for this observation") {
+		t.Errorf("expected expanded top result with rationale, got: %s", textResult1)
+	}
 
 	// 2. Search with Category filter
 	reqSearch2 := mcpgo.CallToolRequest{}

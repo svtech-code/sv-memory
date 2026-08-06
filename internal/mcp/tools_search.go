@@ -79,6 +79,24 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 		fmt.Fprintf(&sb, "| %d | %s | %s | %s | %s | %s |\n",
 			i+1, r.ID, strings.ToUpper(r.Category), escapeTableCell(r.What), escapeTableCell(topic), r.CreatedAt.Format("2006-01-02"))
 	}
+
+	// Expand the top-1 hit inline so the agent often skips the follow-up
+	// sv_mem_get round-trip. Only for fresh searches (offset 0) with a query.
+	if offset == 0 && len(results) > 0 {
+		if top, gErr := memory.GetMemory(s.pool.Reader, s.cfg.ProjectID, results[0].ID); gErr == nil && top != nil {
+			sb.WriteString("\n### Top result (expanded):\n")
+			fmt.Fprintf(&sb, "- [%s] **%s** (ID: %s)\n", strings.ToUpper(top.Category), top.What, top.ID)
+			if top.Why != "" {
+				fmt.Fprintf(&sb, "  *Why:* %s\n", truncateField(top.Why, searchExpandChars))
+			}
+			if top.Learned != "" {
+				fmt.Fprintf(&sb, "  *Learned:* %s\n", truncateField(top.Learned, searchExpandChars))
+			}
+			if top.WherePath != "" {
+				fmt.Fprintf(&sb, "  *Path:* `%s`\n", top.WherePath)
+			}
+		}
+	}
 	// Token estimate for the response
 	responseText := sb.String()
 	estTokens := len(responseText) / 4

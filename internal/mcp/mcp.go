@@ -312,6 +312,10 @@ const timelineWhyChars = 200
 // hint. The search is best-effort; exceeding this budget just omits the hint.
 const similarCheckTimeout = 200 * time.Millisecond
 
+// searchExpandChars caps the why/learned fields shown inline for the top
+// search result, keeping the expanded section token-efficient.
+const searchExpandChars = 300
+
 // truncateField shortens a string to maxChars and appends a truncation
 // notice when the original length exceeds the limit.
 func truncateField(s string, maxChars int) string {
