@@ -69,23 +69,15 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 	// the essentials. Agent drills down with sv_mem_get for full content.
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Found %d relevant project memories (use `sv_mem_get` for full content, `sv_mem_timeline` for context):\n\n", len(results))
-	sb.WriteString("| # | ID | Category | Title | Topic (rev) | Date | Score |\n")
-	sb.WriteString("|---|----|----------|-------|-------------|------|-------|\n")
+	sb.WriteString("| # | ID | Category | Title | Topic | Date |\n")
+	sb.WriteString("|---|----|----------|-------|-------|------|\n")
 	for i, r := range results {
-		title := r.What
-		if r.DuplicateCount > 0 {
-			title += fmt.Sprintf(" (dup: %d)", r.DuplicateCount)
-		}
 		topic := "-"
 		if r.TopicKey != "" {
-			topic = fmt.Sprintf("%s (rev %d)", r.TopicKey, r.RevisionCount)
+			topic = r.TopicKey
 		}
-		score := "-"
-		if r.Score != 0 {
-			score = fmt.Sprintf("%.2f", r.Score)
-		}
-		fmt.Fprintf(&sb, "| %d | %s | %s | %s | %s | %s | %s |\n",
-			i+1, r.ID, strings.ToUpper(r.Category), escapeTableCell(title), escapeTableCell(topic), r.CreatedAt.Format("2006-01-02"), score)
+		fmt.Fprintf(&sb, "| %d | %s | %s | %s | %s | %s |\n",
+			i+1, r.ID, strings.ToUpper(r.Category), escapeTableCell(r.What), escapeTableCell(topic), r.CreatedAt.Format("2006-01-02"))
 	}
 	// Token estimate for the response
 	responseText := sb.String()
