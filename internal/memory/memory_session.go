@@ -194,25 +194,51 @@ func GetAutoBootBundle(db *sql.DB, projectID string) (string, error) {
 		sb.WriteString("\n\n")
 	}
 
-	rows, err := db.Query(`
-	SELECT id, category, what, why, learned, created_at
-	FROM memories
-	WHERE project_id = ? AND category IN ('architecture', 'decision') AND deleted_at IS NULL
-	ORDER BY created_at DESC LIMIT 3`, projectID)
-	if err == nil {
-		defer rows.Close()
-		var archMems []string
-		for rows.Next() {
-			var id, cat, what, why, learned, createdAt string
-			if scanErr := rows.Scan(&id, &cat, &what, &why, &learned, &createdAt); scanErr == nil {
-				archMems = append(archMems, fmt.Sprintf("- **[%s] %s** (ID: %s)\n  *Why:* %s", strings.ToUpper(cat), what, id, why))
-			}
+	writeBundleSection(&sb, db, projectID, "Key Architectural Decisions", `
+		SELECT id, category, what, why
+		FROM memories
+		WHERE project_id = ? AND category IN ('architecture', 'decision') AND deleted_at IS NULL
+		ORDER BY created_at DESC LIMIT 3`, true)
+
+	writeBundleSection(&sb, db, projectID, "Standards & Conventions", `
+		SELECT id, category, what, why
+		FROM memories
+		WHERE project_id = ? AND category = 'standard' AND deleted_at IS NULL
+		ORDER BY created_at DESC LIMIT 2`, false)
+
+	writeBundleSection(&sb, db, projectID, "Recent Work & Known Issues", `
+		SELECT id, category, what, why
+		FROM memories
+		WHERE project_id = ? AND category IN ('bugfix', 'journal') AND deleted_at IS NULL
+		ORDER BY created_at DESC LIMIT 2`, false)
+
+	return strings.TrimSpace(sb.String()), nil
+}
+
+// writeBundleSection appends a titled, compact list of memories to the
+// Auto-Boot bundle. When withWhy is false only the title is shown to keep
+// the bundle token-efficient; the agent can drill down with sv_mem_get.
+func writeBundleSection(sb *strings.Builder, db *sql.DB, projectID, title, query string, withWhy bool) {
+	rows, err := db.Query(query, projectID)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id, cat, what, why string
+		if err := rows.Scan(&id, &cat, &what, &why); err != nil {
+			continue
 		}
-		if len(archMems) > 0 {
-			sb.WriteString("**Key Architectural Decisions:**\n")
-			sb.WriteString(strings.Join(archMems, "\n"))
-			sb.WriteString("\n\n")
+		if withWhy {
+			items = append(items, fmt.Sprintf("- **[%s] %s** (ID: %s)\n  *Why:* %s", strings.ToUpper(cat), what, id, why))
+		} else {
+			items = append(items, fmt.Sprintf("- **[%s] %s** (ID: %s)", strings.ToUpper(cat), what, id))
 		}
 	}
-	return strings.TrimSpace(sb.String()), nil
+	if len(items) > 0 {
+		sb.WriteString("**" + title + ":**\n")
+		sb.WriteString(strings.Join(items, "\n"))
+		sb.WriteString("\n\n")
+	}
 }

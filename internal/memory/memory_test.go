@@ -988,9 +988,11 @@ func TestAutoBootBundleFullSessionFlow(t *testing.T) {
 	}
 
 	mems := []*Memory{
-		{ID: "mem-flow-1", ProjectID: projectID, Category: "architecture", What: "Use SQLite WAL mode", Why: "Improve concurrency", WherePath: "internal/db/pool.go", Learned: "WAL avoids writer locks", SessionID: sess1.ID, CreatedAt: time.Now().Add(-3 * time.Hour)},
-		{ID: "mem-flow-2", ProjectID: projectID, Category: "architecture", What: "Adopt Bun as package manager", Why: "Faster installs", WherePath: ".github", Learned: "Bun is deterministic", SessionID: sess1.ID, CreatedAt: time.Now().Add(-2 * time.Hour)},
-		{ID: "mem-flow-3", ProjectID: projectID, Category: "decision", What: "Keep JSON over NDJSON", Why: "Backwards compatibility", Learned: "JSON stays for legacy commits", SessionID: sess1.ID, CreatedAt: time.Now().Add(-1 * time.Hour)},
+		{ID: "mem-flow-1", ProjectID: projectID, Category: "architecture", What: "Use SQLite WAL mode", Why: "Improve concurrency", WherePath: "internal/db/pool.go", Learned: "WAL avoids writer locks", SessionID: sess1.ID, CreatedAt: time.Now().Add(-4 * time.Hour)},
+		{ID: "mem-flow-2", ProjectID: projectID, Category: "architecture", What: "Adopt Bun as package manager", Why: "Faster installs", WherePath: ".github", Learned: "Bun is deterministic", SessionID: sess1.ID, CreatedAt: time.Now().Add(-3 * time.Hour)},
+		{ID: "mem-flow-3", ProjectID: projectID, Category: "decision", What: "Keep JSON over NDJSON", Why: "Backwards compatibility", Learned: "JSON stays for legacy commits", SessionID: sess1.ID, CreatedAt: time.Now().Add(-2 * time.Hour)},
+		{ID: "mem-flow-4", ProjectID: projectID, Category: "standard", What: "Use Conventional Commits in Spanish", Why: "Team convention", SessionID: sess1.ID, CreatedAt: time.Now().Add(-90 * time.Minute)},
+		{ID: "mem-flow-5", ProjectID: projectID, Category: "bugfix", What: "Fix empty FTS5 query crash", Why: "Sanitize empty tokens", SessionID: sess1.ID, CreatedAt: time.Now().Add(-30 * time.Minute)},
 	}
 	for _, m := range mems {
 		if _, saveErr := SaveMemory(database, m); saveErr != nil {
@@ -1020,11 +1022,15 @@ func TestAutoBootBundleFullSessionFlow(t *testing.T) {
 		"**Session ID:** " + sess1.ID:     "session 1 ID",
 		"**Goal:** Refactor database module": "session 1 goal",
 		"**Summary:** Completed refactor session": "session 1 summary",
-		"**Memories saved (3):**":         "session 1 memory list",
+		"**Memories saved (5):**":         "session 1 memory list",
 		"**Key Architectural Decisions:**": "architectural decisions section",
 		"Use SQLite WAL mode":             "architecture memory title",
 		"Keep JSON over NDJSON":           "decision memory title",
 		"*Why:* Improve concurrency":      "architecture why rationale",
+		"**Standards & Conventions:**":    "standards section",
+		"Use Conventional Commits in Spanish": "standard memory title",
+		"**Recent Work & Known Issues:**": "recent work section",
+		"Fix empty FTS5 query crash":      "bugfix memory title",
 	}
 	for want, desc := range assertions {
 		if !strings.Contains(bundle, want) {
