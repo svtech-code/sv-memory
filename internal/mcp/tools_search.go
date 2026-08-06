@@ -95,6 +95,9 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 			if top.WherePath != "" {
 				fmt.Fprintf(&sb, "  *Path:* `%s`\n", top.WherePath)
 			}
+			if top.TopicKey != "" {
+				fmt.Fprintf(&sb, "  *Topic:* `%s`\n", top.TopicKey)
+			}
 		}
 	}
 	// Token estimate for the response

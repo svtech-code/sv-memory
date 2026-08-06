@@ -266,6 +266,7 @@ func TestSearchMemoryHandler(t *testing.T) {
 			"what":     fmt.Sprintf("Observation title for %s number %d", cat, i),
 			"why":      "Reason for this observation",
 			"learned":  "Key learning points",
+			"topic_key": fmt.Sprintf("standard/observation-%d", i),
 		}
 		_, _ = saveTool.Handler(ctx, req)
 	}
@@ -287,6 +288,9 @@ func TestSearchMemoryHandler(t *testing.T) {
 	}
 	if !strings.Contains(textResult1, "Top result (expanded)") || !strings.Contains(textResult1, "Reason for this observation") {
 		t.Errorf("expected expanded top result with rationale, got: %s", textResult1)
+	}
+	if !strings.Contains(textResult1, "*Topic:*") || !strings.Contains(textResult1, "standard/observation") {
+		t.Errorf("expected expanded top result to include topic_key, got: %s", textResult1)
 	}
 
 	// 2. Search with Category filter
