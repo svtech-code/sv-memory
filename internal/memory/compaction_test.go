@@ -3,6 +3,7 @@ package memory
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/svtech-code/sv-memory/internal/db"
@@ -123,5 +124,18 @@ func TestCompactMemoriesPreservesSessionID(t *testing.T) {
 	}
 	if !sessID.Valid || sessID.String != "sess-abc" {
 		t.Errorf("expected synthesis session_id sess-abc, got %v", sessID)
+	}
+
+	// The Auto-Boot bundle must also surface the synthesized decision so a
+	// new session bootstraps from it, not just sv_mem_context lookups.
+	bundle, err := GetAutoBootBundle(database, projectID)
+	if err != nil {
+		t.Fatalf("failed GetAutoBootBundle after compaction: %v", err)
+	}
+	if !strings.Contains(bundle, "**Key Architectural Decisions:**") {
+		t.Errorf("expected bundle to include architectural decisions section after compaction, got:\n%s", bundle)
+	}
+	if !strings.Contains(bundle, "Use Bun exclusively") {
+		t.Errorf("expected bundle to surface synthesized decision after compaction, got:\n%s", bundle)
 	}
 }
