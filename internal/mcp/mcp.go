@@ -308,6 +308,10 @@ const maxFieldChars = 1500
 // sv_mem_get round-trip.
 const timelineWhyChars = 200
 
+// similarCheckTimeout bounds how long a save waits for the similar-memories
+// hint. The search is best-effort; exceeding this budget just omits the hint.
+const similarCheckTimeout = 200 * time.Millisecond
+
 // truncateField shortens a string to maxChars and appends a truncation
 // notice when the original length exceeds the limit.
 func truncateField(s string, maxChars int) string {

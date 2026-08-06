@@ -88,19 +88,49 @@ func (s *Server) handleSave(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 
 	response := fmt.Sprintf("Successfully %s memory (ID: %s) and synced to Git workspace (.sv-memory/memories.json)", action, saved.ID)
 
-	// Conflict surfacing: check for similar titles after save
-	candidates, err := memory.FindSimilarMemories(s.pool.Reader, s.cfg.ProjectID, what, 5, 0.85)
-	if err == nil && len(candidates) > 0 {
-		response += "\n\n**Similar memories detected (consider reviewing with sv_mem_judge if these are conflicts):**\n"
-		for _, c := range candidates {
-			if c.ID != saved.ID {
-				response += fmt.Sprintf("- [%s] **%s** (ID: %s, similarity: %.0f%%)\n",
-					strings.ToUpper(c.Category), c.What, c.ID, c.Similarity*100)
-			}
-		}
+	// Conflict surfacing: check for similar titles after save. Duplicate
+	// suppressions already know the similar memory, so the extra FTS5 pass is
+	// skipped there. The check is time-boxed so a slow search never blocks the
+	// save response.
+	if saved.DuplicateCount == 0 && saved.RevisionCount <= 1 {
+		response += s.similarMemoriesHint(what, saved.ID)
 	}
 
 	return mcp.NewToolResultText(response), nil
+}
+
+// similarMemoriesHint runs FindSimilarMemories in a goroutine and waits up to
+// similarCheckTimeout for the result. If the search exceeds the budget the
+// hint is omitted rather than blocking the save response.
+func (s *Server) similarMemoriesHint(title, savedID string) string {
+	type result struct {
+		candidates []*memory.MemoryCandidate
+		err        error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		candidates, err := memory.FindSimilarMemories(s.pool.Reader, s.cfg.ProjectID, title, 5, 0.85)
+		ch <- result{candidates, err}
+	}()
+
+	select {
+	case r := <-ch:
+		if r.err != nil || len(r.candidates) == 0 {
+			return ""
+		}
+		var sb strings.Builder
+		sb.WriteString("\n\n**Similar memories detected (consider reviewing with sv_mem_judge if these are conflicts):**\n")
+		for _, c := range r.candidates {
+			if c.ID != savedID {
+				fmt.Fprintf(&sb, "- [%s] **%s** (ID: %s, similarity: %.0f%%)\n",
+					strings.ToUpper(c.Category), c.What, c.ID, c.Similarity*100)
+			}
+		}
+		return sb.String()
+	case <-time.After(similarCheckTimeout):
+		debugLog("mem_save similar-memories check timed out, omitting hint")
+		return ""
+	}
 }
 
 func (s *Server) handleSuggestTopicKey(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
