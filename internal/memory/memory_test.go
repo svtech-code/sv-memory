@@ -601,7 +601,8 @@ func TestFindSimilarMemories(t *testing.T) {
 		},
 	}
 	for _, m := range mems {
-		if _, err := SaveMemory(database, m); err != nil {
+		_, err = SaveMemory(database, m)
+		if err != nil {
 			t.Fatalf("failed saving memory: %v", err)
 		}
 	}
@@ -978,7 +979,8 @@ func TestAutoBootBundleFullSessionFlow(t *testing.T) {
 	defer database.Close()
 
 	projectID := "proj-autoboot-flow"
-	if err := db.RegisterProject(database, projectID, "AutoBoot Flow Proj", tempDir); err != nil {
+	err = db.RegisterProject(database, projectID, "AutoBoot Flow Proj", tempDir)
+	if err != nil {
 		t.Fatalf("failed to register project: %v", err)
 	}
 
@@ -1009,15 +1011,18 @@ func TestAutoBootBundleFullSessionFlow(t *testing.T) {
 		}
 	}
 
-	if err := SaveSessionSummary(database, sess1.ID, "Refactor database module", "Discovered WAL + Bun", "Wrote session flow", "Add edge case tests", "internal/memory/memory_session.go"); err != nil {
+	err = SaveSessionSummary(database, sess1.ID, "Refactor database module", "Discovered WAL + Bun", "Wrote session flow", "Add edge case tests", "internal/memory/memory_session.go")
+	if err != nil {
 		t.Fatalf("failed to save session summary: %v", err)
 	}
-	if err := EndSession(database, sess1.ID, "Completed refactor session"); err != nil {
+	err = EndSession(database, sess1.ID, "Completed refactor session")
+	if err != nil {
 		t.Fatalf("failed to end session 1: %v", err)
 	}
 
 	// Session 2: starting a new session should surface session 1 context.
-	if _, err := StartSession(database, projectID, "New feature task", tempDir); err != nil {
+	_, err = StartSession(database, projectID, "New feature task", tempDir)
+	if err != nil {
 		t.Fatalf("failed to start session 2: %v", err)
 	}
 
@@ -1027,20 +1032,20 @@ func TestAutoBootBundleFullSessionFlow(t *testing.T) {
 	}
 
 	assertions := map[string]string{
-		"## Previous Session Context":    "previous session section header",
-		"**Session ID:** " + sess1.ID:     "session 1 ID",
-		"**Goal:** Refactor database module": "session 1 goal",
+		"## Previous Session Context":             "previous session section header",
+		"**Session ID:** " + sess1.ID:             "session 1 ID",
+		"**Goal:** Refactor database module":      "session 1 goal",
 		"**Summary:** Completed refactor session": "session 1 summary",
-		"**Memories saved (3):**":         "session 1 memory list",
-		"**Key Architectural Decisions:**": "architectural decisions section",
-		"Adopt Bun as package manager":    "architecture memory title",
-		"Use typed constants":             "decision memory title",
-		"*Why:* Faster installs":          "architecture why rationale",
-		"**Standards & Conventions:**":    "standards section",
-		"Use Conventional Commits in Spanish": "standard memory title",
-		"**Recent Work & Known Issues:**": "recent work section",
-		"Fix index out of range":          "bugfix memory title",
-		"Use SQLite WAL mode":             "session architecture memory listed in session context",
+		"**Memories saved (3):**":                 "session 1 memory list",
+		"**Key Architectural Decisions:**":        "architectural decisions section",
+		"Adopt Bun as package manager":            "architecture memory title",
+		"Use typed constants":                     "decision memory title",
+		"*Why:* Faster installs":                  "architecture why rationale",
+		"**Standards & Conventions:**":            "standards section",
+		"Use Conventional Commits in Spanish":     "standard memory title",
+		"**Recent Work & Known Issues:**":         "recent work section",
+		"Fix index out of range":                  "bugfix memory title",
+		"Use SQLite WAL mode":                     "session architecture memory listed in session context",
 	}
 	for want, desc := range assertions {
 		if !strings.Contains(bundle, want) {
@@ -1064,7 +1069,8 @@ func TestGetSessionContextEdgeCases(t *testing.T) {
 		defer database.Close()
 
 		projectID := "proj-edge-new"
-		if err := db.RegisterProject(database, projectID, "Edge New Proj", t.TempDir()); err != nil {
+		err = db.RegisterProject(database, projectID, "Edge New Proj", t.TempDir())
+		if err != nil {
 			t.Fatalf("failed to register project: %v", err)
 		}
 
@@ -1086,18 +1092,21 @@ func TestGetSessionContextEdgeCases(t *testing.T) {
 
 		projectID := "proj-edge-active"
 		tempDir := t.TempDir()
-		if err := db.RegisterProject(database, projectID, "Edge Active Proj", tempDir); err != nil {
+		err = db.RegisterProject(database, projectID, "Edge Active Proj", tempDir)
+		if err != nil {
 			t.Fatalf("failed to register project: %v", err)
 		}
 
 		// An unclosed session must not be surfaced as previous context.
-		if _, err := StartSession(database, projectID, "Unfinished work", tempDir); err != nil {
+		_, err = StartSession(database, projectID, "Unfinished work", tempDir)
+		if err != nil {
 			t.Fatalf("failed to start session: %v", err)
 		}
-		if _, err := SaveMemory(database, &Memory{
+		_, err = SaveMemory(database, &Memory{
 			ProjectID: projectID, Category: "journal", What: "Ongoing notes",
 			CreatedAt: time.Now(),
-		}); err != nil {
+		})
+		if err != nil {
 			t.Fatalf("failed to save memory: %v", err)
 		}
 
@@ -1122,7 +1131,8 @@ func TestGetSessionContextEdgeCases(t *testing.T) {
 
 		projectID := "proj-edge-nodecisions"
 		tempDir := t.TempDir()
-		if err := db.RegisterProject(database, projectID, "Edge No Decisions Proj", tempDir); err != nil {
+		err = db.RegisterProject(database, projectID, "Edge No Decisions Proj", tempDir)
+		if err != nil {
 			t.Fatalf("failed to register project: %v", err)
 		}
 
@@ -1130,13 +1140,15 @@ func TestGetSessionContextEdgeCases(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to start session: %v", err)
 		}
-		if _, err := SaveMemory(database, &Memory{
+		_, err = SaveMemory(database, &Memory{
 			ProjectID: projectID, Category: "journal", What: "Work log entry",
 			SessionID: sess.ID, CreatedAt: time.Now(),
-		}); err != nil {
+		})
+		if err != nil {
 			t.Fatalf("failed to save memory: %v", err)
 		}
-		if err := EndSession(database, sess.ID, "Finished logging"); err != nil {
+		err = EndSession(database, sess.ID, "Finished logging")
+		if err != nil {
 			t.Fatalf("failed to end session: %v", err)
 		}
 
@@ -1357,16 +1369,19 @@ func TestSyncToGitIncremental(t *testing.T) {
 	defer database.Close()
 
 	projectID := "proj-incremental"
-	if err := db.RegisterProject(database, projectID, "Incremental Proj", tempDir); err != nil {
+	err = db.RegisterProject(database, projectID, "Incremental Proj", tempDir)
+	if err != nil {
 		t.Fatalf("failed to register project: %v", err)
 	}
 
 	// Baseline: one memory, first (full) sync.
 	m1 := &Memory{ID: "inc-1", ProjectID: projectID, Category: "standard", What: "Baseline rule", Why: "Stable", TopicKey: "standard/baseline", CreatedAt: time.Now().Add(-time.Hour)}
-	if _, err := SaveMemory(database, m1); err != nil {
+	_, err = SaveMemory(database, m1)
+	if err != nil {
 		t.Fatalf("failed to save baseline: %v", err)
 	}
-	if err := SyncToGit(database, projectID, tempDir); err != nil {
+	err = SyncToGit(database, projectID, tempDir)
+	if err != nil {
 		t.Fatalf("failed baseline SyncToGit: %v", err)
 	}
 
@@ -1385,13 +1400,15 @@ func TestSyncToGitIncremental(t *testing.T) {
 
 	// Update the same memory via its topic_key: memory count is unchanged, so
 	// the incremental path runs and only the changed chunk is rewritten.
-	if _, err := SaveMemory(database, &Memory{
+	_, err = SaveMemory(database, &Memory{
 		ProjectID: projectID, Category: "standard", What: "Baseline rule v2", Why: "Evolving",
 		TopicKey: "standard/baseline", CreatedAt: time.Now().Add(-time.Hour),
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("failed to update baseline via topic_key: %v", err)
 	}
-	if err := SyncToGit(database, projectID, tempDir); err != nil {
+	err = SyncToGit(database, projectID, tempDir)
+	if err != nil {
 		t.Fatalf("failed incremental SyncToGit: %v", err)
 	}
 
@@ -1417,7 +1434,8 @@ func TestSyncToGitIncremental(t *testing.T) {
 
 	// memories.json is only rewritten periodically; a forced flush guarantees
 	// it reflects the full updated set.
-	if err := SyncToGitForceFull(database, projectID, tempDir); err != nil {
+	err = SyncToGitForceFull(database, projectID, tempDir)
+	if err != nil {
 		t.Fatalf("failed SyncToGitForceFull: %v", err)
 	}
 	syncData, err := os.ReadFile(filepath.Join(tempDir, ".sv-memory", "memories.json"))
@@ -1425,7 +1443,8 @@ func TestSyncToGitIncremental(t *testing.T) {
 		t.Fatalf("failed reading memories.json: %v", err)
 	}
 	var all []*Memory
-	if err := json.Unmarshal(syncData, &all); err != nil {
+	err = json.Unmarshal(syncData, &all)
+	if err != nil {
 		t.Fatalf("failed to unmarshal memories.json: %v", err)
 	}
 	if len(all) != 1 {
@@ -1446,25 +1465,30 @@ func TestSyncToGitRemovesOrphanChunks(t *testing.T) {
 	defer database.Close()
 
 	projectID := "proj-orphans"
-	if err := db.RegisterProject(database, projectID, "Orphans Proj", tempDir); err != nil {
+	err = db.RegisterProject(database, projectID, "Orphans Proj", tempDir)
+	if err != nil {
 		t.Fatalf("failed to register project: %v", err)
 	}
 
 	for _, id := range []string{"or-1", "or-2"} {
-		if _, err := SaveMemory(database, &Memory{ID: id, ProjectID: projectID, Category: "standard", What: "Rule " + id, CreatedAt: time.Now()}); err != nil {
+		_, err = SaveMemory(database, &Memory{ID: id, ProjectID: projectID, Category: "standard", What: "Rule " + id, CreatedAt: time.Now()})
+		if err != nil {
 			t.Fatalf("failed to save %s: %v", id, err)
 		}
 	}
-	if err := SyncToGit(database, projectID, tempDir); err != nil {
+	err = SyncToGit(database, projectID, tempDir)
+	if err != nil {
 		t.Fatalf("failed baseline SyncToGit: %v", err)
 	}
 
 	// Soft-delete one memory: its chunk must be removed on the next sync even
 	// though the underlying row count (with deleted_at) is unchanged.
-	if err := DeleteMemory(database, projectID, "or-1", false); err != nil {
+	err = DeleteMemory(database, projectID, "or-1", false)
+	if err != nil {
 		t.Fatalf("failed to soft-delete: %v", err)
 	}
-	if err := SyncToGit(database, projectID, tempDir); err != nil {
+	err = SyncToGit(database, projectID, tempDir)
+	if err != nil {
 		t.Fatalf("failed SyncToGit after delete: %v", err)
 	}
 
@@ -1491,17 +1515,20 @@ func TestSyncToGitPeriodicJSON(t *testing.T) {
 	defer database.Close()
 
 	projectID := "proj-periodic"
-	if err := db.RegisterProject(database, projectID, "Periodic Proj", tempDir); err != nil {
+	err = db.RegisterProject(database, projectID, "Periodic Proj", tempDir)
+	if err != nil {
 		t.Fatalf("failed to register project: %v", err)
 	}
 
 	syncFile := filepath.Join(tempDir, ".sv-memory", "memories.json")
 
 	// First sync writes memories.json (baseline).
-	if _, err := SaveMemory(database, &Memory{ID: "per-1", ProjectID: projectID, Category: "standard", What: "R1", CreatedAt: time.Now()}); err != nil {
+	_, err = SaveMemory(database, &Memory{ID: "per-1", ProjectID: projectID, Category: "standard", What: "R1", CreatedAt: time.Now()})
+	if err != nil {
 		t.Fatalf("failed to save: %v", err)
 	}
-	if err := SyncToGit(database, projectID, tempDir); err != nil {
+	err = SyncToGit(database, projectID, tempDir)
+	if err != nil {
 		t.Fatalf("failed baseline SyncToGit: %v", err)
 	}
 	baseMod, err := os.Stat(syncFile)
@@ -1513,10 +1540,12 @@ func TestSyncToGitPeriodicJSON(t *testing.T) {
 	// jsonSyncInterval boundary (10). Each sync adds a new memory so the
 	// chunk writes happen but the monolithic file stays untouched.
 	for i := 2; i <= 8; i++ {
-		if _, err := SaveMemory(database, &Memory{ID: fmt.Sprintf("per-%d", i), ProjectID: projectID, Category: "standard", What: "R" + fmt.Sprint(i), CreatedAt: time.Now()}); err != nil {
+		_, err = SaveMemory(database, &Memory{ID: fmt.Sprintf("per-%d", i), ProjectID: projectID, Category: "standard", What: "R" + fmt.Sprint(i), CreatedAt: time.Now()})
+		if err != nil {
 			t.Fatalf("failed to save per-%d: %v", i, err)
 		}
-		if err := SyncToGit(database, projectID, tempDir); err != nil {
+		err = SyncToGit(database, projectID, tempDir)
+		if err != nil {
 			t.Fatalf("failed SyncToGit at %d: %v", i, err)
 		}
 	}
@@ -1529,7 +1558,8 @@ func TestSyncToGitPeriodicJSON(t *testing.T) {
 	}
 
 	// A forced flush always rewrites memories.json.
-	if err := SyncToGitForceFull(database, projectID, tempDir); err != nil {
+	err = SyncToGitForceFull(database, projectID, tempDir)
+	if err != nil {
 		t.Fatalf("failed SyncToGitForceFull: %v", err)
 	}
 	forcedMod, err := os.Stat(syncFile)
@@ -1546,7 +1576,8 @@ func TestSyncToGitPeriodicJSON(t *testing.T) {
 		t.Fatalf("failed reading memories.json: %v", err)
 	}
 	var all []*Memory
-	if err := json.Unmarshal(data, &all); err != nil {
+	err = json.Unmarshal(data, &all)
+	if err != nil {
 		t.Fatalf("failed to unmarshal memories.json: %v", err)
 	}
 	if len(all) != 8 {

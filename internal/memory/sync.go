@@ -24,8 +24,8 @@ var (
 const jsonSyncInterval = 10
 
 type syncCacheEntry struct {
-	memoryCount  int
-	lastSyncTime time.Time
+	memoryCount   int
+	lastSyncTime  time.Time
 	jsonSyncCount int
 }
 

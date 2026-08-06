@@ -262,10 +262,10 @@ func TestSearchMemoryHandler(t *testing.T) {
 		req := mcpgo.CallToolRequest{}
 		req.Params.Name = "sv_mem_save"
 		req.Params.Arguments = map[string]any{
-			"category": cat,
-			"what":     fmt.Sprintf("Observation title for %s number %d", cat, i),
-			"why":      "Reason for this observation",
-			"learned":  "Key learning points",
+			"category":  cat,
+			"what":      fmt.Sprintf("Observation title for %s number %d", cat, i),
+			"why":       "Reason for this observation",
+			"learned":   "Key learning points",
 			"topic_key": fmt.Sprintf("standard/observation-%d", i),
 		}
 		_, _ = saveTool.Handler(ctx, req)
