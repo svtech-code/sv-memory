@@ -68,7 +68,7 @@ func SyncToGitChunked(db *sql.DB, projectID string, projPath string) error {
 	}
 
 	for _, mem := range memories {
-		data, err := json.MarshalIndent(mem, "", "  ")
+		data, err := json.Marshal(mem)
 		if err != nil {
 			return fmt.Errorf("failed to marshal chunk %s: %w", mem.ID, err)
 		}
@@ -193,7 +193,7 @@ func SyncToGit(db *sql.DB, projectID string, projPath string) error {
 		}
 	}
 	for _, mem := range memories {
-		data, marshalErr := json.MarshalIndent(mem, "", "  ")
+		data, marshalErr := json.Marshal(mem)
 		if marshalErr != nil {
 			return fmt.Errorf("failed to marshal chunk %s: %w", mem.ID, marshalErr)
 		}
@@ -212,7 +212,7 @@ func SyncToGit(db *sql.DB, projectID string, projPath string) error {
 		os.Remove(filepath.Join(chunkDir, id+".json"))
 	}
 
-	data, err := json.MarshalIndent(memories, "", "  ")
+	data, err := json.Marshal(memories)
 	if err != nil {
 		return fmt.Errorf("failed to marshal memories JSON: %w", err)
 	}
