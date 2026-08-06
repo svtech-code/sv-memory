@@ -232,6 +232,10 @@ func TestReadAndCompactMemoryHandlers(t *testing.T) {
 	if err != nil || !strings.Contains(textContent(timeline.Content[0]), "Timeline around") {
 		t.Fatalf("timeline response = %v, err=%v", timeline, err)
 	}
+	timelineText := textContent(timeline.Content[0])
+	if !strings.Contains(timelineText, "Central observation") || !strings.Contains(timelineText, first.What) {
+		t.Errorf("expected central observation with rationale in timeline, got: %s", timelineText)
+	}
 
 	compactTool := server.GetTool("sv_mem_compact")
 	compactReq := mcpgo.CallToolRequest{}

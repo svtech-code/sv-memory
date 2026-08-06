@@ -303,6 +303,11 @@ func (s *Server) getOrLoadGraph() (*graph.InMemoryGraph, error) {
 // with a "[truncated N chars]" suffix to keep token consumption bounded.
 const maxFieldChars = 1500
 
+// timelineWhyChars caps the rationale shown for the central observation in
+// sv_mem_timeline, keeping the response lean while avoiding a full
+// sv_mem_get round-trip.
+const timelineWhyChars = 200
+
 // truncateField shortens a string to maxChars and appends a truncation
 // notice when the original length exceeds the limit.
 func truncateField(s string, maxChars int) string {

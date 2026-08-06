@@ -178,6 +178,18 @@ func (s *Server) handleTimeline(ctx context.Context, req mcp.CallToolRequest) (*
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "## Timeline around observation `%s`\n\n", obsID)
 
+	// Surface the central observation with a short rationale so the agent
+	// usually doesn't need a separate sv_mem_get call for context.
+	if central, cerr := memory.GetMemory(s.pool.Reader, s.cfg.ProjectID, obsID); cerr == nil && central != nil {
+		fmt.Fprintf(&sb, "### Central observation:\n")
+		fmt.Fprintf(&sb, "- [%s] **%s** (ID: %s, %s)\n",
+			strings.ToUpper(central.Category), central.What, central.ID, central.CreatedAt.Format("2006-01-02 15:04"))
+		if central.Why != "" {
+			fmt.Fprintf(&sb, "  *Why:* %s\n", truncateField(central.Why, timelineWhyChars))
+		}
+		sb.WriteString("\n")
+	}
+
 	if len(prev) > 0 {
 		sb.WriteString("### Before:\n")
 		for _, m := range prev {
