@@ -2,6 +2,7 @@ package memory
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1407,11 +1408,18 @@ func TestSyncToGitIncremental(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed reading inc-1 chunk: %v", err)
 	}
-	if strings.Contains(string(chunk1), "Baseline rule v2") && string(chunk1) == string(baseChunk) {
-		t.Errorf("expected chunk to be rewritten with new title, but content unchanged")
+	if !strings.Contains(string(chunk1), "Baseline rule v2") {
+		t.Errorf("expected chunk to be rewritten with new title, got: %s", chunk1)
+	}
+	if string(chunk1) == string(baseChunk) {
+		t.Errorf("expected chunk content to change after update")
 	}
 
-	// memories.json must always reflect the full set.
+	// memories.json is only rewritten periodically; a forced flush guarantees
+	// it reflects the full updated set.
+	if err := SyncToGitForceFull(database, projectID, tempDir); err != nil {
+		t.Fatalf("failed SyncToGitForceFull: %v", err)
+	}
 	syncData, err := os.ReadFile(filepath.Join(tempDir, ".sv-memory", "memories.json"))
 	if err != nil {
 		t.Fatalf("failed reading memories.json: %v", err)
@@ -1470,5 +1478,78 @@ func TestSyncToGitRemovesOrphanChunks(t *testing.T) {
 	}
 	if entries[0].Name() != "or-2.json" {
 		t.Errorf("expected only or-2.json to remain, got %s", entries[0].Name())
+	}
+}
+
+func TestSyncToGitPeriodicJSON(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_periodic.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-periodic"
+	if err := db.RegisterProject(database, projectID, "Periodic Proj", tempDir); err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	syncFile := filepath.Join(tempDir, ".sv-memory", "memories.json")
+
+	// First sync writes memories.json (baseline).
+	if _, err := SaveMemory(database, &Memory{ID: "per-1", ProjectID: projectID, Category: "standard", What: "R1", CreatedAt: time.Now()}); err != nil {
+		t.Fatalf("failed to save: %v", err)
+	}
+	if err := SyncToGit(database, projectID, tempDir); err != nil {
+		t.Fatalf("failed baseline SyncToGit: %v", err)
+	}
+	baseMod, err := os.Stat(syncFile)
+	if err != nil {
+		t.Fatalf("memories.json not written on first sync: %v", err)
+	}
+
+	// Subsequent incremental syncs must NOT rewrite memories.json until the
+	// jsonSyncInterval boundary (10). Each sync adds a new memory so the
+	// chunk writes happen but the monolithic file stays untouched.
+	for i := 2; i <= 8; i++ {
+		if _, err := SaveMemory(database, &Memory{ID: fmt.Sprintf("per-%d", i), ProjectID: projectID, Category: "standard", What: "R" + fmt.Sprint(i), CreatedAt: time.Now()}); err != nil {
+			t.Fatalf("failed to save per-%d: %v", i, err)
+		}
+		if err := SyncToGit(database, projectID, tempDir); err != nil {
+			t.Fatalf("failed SyncToGit at %d: %v", i, err)
+		}
+	}
+	afterMod, err := os.Stat(syncFile)
+	if err != nil {
+		t.Fatalf("memories.json missing after incremental syncs: %v", err)
+	}
+	if !afterMod.ModTime().Equal(baseMod.ModTime()) {
+		t.Errorf("memories.json was rewritten during incremental syncs before the interval boundary")
+	}
+
+	// A forced flush always rewrites memories.json.
+	if err := SyncToGitForceFull(database, projectID, tempDir); err != nil {
+		t.Fatalf("failed SyncToGitForceFull: %v", err)
+	}
+	forcedMod, err := os.Stat(syncFile)
+	if err != nil {
+		t.Fatalf("memories.json missing after forced flush: %v", err)
+	}
+	if forcedMod.ModTime().Equal(afterMod.ModTime()) {
+		t.Errorf("expected SyncToGitForceFull to rewrite memories.json")
+	}
+
+	// The forced full write must contain the full set.
+	data, err := os.ReadFile(syncFile)
+	if err != nil {
+		t.Fatalf("failed reading memories.json: %v", err)
+	}
+	var all []*Memory
+	if err := json.Unmarshal(data, &all); err != nil {
+		t.Fatalf("failed to unmarshal memories.json: %v", err)
+	}
+	if len(all) != 8 {
+		t.Errorf("expected 8 memories in forced memories.json, got %d", len(all))
 	}
 }

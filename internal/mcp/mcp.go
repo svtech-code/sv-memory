@@ -227,7 +227,8 @@ func (s *Server) scheduleSync() {
 }
 
 // flushPendingSync stops the debounce timer and, if a write is pending, flushes
-// the Git sync synchronously. Invoked during graceful shutdown.
+// the Git sync synchronously. Invoked during graceful shutdown. It forces the
+// monolithic memories.json rewrite so the fallback file is always up to date.
 func (s *Server) flushPendingSync() {
 	s.debounceMu.Lock()
 	defer s.debounceMu.Unlock()
@@ -235,7 +236,7 @@ func (s *Server) flushPendingSync() {
 		s.syncTimer.Stop()
 		if viper.GetBool("git_sync_enabled") {
 			fmt.Fprintf(os.Stderr, "[sv-memory] Flushing pending Git sync...\n")
-			if err := memory.SyncToGit(s.pool.Writer, s.cfg.ProjectID, s.cfg.ProjPath); err != nil {
+			if err := memory.SyncToGitForceFull(s.pool.Writer, s.cfg.ProjectID, s.cfg.ProjPath); err != nil {
 				fmt.Fprintf(os.Stderr, "[sv-memory] Final syncToGit failed: %v\n", err)
 			}
 		}

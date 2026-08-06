@@ -16,9 +16,17 @@ var (
 	lastWriteInfo = map[string]syncCacheEntry{}
 )
 
+// jsonSyncInterval controls how often the legacy monolithic memories.json is
+// rewritten during incremental syncs. Chunks are the primary Git format; the
+// monolithic file is only a fallback for setups without a chunks directory,
+// so it is rewritten on the first sync, every jsonSyncInterval syncs, and on
+// graceful flush (SyncToGitForceFull).
+const jsonSyncInterval = 10
+
 type syncCacheEntry struct {
 	memoryCount  int
 	lastSyncTime time.Time
+	jsonSyncCount int
 }
 
 func chunkedSyncDir(projPath string) string {
@@ -170,6 +178,18 @@ func SyncFromGitChunked(db *sql.DB, projectID string, projPath string) error {
 }
 
 func SyncToGit(db *sql.DB, projectID string, projPath string) error {
+	return syncToGit(db, projectID, projPath, false)
+}
+
+// SyncToGitForceFull performs the same incremental chunk sync as SyncToGit but
+// also rewrites the legacy monolithic memories.json regardless of the periodic
+// interval. It is used on graceful shutdown so the fallback file is always
+// up to date.
+func SyncToGitForceFull(db *sql.DB, projectID string, projPath string) error {
+	return syncToGit(db, projectID, projPath, true)
+}
+
+func syncToGit(db *sql.DB, projectID string, projPath string, forceJSON bool) error {
 	syncDir := filepath.Join(projPath, ".sv-memory")
 	syncFile := filepath.Join(syncDir, "memories.json")
 	chunkDir := chunkedSyncDir(projPath)
@@ -243,23 +263,32 @@ func SyncToGit(db *sql.DB, projectID string, projPath string) error {
 		}
 	}
 
-	data, err := json.Marshal(full)
-	if err != nil {
-		return fmt.Errorf("failed to marshal memories JSON: %w", err)
-	}
-	tmpFile := syncFile + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temp memories file: %w", err)
-	}
-	if err := os.Rename(tmpFile, syncFile); err != nil {
-		os.Remove(tmpFile)
-		return fmt.Errorf("failed to rename temp file: %w", err)
+	// Rewrite the monolithic memories.json on the first sync, on a forced
+	// flush, or every jsonSyncInterval syncs. Chunks are always current, so
+	// the monolithic file only needs periodic consistency.
+	nextJSON := info.jsonSyncCount + 1
+	writeJSON := forceJSON || info.lastSyncTime.IsZero() || nextJSON >= jsonSyncInterval
+	if writeJSON {
+		data, jErr := json.Marshal(full)
+		if jErr != nil {
+			return fmt.Errorf("failed to marshal memories JSON: %w", jErr)
+		}
+		tmpFile := syncFile + ".tmp"
+		if wErr := os.WriteFile(tmpFile, data, 0644); wErr != nil {
+			return fmt.Errorf("failed to write temp memories file: %w", wErr)
+		}
+		if rErr := os.Rename(tmpFile, syncFile); rErr != nil {
+			os.Remove(tmpFile)
+			return fmt.Errorf("failed to rename temp file: %w", rErr)
+		}
+		nextJSON = 0
 	}
 
 	syncCacheMu.Lock()
 	lastWriteInfo[projectID] = syncCacheEntry{
-		memoryCount:  len(full),
-		lastSyncTime: time.Now(),
+		memoryCount:   len(full),
+		lastSyncTime:  time.Now(),
+		jsonSyncCount: nextJSON,
 	}
 	syncCacheMu.Unlock()
 
