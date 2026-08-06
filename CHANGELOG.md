@@ -5,6 +5,60 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+## [v0.5.0] - 2026-08-05
+
+### Added
+
+- Auto-Boot Context Bundle expanded: now includes standards, conventions,
+  and recent bugfix/journal memories alongside key architectural decisions.
+- OpenCode skill expanded from 40 to 93 lines: session lifecycle, progressive
+  disclosure, topic keys, capture guidelines table, graph discovery tools,
+  and periodic maintenance.
+- Top-1 search result expanded inline with why/learned/path on `sv_mem_search`.
+- `sv_mem_timeline` surfaces the central observation rationale (truncated).
+- E2E tests for the full Auto-Boot two-session workflow, edge cases, and
+  post-compaction integrity.
+- MCP integration tests for `sv_graph_explain`, `sv_graph_god_nodes`, and
+  render helpers (`escapeMermaid`, `commLabelStr`, `tokenBenchmark`).
+- Schema JSON serialization tests for `Node` and `Edge` (round-trip + omitempty).
+- `sv_graph_explain` / `sv_graph_god_nodes` tool descriptions now explain usage.
+
+### Changed
+
+- AGENTS.md protocol rewritten: single targeted search instead of triple-search
+  pattern, `sv_mem_stats` for orientation, expanded Graph Inspection with
+  `sv_graph_explain` / `sv_graph_god_nodes` / `sv_graph_path`, new Memory
+  Maintenance and Tool Quick Reference sections, explicit session lifecycle.
+- `sv_mem_search` compact table: removed Score column and revision/duplicate
+  annotations, reducing token cost.
+- Schema doc comments corrected to reflect the node types and relation types
+  actually used in the codebase.
+
+### Performance
+
+- `SyncToGit` incremental chunk writes: only changed memories rewritten after
+  the first sync (O(changes) instead of O(N) file writes).
+- Chunks serialized as compact JSON, cutting ~20-30% sync I/O.
+- `memories.json` rewritten only on first sync, every 10th sync, or forced flush.
+- `FindSimilarMemories` time-boxed (200ms) and skipped for duplicate suppressions.
+- Communities and betweenness centrality computed lazily on demand.
+- New `idx_memories_session` index (migration v9) for save-time session lookup.
+- Auto-Boot Bundle deduplication across session and per-category sections.
+
+### Fixed
+
+- Soft-deleted memories no longer leave orphan chunk files on disk.
+- Topic-key updates are now correctly synced (replaced mtime-based short-circuit
+  with `lastSyncTime` detection).
+- `searchAllMemories` excludes soft-deleted rows from the active set.
+
+### Docs
+
+- `spect.md` Section 8 synchronized with the current `protocol.go` source.
+- Token estimates updated from ~80 to ~30 tokens/result throughout documentation.
+- Tool descriptions enriched for `sv_mem_session_start`, `sv_mem_context`,
+  `sv_mem_compact`, `sv_graph_sync`, and `sv_graph_explain`.
+
 ## [v0.4.1] - 2026-08-04
 
 ### Fixed
@@ -128,4 +182,5 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 [v0.3.0]: https://github.com/svtech-code/sv-memory/releases/tag/v0.3.0
 [v0.4.0]: https://github.com/svtech-code/sv-memory/releases/tag/v0.4.0
 [v0.4.1]: https://github.com/svtech-code/sv-memory/releases/tag/v0.4.1
-[Unreleased]: https://github.com/svtech-code/sv-memory/compare/v0.4.1...main
+[v0.5.0]: https://github.com/svtech-code/sv-memory/releases/tag/v0.5.0
+[Unreleased]: https://github.com/svtech-code/sv-memory/compare/v0.5.0...main
