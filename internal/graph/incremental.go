@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -328,7 +329,9 @@ func loadFileMeta(db *sql.DB, projectID string) (map[string]fileMetaEntry, error
 		var path string
 		var m fileMetaEntry
 		if err := rows.Scan(&path, &m.mtimeMs, &m.size); err == nil {
-			meta[path] = m
+			// Normalize legacy backslash paths (pre-ToSlash Windows builds) so
+			// incremental comparisons match the forward-slash scan keys.
+			meta[filepath.ToSlash(path)] = m
 		}
 	}
 	return meta, rows.Err()

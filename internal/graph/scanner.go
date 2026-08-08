@@ -294,6 +294,11 @@ func scanFilesFiltered(projPath string, readOnly map[string]bool) (*walkResult, 
 		if relErr != nil {
 			return nil
 		}
+		// Canonicalize node paths to forward slashes on every OS so graph node
+		// ids/paths are identical regardless of the platform's separator. This
+		// keeps markdown link resolution, sv_graph_query/path lookups, and the
+		// exported vault/wiki consistent on Windows.
+		relPath = filepath.ToSlash(relPath)
 
 		if d.IsDir() {
 			// Skip if this directory name is in the fallback list or

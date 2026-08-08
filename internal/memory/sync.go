@@ -222,7 +222,9 @@ func syncToGit(db *sql.DB, projectID string, projPath string, forceJSON bool) er
 	}
 
 	// No inserts, updates, or deletions since the last sync: skip all I/O.
-	if len(writeSet) == 0 && countNonDeleted(db, projectID, len(full)) {
+	// A forced full flush (SyncToGitForceFull) always proceeds so the monolithic
+	// memories.json is guaranteed to be rewritten on graceful shutdown.
+	if !forceJSON && len(writeSet) == 0 && countNonDeleted(db, projectID, len(full)) {
 		return nil
 	}
 

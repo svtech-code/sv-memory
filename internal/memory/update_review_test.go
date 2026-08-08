@@ -18,7 +18,7 @@ func TestUpdateMemoryPartialFields(t *testing.T) {
 	defer database.Close()
 
 	const projectID = "upd-project"
-	if err := db.RegisterProject(database, projectID, "Update Project", tempDir); err != nil {
+	if err = db.RegisterProject(database, projectID, "Update Project", tempDir); err != nil {
 		t.Fatalf("failed to register project: %v", err)
 	}
 
@@ -85,7 +85,7 @@ func TestUpdateMemoryClearsFieldWithEmptyString(t *testing.T) {
 	defer database.Close()
 
 	const projectID = "upd-clear"
-	if err := db.RegisterProject(database, projectID, "Clear Project", tempDir); err != nil {
+	if err = db.RegisterProject(database, projectID, "Clear Project", tempDir); err != nil {
 		t.Fatalf("failed to register project: %v", err)
 	}
 
@@ -144,7 +144,7 @@ func TestUpdateMemorySanitizesSecrets(t *testing.T) {
 	defer database.Close()
 
 	const projectID = "upd-sanitize"
-	if err := db.RegisterProject(database, projectID, "Sanitize Project", tempDir); err != nil {
+	if err = db.RegisterProject(database, projectID, "Sanitize Project", tempDir); err != nil {
 		t.Fatalf("failed to register project: %v", err)
 	}
 
@@ -178,7 +178,7 @@ func TestMarkMemoryReviewed(t *testing.T) {
 	defer database.Close()
 
 	const projectID = "review-project"
-	if err := db.RegisterProject(database, projectID, "Review Project", tempDir); err != nil {
+	if err = db.RegisterProject(database, projectID, "Review Project", tempDir); err != nil {
 		t.Fatalf("failed to register project: %v", err)
 	}
 
@@ -194,7 +194,7 @@ func TestMarkMemoryReviewed(t *testing.T) {
 	}
 
 	// Force the review deadline into the past so the memory is due for review.
-	if _, err := database.Exec("UPDATE memories SET review_after = ? WHERE id = ?", "2020-01-01 00:00:00", saved.ID); err != nil {
+	if _, err = database.Exec("UPDATE memories SET review_after = ? WHERE id = ?", "2020-01-01 00:00:00", saved.ID); err != nil {
 		t.Fatalf("failed to backdate review_after: %v", err)
 	}
 
@@ -213,7 +213,7 @@ func TestMarkMemoryReviewed(t *testing.T) {
 		t.Fatal("expected memory to be flagged as needs review before mark_reviewed")
 	}
 
-	if err := MarkMemoryReviewed(database, projectID, saved.ID); err != nil {
+	if err = MarkMemoryReviewed(database, projectID, saved.ID); err != nil {
 		t.Fatalf("failed to mark memory reviewed: %v", err)
 	}
 

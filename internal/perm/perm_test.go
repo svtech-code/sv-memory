@@ -24,6 +24,18 @@ func writeSettingsFile(t *testing.T, content string) string {
 	return path
 }
 
+// setTestHome points HOME and USERPROFILE at dir for the duration of the test,
+// so os.UserHomeDir() resolves to the sandbox on both Unix and Windows (the
+// latter reads USERPROFILE, not HOME).
+func setTestHome(t *testing.T, dir string) {
+	t.Helper()
+	for _, k := range []string{"HOME", "USERPROFILE"} {
+		prev := os.Getenv(k)
+		os.Setenv(k, dir)
+		t.Cleanup(func() { os.Setenv(k, prev) })
+	}
+}
+
 // withTempHome points HOME at a fresh temp dir for the duration of the test and
 // returns the path, so resolveSettingsPath resolves platform configs under it.
 func withTempHome(t *testing.T) string {
@@ -34,9 +46,7 @@ func withTempHome(t *testing.T) string {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 
-	prevHome := os.Getenv("HOME")
-	os.Setenv("HOME", dir)
-	t.Cleanup(func() { os.Setenv("HOME", prevHome) })
+	setTestHome(t, dir)
 	return dir
 }
 
@@ -97,9 +107,7 @@ func TestGrantMergeAllTools(t *testing.T) {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 
-	home := os.Getenv("HOME")
-	os.Setenv("HOME", dir)
-	defer os.Setenv("HOME", home)
+	setTestHome(t, dir)
 
 	configPath := filepath.Join(dir, ".gemini", "antigravity-cli", "settings.json")
 	if mkErr := os.MkdirAll(filepath.Dir(configPath), 0755); mkErr != nil {
@@ -206,9 +214,7 @@ func TestClaudeCodeFormat(t *testing.T) {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 
-	home := os.Getenv("HOME")
-	os.Setenv("HOME", dir)
-	defer os.Setenv("HOME", home)
+	setTestHome(t, dir)
 
 	configPath := filepath.Join(dir, ".claude", "settings.json")
 	if mkErr := os.MkdirAll(filepath.Dir(configPath), 0755); mkErr != nil {

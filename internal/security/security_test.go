@@ -146,15 +146,30 @@ func TestValidateWritePath(t *testing.T) {
 	})
 
 	t.Run("rejects absolute path outside project", func(t *testing.T) {
-		_, err := ValidateWritePath(tmpDir, "/etc/passwd")
+		// Use a path that is absolute on every OS (a Unix-style "/etc/passwd"
+		// is not absolute on Windows and would resolve inside the project).
+		_, err := ValidateWritePath(tmpDir, filepath.Join(os.TempDir(), "sv-memory-escape", "passwd"))
 		if err == nil {
 			t.Fatal("expected error for absolute path outside project")
 		}
 	})
 
 	t.Run("rejects symlink escape", func(t *testing.T) {
+		// Point the symlink at a REAL external directory containing the target
+		// file, so EvalSymlinks resolves and the escape is detected on every OS.
+		// A dangling target makes EvalSymlinks fail with IsNotExist and silently
+		// skips the symlink check on Windows.
+		outside := filepath.Join(os.TempDir(), "sv-memory-escape-target")
+		if err := os.MkdirAll(outside, 0755); err != nil {
+			t.Fatalf("mkdir outside: %v", err)
+		}
+		defer os.RemoveAll(outside)
+		if err := os.WriteFile(filepath.Join(outside, "passwd"), []byte("x"), 0644); err != nil {
+			t.Fatalf("write outside target: %v", err)
+		}
+
 		link := filepath.Join(tmpDir, "link")
-		if err := os.Symlink("/etc", link); err != nil {
+		if err := os.Symlink(outside, link); err != nil {
 			t.Skip("symlink not supported:", err)
 		}
 		_, err := ValidateWritePath(tmpDir, "link/passwd")

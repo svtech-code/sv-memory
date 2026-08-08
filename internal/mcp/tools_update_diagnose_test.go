@@ -205,7 +205,7 @@ func TestReviewMarkReviewedHandler(t *testing.T) {
 	}
 	id := extractID(t, textContent(saveRes.Content[0]))
 
-	if _, err := pool.Writer.Exec("UPDATE memories SET review_after = ? WHERE id = ?", "2020-01-01 00:00:00", id); err != nil {
+	if _, err = pool.Writer.Exec("UPDATE memories SET review_after = ? WHERE id = ?", "2020-01-01 00:00:00", id); err != nil {
 		t.Fatalf("failed to backdate review_after: %v", err)
 	}
 

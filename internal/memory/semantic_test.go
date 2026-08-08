@@ -80,7 +80,7 @@ func TestSemanticJudgeCandidatesWithFakeRunner(t *testing.T) {
 	defer database.Close()
 
 	const projectID = "semantic-proj"
-	if err := db.RegisterProject(database, projectID, "Semantic", tempDir); err != nil {
+	if err = db.RegisterProject(database, projectID, "Semantic", tempDir); err != nil {
 		t.Fatalf("RegisterProject error: %v", err)
 	}
 
@@ -127,13 +127,14 @@ func TestSemanticJudgeCandidatesMaxAndErrors(t *testing.T) {
 	defer database.Close()
 
 	const projectID = "semantic-max-proj"
-	if err := db.RegisterProject(database, projectID, "Semantic Max", tempDir); err != nil {
+	if err = db.RegisterProject(database, projectID, "Semantic Max", tempDir); err != nil {
 		t.Fatalf("RegisterProject error: %v", err)
 	}
 
 	ids := make([]string, 0, 3)
 	for _, w := range []string{"One thing", "Two things", "Three things"} {
-		m, err := SaveMemory(database, &Memory{ProjectID: projectID, Category: "idea", What: w, Why: "w", Learned: "l"})
+		var m *Memory
+		m, err = SaveMemory(database, &Memory{ProjectID: projectID, Category: "idea", What: w, Why: "w", Learned: "l"})
 		if err != nil {
 			t.Fatalf("save: %v", err)
 		}

@@ -16,12 +16,12 @@ func TestSaveMemoryWiresRationaleEdge(t *testing.T) {
 	defer database.Close()
 
 	const projectID = "link-project"
-	if err := db.RegisterProject(database, projectID, "Link Project", tempDir); err != nil {
+	if err = db.RegisterProject(database, projectID, "Link Project", tempDir); err != nil {
 		t.Fatalf("failed to register project: %v", err)
 	}
 
 	// Seed a canonical code node the memory will link to.
-	if _, err := database.Exec(
+	if _, err = database.Exec(
 		"INSERT INTO graph_nodes (id, project_id, node_type, label, path, metadata) VALUES (?, ?, 'file', ?, ?, '{}')",
 		"internal/db/db.go", projectID, "db.go", "internal/db/db.go",
 	); err != nil {
@@ -71,12 +71,12 @@ func TestUpdateMemoryRelinksChangedWherePath(t *testing.T) {
 	defer database.Close()
 
 	const projectID = "link-update-project"
-	if err := db.RegisterProject(database, projectID, "Link Update Project", tempDir); err != nil {
+	if err = db.RegisterProject(database, projectID, "Link Update Project", tempDir); err != nil {
 		t.Fatalf("failed to register project: %v", err)
 	}
 
 	for _, p := range []string{"a.go", "b.go"} {
-		if _, err := database.Exec(
+		if _, err = database.Exec(
 			"INSERT INTO graph_nodes (id, project_id, node_type, label, path, metadata) VALUES (?, ?, 'file', ?, ?, '{}')",
 			p, projectID, p, p,
 		); err != nil {
