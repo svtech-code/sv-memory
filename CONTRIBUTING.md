@@ -77,20 +77,20 @@ We use a standard `Makefile` to manage development workflows. Ensure Go (v1.26+)
 
 The graph engine parses source code dependencies. To add support for a new programming language:
 
-1.  **Map Extensions:** Open [graph.go](file:///Users/msandoval/.work/svtech/sv-memory/internal/graph/graph.go) and add the file extensions to the `languageFromExt` map:
+1.  **Map Extensions:** Open [graph.go](internal/graph/graph.go) and add the file extensions to the `languageFromExt` map:
     ```go
     var languageFromExt = map[string]string{
         ".newext": "newlanguage",
     }
     ```
-2.  **Enable Symbol Scanning:** If the language supports symbols (like functions/classes), add its extension to `symbolScanExts`:
+2.  **Enable Symbol Scanning:** If the language supports symbols (like functions/classes), add its extension to `symbolScanExts` in [scanner.go](internal/graph/scanner.go):
     ```go
     var symbolScanExts = map[string]bool{
         ".newext": true,
     }
     ```
 3.  **Implement Parse Extractor:** In `parseSymbols` or `parseResult` routines, implement the extractor or pattern matching to capture imports and declarations (e.g. using regex or AST parsers).
-4.  **Write Tests:** Add test cases to [graph_test.go](file:///Users/msandoval/.work/svtech/sv-memory/internal/graph/graph_test.go) verifying that file scanning correctly registers nodes and import edges for the new language.
+4.  **Write Tests:** Add test cases to [graph_test.go](internal/graph/graph_test.go) verifying that file scanning correctly registers nodes and import edges for the new language.
 
 ---
 
@@ -98,21 +98,25 @@ The graph engine parses source code dependencies. To add support for a new progr
 
 To register a new Model Context Protocol (MCP) tool:
 
-1.  **Define and Register the Tool:** Open [mcp.go](file:///Users/msandoval/.work/svtech/sv-memory/internal/mcp/mcp.go). Inside the `NewServer` function, define your new tool using `mcp.NewTool` and register its handler:
+1.  **Define and Register the Tool:** Open [mcp.go](internal/mcp/mcp.go). Inside the `NewServer` function, define your new tool using `mcp.NewTool` and register its handler with the MCP server (`ms := server.NewMCPServer(...)`):
     ```go
     newTool := mcp.NewTool("sv_tool_name",
         mcp.WithDescription("Tool description"),
         mcp.WithString("param1", mcp.Required(), mcp.Description("Param description")),
     )
 
-    s.AddTool(newTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+    ms.AddTool(newTool, s.handleToolName)
+    ```
+    Add the handler method `handleToolName` (alongside the other handlers on the `*Server` struct) with the signature `func (s *Server) handleToolName(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error)`:
+    ```go
+    func (s *Server) handleToolName(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
         paramVal, err := req.RequireString("param1")
         if err != nil {
             return mcp.NewToolResultError("missing required field: param1"), nil
         }
         // Tool logic goes here
         return mcp.NewToolResultText("Success"), nil
-    })
+    }
     ```
-2.  **Document the Tool:** Update the MCP tools list in [spect.md](file:///Users/msandoval/.work/svtech/sv-memory/documentation/spect.md) with details on parameters and return formats.
-3.  **Write Integration Tests:** Open [mcp_test.go](file:///Users/msandoval/.work/svtech/sv-memory/internal/mcp/mcp_test.go) and add a test case retrieving your tool and verifying its response for valid and invalid parameters.
+2.  **Document the Tool:** Update the MCP tools list in [spect.md](documentation/spect.md) with details on parameters and return formats.
+3.  **Write Integration Tests:** Open [mcp_test.go](internal/mcp/mcp_test.go) and add a test case retrieving your tool and verifying its response for valid and invalid parameters.

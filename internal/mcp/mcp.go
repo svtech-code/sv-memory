@@ -58,8 +58,8 @@ type Tool struct {
 // AllTools enumerates every tool the sv-memory MCP server exposes, with a
 // short human-readable description used for permission selection transparency.
 // Keep in sync with the NewTool/AddTool registrations in NewServer below;
-// AllToolsGuardTest in mcp_test.go enforces that every registered tool name
-// appears here.
+// TestAllToolsMatchesRegisteredTools in mcp_test.go enforces that every
+// registered tool name appears here.
 var AllTools = []Tool{
 	{Name: "sv_mem_save", Description: "Persist a decision, bugfix, journal, or standard to project memory (with optional topic_key upsert)."},
 	{Name: "sv_mem_suggest_topic_key", Description: "Generate a stable 'category/kebab-case' topic_key for upsert semantics."},

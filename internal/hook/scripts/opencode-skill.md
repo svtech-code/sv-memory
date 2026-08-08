@@ -6,7 +6,7 @@ Persistent architectural memory and dependency graph for AI coding agents.
 
 sv-memory provides two complementary capabilities:
 - **sv_mem_search / sv_mem_get / sv_mem_timeline**: Retrieve past architectural decisions, bug fixes, standards, discussions, and progress journals from persistent memory.
-- **sv_graph_query / sv_graph_explain / sv_graph_god_nodes**: Query the project's code dependency graph to understand module structure, relationships, and community clusters.
+- **sv_graph_query / sv_graph_explain / sv_graph_god_nodes / sv_graph_path / sv_graph_sync**: Query the project's code dependency graph to understand module structure, relationships, and community clusters.
 
 Using these tools **before** reading source files directly saves tokens and provides richer architectural awareness.
 
@@ -14,7 +14,7 @@ Using these tools **before** reading source files directly saves tokens and prov
 
 Manage a coding session to group memories and enable context recovery:
 
-1. **Start:** Call `sv_mem_session_start` at the beginning of work. It returns an **Auto-Boot Context Bundle** (previous session summary, key decisions, standards, recent bugfixes, journals) — use it as your starting context.
+1. **Start:** Call `sv_mem_session_start` at the beginning of work. It returns an **Auto-Boot Context Bundle** (previous session summary, key decisions, standards, recent bugfixes, journals, top graph hubs) — use it as your starting context.
 2. **Capture as you go:** Save knowledge with `sv_mem_save` as you work. Pass the `session_id` from the start call to associate memories with this session.
 3. **Summary:** Before finishing, call `sv_mem_session_summary` with goal, discoveries, accomplished work, and next steps.
 4. **End:** Call `sv_mem_session_end` to close the session.
@@ -89,5 +89,6 @@ The top search result is already expanded inline — only drill further when nec
 
 - **Session:** `sv_mem_session_start`, `sv_mem_session_summary`, `sv_mem_session_end`, `sv_mem_context`
 - **Memory CRUD:** `sv_mem_save`, `sv_mem_get`, `sv_mem_delete`, `sv_mem_search`, `sv_mem_timeline`
+- **Pin / Priority:** `sv_mem_pin`, `sv_mem_unpin`
 - **Knowledge quality:** `sv_mem_suggest_topic_key`, `sv_mem_judge`, `sv_mem_compare`, `sv_mem_compact`, `sv_mem_review`, `sv_mem_capture_passive`, `sv_mem_conflicts`, `sv_mem_stats`, `sv_mem_current_project`
 - **Graph:** `sv_graph_query`, `sv_graph_explain`, `sv_graph_god_nodes`, `sv_graph_path`, `sv_graph_sync`, `sv_graph_surprising_connections`, `sv_graph_viz`, `sv_graph_merge`

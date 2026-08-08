@@ -22,7 +22,7 @@
   <a href="#-arquitectura">Arquitectura</a> •
   <a href="#-inicio-rápido">Inicio Rápido</a> •
   <a href="#-referencia-de-comandos-cli">Comandos CLI</a> •
-  <a href="#-herramientas-del-model-context-protocol-mcp-28-herramientas">Herramientas MCP</a> •
+  <a href="#-herramientas-mcp-28-herramientas">Herramientas MCP</a> •
   <a href="documentation/getting_started_guide.md">Guía</a>
 </p>
 
@@ -39,9 +39,9 @@
 | Categoría            | Característica             | Descripción                                                                                                             |
 | :------------------- | :------------------------- | :---------------------------------------------------------------------------------------------------------------------- |
 | 🧠 **Memoria**       | **FTS5 BM25 & Scoping**    | Búsqueda de texto completo SQLite con clasificación BM25 y filtrado restringido por subdirectorio.                      |
-| ⚡ **Autonomía**     | **Auto-Boot Context**      | `sv_mem_session_start` entrega el resumen de la sesión anterior y decisiones clave en 1 sola llamada.                   |
+| ⚡ **Autonomía**     | **Auto-Boot Context**      | `sv_mem_session_start` entrega el resumen de la sesión anterior, decisiones clave y hubs del grafo en 1 sola llamada.   |
 | 🧹 **Mantenimiento** | **Auto-Compaction Worker** | `sv_mem_compact` consolida revisiones históricas de topic keys para mantener la BD liviana.                             |
-| 🕸️ **Grafo**         | **Caché LRU Sub-ms**       | Parsea 18 lenguajes, comunidades Leiden, nodos god y nodos puente con caché RAM `<1ms` validado por mtime.             |
+| 🕸️ **Grafo**         | **Caché LRU Sub-ms**       | Parsea 17 lenguajes, comunidades Leiden, nodos god y nodos puente con caché RAM `<1ms` validado por mtime.             |
 | 🔍 **Diagnóstico**   | **Diagnóstico de Grafo**   | `DiagnoseGraph` detecta enlaces rotos, nodos huérfanos y entidades AST no vinculadas.                                   |
 | 🎨 **Interfaz**      | **TUI Interactiva**        | Interfaz de Usuario en Terminal (`sv-memory tui`) para inspección, búsqueda BM25 y diagnósticos.                        |
 | 📦 **Exportación**   | **Obsidian & Cypher**      | Exporta a notas Markdown vinculadas de Obsidian (`[[wikilinks]]`) y scripts Cypher para Neo4j / FalkorDB.               |
@@ -158,8 +158,8 @@ sv-memory hooks install --platform antigravity --strict
 Reinicia tu asistente de IA y confirma que todo quedó conectado:
 
 ```bash
-sv-memory permissions status --platform antigravity   # Granted: 26 / 26
-sv-memory hooks status                                # antigravity: installed
+sv-memory permissions status --platform antigravity   # Granted: 28 / 28
+sv-memory hooks status                                # antigravity: ✅ installed
 sv-memory diagnose
 ```
 
@@ -211,7 +211,7 @@ sv-memory tui
 
 ---
 
-## 🧩 Herramientas del Model Context Protocol (MCP) (28 Herramientas)
+## 🧩 Herramientas MCP (28 Herramientas)
 
 ### 🧠 Herramientas de Memoria
 

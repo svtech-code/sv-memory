@@ -22,7 +22,7 @@
   <a href="#-architecture">Architecture</a> •
   <a href="#-getting-started">Getting Started</a> •
   <a href="#-cli-commands-reference">CLI Commands</a> •
-  <a href="#-model-context-protocol-mcp-tools-28-tools">MCP Tools</a> •
+  <a href="#-model-context-protocol-mcp-28-tools">MCP Tools</a> •
   <a href="documentation/getting_started_guide.md">Guide</a>
 </p>
 
@@ -41,7 +41,7 @@
 | 🧠 **Memory**        | **FTS5 BM25 & Scoping**    | SQLite Full-Text Search with BM25 relevance ranking and path-scoped directory filtering.                  |
 | ⚡ **Autonomy**      | **Auto-Boot Context**      | `sv_mem_session_start` delivers previous session summaries, key decisions, and top graph hubs in 1 tool call.              |
 | 🧹 **Maintenance**   | **Auto-Compaction Worker** | `sv_mem_compact` consolidates historical topic key revisions to keep storage ultra-lean.                  |
-| 🕸️ **Graph**         | **Sub-ms LRU Cache**       | Parses 18 languages, Leiden communities, god nodes & bridge nodes with `<1ms` mtime-validated RAM cache. |
+| 🕸️ **Graph**         | **Sub-ms LRU Cache**       | Parses 17 languages, Leiden communities, god nodes & bridge nodes with `<1ms` mtime-validated RAM cache. |
 | 🔍 **Diagnostics**   | **Graph Health Gate**      | `DiagnoseGraph` detects dangling edges, orphan nodes, and unlinked Markdown/SQL AST entities.             |
 | 🎨 **Interfaces**    | **Interactive TUI**        | Terminal User Interface (`sv-memory tui`) for memory inspection, search, and graph diagnostics.           |
 | 📦 **Export**        | **Obsidian & Cypher**      | Exports to linked Markdown Obsidian Vaults (`[[wikilinks]]`) and Neo4j / FalkorDB Cypher scripts.         |
@@ -158,8 +158,8 @@ sv-memory hooks install --platform antigravity --strict
 Restart your AI assistant, then confirm everything is wired up:
 
 ```bash
-sv-memory permissions status --platform antigravity   # Granted: 26 / 26
-sv-memory hooks status                                # antigravity: installed
+sv-memory permissions status --platform antigravity   # Granted: 28 / 28
+sv-memory hooks status                                # antigravity: ✅ installed
 sv-memory diagnose
 ```
 
@@ -211,7 +211,7 @@ sv-memory tui
 
 ---
 
-## 🧩 Model Context Protocol (MCP) Tools (28 Tools)
+## 🧩 Model Context Protocol (MCP) — 28 Tools
 
 ### 🧠 Memory Tools
 
@@ -298,6 +298,10 @@ sv-memory permissions revoke --platform antigravity
 - **OpenCode** and **Codex** use interactive approval and are skipped (no static allow-list).
 - Unrelated entries (e.g. `command(npm run)`) are always preserved.
 - Restart your AI assistant after granting to load the new permissions.
+
+In the `sv-memory configure` wizard, **Phase 4** lists the 28 tools for you to choose
+which to authorize (press `a` to select all and `x` to select none) on the configured
+platforms.
 
 ---
 

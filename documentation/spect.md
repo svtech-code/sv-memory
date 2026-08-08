@@ -358,7 +358,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_relations_target ON memory_relations(proje
 ### Connection Pool
 
 - **Writer:** `MaxOpenConns=1` (serialized writes under WAL)
-- **Reader:** `MaxOpenConns=8` (parallel reads, `?mode=ro` for lock-free concurrency)
+- **Reader:** `MaxOpenConns=16` (parallel reads, `?mode=ro` for lock-free concurrency; unlimited connection lifetime keeps WAL readers warm, idle pruning via `ConnMaxIdleTime`)
 - **Degradation:** If reader fails to open, `Reader == Writer` (correct but slower)
 
 ---
@@ -414,6 +414,7 @@ Update goals, discoveries, and next steps for the session.
 Recover context from the last completed session.
 - **Parameters:**
   - `limit` (string, optional): Max memories to retrieve (default `10`).
+  - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default `'0'` = unlimited).
 
 ### 7. `sv_mem_compact`
 Trigger automatic memory compaction: consolidates historical topic-key revisions and duplicates into clean summary records.
@@ -427,6 +428,8 @@ FTS5-powered memory search. Returns only IDs, categories, dates, titles, and top
   - `path` (string, optional): Path/directory scope filter to narrow memories relevant to a specific file or directory.
   - `limit` (string, optional): Max results (default `10`).
   - `offset` (string, optional): Pagination offset.
+  - `match_mode` (string, optional): `'all'` (default) requires every token to match; `'any'` matches memories matching one or more tokens for broader recall.
+  - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default `'0'` = unlimited).
 
 ### 9. `sv_mem_timeline` (Layer 2 — Progressive Disclosure)
 Retrieve a chronological list of observations centered around a specific memory.
@@ -439,7 +442,8 @@ Retrieve a chronological list of observations centered around a specific memory.
 Retrieve all fields of a specific memory. Text fields are truncated beyond `max_chars`.
 - **Parameters:**
   - `id` (string, required): Memory ID.
-  - `max_chars` (string, optional): Max characters per field (default `2000`).
+  - `max_chars` (string, optional): Max characters per field (default `1000`; `'0'` = unlimited).
+  - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default `'0'` = unlimited).
 
 ### 11. `sv_mem_judge`
 Create a relation (judgment) between two memories to maintain continuity or record conflicts.
@@ -474,13 +478,23 @@ Deletes a memory. Soft-deletes by default; set `hard` to `'true'` to erase perma
   - `id` (string, required): Memory ID.
   - `hard` (string, optional): `'true'` for permanent delete.
 
-### 17. `sv_mem_capture_passive`
+### 17. `sv_mem_pin`
+Pin a local memory so it surfaces first in `sv_mem_context` (key decisions stay visible). Pinned state is local to this device.
+- **Parameters:**
+  - `id` (string, required): Memory ID.
+
+### 18. `sv_mem_unpin`
+Clear the pinned flag on a local memory.
+- **Parameters:**
+  - `id` (string, required): Memory ID.
+
+### 19. `sv_mem_capture_passive`
 Logs a lightweight journal entry automatically (e.g., test outcomes, file changes).
 - **Parameters:**
   - `what` (string, required): Summary description.
   - `why` (string, required): Context or rationale.
 
-### 18. `sv_graph_query`
+### 20. `sv_graph_query`
 Queries structural relations using a Breadth-First Search (BFS). Returns a Mermaid diagram.
 - **Parameters:**
   - `path_or_node` (string, required): File path or module to center on.
@@ -489,18 +503,18 @@ Queries structural relations using a Breadth-First Search (BFS). Returns a Merma
   - `direction` (string, optional): Traversal direction: `'in'` | `'out'` | `'all'` (default `'out'`).
   - `token_budget` (string, optional): Max tokens for the response; the response is truncated with a notice when exceeded (default `'0'` = unlimited).
 
-### 19. `sv_graph_path`
+### 21. `sv_graph_path`
 Finds the shortest dependency route between two graph nodes.
 - **Parameters:**
   - `source` (string, required): Source node ID.
   - `target` (string, required): Target node ID.
   - `max_hops` (string, optional): Hop limit (default `10`).
 
-### 20. `sv_graph_sync`
+### 22. `sv_graph_sync`
 Triggers an incremental scan of modified files to sync nodes/edges. Invalidates cache.
 - **Parameters:** None.
 
-### 21. `sv_mem_conflicts`
+### 23. `sv_mem_conflicts`
 Detects and surfaces conflicting memories with semantic overlap analysis.
 - **Parameters:**
   - `action` (string, required): Action to perform: `list`, `scan`, or `ignore`.
@@ -509,27 +523,27 @@ Detects and surfaces conflicting memories with semantic overlap analysis.
   - `threshold` (string, optional): Similarity threshold for `scan` (default `0.45`).
   - `apply` (string, optional): For `scan`: `'true'` to save scanned conflicts to the database (default `'false'`).
 
-### 22. `sv_graph_explain`
+### 24. `sv_graph_explain`
 Outputs detailed information for a specific graph node: type, label, path, metadata, and fan-in/fan-out metrics.
 - **Parameters:**
   - `node` (string, required): File path or node ID.
 
-### 23. `sv_graph_god_nodes`
+### 25. `sv_graph_god_nodes`
 Identifies the most connected nodes in the graph based on betweenness centrality and degree. Returns a ranked list of god nodes with metrics.
 - **Parameters:**
   - `top_n` (string, optional): Max results to return (default `10`).
 
-### 24. `sv_graph_surprising_connections`
+### 26. `sv_graph_surprising_connections`
 Finds non-obvious or unexpected dependency paths in the graph. Highlights structural anomalies that may indicate architectural concerns.
 - **Parameters:**
   - `limit` (string, optional): Max connections to return (default `10`).
 
-### 25. `sv_graph_viz`
+### 27. `sv_graph_viz`
 Generates an interactive HTML visualization of the graph using vis.js with community coloring, physics simulation, node filtering, and tooltips.
 - **Parameters:**
   - `output` (string, optional): Output file path (default `graph.html`).
 
-### 26. `sv_graph_merge`
+### 28. `sv_graph_merge`
 Merges two project graphs into one (union-merge by node ID), upserting nodes and edges.
 - **Parameters:**
   - `project_a` (string, required): First project ID.
@@ -586,7 +600,7 @@ This project uses 'sv-memory' for persistent architectural memory, progress jour
 
 ## Session Lifecycle (REQUIRED, in this order):
 
-1. **Start:** Call 'sv_mem_session_start' at the beginning of work. It returns an **Auto-Boot Context Bundle** with the previous session summary, key architectural decisions, standards, recent bugfixes, and last journals — read it and use it as your starting context.
+1. **Start:** Call 'sv_mem_session_start' at the beginning of work. It returns an **Auto-Boot Context Bundle** with the previous session summary, key architectural decisions, standards, recent bugfixes, last journals, and top graph hubs — read it and use it as your starting context.
 2. **Associate saves:** Pass 'session_id' to 'sv_mem_save' to group memories under the active session. If omitted, the active session is auto-detected.
 3. **Capture knowledge as you go:** Save journals, decisions, standards, and bugfixes with 'sv_mem_save' (see the Memory Capture Guidelines below). Use 'sv_mem_capture_passive' for lightweight observations that do not need an explicit save decision.
 4. **Summary:** Call 'sv_mem_session_summary' with goal, discoveries, accomplished work, and next steps before closing.
@@ -656,12 +670,13 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 
 - **Session:** sv_mem_session_start, sv_mem_session_summary, sv_mem_session_end, sv_mem_context
 - **Memory CRUD:** sv_mem_save, sv_mem_get, sv_mem_delete, sv_mem_search, sv_mem_timeline
+- **Pin / Priority:** sv_mem_pin, sv_mem_unpin
 - **Knowledge quality:** sv_mem_suggest_topic_key, sv_mem_judge, sv_mem_compare, sv_mem_compact, sv_mem_review, sv_mem_capture_passive, sv_mem_conflicts, sv_mem_stats, sv_mem_current_project
 - **Graph:** sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_viz, sv_graph_merge
 
 ## Repository Restrictions & Commit Standards:
 
-- **Commit Format:** Always provide commit messages using the Conventional Commits format (e.g., 'feat(scope): descripcion'). Use Spanish by default, unless specified otherwise for the project.
+- **Commit Format:** Always provide commit messages using the Conventional Commits format (e.g., 'feat(scope): description'). Use the project's configured commit language (default: English), unless the project specifies otherwise.
 - **Forbidden Actions:** You MUST NOT run 'git add', 'git commit', or 'git push' commands autonomously. The user must review changes and run these commands manually.
 <!-- SV-MEMORY:END -->
 ```
@@ -694,7 +709,7 @@ sv-memory/
 │   │   ├── extractor/           # tree-sitter extractor, regex fallback, markdown semantics
 │   │   └── schema/              # Node/Edge structs
 │   ├── hook/                    # PreToolUse hooks generation & templates
-│   ├── mcp/                     # Server start, 28 tool handlers, in-memory graph cache
+│   ├── mcp/                     # MCP server + 28 tool handlers; reads from internal/graph LRU cache
 │   ├── memory/                  # CRUD, sessions storage, dedup, conflicts, compaction,
 │   │                            # chunked git sync, Obsidian/Cypher export, stats
 │   ├── perm/                    # MCP tool allow-list management (antigravity/claude-code)
@@ -756,11 +771,11 @@ Parsing uses **tree-sitter** (`gotreesitter`) for the primary languages, with a 
 |---|---|---|
 | Progressive 3-layer disclosure | Search returns compact rows (~30 tokens/result); full content on demand | 60-80% of response tokens |
 | Session compaction | Full conversation → structured journal entry (200-500 tokens) | 80-90% vs raw history |
-| Field truncation (`sv_mem_get`) | `max_chars` cap per text field (default 2000) | Prevents unbounded token consumption |
+| Field truncation (`sv_mem_get`) | `max_chars` cap per text field (default 1000) | Prevents unbounded token consumption |
 | Topic key upsert | Update in-place instead of accumulating revisions | 50% fewer redundant search results |
 | Rolling-window dedup | Suppress identical saves within 24h | Prevents duplicate bloat |
 | Compact search SQL | SELECT only 7 needed columns instead of all 20 | ~60% less I/O per search |
-| Token budget benchmark (`BenchmarkToolResult`) | Measures and reports `tokens_used` / `total_budget` ratio in MCP response metadata for `sv_graph_query`, `sv_graph_god_nodes`, and `sv_graph_surprising_connections` | Agent-aware token consumption (visible in MCP response metadata) |
+| Token budget benchmark (`BenchmarkToolResponseTokens`) | Regression guard measuring per-call bytes and estimated tokens for `sv_mem_search`, `sv_mem_get`, `sv_mem_timeline`, and `sv_mem_context` | Guards against unbounded response growth between releases |
 
 ---
 

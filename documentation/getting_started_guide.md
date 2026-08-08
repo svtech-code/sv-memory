@@ -9,7 +9,7 @@ Esta guía explica paso a paso cómo instalar **sv-memory**, configurarlo en tu 
 ## 🎯 ¿Por qué usar sv-memory?
 
 Cuando trabajas con asistentes de IA en repositorios medianos o grandes, suceden tres problemas recurrentes:
-1. **Amnesia de Sesión:** La IA olvida las decisiones arquitectónicas tomaron en sesiones anteriores.
+1. **Amnesia de Sesión:** La IA olvida las decisiones arquitectónicas tomadas en sesiones anteriores.
 2. **Desperdicio de Tokens:** La IA necesita leer decenas de archivos fuente una y otra vez para entender la estructura del código.
 3. **Falta de Continuidad:** Las decisiones técnicas quedan atrapadas en chats individuales en lugar de compartirse con el equipo.
 
@@ -151,7 +151,7 @@ Cierra y vuelve a abrir tu asistente de IA para que cargue el MCP, los permisos 
 
 ```bash
 cd /ruta/a/tu-proyecto
-sv-memory permissions status --platform antigravity   # Granted: 26 / 26
+sv-memory permissions status --platform antigravity   # Granted: 28 / 28
 sv-memory hooks status                                # antigravity: ✅ installed
 sv-memory diagnose                                    # 17 pass, 0 failures
 ```

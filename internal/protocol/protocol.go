@@ -15,7 +15,7 @@ This project uses 'sv-memory' for persistent architectural memory, progress jour
 
 ## Session Lifecycle (REQUIRED, in this order):
 
-1. **Start:** Call 'sv_mem_session_start' at the beginning of work. It returns an **Auto-Boot Context Bundle** with the previous session summary, key architectural decisions, standards, recent bugfixes, and last journals — read it and use it as your starting context.
+1. **Start:** Call 'sv_mem_session_start' at the beginning of work. It returns an **Auto-Boot Context Bundle** with the previous session summary, key architectural decisions, standards, recent bugfixes, last journals, and top graph hubs — read it and use it as your starting context.
 2. **Associate saves:** Pass 'session_id' to 'sv_mem_save' to group memories under the active session. If omitted, the active session is auto-detected.
 3. **Capture knowledge as you go:** Save journals, decisions, standards, and bugfixes with 'sv_mem_save' (see the Memory Capture Guidelines below). Use 'sv_mem_capture_passive' for lightweight observations that do not need an explicit save decision.
 4. **Summary:** Call 'sv_mem_session_summary' with goal, discoveries, accomplished work, and next steps before closing.
@@ -85,12 +85,13 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 
 - **Session:** sv_mem_session_start, sv_mem_session_summary, sv_mem_session_end, sv_mem_context
 - **Memory CRUD:** sv_mem_save, sv_mem_get, sv_mem_delete, sv_mem_search, sv_mem_timeline
+- **Pin / Priority:** sv_mem_pin, sv_mem_unpin
 - **Knowledge quality:** sv_mem_suggest_topic_key, sv_mem_judge, sv_mem_compare, sv_mem_compact, sv_mem_review, sv_mem_capture_passive, sv_mem_conflicts, sv_mem_stats, sv_mem_current_project
 - **Graph:** sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_viz, sv_graph_merge
 
 ## Repository Restrictions & Commit Standards:
 
-- **Commit Format:** Always provide commit messages using the Conventional Commits format (e.g., 'feat(scope): descripcion'). Use Spanish by default, unless specified otherwise for the project.
+- **Commit Format:** Always provide commit messages using the Conventional Commits format (e.g., 'feat(scope): description'). Use the project's configured commit language (default: English), unless the project specifies otherwise.
 - **Forbidden Actions:** You MUST NOT run 'git add', 'git commit', or 'git push' commands autonomously. The user must review changes and run these commands manually.
 <!-- SV-MEMORY:END -->
 `
