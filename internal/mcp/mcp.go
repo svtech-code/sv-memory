@@ -77,6 +77,8 @@ var AllTools = []Tool{
 	{Name: "sv_mem_stats", Description: "Get aggregate memory statistics per category and session counts."},
 	{Name: "sv_mem_current_project", Description: "Get the current project's ID and display name."},
 	{Name: "sv_mem_delete", Description: "Soft-delete (default) or hard-delete a memory."},
+	{Name: "sv_mem_pin", Description: "Pin a local memory so it surfaces first in session context (key decisions stay visible)."},
+	{Name: "sv_mem_unpin", Description: "Clear the pinned flag on a local memory."},
 	{Name: "sv_mem_capture_passive", Description: "Log lightweight observations (files modified, tests failing) without a save decision."},
 	{Name: "sv_mem_conflicts", Description: "List, scan, or ignore potential memory conflicts."},
 	{Name: "sv_graph_query", Description: "Query the dependency graph for a module, file, or package (returns Mermaid)."},
@@ -99,7 +101,7 @@ var (
 // Server holds the long-lived state shared by every MCP tool handler: the
 // connection pool, the active project config, the debounced Git sync state,
 // and the per-project graph load lock. Splitting this state onto the Server
-// struct (instead of closures in NewServer) keeps the 26 tool handlers in
+// struct (instead of closures in NewServer) keeps the 28 tool handlers in
 // focused per-domain files.
 type Server struct {
 	pool *db.Pool
@@ -399,7 +401,7 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 	return err
 }
 
-// NewServer initializes the MCP server, registers all 26 tools, and returns it.
+// NewServer initializes the MCP server, registers all 28 tools, and returns it.
 // Split from StartServer for programmatic unit testing. Tool definitions and
 // handler wiring live here (single source of truth for the tool surface, kept
 // in sync with AllTools); the handlers themselves are Server methods defined
@@ -486,6 +488,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		mcp.WithString("query", mcp.Required(), mcp.Description("The keyword or phrase to search for")),
 		mcp.WithString("category", mcp.Description("Optional category to filter results: 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem' | 'discussion' | 'idea' | 'qa'")),
 		mcp.WithString("path", mcp.Description("Optional path/directory scope filter to narrow memories relevant to a specific file or directory")),
+		mcp.WithString("match_mode", mcp.Description("FTS5 match mode: 'all' (every token must match, default) or 'any' (broader recall — a memory matching one or more tokens is returned)")),
 		mcp.WithString("limit", mcp.Description("Optional limit of results to return (default is '10')")),
 		mcp.WithString("offset", mcp.Description("Optional offset for pagination (default is '0')")),
 		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
@@ -557,7 +560,21 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	)
 	ms.AddTool(deleteTool, s.handleDelete)
 
-	// 17. Tool: sv_mem_capture_passive
+	// 17. Tool: sv_mem_pin
+	pinTool := mcp.NewTool("sv_mem_pin",
+		mcp.WithDescription("Pin a local memory so it surfaces first in sv_mem_context (key decisions stay visible). Pinned state is local to this device."),
+		mcp.WithString("id", mcp.Required(), mcp.Description("The memory ID to pin")),
+	)
+	ms.AddTool(pinTool, s.handlePin)
+
+	// 17b. Tool: sv_mem_unpin
+	unpinTool := mcp.NewTool("sv_mem_unpin",
+		mcp.WithDescription("Clear the pinned flag on a local memory."),
+		mcp.WithString("id", mcp.Required(), mcp.Description("The memory ID to unpin")),
+	)
+	ms.AddTool(unpinTool, s.handleUnpin)
+
+	// 18. Tool: sv_mem_capture_passive
 	captureTool := mcp.NewTool("sv_mem_capture_passive",
 		mcp.WithDescription("Save a lightweight passive observation (e.g. 'modified file X', 'test Y failed'). Unlike sv_mem_save, this requires no explicit decision — it logs context automatically. Category is set to 'journal'."),
 		mcp.WithString("what", mcp.Required(), mcp.Description("Brief description of what happened")),
@@ -565,7 +582,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	)
 	ms.AddTool(captureTool, s.handleCapturePassive)
 
-	// 18. Tool: sv_graph_query
+	// 19. Tool: sv_graph_query
 	graphQueryTool := mcp.NewTool("sv_graph_query",
 		mcp.WithDescription("Retrieve project code structure, connections, imports, and dependencies for a given module, file, or package."),
 		mcp.WithString("path_or_node", mcp.Required(), mcp.Description("The file path, package name, or module to inspect")),
@@ -576,7 +593,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	)
 	ms.AddTool(graphQueryTool, s.handleGraphQuery)
 
-	// 19. Tool: sv_graph_path
+	// 20. Tool: sv_graph_path
 	graphPathTool := mcp.NewTool("sv_graph_path",
 		mcp.WithDescription("Find the shortest path between two nodes in the dependency graph."),
 		mcp.WithString("source", mcp.Required(), mcp.Description("The starting node ID (file path, package name, etc.)")),
@@ -585,13 +602,13 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	)
 	ms.AddTool(graphPathTool, s.handleGraphPath)
 
-	// 20. Tool: sv_graph_sync
+	// 21. Tool: sv_graph_sync
 	graphSyncTool := mcp.NewTool("sv_graph_sync",
 		mcp.WithDescription("Incrementally re-scan the codebase and rebuild the dependency graph. Call after adding major new files, creating new packages, or modifying package structures and imports. Communities and centrality are computed lazily on demand."),
 	)
 	ms.AddTool(graphSyncTool, s.handleGraphSync)
 
-	// 21. Tool: sv_mem_conflicts
+	// 22. Tool: sv_mem_conflicts
 	conflictsTool := mcp.NewTool("sv_mem_conflicts",
 		mcp.WithDescription("Manage potential memory conflicts in the project: list, scan, or ignore conflicts."),
 		mcp.WithDeferLoading(true),
@@ -603,28 +620,28 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	)
 	ms.AddTool(conflictsTool, s.handleConflicts)
 
-	// 22. Tool: sv_graph_explain
+	// 23. Tool: sv_graph_explain
 	graphExplainTool := mcp.NewTool("sv_graph_explain",
 		mcp.WithDescription("Explain a node's structural role, community, centrality metrics, neighbors, and suggested questions. Use before refactoring, deleting, or restructuring a file/module to understand its impact — richer than sv_graph_query for a single node."),
 		mcp.WithString("node", mcp.Required(), mcp.Description("The node ID (file path, package, class, or function name) to explain")),
 	)
 	ms.AddTool(graphExplainTool, s.handleGraphExplain)
 
-	// 23. Tool: sv_graph_god_nodes
+	// 24. Tool: sv_graph_god_nodes
 	godNodesTool := mcp.NewTool("sv_graph_god_nodes",
 		mcp.WithDescription("List the most-connected nodes (God Nodes) in the project dependency graph. These are the concepts everything flows through — useful for architectural orientation."),
 		mcp.WithString("top_n", mcp.Description("Number of top god nodes to return (default '10')")),
 	)
 	ms.AddTool(godNodesTool, s.handleGodNodes)
 
-	// 24. Tool: sv_graph_surprising_connections
+	// 25. Tool: sv_graph_surprising_connections
 	surprisingTool := mcp.NewTool("sv_graph_surprising_connections",
 		mcp.WithDescription("Find surprising/interesting cross-community connections (bridges between different parts of the codebase)"),
 		mcp.WithString("limit", mcp.Description("Maximum number of connections to return (default '10')")),
 	)
 	ms.AddTool(surprisingTool, s.handleSurprisingConnections)
 
-	// 25. Tool: sv_graph_viz
+	// 26. Tool: sv_graph_viz
 	vizTool := mcp.NewTool("sv_graph_viz",
 		mcp.WithDescription("Generate an interactive HTML visualization (graph.html) of the project dependency graph"),
 		mcp.WithDeferLoading(true),
@@ -632,7 +649,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	)
 	ms.AddTool(vizTool, s.handleGraphViz)
 
-	// 26. Tool: sv_graph_merge
+	// 27. Tool: sv_graph_merge
 	mergeTool := mcp.NewTool("sv_graph_merge",
 		mcp.WithDescription("Merge two project graphs into one (union-merge by node ID)"),
 		mcp.WithDeferLoading(true),

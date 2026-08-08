@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS memories (
     impact TEXT,
     errors_faced TEXT,
     next_steps TEXT,
+    review_after DATETIME,
+    pinned INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
@@ -143,6 +145,7 @@ var migrations = []migration{
 	{7, "graph_edges_composite_pk", migrateGraphEdgesCompositePK},
 	{8, "add_project_scan_meta", addProjectScanMeta},
 	{9, "add_session_index", addSessionIndex},
+	{10, "add_review_after_and_pinned", addReviewAfterAndPinned},
 }
 
 func applyMigrations(db *sql.DB) error {
@@ -449,6 +452,28 @@ func addProjectScanMeta(db *sql.DB) error {
 func addSessionIndex(db *sql.DB) error {
 	if _, err := db.Exec("CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(project_id, session_id);"); err != nil {
 		return fmt.Errorf("failed to create idx_memories_session: %w", err)
+	}
+	return nil
+}
+
+// addReviewAfterAndPinned adds the review_after (decay-driven review due date)
+// and pinned (local context priority) columns to the memories table. Both are
+// additive and idempotent; fresh installs get them from the base schema.
+func addReviewAfterAndPinned(db *sql.DB) error {
+	columns := map[string]string{
+		"review_after": "ALTER TABLE memories ADD COLUMN review_after DATETIME;",
+		"pinned":       "ALTER TABLE memories ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;",
+	}
+	for col, alterStmt := range columns {
+		exists, err := columnExists(db, "memories", col)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			if _, err := db.Exec(alterStmt); err != nil {
+				return fmt.Errorf("failed to add column %s to memories: %w", col, err)
+			}
+		}
 	}
 	return nil
 }

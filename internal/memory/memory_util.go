@@ -74,8 +74,8 @@ func truncateText(s string, maxChars int) string {
 
 func memoryInsertConflictQuery() string {
 	return `
-	INSERT INTO memories (id, project_id, category, what, why, where_path, learned, git_branch, git_commit, author, impact, errors_faced, next_steps, session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO memories (id, project_id, category, what, why, where_path, learned, git_branch, git_commit, author, impact, errors_faced, next_steps, session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, review_after, pinned, created_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
 		category = excluded.category,
 		what = excluded.what,
@@ -94,5 +94,7 @@ func memoryInsertConflictQuery() string {
 		duplicate_count = excluded.duplicate_count,
 		last_seen_at = excluded.last_seen_at,
 		normalized_hash = excluded.normalized_hash,
+		review_after = excluded.review_after,
+		pinned = excluded.pinned,
 		created_at = excluded.created_at;`
 }

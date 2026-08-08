@@ -53,10 +53,38 @@ func SearchMemoriesBySessionCompact(db *sql.DB, projectID, sessionID string, lim
 }
 
 func SearchMemoriesCompact(db *sql.DB, projectID string, searchTerm string, category string, limit int, offset int) ([]*MemorySearchResult, error) {
-	return SearchMemoriesCompactScoped(db, projectID, searchTerm, category, "", limit, offset)
+	return SearchMemoriesCompactScoped(db, projectID, searchTerm, category, "", "all", limit, offset)
 }
 
-func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string, category string, pathFilter string, limit int, offset int) ([]*MemorySearchResult, error) {
+// SearchPinnedMemories returns pinned memories for a project, most recently
+// created first. Pinned memories surface first in session context so key
+// decisions stay visible regardless of session recency.
+func SearchPinnedMemories(db *sql.DB, projectID string, limit int) ([]*MemorySearchResult, error) {
+	query := `
+	SELECT id, category, what,
+		topic_key, revision_count, duplicate_count, created_at
+	FROM memories
+	WHERE project_id = ? AND pinned = 1 AND deleted_at IS NULL
+	ORDER BY created_at DESC`
+	var args []interface{}
+	args = append(args, projectID)
+	if limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, limit)
+	}
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search pinned memories: %w", err)
+	}
+	defer rows.Close()
+	return scanCompactMemories(rows)
+}
+
+// SearchMemoriesCompactScoped searches memories scoped to a project with an
+// optional category and path filter. matchMode is "all" (every token must
+// match, default) or "any" (broader recall — a memory matching one or more
+// tokens is returned).
+func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string, category string, pathFilter string, matchMode string, limit int, offset int) ([]*MemorySearchResult, error) {
 	pathFilter = sanitizePathFilter(pathFilter)
 	var query string
 	var args []interface{}
@@ -79,7 +107,7 @@ func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string
 		}
 		query += " ORDER BY created_at DESC"
 	} else {
-		searchTerm = sanitizeFTS5Query(searchTerm)
+		searchTerm = sanitizeFTS5QueryWithMode(searchTerm, matchMode)
 		// An empty sanitized query (e.g. only quotes) must not reach `MATCH ''`,
 		// which raises an FTS5 syntax error. Treat it as "no results".
 		if searchTerm == "" {
@@ -431,6 +459,14 @@ func SearchMemoriesScoped(db *sql.DB, projectID string, searchTerm string, categ
 // callers must treat it as "no results" instead of running an empty FTS5 MATCH
 // expression, which raises an FTS5 syntax error.
 func sanitizeFTS5Query(term string) string {
+	return sanitizeFTS5QueryWithMode(term, "all")
+}
+
+// sanitizeFTS5QueryWithMode tokenizes a raw user query into a safe FTS5 MATCH
+// expression. matchMode controls the operator between tokens: "all" (default)
+// requires every token to match (implicit AND), "any" broadens recall so a
+// memory matching one or more tokens is returned (explicit OR).
+func sanitizeFTS5QueryWithMode(term string, matchMode string) string {
 	tokens := strings.Fields(term)
 	if len(tokens) == 0 {
 		return ""
@@ -446,6 +482,12 @@ func sanitizeFTS5Query(term string) string {
 		} else {
 			quoted = append(quoted, `"`+cleaned+`"`)
 		}
+	}
+	if len(quoted) == 0 {
+		return ""
+	}
+	if matchMode == "any" {
+		return strings.Join(quoted, " OR ")
 	}
 	return strings.Join(quoted, " ")
 }

@@ -124,11 +124,11 @@ func TestGrantMergeAllTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("regrant: %v", err)
 	}
-	if len(res2.Added) != 0 || len(res2.Present) != 26 {
-		t.Fatalf("expected 26 present / 0 added on re-grant, got: added=%d present=%d", len(res2.Added), len(res2.Present))
+	if len(res2.Added) != 0 || len(res2.Present) != 28 {
+		t.Fatalf("expected 28 present / 0 added on re-grant, got: added=%d present=%d", len(res2.Added), len(res2.Present))
 	}
 
-	// Verify file contents: unrelated entry preserved + 26 sv-memory entries.
+	// Verify file contents: unrelated entry preserved + 28 sv-memory entries.
 	content, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("read: %v", err)
@@ -148,8 +148,8 @@ func TestGrantMergeAllTools(t *testing.T) {
 			hasNpm = true
 		}
 	}
-	if found != 26 {
-		t.Errorf("expected 26 sv-memory entries, got %d", found)
+	if found != 28 {
+		t.Errorf("expected 28 sv-memory entries, got %d", found)
 	}
 	if !hasNpm {
 		t.Error("unrelated entry 'command(npm run)' was not preserved")
@@ -285,8 +285,8 @@ func TestStatusReportsGrantedAndMissing(t *testing.T) {
 	if len(status.Granted) != 2 {
 		t.Errorf("expected 2 granted, got %d: %v", len(status.Granted), status.Granted)
 	}
-	if len(status.Missing) != 24 {
-		t.Errorf("expected 24 missing, got %d", len(status.Missing))
+	if len(status.Missing) != 26 {
+		t.Errorf("expected 26 missing, got %d", len(status.Missing))
 	}
 	if status.ConfigPath != configPath {
 		t.Errorf("expected config path %s, got %s", configPath, status.ConfigPath)

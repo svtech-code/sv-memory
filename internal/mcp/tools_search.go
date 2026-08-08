@@ -23,6 +23,10 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 	}
 	category := req.GetString("category", "")
 	pathFilter := req.GetString("path", "")
+	matchMode := req.GetString("match_mode", "all")
+	if matchMode != "any" {
+		matchMode = "all"
+	}
 	limitStr := req.GetString("limit", "10")
 	offsetStr := req.GetString("offset", "0")
 
@@ -55,7 +59,7 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 	debugLog("mem_search maybeSyncFromGit took %s", time.Since(startSync))
 
 	startSearch := time.Now()
-	results, err := memory.SearchMemoriesCompactScoped(s.pool.Reader, s.cfg.ProjectID, query, category, pathFilter, limit, offset)
+	results, err := memory.SearchMemoriesCompactScoped(s.pool.Reader, s.cfg.ProjectID, query, category, pathFilter, matchMode, limit, offset)
 	debugLog("mem_search query=%q category=%q offset=%d returned %d rows in %s", query, category, offset, len(results), time.Since(startSearch))
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed searching memories: %v", err)), nil
@@ -144,6 +148,12 @@ func (s *Server) handleGet(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 	}
 	if mem.DuplicateCount > 0 {
 		fmt.Fprintf(&sb, "* **Duplicates:** %d\n", mem.DuplicateCount)
+	}
+	if mem.Pinned {
+		sb.WriteString("* **Pinned:** 📌 yes\n")
+	}
+	if !mem.ReviewAfter.IsZero() {
+		fmt.Fprintf(&sb, "* **Review after:** %s\n", mem.ReviewAfter.Format("2006-01-02"))
 	}
 	if mem.GitBranch != "" {
 		fmt.Fprintf(&sb, "* **Branch:** `%s`\n", mem.GitBranch)
@@ -287,6 +297,13 @@ func (s *Server) handleReview(ctx context.Context, req mcp.CallToolRequest) (*mc
 		}
 		if item.NeedsConsolidation {
 			sb.WriteString("* **⚠ Needs consolidation** (many revisions)\n")
+		}
+		if item.NeedsReview {
+			if item.ReviewDueDays > 0 {
+				fmt.Fprintf(&sb, "* **⏰ Due for policy review** (%d days overdue)\n", item.ReviewDueDays)
+			} else {
+				sb.WriteString("* **⏰ Due for policy review**\n")
+			}
 		}
 		sb.WriteString("\n")
 	}

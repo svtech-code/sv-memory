@@ -5,6 +5,37 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+### Added
+
+- `sv_mem_pin` / `sv_mem_unpin`: pin local memories so key decisions surface
+  first in `sv_mem_context` (📌 Pinned section). Pinned state is local-only.
+- `sv_mem_search` `match_mode` (`all` default / `any`): broader FTS5 recall
+  when a memory matching one or more query tokens is useful.
+- Decay-driven `review_after` per memory category (decision/architecture 6mo,
+  standard 12mo, bugfix/idea 3mo). `sv_mem_review` now flags and prioritizes
+  memories due for policy review.
+- Global `max_response_tokens` config (default 4000) enforced across read
+  handlers via shared `resolveTokenBudget` / `truncateToTokenBudget` helpers;
+  `sv_mem_search` / `sv_mem_get` / `sv_mem_context` accept a per-call
+  `token_budget` override.
+- `BenchmarkToolResponseTokens` regression guard measuring per-call bytes and
+  estimated tokens for search/get/timeline/context.
+
+### Changed
+
+- Removed self-referential `*Response: ~N tokens*` estimate from
+  `sv_mem_search` / `sv_mem_get` / `sv_mem_review` / `sv_mem_stats` and
+  `sv_graph_god_nodes` / `sv_graph_surprising_connections` outputs (the LLM
+  never used it).
+- Lowered default `sv_mem_get` field truncation from 1500 to 1000 chars
+  (`max_chars="0"` remains unlimited).
+- `sv_mem_save` similar-memories hint now emits a ready-to-call
+  `sv_mem_judge(source_id, target_id, relation_type)` per candidate.
+- 6 admin/maintenance tools (`sv_mem_delete`, `sv_mem_compact`, `sv_mem_review`,
+  `sv_mem_conflicts`, `sv_graph_viz`, `sv_graph_merge`) marked as
+  `defer_loading` for MCP clients supporting dynamic tool loading (tool count
+  documented as 28).
+
 ## [v0.5.0] - 2026-08-05
 
 ### Added

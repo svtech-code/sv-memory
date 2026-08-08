@@ -181,6 +181,17 @@ func GetSessionContext(db *sql.DB, projectID string) (string, error) {
 				strings.ToUpper(m.Category), m.What, m.ID)
 		}
 	}
+
+	// Pinned memories surface first so key decisions stay visible regardless
+	// of session recency (sv_mem_pin / sv_mem_unpin).
+	pinned, perr := SearchPinnedMemories(db, projectID, 5)
+	if perr == nil && len(pinned) > 0 {
+		fmt.Fprintf(&sb, "\n**📌 Pinned memories (%d):**\n", len(pinned))
+		for _, m := range pinned {
+			fmt.Fprintf(&sb, "- [%s] **%s** (ID: %s)\n",
+				strings.ToUpper(m.Category), m.What, m.ID)
+		}
+	}
 	return sb.String(), nil
 }
 

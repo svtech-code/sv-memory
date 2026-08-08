@@ -159,7 +159,7 @@ func ReviewMemories(db *sql.DB, projectID string, limit int) ([]*MemoryReviewIte
 	}
 
 	rows, err := db.Query(`
-		SELECT id, category, what, topic_key, revision_count, duplicate_count, created_at, last_seen_at
+		SELECT id, category, what, topic_key, revision_count, duplicate_count, created_at, last_seen_at, review_after
 		FROM memories
 		WHERE project_id = ? AND deleted_at IS NULL
 		ORDER BY created_at DESC
@@ -174,12 +174,12 @@ func ReviewMemories(db *sql.DB, projectID string, limit int) ([]*MemoryReviewIte
 	for rows.Next() {
 		var r MemoryReviewItem
 		var createdAtStr string
-		var lastSeenAtStr sql.NullString
+		var lastSeenAtStr, reviewAfterStr sql.NullString
 		var topicKey sql.NullString
 		var revisionCount, duplicateCount sql.NullInt64
 
 		r.Memory = &MemorySearchResult{}
-		err := rows.Scan(&r.Memory.ID, &r.Memory.Category, &r.Memory.What, &topicKey, &revisionCount, &duplicateCount, &createdAtStr, &lastSeenAtStr)
+		err := rows.Scan(&r.Memory.ID, &r.Memory.Category, &r.Memory.What, &topicKey, &revisionCount, &duplicateCount, &createdAtStr, &lastSeenAtStr, &reviewAfterStr)
 		if err != nil {
 			return nil, err
 		}
@@ -201,10 +201,23 @@ func ReviewMemories(db *sql.DB, projectID string, limit int) ([]*MemoryReviewIte
 				r.LastSeenDays = int(now.Sub(t).Hours() / 24)
 			}
 		}
+		if reviewAfterStr.Valid && reviewAfterStr.String != "" {
+			if t, err := parseTime(reviewAfterStr.String); err == nil {
+				r.NeedsReview = now.After(t)
+				r.ReviewDueDays = int(now.Sub(t).Hours() / 24)
+			}
+		}
 
 		r.RelationCount = relCounts[r.Memory.ID]
 
 		var reasons []string
+		if r.NeedsReview {
+			if r.ReviewDueDays > 0 {
+				reasons = append(reasons, fmt.Sprintf("due for review (policy, %d days overdue)", r.ReviewDueDays))
+			} else {
+				reasons = append(reasons, "due for review (policy)")
+			}
+		}
 		if r.AgeDays > 30 {
 			reasons = append(reasons, fmt.Sprintf("old (%d days)", r.AgeDays))
 		}
@@ -228,13 +241,17 @@ func ReviewMemories(db *sql.DB, projectID string, limit int) ([]*MemoryReviewIte
 		return nil, err
 	}
 
-	// Prioritize memories that actually need attention, then by age, so the
-	// limited output surfaces stale/duplicate/consolidation candidates first.
+	// Prioritize memories that actually need attention (policy review first,
+	// then stale/duplicate/consolidation candidates), then by age, so the
+	// limited output surfaces the most actionable items first.
 	sort.SliceStable(items, func(i, j int) bool {
 		ineed := items[i].Reason != "recent and healthy"
 		jneed := items[j].Reason != "recent and healthy"
 		if ineed != jneed {
 			return ineed
+		}
+		if items[i].NeedsReview != items[j].NeedsReview {
+			return items[i].NeedsReview
 		}
 		return items[i].AgeDays > items[j].AgeDays
 	})

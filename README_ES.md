@@ -22,7 +22,7 @@
   <a href="#-arquitectura">Arquitectura</a> •
   <a href="#-inicio-rápido">Inicio Rápido</a> •
   <a href="#-referencia-de-comandos-cli">Comandos CLI</a> •
-  <a href="#-herramientas-del-model-context-protocol-mcp-26-herramientas">Herramientas MCP</a> •
+  <a href="#-herramientas-del-model-context-protocol-mcp-28-herramientas">Herramientas MCP</a> •
   <a href="documentation/getting_started_guide.md">Guía</a>
 </p>
 
@@ -204,19 +204,19 @@ sv-memory tui
 | `sv-memory obsidian-export`        | **Exportación** | Exporta memorias a una bóveda de notas Markdown de Obsidian (`[[wikilinks]]`).                        |
 | `sv-memory conflicts`              | **Memoria**     | Detecta superposiciones semánticas y conflictos entre memorias del proyecto.                          |
 | `sv-memory hooks install`          | **Hooks**       | Instala hooks PreToolUse para Claude Code, Antigravity CLI y OpenCode.                                |
-| `sv-memory permissions list`       | **Permisos**    | Lista las 26 herramientas MCP de sv-memory con descripciones.                                         |
+| `sv-memory permissions list`       | **Permisos**    | Lista las 28 herramientas MCP de sv-memory con descripciones.                                         |
 | `sv-memory permissions status`     | **Permisos**    | Muestra permisos MCP otorgados/faltantes por plataforma.                                              |
 | `sv-memory permissions grant`      | **Permisos**    | Escribe allow-lists de herramientas MCP (`--all`/`--tool`, `--dry-run`) para Antigravity/Claude Code. |
 | `sv-memory permissions revoke`     | **Permisos**    | Elimina entradas de sv-memory de la allow-list conservando permisos no relacionados.                  |
 
 ---
 
-## 🧩 Herramientas del Model Context Protocol (MCP) (26 Herramientas)
+## 🧩 Herramientas del Model Context Protocol (MCP) (28 Herramientas)
 
 ### 🧠 Herramientas de Memoria
 
 - **`sv_mem_save`**: Guarda decisiones arquitectónicas, correcciones o estándares con Git sync automático.
-- **`sv_mem_search`**: Búsqueda FTS5 con **clasificación BM25**, filtros por categoría y **path-scoping**.
+- **`sv_mem_search`**: Búsqueda FTS5 con **clasificación BM25**, filtros por categoría/ruta y **match_mode** (`all` / `any`).
 - **`sv_mem_get`**: Recupera el contenido completo de una memoria específica con truncamiento opcional.
 - **`sv_mem_timeline`**: Contexto cronológico alrededor de una memoria (Capa 2 de divulgación progresiva).
 - **`sv_mem_suggest_topic_key`**: Genera un topic_key estable en formato `category/kebab-case` para upsert.
@@ -226,6 +226,7 @@ sv-memory tui
 - **`sv_mem_stats`**: Estadísticas agregadas de memorias y desglose por categoría.
 - **`sv_mem_current_project`**: Recupera el ID, nombre y ruta del proyecto activo.
 - **`sv_mem_delete`**: Soft-delete (o hard-delete) de una memoria.
+- **`sv_mem_pin`** / **`sv_mem_unpin`**: Fija una memoria local para que aparezca primero en el contexto de sesión.
 - **`sv_mem_capture_passive`**: Registra entradas de diario ligeras automáticamente.
 - **`sv_mem_conflicts`**: Muestra conflictos de memoria con análisis de superposición semántica.
 - **`sv_mem_compact`**: Consolida revisiones históricas de topic keys en registros de síntesis unificados.
@@ -275,10 +276,10 @@ gestionar esa allow-list automáticamente, ya sea desde el asistente `configure`
 (Fase 4) o de forma independiente:
 
 ```bash
-# Muestra las 26 herramientas con descripciones
+# Muestra las 28 herramientas con descripciones
 sv-memory permissions list
 
-# Otorga las 26 herramientas a Antigravity CLI (usa --dry-run primero para previsualizar)
+# Otorga las 28 herramientas a Antigravity CLI (usa --dry-run primero para previsualizar)
 sv-memory permissions grant --platform antigravity --all --dry-run
 sv-memory permissions grant --platform antigravity --all
 
@@ -296,7 +297,7 @@ sv-memory permissions revoke --platform antigravity
 - Las entradas no relacionadas (p. ej. `command(npm run)`) siempre se conservan.
 - Reinicia tu asistente de IA tras otorgar permisos para que cargue los cambios.
 
-En el asistente `sv-memory configure`, la **Fase 4** lista las 26 herramientas para que
+En el asistente `sv-memory configure`, la **Fase 4** lista las 28 herramientas para que
 selecciones cuáles autorizar (con `a` seleccionas todas y `x` ninguna) en las plataformas
 configuradas.
 

@@ -44,8 +44,52 @@ type Memory struct {
 	DuplicateCount int       `json:"duplicate_count,omitempty"`
 	LastSeenAt     time.Time `json:"last_seen_at,omitempty"`
 	NormalizedHash string    `json:"normalized_hash,omitempty"`
+	ReviewAfter    time.Time `json:"review_after,omitempty"`
+	Pinned         bool      `json:"pinned,omitempty"`
 	DeletedAt      time.Time `json:"deleted_at,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
+}
+
+// decayReviewAfter returns the review-cycle duration for a memory category so
+// policies and decisions are re-validated on a predictable schedule. Decisions
+// and architecture need a periodic sanity check; standards are more stable;
+// bugfixes and ideas go stale fastest.
+func decayReviewAfter(category string) time.Duration {
+	switch strings.ToLower(category) {
+	case "decision", "architecture":
+		return 6 * 30 * 24 * time.Hour
+	case "standard":
+		return 12 * 30 * 24 * time.Hour
+	case "bugfix", "idea":
+		return 3 * 30 * 24 * time.Hour
+	default:
+		return 6 * 30 * 24 * time.Hour
+	}
+}
+
+// PinMemory marks a memory as pinned (local context priority). Pinned memories
+// surface first in session context so key decisions stay visible.
+func PinMemory(db *sql.DB, projectID, id string) error {
+	res, err := db.Exec("UPDATE memories SET pinned = 1 WHERE project_id = ? AND id = ? AND deleted_at IS NULL", projectID, id)
+	if err != nil {
+		return fmt.Errorf("failed to pin memory: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("memory %s not found in project", id)
+	}
+	return nil
+}
+
+// UnpinMemory clears the pinned flag on a memory.
+func UnpinMemory(db *sql.DB, projectID, id string) error {
+	res, err := db.Exec("UPDATE memories SET pinned = 0 WHERE project_id = ? AND id = ? AND deleted_at IS NULL", projectID, id)
+	if err != nil {
+		return fmt.Errorf("failed to unpin memory: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("memory %s not found in project", id)
+	}
+	return nil
 }
 
 type MemoryRelation struct {
@@ -71,6 +115,8 @@ type MemoryReviewItem struct {
 	DuplicateCount     int                 `json:"duplicate_count"`
 	RelationCount      int                 `json:"relation_count"`
 	NeedsConsolidation bool                `json:"needs_consolidation"`
+	NeedsReview        bool                `json:"needs_review,omitempty"`
+	ReviewDueDays      int                 `json:"review_due_days,omitempty"`
 	Reason             string              `json:"reason"`
 }
 
@@ -136,6 +182,9 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 
 	now := time.Now()
 	mem.NormalizedHash = computeHash(mem.What, mem.Why, mem.Learned, mem.WherePath)
+	if mem.ReviewAfter.IsZero() {
+		mem.ReviewAfter = now.Add(decayReviewAfter(mem.Category))
+	}
 
 	if mem.TopicKey != "" {
 		var existingID string
@@ -156,14 +205,14 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 				git_branch = ?, git_commit = ?, author = ?, impact = ?,
 				errors_faced = ?, next_steps = ?, session_id = ?,
 				topic_key = ?, revision_count = ?, normalized_hash = ?,
-				last_seen_at = ?, created_at = ?, deleted_at = NULL
+				last_seen_at = ?, review_after = ?, created_at = ?, deleted_at = NULL
 			WHERE id = ?`
 			_, err := db.Exec(query,
 				mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned,
 				mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact,
 				mem.ErrorsFaced, mem.NextSteps, mem.SessionID,
 				mem.TopicKey, mem.RevisionCount, mem.NormalizedHash,
-				now, mem.CreatedAt, mem.ID)
+				now, mem.ReviewAfter, mem.CreatedAt, mem.ID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to update memory via topic_key: %w", err)
 			}
@@ -206,7 +255,7 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 		mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned,
 		mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact, mem.ErrorsFaced, mem.NextSteps,
 		mem.SessionID, mem.TopicKey, mem.RevisionCount, mem.DuplicateCount, mem.LastSeenAt,
-		mem.NormalizedHash, mem.CreatedAt)
+		mem.NormalizedHash, mem.ReviewAfter, mem.Pinned, mem.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save memory: %w", err)
 	}
@@ -217,16 +266,17 @@ func GetMemory(db *sql.DB, projectID, id string) (*Memory, error) {
 	query := `
 	SELECT id, project_id, category, what, why, where_path, learned,
 		git_branch, git_commit, author, impact, errors_faced, next_steps,
-		session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at
+		session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, review_after, pinned, created_at
 	FROM memories WHERE project_id = ? AND id = ? AND deleted_at IS NULL`
 	row := db.QueryRow(query, projectID, id)
 	var mem Memory
 	var createdAtStr string
-	var lastSeenAtStr sql.NullString
+	var lastSeenAtStr, reviewAfterStr sql.NullString
 	var gitBranch, gitCommit, author, impact, errorsFaced, nextSteps, sessionID, topicKey sql.NullString
 	var revisionCount, duplicateCount sql.NullInt64
+	var pinned sql.NullInt64
 	var normalizedHash sql.NullString
-	err := row.Scan(&mem.ID, &mem.ProjectID, &mem.Category, &mem.What, &mem.Why, &mem.WherePath, &mem.Learned, &gitBranch, &gitCommit, &author, &impact, &errorsFaced, &nextSteps, &sessionID, &topicKey, &revisionCount, &duplicateCount, &lastSeenAtStr, &normalizedHash, &createdAtStr)
+	err := row.Scan(&mem.ID, &mem.ProjectID, &mem.Category, &mem.What, &mem.Why, &mem.WherePath, &mem.Learned, &gitBranch, &gitCommit, &author, &impact, &errorsFaced, &nextSteps, &sessionID, &topicKey, &revisionCount, &duplicateCount, &lastSeenAtStr, &normalizedHash, &reviewAfterStr, &pinned, &createdAtStr)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -251,10 +301,18 @@ func GetMemory(db *sql.DB, projectID, id string) (*Memory, error) {
 	if duplicateCount.Valid {
 		mem.DuplicateCount = int(duplicateCount.Int64)
 	}
+	if pinned.Valid {
+		mem.Pinned = pinned.Int64 == 1
+	}
 	mem.NormalizedHash = normalizedHash.String
 	if lastSeenAtStr.Valid && lastSeenAtStr.String != "" {
 		if t, err := parseTime(lastSeenAtStr.String); err == nil {
 			mem.LastSeenAt = t
+		}
+	}
+	if reviewAfterStr.Valid && reviewAfterStr.String != "" {
+		if t, err := parseTime(reviewAfterStr.String); err == nil {
+			mem.ReviewAfter = t
 		}
 	}
 	if t, err := parseTime(createdAtStr); err == nil {

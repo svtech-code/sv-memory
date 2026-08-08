@@ -172,6 +172,30 @@ func (s *Server) handleCapturePassive(ctx context.Context, req mcp.CallToolReque
 	return mcp.NewToolResultText(fmt.Sprintf("Passive observation captured (ID: %s, category: journal). Use sv_mem_get(id=\"%s\") for details.", mem.ID, mem.ID)), nil
 }
 
+func (s *Server) handlePin(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := req.RequireString("id")
+	if err != nil {
+		return mcp.NewToolResultError("missing required field: id"), nil
+	}
+	if err := memory.PinMemory(s.pool.Writer, s.cfg.ProjectID, id); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to pin memory: %v", err)), nil
+	}
+	s.scheduleSync()
+	return mcp.NewToolResultText(fmt.Sprintf("Memory %s pinned. It will surface first in sv_mem_context.", id)), nil
+}
+
+func (s *Server) handleUnpin(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := req.RequireString("id")
+	if err != nil {
+		return mcp.NewToolResultError("missing required field: id"), nil
+	}
+	if err := memory.UnpinMemory(s.pool.Writer, s.cfg.ProjectID, id); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to unpin memory: %v", err)), nil
+	}
+	s.scheduleSync()
+	return mcp.NewToolResultText(fmt.Sprintf("Memory %s unpinned.", id)), nil
+}
+
 func (s *Server) handleDelete(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	id, err := req.RequireString("id")
 	if err != nil {

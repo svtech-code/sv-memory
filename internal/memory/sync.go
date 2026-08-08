@@ -168,6 +168,7 @@ func SyncFromGitChunked(db *sql.DB, projectID string, projPath string) error {
 			nullString(mem.SessionID), nullString(mem.TopicKey),
 			mem.RevisionCount, mem.DuplicateCount,
 			nullTime(mem.LastSeenAt), nullString(mem.NormalizedHash),
+			nullTime(mem.ReviewAfter), mem.Pinned,
 			createdAt)
 		if err != nil {
 			return fmt.Errorf("failed to import chunk %s: %w", entry.Name(), err)
@@ -349,6 +350,7 @@ func SyncFromGit(db *sql.DB, projectID string, projPath string) error {
 			nullString(mem.SessionID), nullString(mem.TopicKey),
 			mem.RevisionCount, mem.DuplicateCount,
 			nullTime(mem.LastSeenAt), nullString(mem.NormalizedHash),
+			nullTime(mem.ReviewAfter), mem.Pinned,
 			createdAt)
 		if err != nil {
 			return fmt.Errorf("failed to sync memory %s: %w", mem.ID, err)

@@ -78,6 +78,7 @@ func ImportJSON(db *sql.DB, projectID, filePath string) (int, error) {
 			nullString(mem.SessionID), nullString(mem.TopicKey),
 			mem.RevisionCount, mem.DuplicateCount,
 			nullTime(mem.LastSeenAt), nullString(mem.NormalizedHash),
+			nullTime(mem.ReviewAfter), mem.Pinned,
 			createdAt)
 		if err != nil {
 			return 0, fmt.Errorf("failed to import memory %s: %w", mem.ID, err)

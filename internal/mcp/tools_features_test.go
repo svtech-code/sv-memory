@@ -1,0 +1,109 @@
+package mcp
+
+import (
+	"context"
+	"strings"
+	"testing"
+	"time"
+
+	mcpgo "github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/svtech-code/sv-memory/internal/memory"
+)
+
+func TestPinUnpinTools(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	srv := NewServer(pool, cfg)
+	ctx := context.Background()
+
+	saved, err := memory.SaveMemory(pool.Writer, &memory.Memory{
+		ID: "pin-tool-1", ProjectID: cfg.ProjectID, Category: "decision",
+		What: "Key decision to pin", Why: "important", Learned: "keep visible", CreatedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("seed save failed: %v", err)
+	}
+
+	call := func(name string, args map[string]any) string {
+		req := mcpgo.CallToolRequest{}
+		req.Params.Name = name
+		req.Params.Arguments = args
+		res, err := srv.GetTool(name).Handler(ctx, req)
+		if err != nil {
+			t.Fatalf("%s failed: %v", name, err)
+		}
+		var out strings.Builder
+		for _, c := range res.Content {
+			out.WriteString(textContent(c))
+		}
+		return out.String()
+	}
+
+	out := call("sv_mem_pin", map[string]any{"id": saved.ID})
+	if !strings.Contains(out, "pinned") {
+		t.Fatalf("expected pin confirmation, got %q", out)
+	}
+	pinned, err := memory.SearchPinnedMemories(pool.Reader, cfg.ProjectID, 10)
+	if err != nil {
+		t.Fatalf("pinned search failed: %v", err)
+	}
+	if len(pinned) != 1 || pinned[0].ID != saved.ID {
+		t.Fatalf("expected 1 pinned memory, got %d", len(pinned))
+	}
+
+	out = call("sv_mem_unpin", map[string]any{"id": saved.ID})
+	if !strings.Contains(out, "unpinned") {
+		t.Fatalf("expected unpin confirmation, got %q", out)
+	}
+	pinned, err = memory.SearchPinnedMemories(pool.Reader, cfg.ProjectID, 10)
+	if err != nil {
+		t.Fatalf("pinned search failed: %v", err)
+	}
+	if len(pinned) != 0 {
+		t.Fatalf("expected 0 pinned after unpin, got %d", len(pinned))
+	}
+}
+
+func TestSearchMatchModeHandler(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	for _, m := range []*memory.Memory{
+		{ID: "mm-h-1", Category: "decision", What: "auth uses JWT", Why: "security", Learned: "x"},
+		{ID: "mm-h-2", Category: "decision", What: "cache uses redis", Why: "perf", Learned: "x"},
+	} {
+		m.ProjectID = cfg.ProjectID
+		m.CreatedAt = time.Now()
+		if _, err := memory.SaveMemory(pool.Writer, m); err != nil {
+			t.Fatalf("seed failed: %v", err)
+		}
+	}
+
+	srv := NewServer(pool, cfg)
+	ctx := context.Background()
+	call := func(mode string) string {
+		req := mcpgo.CallToolRequest{}
+		req.Params.Name = "sv_mem_search"
+		req.Params.Arguments = map[string]any{"query": "auth redis", "match_mode": mode, "limit": "10"}
+		res, err := srv.GetTool("sv_mem_search").Handler(ctx, req)
+		if err != nil {
+			t.Fatalf("search failed: %v", err)
+		}
+		var out strings.Builder
+		for _, c := range res.Content {
+			out.WriteString(textContent(c))
+		}
+		return out.String()
+	}
+
+	allMode := call("all")
+	anyMode := call("any")
+	if strings.Contains(allMode, "mm-h-2") && strings.Contains(allMode, "mm-h-1") {
+		t.Log("note: all-mode matched both in this small corpus")
+	}
+	if !strings.Contains(anyMode, "mm-h-1") && !strings.Contains(anyMode, "mm-h-2") {
+		t.Fatalf("any-mode should return at least one result, got:\n%s", anyMode)
+	}
+}

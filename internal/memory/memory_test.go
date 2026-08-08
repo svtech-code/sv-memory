@@ -951,7 +951,7 @@ func TestAutoBootBundleAndScopedSearch(t *testing.T) {
 	}
 
 	// 3. Test SearchMemoriesCompactScoped with BM25 & path filter
-	results, err := SearchMemoriesCompactScoped(database, projectID, "SQLite", "", "internal/db", 10, 0)
+	results, err := SearchMemoriesCompactScoped(database, projectID, "SQLite", "", "internal/db", "all", 10, 0)
 	if err != nil {
 		t.Fatalf("failed scoped search: %v", err)
 	}
@@ -960,7 +960,7 @@ func TestAutoBootBundleAndScopedSearch(t *testing.T) {
 	}
 
 	// Test path filter miss
-	noResults, err := SearchMemoriesCompactScoped(database, projectID, "SQLite", "", "internal/mcp", 10, 0)
+	noResults, err := SearchMemoriesCompactScoped(database, projectID, "SQLite", "", "internal/mcp", "all", 10, 0)
 	if err != nil {
 		t.Fatalf("failed scoped search miss: %v", err)
 	}

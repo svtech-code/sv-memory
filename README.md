@@ -22,7 +22,7 @@
   <a href="#-architecture">Architecture</a> •
   <a href="#-getting-started">Getting Started</a> •
   <a href="#-cli-commands-reference">CLI Commands</a> •
-  <a href="#-model-context-protocol-mcp-tools-26-tools">MCP Tools</a> •
+  <a href="#-model-context-protocol-mcp-tools-28-tools">MCP Tools</a> •
   <a href="documentation/getting_started_guide.md">Guide</a>
 </p>
 
@@ -204,19 +204,19 @@ sv-memory tui
 | `sv-memory obsidian-export`        | **Export**      | Exports memories into linked Obsidian Markdown notes (`[[wikilinks]]`).                  |
 | `sv-memory conflicts`              | **Memory**      | Detects semantic overlap and memory conflicts across the project.                        |
 | `sv-memory hooks install`          | **Hooks**       | Installs PreToolUse hooks for Claude Code, Antigravity CLI, and OpenCode.                |
-| `sv-memory permissions list`       | **Permissions** | Lists the 26 sv-memory MCP tools with descriptions.                                      |
+| `sv-memory permissions list`       | **Permissions** | Lists the 28 sv-memory MCP tools with descriptions.                                      |
 | `sv-memory permissions status`     | **Permissions** | Shows granted/missing MCP permissions per platform.                                      |
 | `sv-memory permissions grant`      | **Permissions** | Writes MCP tool allow-lists (`--all`/`--tool`, `--dry-run`) for Antigravity/Claude Code. |
 | `sv-memory permissions revoke`     | **Permissions** | Removes sv-memory allow-list entries, preserving unrelated permissions.                  |
 
 ---
 
-## 🧩 Model Context Protocol (MCP) Tools (26 Tools)
+## 🧩 Model Context Protocol (MCP) Tools (28 Tools)
 
 ### 🧠 Memory Tools
 
 - **`sv_mem_save`**: Persists architectural decisions, bugfixes, or standards with auto Git sync.
-- **`sv_mem_search`**: FTS5 search with **BM25 ranking**, category filters, and **path-scoping**.
+- **`sv_mem_search`**: FTS5 search with **BM25 ranking**, category/path filters, and **match_mode** (`all` / `any`).
 - **`sv_mem_get`**: Retrieves full content of a specific memory with optional truncation.
 - **`sv_mem_timeline`**: Chronological context around a memory (Layer 2 progressive disclosure).
 - **`sv_mem_suggest_topic_key`**: Generates stable `category/kebab-case` topic key for upsert.
@@ -226,6 +226,7 @@ sv-memory tui
 - **`sv_mem_stats`**: Aggregate memory statistics and per-category breakdowns.
 - **`sv_mem_current_project`**: Retrieves active project ID, name, and path.
 - **`sv_mem_delete`**: Soft-deletes (or hard-deletes) a memory.
+- **`sv_mem_pin`** / **`sv_mem_unpin`**: Pins a local memory so it surfaces first in session context.
 - **`sv_mem_capture_passive`**: Logs lightweight journal entries automatically.
 - **`sv_mem_conflicts`**: Surfaces memory conflicts with semantic overlap analysis.
 - **`sv_mem_compact`**: Consolidates historical topic key revisions into unified summary records.
@@ -277,10 +278,10 @@ approval on every unlisted MCP tool call. `sv-memory` can manage that allow-list
 for you, either from the `configure` wizard (Phase 4) or standalone:
 
 ```bash
-# Show the 26 tools with descriptions
+# Show the 28 tools with descriptions
 sv-memory permissions list
 
-# Grant all 26 tools to Antigravity CLI (dry-run first to preview)
+# Grant all 28 tools to Antigravity CLI (dry-run first to preview)
 sv-memory permissions grant --platform antigravity --all --dry-run
 sv-memory permissions grant --platform antigravity --all
 

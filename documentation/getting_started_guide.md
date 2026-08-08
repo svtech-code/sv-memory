@@ -13,7 +13,7 @@ Cuando trabajas con asistentes de IA en repositorios medianos o grandes, suceden
 2. **Desperdicio de Tokens:** La IA necesita leer decenas de archivos fuente una y otra vez para entender la estructura del código.
 3. **Falta de Continuidad:** Las decisiones técnicas quedan atrapadas en chats individuales en lugar de compartirse con el equipo.
 
-**sv-memory** resuelve esto combinando **memorias persistentes indexadas con SQLite FTS5 BM25** y un **grafo de dependencias estructural de código** expuesto a través de 26 herramientas MCP (*Model Context Protocol*).
+**sv-memory** resuelve esto combinando **memorias persistentes indexadas con SQLite FTS5 BM25** y un **grafo de dependencias estructural de código** expuesto a través de 28 herramientas MCP (*Model Context Protocol*).
 
 ---
 
@@ -95,7 +95,7 @@ El asistente te guiará a través de fases interactivas en la terminal, navegabl
 1. **Fase 1 (Editores GUI):** Te permite seleccionar editores como **Cursor**, **VS Code**, **Zed** o **Windsurf**. Registra automáticamente el servidor MCP en sus archivos de configuración de usuario (ej. `claude_desktop_config.json` o settings de Cursor).
 2. **Fase 2 (Asistentes de Terminal):** Te permite seleccionar clientes CLI como **Claude Code**, **Antigravity CLI (agy)** u **OpenCode**.
 3. **Fase 3 (Confirmación y aplicación):** Muestra el resumen de herramientas seleccionadas y aplica las configuraciones automáticas o manuales.
-4. **Fase 4 (Permisos MCP):** Lista las **26 herramientas MCP de sv-memory** para que selecciones cuáles autorizar (con `a` seleccionas todas y `x` ninguna). Otorga los permisos en las plataformas configuradas que usan allow-list estática (Antigravity CLI, Claude Code).
+4. **Fase 4 (Permisos MCP):** Lista las **28 herramientas MCP de sv-memory** para que selecciones cuáles autorizar (con `a` seleccionas todas y `x` ninguna). Otorga los permisos en las plataformas configuradas que usan allow-list estática (Antigravity CLI, Claude Code).
 
 > **¿Por qué este paso?**
 > Evita que tengas que editar manualmente archivos JSON de configuración complejos. Con un par de teclas en la terminal, todos tus editores quedan enlazados al servidor MCP de `sv-memory` y los permisos de las herramientas quedan otorgados con total transparencia.

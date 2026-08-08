@@ -82,7 +82,7 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 
 #### 2. `sv-memory mcp`
 - Starts the JSON-RPC MCP server over `stdio` for agent consumption.
-- Registers all 26 MCP tools.
+- Registers all 28 MCP tools.
 - Maintains an in-memory graph cache for zero-SQL BFS traversals.
 - Debounces Git sync writes (500ms coalescing).
 
@@ -107,14 +107,14 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 
 #### 9. `sv-memory configure`
 - Interactive wizard for automatic/manual configurations of editors (Cursor, VS Code, Zed, Windsurf, OpenCode) and CLIs (Claude Code, Codex, Antigravity).
-- **Phase 4 (MCP Permissions):** Lists the 26 sv-memory MCP tools with descriptions and grants the selected allow-list entries to the allow-listed platforms chosen earlier (Antigravity CLI, Claude Code).
+- **Phase 4 (MCP Permissions):** Lists the 28 sv-memory MCP tools with descriptions and grants the selected allow-list entries to the allow-listed platforms chosen earlier (Antigravity CLI, Claude Code).
 - **Sub-commands** for reading/writing configuration (YAML, global `~/.sv-memory/config.yaml` or local `.sv-memory/config.yaml`):
   - `sv-memory configure get <key>`: prints a single configuration value.
   - `sv-memory configure set <key> <value> [--local]`: writes a value globally (default) or project-locally.
   - `sv-memory configure list`: prints all active configuration values (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`).
 
 #### 10. `sv-memory permissions`
-- `list`: shows the 26 sv-memory MCP tools with human-readable descriptions.
+- `list`: shows the 28 sv-memory MCP tools with human-readable descriptions.
 - `grant --platform <p> [--all | --tool a,b] [--dry-run]`: writes allow-list entries (`mcp(sv-memory/<tool>)` for Antigravity, `mcp__sv-memory__<tool>` for Claude Code), preserving unrelated entries.
 - `revoke --platform <p> [--dry-run]`: removes sv-memory allow-list entries.
 - `status [--platform <p>]`: reports granted vs missing tools per platform.
@@ -365,7 +365,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_relations_target ON memory_relations(proje
 
 ## 6. MCP Tools Definition
 
-`sv-memory` registers **26 MCP tools** for AI agents:
+`sv-memory` registers **28 MCP tools** for AI agents:
 
 ### 1. `sv_mem_save`
 Persist a key architectural decision, bug fix, progress journal, or standard guideline.
@@ -694,7 +694,7 @@ sv-memory/
 │   │   ├── extractor/           # tree-sitter extractor, regex fallback, markdown semantics
 │   │   └── schema/              # Node/Edge structs
 │   ├── hook/                    # PreToolUse hooks generation & templates
-│   ├── mcp/                     # Server start, 26 tool handlers, in-memory graph cache
+│   ├── mcp/                     # Server start, 28 tool handlers, in-memory graph cache
 │   ├── memory/                  # CRUD, sessions storage, dedup, conflicts, compaction,
 │   │                            # chunked git sync, Obsidian/Cypher export, stats
 │   ├── perm/                    # MCP tool allow-list management (antigravity/claude-code)
