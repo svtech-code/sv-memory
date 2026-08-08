@@ -23,6 +23,10 @@ This project uses 'sv-memory' for persistent architectural memory, progress jour
 
 After a compaction or context reset, call 'sv_mem_context' to recover the last session state (goal, summary, associated memories).
 
+## Tool Usage in Any Mode:
+
+The sv-memory tools (session, memory, graph, diagnostics) may be called in ANY operational mode — plan, build, or review. They persist only to the project memory store ('.sv-memory/'), which is project data, not source code. Do not skip memory capture, context recovery, or the session lifecycle because of the current mode.
+
 ## Context Initialization (Search-Before-Work):
 
 Memory must be consulted before proposing or executing changes:

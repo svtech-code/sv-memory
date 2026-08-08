@@ -1,17 +1,1 @@
-{
-  "id": "2d004522",
-  "project_id": "ce22c23ac33d7a36",
-  "category": "journal",
-  "what": "Engram feature parity: chunked git sync and obsidian export",
-  "why": "All Engram-inspired features implemented and tested. Fixed NULL last_seen_at scan bug in scanMemories, GetMemory, and ReviewMemories.",
-  "learned": "last_seen_at column is NULL for records created before the migration — must use sql.NullString for scanning. Chunked sync writes one file per memory ID to .sv-memory/chunks/ to avoid Git merge conflicts. Obsidian export writes .md files with YAML frontmatter and [[wikilinks]].",
-  "git_branch": "main",
-  "git_commit": "5096d74",
-  "author": "Mario Sandoval (Sv Tech)",
-  "impact": "All Engram competitive features ported. Build clean, all tests pass.",
-  "next_steps": "End session, optionally update spec.md and AGENTS.md to reflect new tool count (16 MCP tools) and chunked sync format",
-  "last_seen_at": "0001-01-01T00:00:00Z",
-  "normalized_hash": "4bf80f388b28e679a1bff20e7b0a21cffc51a570e2f47265f063550ff536c1b2",
-  "deleted_at": "0001-01-01T00:00:00Z",
-  "created_at": "2026-07-26T05:06:03.435423-04:00"
-}
+{"id":"2d004522","project_id":"ce22c23ac33d7a36","category":"journal","what":"Engram feature parity: chunked git sync and obsidian export","why":"All Engram-inspired features implemented and tested. Fixed NULL last_seen_at scan bug in scanMemories, GetMemory, and ReviewMemories.","learned":"last_seen_at column is NULL for records created before the migration — must use sql.NullString for scanning. Chunked sync writes one file per memory ID to .sv-memory/chunks/ to avoid Git merge conflicts. Obsidian export writes .md files with YAML frontmatter and [[wikilinks]].","git_branch":"main","git_commit":"5096d74","author":"Mario Sandoval (Sv Tech)","impact":"All Engram competitive features ported. Build clean, all tests pass.","next_steps":"End session, optionally update spec.md and AGENTS.md to reflect new tool count (16 MCP tools) and chunked sync format","last_seen_at":"0001-01-01T00:00:00Z","normalized_hash":"4bf80f388b28e679a1bff20e7b0a21cffc51a570e2f47265f063550ff536c1b2","review_after":"0001-01-01T00:00:00Z","deleted_at":"0001-01-01T00:00:00Z","created_at":"2026-07-26T05:06:03.435423-04:00"}

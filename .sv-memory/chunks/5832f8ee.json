@@ -1,18 +1,1 @@
-{
-  "id": "5832f8ee",
-  "project_id": "ce22c23ac33d7a36",
-  "category": "journal",
-  "what": "Actualización de archivos README.md y README_ES.md con todas las optimizaciones implementadas",
-  "why": "Mantener la documentación pública sincronizada con la suite de comandos CLI y herramientas MCP.",
-  "learned": "Mantener el README en inglés y español actualizado sincroniza la lista de 26 herramientas MCP y comandos CLI para nuevos usuarios y desarrolladores.",
-  "git_branch": "main",
-  "git_commit": "8d18080",
-  "author": "Mario Sandoval (Sv Tech)",
-  "session_id": "012609ab",
-  "topic_key": "journal/documentation-readme-updates-blocks-1-to-5",
-  "revision_count": 1,
-  "last_seen_at": "0001-01-01T00:00:00Z",
-  "normalized_hash": "ca676f867b2fb1053c43718ad30ac1db17fecb040f51a7f9b4bb6c7b68a8afce",
-  "deleted_at": "0001-01-01T00:00:00Z",
-  "created_at": "2026-07-27T23:03:26.87223-04:00"
-}
+{"id":"5832f8ee","project_id":"ce22c23ac33d7a36","category":"journal","what":"Actualización de archivos README.md y README_ES.md con todas las optimizaciones implementadas","why":"Mantener la documentación pública sincronizada con la suite de comandos CLI y herramientas MCP.","learned":"Mantener el README en inglés y español actualizado sincroniza la lista de 26 herramientas MCP y comandos CLI para nuevos usuarios y desarrolladores.","git_branch":"main","git_commit":"8d18080","author":"Mario Sandoval (Sv Tech)","session_id":"012609ab","topic_key":"journal/documentation-readme-updates-blocks-1-to-5","revision_count":1,"last_seen_at":"0001-01-01T00:00:00Z","normalized_hash":"ca676f867b2fb1053c43718ad30ac1db17fecb040f51a7f9b4bb6c7b68a8afce","review_after":"0001-01-01T00:00:00Z","deleted_at":"0001-01-01T00:00:00Z","created_at":"2026-07-27T23:03:26.87223-04:00"}

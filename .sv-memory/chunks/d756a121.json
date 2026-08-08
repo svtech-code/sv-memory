@@ -1,16 +1,1 @@
-{
-  "id": "d756a121",
-  "project_id": "ce22c23ac33d7a36",
-  "category": "architecture",
-  "what": "Implemented codebase quality improvements covering deterministic label propagation, robust JSON comment stripping state machine, database migration error propagation, and version-tracked debouncing to prevent time.Timer race conditions",
-  "why": "A quality audit highlighted bugs such as non-deterministic community results, JSON corruption due to comment regex, silent SQL migration warnings, time.Timer race conditions, and path-collision duplication.",
-  "learned": "Map iterations in Go are non-deterministic; sort keys/slices before algorithms like community detection. JSON comment stripping via regex is brittle; use a state-machine that respects string contexts. Propagate SQL migration errors instead of printing warnings. Prevent time.AfterFunc race conditions using a synchronized incremental version counter. Include path details in deduplication content hashes.",
-  "git_branch": "main",
-  "git_commit": "32b6d30",
-  "author": "Mario Sandoval (Sv Tech)",
-  "session_id": "db63cbee",
-  "last_seen_at": "0001-01-01T00:00:00Z",
-  "normalized_hash": "590024f0bf1a68dd0e7a3bbfac8ac3a18162705700a8ca9747aeec27fc6d9904",
-  "deleted_at": "0001-01-01T00:00:00Z",
-  "created_at": "2026-07-26T21:20:09.213519-04:00"
-}
+{"id":"d756a121","project_id":"ce22c23ac33d7a36","category":"architecture","what":"Implemented codebase quality improvements covering deterministic label propagation, robust JSON comment stripping state machine, database migration error propagation, and version-tracked debouncing to prevent time.Timer race conditions","why":"A quality audit highlighted bugs such as non-deterministic community results, JSON corruption due to comment regex, silent SQL migration warnings, time.Timer race conditions, and path-collision duplication.","learned":"Map iterations in Go are non-deterministic; sort keys/slices before algorithms like community detection. JSON comment stripping via regex is brittle; use a state-machine that respects string contexts. Propagate SQL migration errors instead of printing warnings. Prevent time.AfterFunc race conditions using a synchronized incremental version counter. Include path details in deduplication content hashes.","git_branch":"main","git_commit":"32b6d30","author":"Mario Sandoval (Sv Tech)","session_id":"db63cbee","last_seen_at":"0001-01-01T00:00:00Z","normalized_hash":"590024f0bf1a68dd0e7a3bbfac8ac3a18162705700a8ca9747aeec27fc6d9904","review_after":"0001-01-01T00:00:00Z","deleted_at":"0001-01-01T00:00:00Z","created_at":"2026-07-26T21:20:09.213519-04:00"}

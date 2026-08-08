@@ -1,15 +1,1 @@
-{
-  "id": "e37cbb81",
-  "project_id": "ce22c23ac33d7a36",
-  "category": "standard",
-  "what": "Git commit guidelines and agent execution limits",
-  "why": "Define repository standards for commit formatting (Conventional Commits in English) and explicitly restrict AI agents from performing destructive git operations (add, commit, push) autonomously.",
-  "where_path": "AGENTS.md",
-  "learned": "AI agents must never execute git write operations directly (add, commit, push) and must write commit messages in English using the Conventional Commits format.",
-  "git_branch": "main",
-  "git_commit": "8dc5e73",
-  "author": "Mario Sandoval (Sv Tech)",
-  "last_seen_at": "0001-01-01T00:00:00Z",
-  "deleted_at": "0001-01-01T00:00:00Z",
-  "created_at": "2026-07-26T02:45:54.842348-04:00"
-}
+{"id":"e37cbb81","project_id":"ce22c23ac33d7a36","category":"standard","what":"Git commit guidelines and agent execution limits","why":"Define repository standards for commit formatting (Conventional Commits in English) and explicitly restrict AI agents from performing destructive git operations (add, commit, push) autonomously.","where_path":"AGENTS.md","learned":"AI agents must never execute git write operations directly (add, commit, push) and must write commit messages in English using the Conventional Commits format.","git_branch":"main","git_commit":"8dc5e73","author":"Mario Sandoval (Sv Tech)","last_seen_at":"0001-01-01T00:00:00Z","review_after":"0001-01-01T00:00:00Z","deleted_at":"0001-01-01T00:00:00Z","created_at":"2026-07-26T02:45:54.842348-04:00"}

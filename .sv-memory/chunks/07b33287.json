@@ -1,16 +1,1 @@
-{
-  "id": "07b33287",
-  "project_id": "ce22c23ac33d7a36",
-  "category": "journal",
-  "what": "Completed 3-phase optimization initiative for sv-memory: DB tuning, sync compaction, and query optimization",
-  "why": "Systematic code review identified 10+ issues ranging from missing indexes and connection pool misconfiguration to N+1 query patterns and non-atomic file writes. All three phases were validated via existing test suite without regressions.",
-  "learned": "modernc.org/sqlite benefits greatly from explicit PRAGMAs (mmap_size, cache_size, busy_timeout) and connection pool tuning (split writer/reader). Incremental graph rebuild via mtime/size comparison avoids O(n) rescans. In-memory BFS with 2 bulk queries eliminates N+1 pattern entirely.",
-  "git_branch": "main",
-  "git_commit": "d31c64b",
-  "author": "Mario Sandoval (Sv Tech)",
-  "impact": "All 10+ identified performance issues addressed across internal/db, internal/mcp, internal/memory, and internal/graph packages. All existing tests pass, go vet is clean.",
-  "next_steps": "Monitor real-world perf with SV_MEMORY_DEBUG=1 in an MCP client session. Consider adding a dedicated in-memory benchmark test for BFS traversal speed.",
-  "last_seen_at": "0001-01-01T00:00:00Z",
-  "deleted_at": "0001-01-01T00:00:00Z",
-  "created_at": "2026-07-26T04:15:11.298094-04:00"
-}
+{"id":"07b33287","project_id":"ce22c23ac33d7a36","category":"journal","what":"Completed 3-phase optimization initiative for sv-memory: DB tuning, sync compaction, and query optimization","why":"Systematic code review identified 10+ issues ranging from missing indexes and connection pool misconfiguration to N+1 query patterns and non-atomic file writes. All three phases were validated via existing test suite without regressions.","learned":"modernc.org/sqlite benefits greatly from explicit PRAGMAs (mmap_size, cache_size, busy_timeout) and connection pool tuning (split writer/reader). Incremental graph rebuild via mtime/size comparison avoids O(n) rescans. In-memory BFS with 2 bulk queries eliminates N+1 pattern entirely.","git_branch":"main","git_commit":"d31c64b","author":"Mario Sandoval (Sv Tech)","impact":"All 10+ identified performance issues addressed across internal/db, internal/mcp, internal/memory, and internal/graph packages. All existing tests pass, go vet is clean.","next_steps":"Monitor real-world perf with SV_MEMORY_DEBUG=1 in an MCP client session. Consider adding a dedicated in-memory benchmark test for BFS traversal speed.","last_seen_at":"0001-01-01T00:00:00Z","review_after":"0001-01-01T00:00:00Z","deleted_at":"0001-01-01T00:00:00Z","created_at":"2026-07-26T04:15:11.298094-04:00"}

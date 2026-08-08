@@ -1,16 +1,1 @@
-{
-  "id": "d4252b1c",
-  "project_id": "ce22c23ac33d7a36",
-  "category": "qa",
-  "what": "Confirmation that memory risks are well covered",
-  "why": "The user asked for final confirmation on whether the proposed risks are well covered.",
-  "learned": "Confirmed to the user that memory risks (noise and graph divergence) are thoroughly covered by sv-memory's architecture. The design integrates deduplication, Jaccard similarity conflict scans, and incremental file dependency updates to maintain accuracy and prevent agent hallucination with stale context.",
-  "git_branch": "main",
-  "git_commit": "f3d8d43",
-  "author": "Mario Sandoval (Sv Tech)",
-  "session_id": "8b0d10f8",
-  "last_seen_at": "0001-01-01T00:00:00Z",
-  "normalized_hash": "6480f3b4050374fc9cfb43bdcd964308c33f2dae8c4b906a0f9fba150c53da2e",
-  "deleted_at": "0001-01-01T00:00:00Z",
-  "created_at": "2026-07-26T20:47:30.203114-04:00"
-}
+{"id":"d4252b1c","project_id":"ce22c23ac33d7a36","category":"qa","what":"Confirmation that memory risks are well covered","why":"The user asked for final confirmation on whether the proposed risks are well covered.","learned":"Confirmed to the user that memory risks (noise and graph divergence) are thoroughly covered by sv-memory's architecture. The design integrates deduplication, Jaccard similarity conflict scans, and incremental file dependency updates to maintain accuracy and prevent agent hallucination with stale context.","git_branch":"main","git_commit":"f3d8d43","author":"Mario Sandoval (Sv Tech)","session_id":"8b0d10f8","last_seen_at":"0001-01-01T00:00:00Z","normalized_hash":"6480f3b4050374fc9cfb43bdcd964308c33f2dae8c4b906a0f9fba150c53da2e","review_after":"0001-01-01T00:00:00Z","deleted_at":"0001-01-01T00:00:00Z","created_at":"2026-07-26T20:47:30.203114-04:00"}

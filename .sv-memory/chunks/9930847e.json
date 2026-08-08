@@ -1,15 +1,1 @@
-{
-  "id": "9930847e",
-  "project_id": "ce22c23ac33d7a36",
-  "category": "decision",
-  "what": "Optimización de tokens mediante parámetro 'limit' en sv_mem_search",
-  "why": "Prevenir que búsquedas de memoria muy amplias devuelvan demasiados registros y saturen el contexto de la sesión de la IA con tokens redundantes.",
-  "learned": "Limitar las consultas de búsqueda de memoria del proyecto (usando LIMIT en SQLite) evita la sobrecarga del contexto y optimiza el uso de tokens en el agente de IA.",
-  "git_branch": "main",
-  "git_commit": "d18fb0b",
-  "author": "Mario Sandoval (Sv Tech)",
-  "next_steps": "Reinstalar el ejecutable compilado en el entorno global para activar el parámetro limit en los clientes MCP.",
-  "last_seen_at": "0001-01-01T00:00:00Z",
-  "deleted_at": "0001-01-01T00:00:00Z",
-  "created_at": "2026-07-26T03:46:12.212369-04:00"
-}
+{"id":"9930847e","project_id":"ce22c23ac33d7a36","category":"decision","what":"Optimización de tokens mediante parámetro 'limit' en sv_mem_search","why":"Prevenir que búsquedas de memoria muy amplias devuelvan demasiados registros y saturen el contexto de la sesión de la IA con tokens redundantes.","learned":"Limitar las consultas de búsqueda de memoria del proyecto (usando LIMIT en SQLite) evita la sobrecarga del contexto y optimiza el uso de tokens en el agente de IA.","git_branch":"main","git_commit":"d18fb0b","author":"Mario Sandoval (Sv Tech)","next_steps":"Reinstalar el ejecutable compilado en el entorno global para activar el parámetro limit en los clientes MCP.","last_seen_at":"0001-01-01T00:00:00Z","review_after":"0001-01-01T00:00:00Z","deleted_at":"0001-01-01T00:00:00Z","created_at":"2026-07-26T03:46:12.212369-04:00"}

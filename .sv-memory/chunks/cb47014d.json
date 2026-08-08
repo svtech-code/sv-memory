@@ -1,18 +1,1 @@
-{
-  "id": "cb47014d",
-  "project_id": "ce22c23ac33d7a36",
-  "category": "journal",
-  "what": "Refactor final: withProject helper, tests Node helpers, sanitización, ExportObsidian, MCP lazy-load",
-  "why": "Completados los 5 pasos pendientes de deuda estructural identificados en la revisión final post-bugfixes.",
-  "learned": "La extracción de withProject() en CLI reduce ~100 líneas de boilerplate pero requiere manejar scopes de err en handlers con múltiples asignaciones. ExportObsidian es un caso de función que pide a gritos ser dividida en sub-funciones. Los tests unitarios puros (sin DB) para helpers de Metadata deben cubrir todos los type-switch y nil/edge cases.",
-  "git_branch": "main",
-  "git_commit": "141bb02",
-  "author": "Mario Sandoval (Sv Tech)",
-  "session_id": "53068bd4",
-  "topic_key": "journal/refactor-final-post-bugfixes",
-  "revision_count": 1,
-  "last_seen_at": "0001-01-01T00:00:00Z",
-  "normalized_hash": "6d928fc0127e93e4d8d56144fd065652b6f1c80f1c652e422ae9068d49cf28f9",
-  "deleted_at": "0001-01-01T00:00:00Z",
-  "created_at": "2026-07-29T01:19:15.109868-04:00"
-}
+{"id":"cb47014d","project_id":"ce22c23ac33d7a36","category":"journal","what":"Refactor final: withProject helper, tests Node helpers, sanitización, ExportObsidian, MCP lazy-load","why":"Completados los 5 pasos pendientes de deuda estructural identificados en la revisión final post-bugfixes.","learned":"La extracción de withProject() en CLI reduce ~100 líneas de boilerplate pero requiere manejar scopes de err en handlers con múltiples asignaciones. ExportObsidian es un caso de función que pide a gritos ser dividida en sub-funciones. Los tests unitarios puros (sin DB) para helpers de Metadata deben cubrir todos los type-switch y nil/edge cases.","git_branch":"main","git_commit":"141bb02","author":"Mario Sandoval (Sv Tech)","session_id":"53068bd4","topic_key":"journal/refactor-final-post-bugfixes","revision_count":1,"last_seen_at":"0001-01-01T00:00:00Z","normalized_hash":"6d928fc0127e93e4d8d56144fd065652b6f1c80f1c652e422ae9068d49cf28f9","review_after":"0001-01-01T00:00:00Z","deleted_at":"0001-01-01T00:00:00Z","created_at":"2026-07-29T01:19:15.109868-04:00"}
