@@ -204,21 +204,35 @@ func TestCompactMemoriesIncrementalOnlyProcessesNewTopics(t *testing.T) {
 		t.Fatalf("failed to register project: %v", regErr)
 	}
 
-	seed := func(id, tk, when string, rev int) {
+	// Deterministic control of the watermark: we explicitly set
+	// last_compaction_at before each run so the test never depends on the
+	// wall clock or the host timezone (SQLite datetime('now') is UTC while
+	// Go time.Now() carries a local offset).
+	setWatermark := func(wm string) {
 		t.Helper()
-		if _, err := database.Exec(`
-			INSERT INTO memories (id, project_id, category, what, why, learned, topic_key, revision_count, created_at)
-			VALUES (?, ?, 'architecture', 'Old title', 'Old why', 'Old learned', ?, ?, datetime('now', ?))
-		`, id, projectID, tk, rev, when); err != nil {
-			t.Fatalf("failed seeding %s: %v", id, err)
+		if _, execErr := database.Exec(
+			"UPDATE projects SET last_compaction_at = ? WHERE id = ?", wm, projectID); execErr != nil {
+			t.Fatalf("failed setting watermark %s: %v", wm, execErr)
 		}
 	}
 
-	// First run: two old topic keys, each with 2 rows -> both compacted.
-	seed("i-1", "architecture/old-a", "-3 hours", 1)
-	seed("i-2", "architecture/old-a", "-2 hours", 2)
-	seed("i-3", "architecture/old-b", "-3 hours", 1)
-	seed("i-4", "architecture/old-b", "-2 hours", 2)
+	seed := func(id, tk, at string, rev int) {
+		t.Helper()
+		if _, execErr := database.Exec(`
+			INSERT INTO memories (id, project_id, category, what, why, learned, topic_key, revision_count, created_at)
+			VALUES (?, ?, 'architecture', 'Old title', 'Old why', 'Old learned', ?, ?, ?)
+		`, id, projectID, tk, rev, at); execErr != nil {
+			t.Fatalf("failed seeding %s: %v", id, execErr)
+		}
+	}
+
+	// First run: watermark sits before all seeded rows, so both old topic
+	// keys (2 rows each) are picked up.
+	setWatermark("2026-01-01 00:00:00")
+	seed("i-1", "architecture/old-a", "2026-01-02 10:00:00", 1)
+	seed("i-2", "architecture/old-a", "2026-01-02 11:00:00", 2)
+	seed("i-3", "architecture/old-b", "2026-01-02 10:00:00", 1)
+	seed("i-4", "architecture/old-b", "2026-01-02 11:00:00", 2)
 
 	report, err := CompactMemoriesIncremental(database, projectID)
 	if err != nil {
@@ -228,7 +242,10 @@ func TestCompactMemoriesIncrementalOnlyProcessesNewTopics(t *testing.T) {
 		t.Fatalf("expected 2 processed topics on first run, got %d", report.ProcessedTopics)
 	}
 
-	// Second run with no new activity: watermark advanced, nothing to compact.
+	// Second run: old topics were consolidated to a single row each, so
+	// nothing qualifies regardless of the watermark. Reset the watermark to
+	// a known value so the run is fully deterministic.
+	setWatermark("2026-01-10 00:00:00")
 	report, err = CompactMemoriesIncremental(database, projectID)
 	if err != nil {
 		t.Fatalf("second incremental run failed: %v", err)
@@ -237,9 +254,10 @@ func TestCompactMemoriesIncrementalOnlyProcessesNewTopics(t *testing.T) {
 		t.Errorf("expected 0 processed topics on idle second run, got %d", report.ProcessedTopics)
 	}
 
-	// A brand-new topic key created after the watermark is picked up.
-	seed("i-5", "architecture/new-c", "-1 minutes", 1)
-	seed("i-6", "architecture/new-c", "-30 seconds", 2)
+	// A brand-new topic key created after the (reset) watermark is picked up.
+	setWatermark("2026-01-20 00:00:00")
+	seed("i-5", "architecture/new-c", "2026-01-21 10:00:00", 1)
+	seed("i-6", "architecture/new-c", "2026-01-21 11:00:00", 2)
 	report, err = CompactMemoriesIncremental(database, projectID)
 	if err != nil {
 		t.Fatalf("third incremental run failed: %v", err)

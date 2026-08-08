@@ -90,8 +90,8 @@ func compactMemoriesSince(db *sql.DB, projectID string, since time.Time) (*Compa
 		}
 	}
 	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, rowsErr
 	}
 
 	if len(topicKeysToCompact) == 0 {

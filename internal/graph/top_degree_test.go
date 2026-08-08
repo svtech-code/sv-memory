@@ -17,7 +17,7 @@ func TestTopDegreeNodes(t *testing.T) {
 	defer database.Close()
 
 	projectID := "proj-top-degree"
-	if err := db.RegisterProject(database, projectID, "Top Degree Proj", tempDir); err != nil {
+	if err = db.RegisterProject(database, projectID, "Top Degree Proj", tempDir); err != nil {
 		t.Fatalf("failed to register project: %v", err)
 	}
 
@@ -35,10 +35,10 @@ func TestTopDegreeNodes(t *testing.T) {
 		{"d.go", "file", "d.go"}, {"e.go", "file", "e.go"},
 	}
 	for _, n := range nodes {
-		if _, err := database.Exec(
+		if _, execErr := database.Exec(
 			"INSERT INTO graph_nodes (project_id, id, node_type, label, path, metadata) VALUES (?, ?, ?, ?, ?, '{}')",
-			projectID, n.id, n.typ, n.label, n.id); err != nil {
-			t.Fatalf("failed inserting node %s: %v", n.id, err)
+			projectID, n.id, n.typ, n.label, n.id); execErr != nil {
+			t.Fatalf("failed inserting node %s: %v", n.id, execErr)
 		}
 	}
 
@@ -51,10 +51,10 @@ func TestTopDegreeNodes(t *testing.T) {
 	}
 	for i, e := range edges {
 		id := "e" + string(rune('a'+i))
-		if _, err := database.Exec(
+		if _, execErr := database.Exec(
 			"INSERT INTO graph_edges (id, project_id, source_id, target_id, relation_type, confidence) VALUES (?, ?, ?, ?, 'imports', 'EXTRACTED')",
-			id, projectID, e.src, e.tgt); err != nil {
-			t.Fatalf("failed inserting edge %s: %v", id, err)
+			id, projectID, e.src, e.tgt); execErr != nil {
+			t.Fatalf("failed inserting edge %s: %v", id, execErr)
 		}
 	}
 
@@ -83,7 +83,7 @@ func TestTopDegreeNodes(t *testing.T) {
 
 	// Empty project → no error, empty result.
 	emptyPath := filepath.Join(tempDir, "empty")
-	if err := db.RegisterProject(database, "proj-empty", "Empty", emptyPath); err != nil {
+	if err = db.RegisterProject(database, "proj-empty", "Empty", emptyPath); err != nil {
 		t.Fatalf("failed to register empty project: %v", err)
 	}
 	empty, err := TopDegreeNodes(database, "proj-empty", 3)

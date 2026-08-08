@@ -130,7 +130,7 @@ func TestPinUnpinMemory(t *testing.T) {
 		t.Fatalf("expected pin-1 pinned, got %v", pinned)
 	}
 
-	if err := UnpinMemory(dbc, projectID, "pin-1"); err != nil {
+	if err = UnpinMemory(dbc, projectID, "pin-1"); err != nil {
 		t.Fatalf("unpin failed: %v", err)
 	}
 	pinned, err = SearchPinnedMemories(dbc, projectID, 10)

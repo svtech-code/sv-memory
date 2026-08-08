@@ -33,9 +33,9 @@ func TestPinUnpinTools(t *testing.T) {
 		req := mcpgo.CallToolRequest{}
 		req.Params.Name = name
 		req.Params.Arguments = args
-		res, err := srv.GetTool(name).Handler(ctx, req)
-		if err != nil {
-			t.Fatalf("%s failed: %v", name, err)
+		res, callErr := srv.GetTool(name).Handler(ctx, req)
+		if callErr != nil {
+			t.Fatalf("%s failed: %v", name, callErr)
 		}
 		var out strings.Builder
 		for _, c := range res.Content {
