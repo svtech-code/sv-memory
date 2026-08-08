@@ -62,12 +62,18 @@ func openDBWithTuning(dbPath string, isWriter bool) (*sql.DB, error) {
 		db.SetMaxOpenConns(1)
 		db.SetMaxIdleConns(1)
 	} else {
-		maxReaders := 8
+		// Readers outnumber writers: WAL allows many concurrent readers while
+		// the single writer serializes commits. 16 open readers comfortably
+		// covers bursts of parallel tool calls without saturating SQLite.
+		maxReaders := 16
 		db.SetMaxOpenConns(maxReaders)
 		db.SetMaxIdleConns(maxReaders)
+		// Readers are long-lived: recycling WAL read connections adds churn
+		// and can transiently hit busy_timeout. Keep them warm (idle pruning
+		// via ConnMaxIdleTime still applies).
+		db.SetConnMaxLifetime(0)
 	}
 	db.SetConnMaxIdleTime(30 * time.Minute)
-	db.SetConnMaxLifetime(1 * time.Hour)
 
 	// Apply foreign_keys pragma once via Exec to ensure correct value per-session
 	// (modernc's _pragma may not set it correctly for some configurations).

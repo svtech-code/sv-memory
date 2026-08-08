@@ -146,6 +146,7 @@ var migrations = []migration{
 	{8, "add_project_scan_meta", addProjectScanMeta},
 	{9, "add_session_index", addSessionIndex},
 	{10, "add_review_after_and_pinned", addReviewAfterAndPinned},
+	{11, "add_last_compaction_at", addLastCompactionAt},
 }
 
 func applyMigrations(db *sql.DB) error {
@@ -473,6 +474,22 @@ func addReviewAfterAndPinned(db *sql.DB) error {
 			if _, err := db.Exec(alterStmt); err != nil {
 				return fmt.Errorf("failed to add column %s to memories: %w", col, err)
 			}
+		}
+	}
+	return nil
+}
+
+// addLastCompactionAt records when the last incremental compaction ran for a
+// project, so the background compaction worker only re-processes topic keys
+// that changed since then instead of scanning the full history every tick.
+func addLastCompactionAt(db *sql.DB) error {
+	exists, err := columnExists(db, "projects", "last_compaction_at")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		if _, err := db.Exec("ALTER TABLE projects ADD COLUMN last_compaction_at DATETIME;"); err != nil {
+			return fmt.Errorf("failed to add column last_compaction_at to projects: %w", err)
 		}
 	}
 	return nil

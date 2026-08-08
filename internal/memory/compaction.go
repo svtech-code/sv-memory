@@ -23,52 +23,75 @@ type CompactionReport struct {
 //
 //nolint:gocyclo // consolidation logic spans many merge branches; refactor later
 func CompactMemories(db *sql.DB, projectID string) (*CompactionReport, error) {
+	return compactMemoriesSince(db, projectID, time.Time{})
+}
+
+// CompactMemoriesIncremental runs compaction only over topic keys that changed
+// since the last run, tracking the watermark in projects.last_compaction_at.
+// This keeps the periodic background worker cheap: after the first full pass,
+// each tick only re-examines topic keys with new activity instead of scanning
+// the entire history.
+func CompactMemoriesIncremental(db *sql.DB, projectID string) (*CompactionReport, error) {
+	var since time.Time
+	var sinceStr sql.NullString
+	if err := db.QueryRow("SELECT last_compaction_at FROM projects WHERE id = ?", projectID).Scan(&sinceStr); err == nil && sinceStr.Valid {
+		if t, pErr := parseTime(sinceStr.String); pErr == nil {
+			since = t
+		}
+	}
+
+	report, err := compactMemoriesSince(db, projectID, since)
+	if err != nil {
+		return nil, err
+	}
+
+	// Always advance the watermark (even with nothing to do) so a project that
+	// was compacted earlier isn't re-scanned from scratch on every worker tick.
+	if _, err := db.Exec("UPDATE projects SET last_compaction_at = ? WHERE id = ?", time.Now(), projectID); err != nil {
+		return nil, fmt.Errorf("failed updating last_compaction_at: %w", err)
+	}
+	return report, nil
+}
+
+func compactMemoriesSince(db *sql.DB, projectID string, since time.Time) (*CompactionReport, error) {
 	report := &CompactionReport{
 		ProjectID: projectID,
 	}
 
-	// 1. Find topic_keys with > 1 active memory entries OR revision_count >= 3
+	// 1. Find topic_keys with > 1 active memory entry. A single surviving row
+	// under a topic_key holds the consolidated truth (topic-key upserts
+	// overwrite content, they don't accumulate history), so merging it would
+	// only inflate revision_count with a near-duplicate synthesis.
+	// When `since` is set, only topic keys that changed afterwards are
+	// re-examined (incremental watermark).
 	topicQuery := `
 	SELECT topic_key, COUNT(*) as cnt
 	FROM memories
 	WHERE project_id = ? AND topic_key IS NOT NULL AND topic_key != '' AND deleted_at IS NULL
-	GROUP BY topic_key`
+	GROUP BY topic_key
+	HAVING COUNT(*) > 1`
+	args := []interface{}{projectID}
+	if !since.IsZero() {
+		topicQuery += ` AND MAX(created_at) > ?`
+		args = append(args, since.Format("2006-01-02 15:04:05"))
+	}
 
-	rows, err := db.Query(topicQuery, projectID)
+	rows, err := db.Query(topicQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed querying topic keys for compaction: %w", err)
 	}
-	defer rows.Close()
 
 	var topicKeysToCompact []string
 	for rows.Next() {
 		var tk string
 		var cnt int
 		if scanErr := rows.Scan(&tk, &cnt); scanErr == nil && tk != "" {
-			if cnt > 1 {
-				topicKeysToCompact = append(topicKeysToCompact, tk)
-			}
+			topicKeysToCompact = append(topicKeysToCompact, tk)
 		}
 	}
 	rows.Close()
-
-	// Also check high revision memories without multiple rows
-	highRevQuery := `
-	SELECT topic_key
-	FROM memories
-	WHERE project_id = ? AND topic_key IS NOT NULL AND topic_key != '' AND revision_count >= 3 AND deleted_at IS NULL`
-
-	hRows, hErr := db.Query(highRevQuery, projectID)
-	if hErr == nil {
-		for hRows.Next() {
-			var tk string
-			if scanErr := hRows.Scan(&tk); scanErr == nil && tk != "" {
-				if !containsStr(topicKeysToCompact, tk) {
-					topicKeysToCompact = append(topicKeysToCompact, tk)
-				}
-			}
-		}
-		hRows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	if len(topicKeysToCompact) == 0 {
@@ -224,7 +247,7 @@ func StartAutoCompaction(ctx context.Context, db *sql.DB, projectID string, inte
 				log.Println("[sv-memory] Auto-compaction worker stopped")
 				return
 			case <-ticker.C:
-				report, err := CompactMemories(db, projectID)
+				report, err := CompactMemoriesIncremental(db, projectID)
 				if err != nil {
 					log.Printf("[sv-memory] Auto-compaction error: %v", err)
 					continue

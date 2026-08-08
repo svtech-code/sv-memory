@@ -20,15 +20,28 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
   `token_budget` override.
 - `BenchmarkToolResponseTokens` regression guard measuring per-call bytes and
   estimated tokens for search/get/timeline/context.
+- Incremental compaction tests: `TestCompactMemoriesIncrementalOnlyProcessesNewTopics`
+  (watermark behavior) and `TestCompactMemoriesSkipsSingleRowHighRevision`
+  (inflation fix).
 
 ### Changed
 
+- **Auto-compaction is now incremental**: the background worker only re-processes
+  topic keys that changed since the last run (`projects.last_compaction_at`
+  watermark, migration v11) instead of scanning the full history every tick.
+- Fixed compaction inflation: a single surviving row under a topic_key (where
+  upserts overwrite content rather than accumulating history) is no longer
+  re-synthesized on every run, which previously bumped `revision_count` and
+  created near-duplicate records.
 - Removed self-referential `*Response: ~N tokens*` estimate from
   `sv_mem_search` / `sv_mem_get` / `sv_mem_review` / `sv_mem_stats` and
   `sv_graph_god_nodes` / `sv_graph_surprising_connections` outputs (the LLM
   never used it).
 - Lowered default `sv_mem_get` field truncation from 1500 to 1000 chars
   (`max_chars="0"` remains unlimited).
+- Reader connection pool increased from 8 to 16 with unlimited connection
+  lifetime (keeps WAL readers warm; idle pruning still applies via
+  `ConnMaxIdleTime`).
 - `sv_mem_save` similar-memories hint now emits a ready-to-call
   `sv_mem_judge(source_id, target_id, relation_type)` per candidate.
 - 6 admin/maintenance tools (`sv_mem_delete`, `sv_mem_compact`, `sv_mem_review`,

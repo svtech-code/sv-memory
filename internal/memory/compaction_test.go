@@ -139,3 +139,112 @@ func TestCompactMemoriesPreservesSessionID(t *testing.T) {
 		t.Errorf("expected bundle to surface synthesized decision after compaction, got:\n%s", bundle)
 	}
 }
+
+func TestCompactMemoriesSkipsSingleRowHighRevision(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_compact_singlerow.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-compact-single"
+	if regErr := db.RegisterProject(database, projectID, "Compact Single Proj", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
+	}
+
+	// A single active row under a topic_key with a high revision count. Its
+	// content was overwritten by each upsert, so there is no history to merge.
+	// Compaction must NOT synthesize a near-duplicate twin (which previously
+	// inflated revision_count on every run).
+	_, err = database.Exec(`
+		INSERT INTO memories (id, project_id, category, what, why, learned, where_path, topic_key, revision_count, created_at)
+		VALUES ('s-1', ?, 'decision', 'Use Bun', 'Avoid npm', 'Bun is the package manager', 'package.json', 'decision/use-bun', 7, datetime('now'))
+	`, projectID)
+	if err != nil {
+		t.Fatalf("failed inserting test memory: %v", err)
+	}
+
+	report, err := CompactMemories(database, projectID)
+	if err != nil {
+		t.Fatalf("failed CompactMemories: %v", err)
+	}
+	if report.ProcessedTopics != 0 {
+		t.Errorf("expected 0 processed topics for a single high-revision row, got %d", report.ProcessedTopics)
+	}
+	if report.NewSynthesesCreated != 0 {
+		t.Errorf("expected 0 syntheses for a single high-revision row, got %d", report.NewSynthesesCreated)
+	}
+
+	// The original memory must remain untouched (not soft-deleted).
+	activeMems, err := SearchMemories(database, projectID, "", "", 10)
+	if err != nil {
+		t.Fatalf("failed searching active memories: %v", err)
+	}
+	if len(activeMems) != 1 || activeMems[0].ID != "s-1" {
+		t.Fatalf("expected the single memory to survive intact, got %d memories", len(activeMems))
+	}
+	if activeMems[0].RevisionCount != 7 {
+		t.Errorf("expected revision_count to stay 7, got %d", activeMems[0].RevisionCount)
+	}
+}
+
+func TestCompactMemoriesIncrementalOnlyProcessesNewTopics(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_compact_incr.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-compact-incr"
+	if regErr := db.RegisterProject(database, projectID, "Compact Incr Proj", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
+	}
+
+	seed := func(id, tk, when string, rev int) {
+		t.Helper()
+		if _, err := database.Exec(`
+			INSERT INTO memories (id, project_id, category, what, why, learned, topic_key, revision_count, created_at)
+			VALUES (?, ?, 'architecture', 'Old title', 'Old why', 'Old learned', ?, ?, datetime('now', ?))
+		`, id, projectID, tk, rev, when); err != nil {
+			t.Fatalf("failed seeding %s: %v", id, err)
+		}
+	}
+
+	// First run: two old topic keys, each with 2 rows -> both compacted.
+	seed("i-1", "architecture/old-a", "-3 hours", 1)
+	seed("i-2", "architecture/old-a", "-2 hours", 2)
+	seed("i-3", "architecture/old-b", "-3 hours", 1)
+	seed("i-4", "architecture/old-b", "-2 hours", 2)
+
+	report, err := CompactMemoriesIncremental(database, projectID)
+	if err != nil {
+		t.Fatalf("first incremental run failed: %v", err)
+	}
+	if report.ProcessedTopics != 2 {
+		t.Fatalf("expected 2 processed topics on first run, got %d", report.ProcessedTopics)
+	}
+
+	// Second run with no new activity: watermark advanced, nothing to compact.
+	report, err = CompactMemoriesIncremental(database, projectID)
+	if err != nil {
+		t.Fatalf("second incremental run failed: %v", err)
+	}
+	if report.ProcessedTopics != 0 {
+		t.Errorf("expected 0 processed topics on idle second run, got %d", report.ProcessedTopics)
+	}
+
+	// A brand-new topic key created after the watermark is picked up.
+	seed("i-5", "architecture/new-c", "-1 minutes", 1)
+	seed("i-6", "architecture/new-c", "-30 seconds", 2)
+	report, err = CompactMemoriesIncremental(database, projectID)
+	if err != nil {
+		t.Fatalf("third incremental run failed: %v", err)
+	}
+	if report.ProcessedTopics != 1 {
+		t.Errorf("expected 1 new topic processed on third run, got %d", report.ProcessedTopics)
+	}
+}
