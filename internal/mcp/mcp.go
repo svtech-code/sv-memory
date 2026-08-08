@@ -291,6 +291,7 @@ func (s *Server) getOrLoadGraph() (*graph.InMemoryGraph, error) {
 			return nil, err
 		}
 		debugLog("graph_query auto-built graph in %s", time.Since(startBuild))
+		s.relinkMemoryRationales()
 	}
 	g, err := graph.LoadFullGraph(s.pool.Reader, s.cfg.ProjectID)
 	if err != nil {
@@ -302,6 +303,19 @@ func (s *Server) getOrLoadGraph() (*graph.InMemoryGraph, error) {
 	_ = s.pool.Reader.QueryRow("SELECT COUNT(*), COALESCE(MAX(mtime_ms), 0) FROM graph_files_meta WHERE project_id = ?", s.cfg.ProjectID).Scan(&fileCount, &maxMtime)
 	graph.GlobalGraphCache.Put(s.cfg.ProjectID, g, int(fileCount.Int64), maxMtime.Int64)
 	return g, nil
+}
+
+// relinkMemoryRationales re-creates the rationale_for edges between saved
+// memories (where_path) and their code nodes. Called after a full graph
+// rebuild, which wipes the graph nodes/edges tables. Best-effort.
+func (s *Server) relinkMemoryRationales() {
+	refs, err := memory.ActiveMemoryRationaleRefs(s.pool.Writer, s.cfg.ProjectID)
+	if err != nil || len(refs) == 0 {
+		return
+	}
+	if err := graph.RelinkMemoryRationaleEdges(s.pool.Writer, s.cfg.ProjectID, refs); err != nil {
+		fmt.Fprintf(os.Stderr, "[sv-memory] relink rationale edges failed: %v\n", err)
+	}
 }
 
 // maxFieldChars is the default maximum character count per text field in

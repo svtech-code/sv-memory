@@ -216,7 +216,7 @@ sv-memory tui
 
 ### 🧠 Memory Tools
 
-- **`sv_mem_save`**: Persists architectural decisions, bugfixes, or standards with auto Git sync.
+- **`sv_mem_save`**: Persists architectural decisions, bugfixes, or standards with auto Git sync, and links the memory to its code node in the dependency graph when a `where_path` is provided.
 - **`sv_mem_update`**: Partially updates an existing memory by ID (keeps identity, advances revision).
 - **`sv_mem_search`**: FTS5 search with **BM25 ranking**, category/path filters, and **match_mode** (`all` / `any`).
 - **`sv_mem_get`**: Retrieves full content of a specific memory with optional truncation.

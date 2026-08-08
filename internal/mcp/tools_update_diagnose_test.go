@@ -6,7 +6,79 @@ import (
 	"testing"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
+	"github.com/svtech-code/sv-memory/internal/graph"
 )
+
+func TestSaveWiresRationaleEdgeToGraph(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	// Build the code graph first so where_path can resolve to a code node.
+	writeMockCodeFiles(t, tempDir)
+	if err := graph.SyncGraph(pool.Writer, cfg.ProjectID, tempDir); err != nil {
+		t.Fatalf("failed to build graph: %v", err)
+	}
+
+	server := NewServer(pool, cfg)
+	ctx := context.Background()
+
+	saveTool := server.GetTool("sv_mem_save")
+	saveReq := mcpgo.CallToolRequest{}
+	saveReq.Params.Name = "sv_mem_save"
+	saveReq.Params.Arguments = map[string]any{
+		"category":   "decision",
+		"what":       "Prefer utils module for shared logic",
+		"why":        "Avoid duplication across components",
+		"learned":    "Centralize shared helpers in utils",
+		"where_path": "utils.js",
+	}
+	saveRes, err := saveTool.Handler(ctx, saveReq)
+	if err != nil {
+		t.Fatalf("save failed: %v", err)
+	}
+	id := extractID(t, textContent(saveRes.Content[0]))
+
+	var relType string
+	err = pool.Writer.QueryRow(
+		"SELECT relation_type FROM graph_edges WHERE project_id = ? AND source_id = ? AND target_id = 'utils.js'",
+		cfg.ProjectID, id,
+	).Scan(&relType)
+	if err != nil {
+		t.Fatalf("expected rationale_for edge memory->utils.js after save, got: %v", err)
+	}
+	if relType != "rationale_for" {
+		t.Fatalf("expected rationale_for, got %s", relType)
+	}
+
+	// The graph query for utils.js should now surface the decision node
+	// (incoming rationale_for edge, so scan both directions).
+	queryTool := server.GetTool("sv_graph_query")
+	qReq := mcpgo.CallToolRequest{}
+	qReq.Params.Name = "sv_graph_query"
+	qReq.Params.Arguments = map[string]any{"path_or_node": "utils.js", "direction": "all"}
+	qRes, err := queryTool.Handler(ctx, qReq)
+	if err != nil {
+		t.Fatalf("graph query failed: %v", err)
+	}
+	qBody := textContent(qRes.Content[0])
+	if !strings.Contains(qBody, id) {
+		t.Fatalf("expected graph query to surface memory node %s, got: %q", id, qBody)
+	}
+
+	// sv_graph_explain should surface the decision under rationale neighbors.
+	explainTool := server.GetTool("sv_graph_explain")
+	eReq := mcpgo.CallToolRequest{}
+	eReq.Params.Name = "sv_graph_explain"
+	eReq.Params.Arguments = map[string]any{"node": "utils.js"}
+	eRes, err := explainTool.Handler(ctx, eReq)
+	if err != nil {
+		t.Fatalf("graph explain failed: %v", err)
+	}
+	eBody := textContent(eRes.Content[0])
+	if !strings.Contains(eBody, "Memory/Decision") || !strings.Contains(eBody, id) {
+		t.Fatalf("expected sv_graph_explain to surface the memory decision %s, got: %q", id, eBody)
+	}
+}
 
 func TestUpdateMemoryHandler(t *testing.T) {
 	tempDir, pool, cfg := setupTestEnv(t)

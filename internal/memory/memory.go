@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/svtech-code/sv-memory/internal/graph"
 	"github.com/svtech-code/sv-memory/internal/security"
 )
 
@@ -65,6 +66,31 @@ func decayReviewAfter(category string) time.Duration {
 	default:
 		return 6 * 30 * 24 * time.Hour
 	}
+}
+
+// ActiveMemoryRationaleRefs returns the (id, category, what, where_path) of all
+// active memories that reference a code path, for re-linking the memory <-> code
+// rationale_for edges after a full graph rebuild (which wipes the graph tables).
+func ActiveMemoryRationaleRefs(db *sql.DB, projectID string) ([]graph.MemoryRationaleRef, error) {
+	rows, err := db.Query(`
+		SELECT id, category, what, where_path
+		FROM memories
+		WHERE project_id = ? AND deleted_at IS NULL
+		  AND where_path IS NOT NULL AND where_path != ''`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list memories for graph re-linking: %w", err)
+	}
+	defer rows.Close()
+
+	var refs []graph.MemoryRationaleRef
+	for rows.Next() {
+		var r graph.MemoryRationaleRef
+		if err := rows.Scan(&r.ID, &r.Category, &r.What, &r.WherePath); err != nil {
+			return nil, err
+		}
+		refs = append(refs, r)
+	}
+	return refs, rows.Err()
 }
 
 // PinMemory marks a memory as pinned (local context priority). Pinned memories
@@ -217,6 +243,18 @@ func UpdateMemory(db *sql.DB, projectID, id string, upd MemoryUpdate) (*Memory, 
 	errorsFaced = security.SanitizeText(errorsFaced)
 	nextSteps = security.SanitizeText(nextSteps)
 
+	// Best-effort re-link of the memory to its code node (where_path may have
+	// changed). Never fails the update if the graph is not built or the path is
+	// unknown.
+	defer func() {
+		_ = graph.EnsureMemoryRationaleEdge(db, projectID, graph.MemoryRationaleRef{
+			ID:        id,
+			Category:  existing.Category,
+			What:      what,
+			WherePath: wherePath,
+		})
+	}()
+
 	now := time.Now()
 	revision := existing.RevisionCount + 1
 	hash := computeHash(what, why, learned, wherePath)
@@ -284,6 +322,18 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 	mem.Impact = security.SanitizeText(mem.Impact)
 	mem.ErrorsFaced = security.SanitizeText(mem.ErrorsFaced)
 	mem.NextSteps = security.SanitizeText(mem.NextSteps)
+
+	// Best-effort: link the memory to its code node in the structural graph via
+	// a rationale_for edge. Runs on every save path (new, topic upsert, dedup)
+	// and never fails the save if the graph is not built or the path is unknown.
+	defer func() {
+		_ = graph.EnsureMemoryRationaleEdge(db, mem.ProjectID, graph.MemoryRationaleRef{
+			ID:        mem.ID,
+			Category:  mem.Category,
+			What:      mem.What,
+			WherePath: mem.WherePath,
+		})
+	}()
 
 	now := time.Now()
 	mem.NormalizedHash = computeHash(mem.What, mem.Why, mem.Learned, mem.WherePath)

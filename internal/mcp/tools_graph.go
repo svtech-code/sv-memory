@@ -257,6 +257,7 @@ func (s *Server) handleGraphSync(ctx context.Context, req mcp.CallToolRequest) (
 	if !synced {
 		return mcp.NewToolResultText("Dependency graph is already up to date (no file changes detected)."), nil
 	}
+	s.relinkMemoryRationales()
 	return mcp.NewToolResultText("Dependency graph refreshed and synchronized successfully in SQLite."), nil
 }
 
@@ -388,6 +389,13 @@ func (s *Server) handleGraphExplain(ctx context.Context, req mcp.CallToolRequest
 		if e.RelationType == "rationale_for" {
 			srcNode := g.Nodes[e.SourceID]
 			if srcNode != nil {
+				if isMemory, _ := srcNode.Metadata["memory"].(bool); isMemory {
+					// Memory-backed rationale: the source is a saved sv_mem_save
+					// decision, not a code comment. Surface it as a decision link.
+					rationales = append(rationales, fmt.Sprintf("- **Memory/Decision:** `%s` (ID: `%s`)\n  → run `sv_mem_get(id=\"%s\")` for full context",
+						srcNode.Label, srcNode.ID, srcNode.ID))
+					continue
+				}
 				lineVal := 0
 				if srcNode.Metadata != nil {
 					if l, ok := srcNode.Metadata["line"]; ok {

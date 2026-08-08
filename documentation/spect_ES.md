@@ -843,6 +843,12 @@ Las entidades de código y las observaciones de memoria se mapean sobre un grafo
 - **Nodos de Memoria:** Las decisiones y estándares se mapean en el mismo espacio topológico.
 - **Aristas de Unificación (`rationale_for`):** Conectar una memoria a una entidad de código vincula el *Por qué* directamente con el *Qué*. Recorrer el grafo de código mediante `sv_graph_query` recupera tanto los imports/calls relacionados como las decisiones asociadas, brindando a desarrolladores y agentes el contexto completo en el punto de interés.
 
+**Conexión nativa memoria→código:** cuando una memoria se guarda con `sv_mem_save` (o se actualiza con `sv_mem_update`) y proporciona un `where_path`, sv-memory crea/actualiza automáticamente un nodo `document` del grafo para esa memoria (id = ID de la memoria) y una arista `rationale_for` hacia el nodo canónico de código en esa ruta (best-effort: no-op si el grafo aún no se construyó o la ruta es desconocida). Esto implica:
+
+- `sv_graph_explain`/`sv_graph_query` sobre un archivo expone las decisiones/estándares asociados bajo los vecinos de rationale **Memory/Decision**.
+- La exportación a bóveda Obsidian vincula cada nota de memoria con sus archivos de código mediante las mismas aristas.
+- Tras un rebuild completo del grafo (`sv-memory graph rebuild`, `sv_graph_sync`), los enlaces se recrean automáticamente desde todas las memorias activas con `where_path`.
+
 ---
 
 *Especificación v3 — refleja la implementación completa a agosto de 2026.*

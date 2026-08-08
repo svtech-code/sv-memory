@@ -14,6 +14,7 @@ import (
 	"github.com/svtech-code/sv-memory/internal/config"
 	"github.com/svtech-code/sv-memory/internal/db"
 	"github.com/svtech-code/sv-memory/internal/graph"
+	"github.com/svtech-code/sv-memory/internal/memory"
 	"github.com/svtech-code/sv-memory/internal/security"
 )
 
@@ -266,6 +267,12 @@ var rebuildCmd = &cobra.Command{
 			fmt.Println("Rebuilding project dependency graph...")
 			if err := graph.SyncGraphFull(database, cfg.ProjectID, cfg.ProjPath); err != nil {
 				return err
+			}
+			// Re-link memory <-> code rationale_for edges, wiped by the rebuild.
+			if refs, rErr := memory.ActiveMemoryRationaleRefs(database, cfg.ProjectID); rErr == nil && len(refs) > 0 {
+				if rErr := graph.RelinkMemoryRationaleEdges(database, cfg.ProjectID, refs); rErr != nil {
+					return rErr
+				}
 			}
 			fmt.Println("Dependency graph rebuild complete.")
 			return nil

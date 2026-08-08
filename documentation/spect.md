@@ -844,6 +844,12 @@ Code entities and memory observations are mapped onto a unified directed graph s
 - **Memory Nodes:** Decisions and standards are mapped into the same topological space.
 - **Unification Edges (`rationale_for`):** Connecting a memory to a code entity links the *Why* directly to the *What*. Traversing the code graph via `sv_graph_query` retrieves both related imports/calls and associated decisions, giving developers and agents full context at the point of interest.
 
+**Native memory→code wiring:** when a memory is saved via `sv_mem_save` (or updated with `sv_mem_update`) and provides a `where_path`, sv-memory automatically upserts a `document` graph node for that memory (id = memory ID) and a `rationale_for` edge to the canonical code node at that path (best-effort: no-op when the graph is not built yet or the path is unknown). This means:
+
+- `sv_graph_explain`/`sv_graph_query` on a file surfaces the associated decisions/standards under the **Memory/Decision** rationale neighbors.
+- The Obsidian vault export links each memory note to its code files through the same edges.
+- After a full graph rebuild (`sv-memory graph rebuild`, `sv_graph_sync`), the links are re-created automatically from all active memories with a `where_path`.
+
 ---
 
 *Specification v3 — reflecting the full implementation as of August 2026.*

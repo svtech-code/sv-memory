@@ -216,7 +216,7 @@ sv-memory tui
 
 ### 🧠 Herramientas de Memoria
 
-- **`sv_mem_save`**: Guarda decisiones arquitectónicas, correcciones o estándares con Git sync automático.
+- **`sv_mem_save`**: Guarda decisiones arquitectónicas, correcciones o estándares con Git sync automático, y enlaza la memoria a su nodo de código en el grafo de dependencias cuando se proporciona un `where_path`.
 - **`sv_mem_update`**: Actualiza parcialmente una memoria existente por ID (conserva la identidad, avanza la revisión).
 - **`sv_mem_search`**: Búsqueda FTS5 con **clasificación BM25**, filtros por categoría/ruta y **match_mode** (`all` / `any`).
 - **`sv_mem_get`**: Recupera el contenido completo de una memoria específica con truncamiento opcional.
