@@ -184,6 +184,7 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 - `list [--status pending|judged|ignored] [--project P]`: displays conflicting memories and detected semantic overlaps.
 - `stats`: summarizes conflict relation counts by status.
 - `scan [--apply] [--dry-run] [--max-insert N] [--threshold T]`: runs incremental semantic-overlap scanning; by default reports without persisting (`--apply` saves the detected `potential_conflict` relations).
+- `scan --semantic [--agent claude|opencode|CMD] [--max-semantic N] [--concurrency N]`: after surfacing candidate pairs, LLM-judges them with the configured agent CLI. The agent compares full memory content and returns a verdict (`supersedes`, `conflicts_with`, `relates_to`, or `none`); verdicts are persisted with `judged_by='llm'` when `--apply`, and failed judgments stay pending for retry. Default agent: `$SV_MEMORY_SEMANTIC_AGENT` or `claude`.
 - `ignore <relation-id>`: marks a detected conflict as ignored.
 
 ---
@@ -536,13 +537,17 @@ Triggers an incremental scan of modified files to sync nodes/edges. Invalidates 
 - **Parameters:** None.
 
 ### 23. `sv_mem_conflicts`
-Detects and surfaces conflicting memories with semantic overlap analysis.
+Detects and surfaces conflicting memories with semantic overlap analysis, and can LLM-judge candidate pairs.
 - **Parameters:**
   - `action` (string, required): Action to perform: `list`, `scan`, or `ignore`.
   - `status` (string, optional): Status filter for `list` (`pending`, `judged`, `ignored`).
   - `relation_id` (string, optional): Required for `ignore`: the conflict relation ID to ignore.
   - `threshold` (string, optional): Similarity threshold for `scan` (default `0.45`).
-  - `apply` (string, optional): For `scan`: `'true'` to save scanned conflicts to the database (default `'false'`).
+  - `apply` (string, optional): For `scan`: `'true'` to save scanned conflicts / semantic judgments to the database (default `'false'`).
+  - `semantic` (string, optional): For `scan`: `'true'` to LLM-judge candidate conflicts with the agent CLI (default `'false'`).
+  - `agent` (string, optional): Agent CLI for semantic judging (`claude`, `opencode`, or a custom command; default `$SV_MEMORY_SEMANTIC_AGENT` or `claude`).
+  - `max_semantic` (string, optional): Maximum candidate pairs to judge (default: all).
+  - `concurrency` (string, optional): Parallel agent judgments (default `3`).
 
 ### 24. `sv_graph_explain`
 Outputs detailed information for a specific graph node: type, label, path, metadata, and fan-in/fan-out metrics.
@@ -813,7 +818,7 @@ To maintain coherence across long-term agent interactions, `sv-memory` includes 
 - **Conflict Lifecycle:**
   1. **Detection:** Run `sv-memory conflicts scan` (CLI) or `sv_mem_conflicts` with `action=scan` (MCP). The scan is incremental (O(new memories × total) instead of O(N²)), caches tokenizations, and inserts at most `--max-insert N` (default 100) relations. By default it only reports; `--apply` (or `apply='true'`) persists the detected `potential_conflict` relations.
   2. **Review:** `sv-memory conflicts list` / `sv_mem_conflicts` with `action=list` displays pending conflicts. Calling `sv_mem_review` also highlights pending conflicts.
-  3. **Resolution:** Judge the pair with `sv_mem_judge` (promoting to `supersedes`/`conflicts_with`/`relates_to`) or mark it as reviewed/ignored with `sv-memory conflicts ignore <relation-id>` (or `action=ignore`).
+  3. **Resolution:** Judge the pair with `sv_mem_judge` (promoting to `supersedes`/`conflicts_with`/`relates_to`), run a **semantic LLM scan** (`sv-memory conflicts scan --semantic` / `sv_mem_conflicts action=scan semantic=true`) which automates the same judgment with the configured agent CLI, or mark it as reviewed/ignored with `sv-memory conflicts ignore <relation-id>` (or `action=ignore`).
 
 ---
 

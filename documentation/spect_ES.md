@@ -184,6 +184,7 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 - `list [--status pending|judged|ignored] [--project P]`: muestra memorias conflictivas y superposiciones semánticas detectadas.
 - `stats`: resume los conteos de relaciones de conflicto por estado.
 - `scan [--apply] [--dry-run] [--max-insert N] [--threshold T]`: ejecuta el escaneo incremental de superposición semántica; por defecto solo reporta sin persistir (`--apply` guarda las relaciones `potential_conflict` detectadas).
+- `scan --semantic [--agent claude|opencode|CMD] [--max-semantic N] [--concurrency N]`: tras exponer los pares candidatos, los juzga con el CLI del agente configurado. El agente compara el contenido completo de las memorias y devuelve un veredicto (`supersedes`, `conflicts_with`, `relates_to` o `none`); los veredictos se persisten con `judged_by='llm'` al usar `--apply`, y los juicios fallidos quedan pendientes para reintentar. Agente por defecto: `$SV_MEMORY_SEMANTIC_AGENT` o `claude`.
 - `ignore <relation-id>`: marca un conflicto detectado como ignorado.
 
 ---
@@ -535,13 +536,17 @@ Activa un escaneo incremental de archivos modificados para sincronizar nodos/ari
 - **Parámetros:** Ninguno.
 
 ### 23. `sv_mem_conflicts`
-Detecta y expone memorias conflictivas con análisis de superposición semántica.
+Detecta y expone memorias conflictivas con análisis de superposición semántica, y puede juzgar pares candidatos con LLM.
 - **Parámetros:**
   - `action` (string, requerido): Acción a realizar: `list`, `scan` o `ignore`.
   - `status` (string, opcional): Filtro de estado para `list` (`pending`, `judged`, `ignored`).
   - `relation_id` (string, opcional): Requerido para `ignore`: el ID de la relación de conflicto a ignorar.
   - `threshold` (string, opcional): Umbral de similitud para `scan` (por defecto `0.45`).
-  - `apply` (string, opcional): Para `scan`: `'true'` para guardar los conflictos escaneados en la base de datos (por defecto `'false'`).
+  - `apply` (string, opcional): Para `scan`: `'true'` para guardar los conflictos escaneados / juicios semánticos en la base de datos (por defecto `'false'`).
+  - `semantic` (string, opcional): Para `scan`: `'true'` para juzgar los conflictos candidatos con el CLI del agente (por defecto `'false'`).
+  - `agent` (string, opcional): CLI del agente para el juicio semántico (`claude`, `opencode` o un comando personalizado; por defecto `$SV_MEMORY_SEMANTIC_AGENT` o `claude`).
+  - `max_semantic` (string, opcional): Máximo de pares candidatos a juzgar (por defecto: todos).
+  - `concurrency` (string, opcional): Juicios de agente en paralelo (por defecto `3`).
 
 ### 24. `sv_graph_explain`
 Imprime información detallada de un nodo específico del grafo: tipo, etiqueta, ruta, metadatos y métricas fan-in/fan-out.
@@ -812,7 +817,7 @@ Para mantener la coherencia en interacciones de agentes de largo plazo, `sv-memo
 - **Ciclo de Vida del Conflicto:**
   1. **Detección:** Ejecuta `sv-memory conflicts scan` (CLI) o `sv_mem_conflicts` con `action=scan` (MCP). El escaneo es incremental (O(nuevas memorias × total) en lugar de O(N²)), cachea las tokenizaciones e inserta como máximo `--max-insert N` (por defecto 100) relaciones. Por defecto solo reporta; `--apply` (o `apply='true'`) persiste las relaciones `potential_conflict` detectadas.
   2. **Revisión:** `sv-memory conflicts list` / `sv_mem_conflicts` con `action=list` muestra los conflictos pendientes. Llamar a `sv_mem_review` también resalta los conflictos pendientes.
-  3. **Resolución:** Juzga el par con `sv_mem_judge` (promoviéndolo a `supersedes`/`conflicts_with`/`relates_to`) o márcalo como revisado/ignorado con `sv-memory conflicts ignore <relation-id>` (o `action=ignore`).
+  3. **Resolución:** Juzga el par con `sv_mem_judge` (promoviéndolo a `supersedes`/`conflicts_with`/`relates_to`), ejecuta un **escaneo semántico LLM** (`sv-memory conflicts scan --semantic` / `sv_mem_conflicts action=scan semantic=true`) que automatiza el mismo juicio con el CLI del agente configurado, o márcalo como revisado/ignorado con `sv-memory conflicts ignore <relation-id>` (o `action=ignore`).
 
 ---
 

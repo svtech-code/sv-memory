@@ -234,7 +234,7 @@ sv-memory tui
 - **`sv_mem_delete`**: Soft-deletes (or hard-deletes) a memory.
 - **`sv_mem_pin`** / **`sv_mem_unpin`**: Pins a local memory so it surfaces first in session context.
 - **`sv_mem_capture_passive`**: Logs lightweight journal entries automatically.
-- **`sv_mem_conflicts`**: Surfaces memory conflicts with semantic overlap analysis.
+- **`sv_mem_conflicts`**: Surfaces memory conflicts with semantic overlap analysis; `action=scan semantic=true` LLM-judges candidate pairs via the agent CLI (claude/opencode).
 - **`sv_mem_compact`**: Consolidates historical topic key revisions into unified summary records.
 
 ### ⏱️ Session Tools

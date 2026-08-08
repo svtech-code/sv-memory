@@ -13,6 +13,7 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 - **Memory→code graph unification:** saving or updating a memory with a `where_path` now auto-links it to its code node through a `rationale_for` edge (memory `document` node + edge). `sv_graph_explain`/`sv_graph_query` surface associated decisions/standards, and the links are re-created automatically after a full graph rebuild.
 - **Installer checksum verification:** `install.sh` and `install.ps1` now verify the downloaded binary against the release's `checksums.txt` (SHA-256). A mismatched hash aborts the install; missing checksums warn instead of failing.
 - **CI on Windows:** the test job now runs `go vet`, `go test -race -cover`, and a build check on `windows-latest` too, covering the Windows binaries that releases publish.
+- **Semantic LLM conflict judging:** `sv-memory conflicts scan --semantic [--agent claude|opencode] [--max-semantic N] [--concurrency N]` and `sv_mem_conflicts action=scan semantic=true` LLM-judge candidate conflict pairs using the configured agent CLI. Verdicts (`supersedes`/`conflicts_with`/`relates_to`/`none`) are persisted with `judged_by='llm'`; failed judgments stay pending for retry.
 
 ## [v0.6.0] - 2026-08-07
 

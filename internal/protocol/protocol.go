@@ -77,7 +77,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 ## Memory Maintenance (periodic):
 
 - **Review:** Call 'sv_mem_review' to list stale, duplicate, or consolidation-candidate memories.
-- **Conflicts:** Call 'sv_mem_conflicts action=scan' to detect potential duplicate memories; judge them with 'sv_mem_judge' (supersedes / conflicts_with / relates_to) to keep relations coherent.
+- **Conflicts:** Call 'sv_mem_conflicts action=scan' to detect potential duplicate memories; judge them with 'sv_mem_judge' (supersedes / conflicts_with / relates_to) or with 'action=scan semantic=true' to LLM-judge candidates via the agent CLI. Keep relations coherent.
 - **Compare:** Call 'sv_mem_compare(id1, id2)' before judging two similar memories.
 - **Compact:** Call 'sv_mem_compact' periodically or after many topic-key upserts to consolidate revisions and keep search fast.
 

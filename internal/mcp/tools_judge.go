@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -79,19 +80,82 @@ func (s *Server) handleConflicts(ctx context.Context, req mcp.CallToolRequest) (
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to scan conflicts: %v", err)), nil
 		}
-		if len(found) == 0 {
-			return mcp.NewToolResultText("No potential conflicts detected."), nil
+
+		semantic := req.GetString("semantic", "false") == "true"
+		if !semantic {
+			if len(found) == 0 {
+				return mcp.NewToolResultText("No potential conflicts detected."), nil
+			}
+			var sb strings.Builder
+			fmt.Fprintf(&sb, "Found %d potential conflict(s):\n\n", len(found))
+			for _, c := range found {
+				fmt.Fprintf(&sb, "- **ID:** %s | **Score:** %.2f\n  - A: %s\n  - B: %s\n",
+					c.ID, c.Score, c.SourceWhat, c.TargetWhat)
+			}
+			if apply {
+				sb.WriteString("\nConflicts successfully saved to database (status: pending).")
+			} else {
+				sb.WriteString("\nRun with apply=true to persist these conflicts to database.")
+			}
+			return mcp.NewToolResultText(sb.String()), nil
 		}
+
+		// Semantic mode: LLM-judge the candidate pairs with the agent CLI.
+		agent := req.GetString("agent", "")
+		if agent == "" {
+			agent = os.Getenv("SV_MEMORY_SEMANTIC_AGENT")
+		}
+		if agent == "" {
+			agent = "claude"
+		}
+		maxSemantic, _ := strconv.Atoi(req.GetString("max_semantic", "0"))
+		concurrency, _ := strconv.Atoi(req.GetString("concurrency", "3"))
+		if concurrency <= 0 {
+			concurrency = 3
+		}
+
+		candidates := found
+		if len(candidates) == 0 {
+			candidates, _ = memory.ListConflicts(s.pool.Writer, s.cfg.ProjectID, "pending")
+		}
+		if len(candidates) == 0 {
+			return mcp.NewToolResultText("No candidate conflicts to judge semantically. Run a scan first (apply=true) to surface candidates."), nil
+		}
+
+		verdicts, err := memory.SemanticJudgeCandidates(ctx, s.pool.Writer, s.cfg.ProjectID, candidates, agent, maxSemantic, concurrency)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to run semantic judgments: %v", err)), nil
+		}
+
 		var sb strings.Builder
-		fmt.Fprintf(&sb, "Found %d potential conflict(s):\n\n", len(found))
-		for _, c := range found {
-			fmt.Fprintf(&sb, "- **ID:** %s | **Score:** %.2f\n  - A: %s\n  - B: %s\n",
-				c.ID, c.Score, c.SourceWhat, c.TargetWhat)
+		fmt.Fprintf(&sb, "Semantic judgments for %d candidate(s) using agent '%s':\n\n", len(verdicts), agent)
+		judged, ignored, failed := 0, 0, 0
+		for _, v := range verdicts {
+			if v.Error != "" {
+				failed++
+				fmt.Fprintf(&sb, "- ❌ **%s** ↔ **%s**: %s\n", v.SourceID, v.TargetID, v.Error)
+				continue
+			}
+			if v.Relation == memory.SemanticNone {
+				ignored++
+				fmt.Fprintf(&sb, "- ➖ **NONE** %s ↔ %s (score %.2f) — %s\n", v.SourceID, v.TargetID, v.Score, v.Reason)
+			} else {
+				judged++
+				fmt.Fprintf(&sb, "- 🔀 **%s** %s ↔ %s (score %.2f) — %s\n", strings.ToUpper(v.Relation), v.SourceID, v.TargetID, v.Score, v.Reason)
+			}
+			if apply {
+				if err := memory.ApplySemanticVerdict(s.pool.Writer, s.cfg.ProjectID, v); err != nil {
+					return mcp.NewToolResultError(fmt.Sprintf("failed to persist semantic verdict: %v", err)), nil
+				}
+			}
+		}
+		if failed > 0 {
+			fmt.Fprintf(&sb, "\n⚠️  %d judgment(s) failed and were left pending for retry.\n", failed)
 		}
 		if apply {
-			sb.WriteString("\nConflicts successfully saved to database (status: pending).")
+			fmt.Fprintf(&sb, "\nPersisted %d judged and %d ignored relation(s) (judged_by: llm).", judged, ignored)
 		} else {
-			sb.WriteString("\nRun with apply=true to persist these conflicts to database.")
+			sb.WriteString("\nRun with apply=true to persist these judgments.")
 		}
 		return mcp.NewToolResultText(sb.String()), nil
 

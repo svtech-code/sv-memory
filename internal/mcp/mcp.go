@@ -649,13 +649,17 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 22. Tool: sv_mem_conflicts
 	conflictsTool := mcp.NewTool("sv_mem_conflicts",
-		mcp.WithDescription("Manage potential memory conflicts in the project: list, scan, or ignore conflicts."),
+		mcp.WithDescription("Manage potential memory conflicts in the project: list, scan, or ignore conflicts. scan with semantic='true' LLM-judges candidate pairs using the configured agent CLI (claude/opencode)."),
 		mcp.WithDeferLoading(true),
 		mcp.WithString("action", mcp.Required(), mcp.Description("Action to perform: list, scan, or ignore")),
 		mcp.WithString("status", mcp.Description("Optional status filter for list (pending, judged, ignored)")),
 		mcp.WithString("relation_id", mcp.Description("Required for ignore action: the conflict relation ID to ignore")),
 		mcp.WithString("threshold", mcp.Description("Optional similarity threshold for scan (default: '0.45')")),
-		mcp.WithString("apply", mcp.Description("For scan: 'true' to save scanned conflicts to database (default: 'false')")),
+		mcp.WithString("apply", mcp.Description("For scan: 'true' to save scanned conflicts / semantic judgments to database (default: 'false')")),
+		mcp.WithString("semantic", mcp.Description("For scan: 'true' to LLM-judge candidate conflicts with the agent CLI (default: 'false')")),
+		mcp.WithString("agent", mcp.Description("For semantic scan: agent CLI to use ('claude', 'opencode', or a custom command; default: $SV_MEMORY_SEMANTIC_AGENT or 'claude')")),
+		mcp.WithString("max_semantic", mcp.Description("For semantic scan: maximum number of candidate pairs to judge (default: all)")),
+		mcp.WithString("concurrency", mcp.Description("For semantic scan: number of parallel agent judgments (default: '3')")),
 	)
 	ms.AddTool(conflictsTool, s.handleConflicts)
 

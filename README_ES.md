@@ -234,7 +234,7 @@ sv-memory tui
 - **`sv_mem_delete`**: Soft-delete (o hard-delete) de una memoria.
 - **`sv_mem_pin`** / **`sv_mem_unpin`**: Fija una memoria local para que aparezca primero en el contexto de sesión.
 - **`sv_mem_capture_passive`**: Registra entradas de diario ligeras automáticamente.
-- **`sv_mem_conflicts`**: Muestra conflictos de memoria con análisis de superposición semántica.
+- **`sv_mem_conflicts`**: Muestra conflictos de memoria con análisis de superposición semántica; `action=scan semantic=true` juzga los pares candidatos con LLM vía el CLI del agente (claude/opencode).
 - **`sv_mem_compact`**: Consolida revisiones históricas de topic keys en registros de síntesis unificados.
 
 ### ⏱️ Herramientas de Sesión
