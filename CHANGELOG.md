@@ -5,6 +5,8 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+## [v0.6.0] - 2026-08-07
+
 ### Added
 
 - `sv_mem_session_start` Auto-Boot bundle now includes a **Graph Hubs** section:
@@ -58,6 +60,29 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
   `sv_mem_conflicts`, `sv_graph_viz`, `sv_graph_merge`) marked as
   `defer_loading` for MCP clients supporting dynamic tool loading (tool count
   documented as 28).
+
+### Docs
+
+- Commit language rule: **English by default** in the injected protocol template
+  (was "Spanish by default"); propagated to `AGENTS.md` and the `spect.md` §8
+  embedded template.
+- `spect.md` MCP Tools section now covers all 28 tools (`sv_mem_pin` /
+  `sv_mem_unpin` added and renumbered contiguously 1-28), documents the
+  `match_mode` and `token_budget` parameters, and fixes stale values
+  (`max_chars` default 2000 → 1000, reader pool 8 → 16, benchmark renamed to
+  `BenchmarkToolResponseTokens`).
+- `CONTRIBUTING.md`: absolute `file:///` links converted to repo-relative paths;
+  `symbolScanExts` correctly pointed to `scanner.go`; tool-registration example
+  updated to the real `ms.AddTool` + `handleX` pattern.
+- `SECURITY.md`: supported-versions policy declared as **latest minor only**
+  (0.6.x).
+- `README.md` / `README_ES.md` / getting-started guide: granted-permissions
+  example updated to `28 / 28`, language count corrected to 17, hook status
+  output harmonized, Phase-4 `configure` keyboard hints now documented in
+  English as well.
+- OpenCode skill: added Pin/Priority tool group and extended the graph-tools
+  summary; fixed typos in `requirement.md` and a stale test-name comment in
+  `internal/mcp/mcp.go`.
 
 ## [v0.5.0] - 2026-08-05
 
