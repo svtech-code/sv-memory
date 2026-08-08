@@ -48,6 +48,9 @@ func DetectStaleFiles(db *sql.DB, projectID string, projPath string) (*StaleRepo
 		if relErr != nil {
 			return nil
 		}
+		// Match the forward-slash keys written by the scanner/loadFileMeta, so
+		// the probe never misreports unchanged files as changed on Windows.
+		relPath = filepath.ToSlash(relPath)
 		if d.IsDir() {
 			if fallbackIgnoreDirs[d.Name()] {
 				return filepath.SkipDir

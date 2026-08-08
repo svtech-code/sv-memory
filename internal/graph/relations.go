@@ -13,6 +13,9 @@ func resolveImport(projPath, sourcePath, imp string, nodes map[string]*Node) (st
 	if strings.HasPrefix(imp, ".") {
 		sourceDir := filepath.Dir(sourcePath)
 		resolvedRel := filepath.Clean(filepath.Join(sourceDir, imp))
+		// Node ids/paths are canonicalized to forward slashes (see scanner), so
+		// normalize the resolved import on Windows where filepath uses "\".
+		resolvedRel = filepath.ToSlash(resolvedRel)
 
 		// Check options with extensions
 		exts := []string{"", ".ts", ".js", ".tsx", ".jsx", ".astro", ".sh", ".lua", "/index.ts", "/index.js", "/index.tsx", "/index.jsx"}
