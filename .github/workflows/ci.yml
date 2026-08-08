@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -49,4 +49,4 @@ jobs:
         run: go test -race -cover ./...
 
       - name: Build
-        run: go build -trimpath -ldflags="-X main.version=ci -X main.commit=${{ github.sha }}" -o /tmp/sv-memory-check ./cmd/sv-memory
+        run: go build -trimpath -ldflags="-X main.version=ci -X main.commit=${{ github.sha }}" -o "${{ github.workspace }}/sv-memory-check" ./cmd/sv-memory

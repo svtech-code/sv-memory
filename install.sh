@@ -68,12 +68,50 @@ if ! curl -fsSL "$URL" -o "$TEMP_DIR/$TARBALL"; then
     exit 1
 fi
 
-# 4. Extract into the install directory (tarball contains a single binary)
+# 4. Verify the SHA-256 checksum against checksums.txt from the release.
+#    Best-effort: releases without a checksums.txt (or platforms without a
+#    hashing tool) warn instead of failing, but a mismatched hash aborts.
+if [ "$VERSION" = "latest" ]; then
+    CHECKSUM_URL="https://github.com/$REPO/releases/latest/download/checksums.txt"
+else
+    CHECKSUM_URL="https://github.com/$REPO/releases/download/${VERSION}/checksums.txt"
+fi
+
+if CHECKSUM_FILE="$(curl -fsSL "$CHECKSUM_URL" 2>/dev/null)"; then
+    EXPECTED="$(printf '%s\n' "$CHECKSUM_FILE" | awk -v f="$TARBALL" '$2 == f { print $1; exit }')"
+    if [ -z "$EXPECTED" ]; then
+        echo "⚠️  checksums.txt found but no entry for $TARBALL — skipping checksum verification"
+    else
+        if command -v shasum >/dev/null 2>&1; then
+            ACTUAL="$(shasum -a 256 "$TEMP_DIR/$TARBALL" | awk '{print $1}')"
+        elif command -v sha256sum >/dev/null 2>&1; then
+            ACTUAL="$(sha256sum "$TEMP_DIR/$TARBALL" | awk '{print $1}')"
+        else
+            ACTUAL=""
+            echo "⚠️  No shasum/sha256sum available — skipping checksum verification"
+        fi
+        if [ -n "$ACTUAL" ]; then
+            if [ "$ACTUAL" = "$EXPECTED" ]; then
+                echo "🔒 Checksum verified (SHA-256): OK"
+            else
+                echo "❌ Checksum verification FAILED for $TARBALL"
+                echo "   expected: $EXPECTED"
+                echo "   actual:   $ACTUAL"
+                echo "   The download may be corrupt or tampered with. Aborting."
+                exit 1
+            fi
+        fi
+    fi
+else
+    echo "⚠️  Could not fetch $CHECKSUM_URL — skipping checksum verification"
+fi
+
+# 5. Extract into the install directory (tarball contains a single binary)
 mkdir -p "$INSTALL_DIR"
 tar -xzf "$TEMP_DIR/$TARBALL" -C "$INSTALL_DIR" "$BINARY"
 chmod +x "$INSTALL_DIR/$BINARY"
 
-# 5. Warn if the install directory is not on PATH
+# 6. Warn if the install directory is not on PATH
 case ":$PATH:" in
     *":$INSTALL_DIR:"*) ;;
     *)

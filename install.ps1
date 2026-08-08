@@ -47,6 +47,42 @@ try {
     exit 1
 }
 
+# Verify the SHA-256 checksum against checksums.txt from the release.
+# Best-effort: releases without a checksums.txt warn instead of failing, but a
+# mismatched hash aborts.
+$ChecksumUrl = if ($Version -eq "latest") {
+    "https://github.com/$Repo/releases/latest/download/checksums.txt"
+} else {
+    "https://github.com/$Repo/releases/download/${Version}/checksums.txt"
+}
+$ZipName = "sv-memory_windows_${Arch}.zip"
+$ChecksumFile = Join-Path $env:TEMP "sv-memory-checksums-$([guid]::NewGuid()).txt"
+try {
+    Invoke-WebRequest -Uri $ChecksumUrl -OutFile $ChecksumFile -UseBasicParsing
+    $Expected = Get-Content $ChecksumFile -ErrorAction Stop | ForEach-Object {
+        $parts = $_ -split '\s+'
+        if ($parts.Length -ge 2 -and $parts[1] -eq $ZipName) { $parts[0] }
+    } | Select-Object -First 1
+    if ($Expected) {
+        $Actual = (Get-FileHash -Algorithm SHA256 -Path $Zip).Hash
+        if ($Actual -ieq $Expected) {
+            Write-Host "🔒 Checksum verified (SHA-256): OK" -ForegroundColor Green
+        } else {
+            Write-Host "❌ Checksum verification FAILED for $ZipName" -ForegroundColor Red
+            Write-Host "   expected: $Expected"
+            Write-Host "   actual:   $Actual"
+            Write-Host "   The download may be corrupt or tampered with. Aborting."
+            exit 1
+        }
+    } else {
+        Write-Host "⚠️  checksums.txt found but no entry for $ZipName — skipping checksum verification" -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "⚠️  Could not fetch $ChecksumUrl — skipping checksum verification" -ForegroundColor Yellow
+} finally {
+    if (Test-Path $ChecksumFile) { Remove-Item $ChecksumFile -Force }
+}
+
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 Expand-Archive -Path $Zip -DestinationPath $InstallDir -Force
 Remove-Item $Zip -Force

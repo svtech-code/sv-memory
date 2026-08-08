@@ -11,6 +11,8 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 - `sv_mem_diagnose` MCP tool: read-only health checks (database, schema tables, FTS5 triggers, project registration, write permissions, chunks) combined with structural graph diagnostics (dangling edges, orphan nodes, self-loops, missing files).
 - `sv_mem_review` `action="mark_reviewed"`: reset a memory's policy-review deadline (`review_after`) after it has been validated, closing the review lifecycle loop.
 - **Memory→code graph unification:** saving or updating a memory with a `where_path` now auto-links it to its code node through a `rationale_for` edge (memory `document` node + edge). `sv_graph_explain`/`sv_graph_query` surface associated decisions/standards, and the links are re-created automatically after a full graph rebuild.
+- **Installer checksum verification:** `install.sh` and `install.ps1` now verify the downloaded binary against the release's `checksums.txt` (SHA-256). A mismatched hash aborts the install; missing checksums warn instead of failing.
+- **CI on Windows:** the test job now runs `go vet`, `go test -race -cover`, and a build check on `windows-latest` too, covering the Windows binaries that releases publish.
 
 ## [v0.6.0] - 2026-08-07
 

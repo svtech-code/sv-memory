@@ -104,6 +104,9 @@ curl -fsSL https://raw.githubusercontent.com/svtech-code/sv-memory/main/install.
 iwr -useb https://raw.githubusercontent.com/svtech-code/sv-memory/main/install.ps1 | iex
 ```
 
+> El instalador verifica el binario descargado contra el `checksums.txt` SHA-256
+> de la release — un hash que no coincida aborta la instalación.
+
 > En macOS/Linux el binario se instala en `$HOME/.local/bin` (sin `sudo`).
 > En Windows se instala en `%LOCALAPPDATA%\sv-memory` y se agrega al PATH del usuario.
 
