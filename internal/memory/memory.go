@@ -131,6 +131,111 @@ type Session struct {
 	Status    string    `json:"status"`
 }
 
+// MemoryUpdate holds the fields an sv_mem_update call can change. A nil field
+// keeps the stored value; a non-nil field overwrites it (including an empty
+// string, which clears the field).
+type MemoryUpdate struct {
+	What        *string
+	Why         *string
+	Learned     *string
+	WherePath   *string
+	Impact      *string
+	ErrorsFaced *string
+	NextSteps   *string
+}
+
+// UpdateMemory partially updates an existing memory by ID. Identity fields
+// (id, project_id, category, created_at, session_id, topic_key) are preserved;
+// only the fields present in upd are changed. The revision counter advances,
+// last_seen_at bumps so the next chunked Git sync re-writes the memory, and
+// the normalized hash is recomputed from the final field values.
+func UpdateMemory(db *sql.DB, projectID, id string, upd MemoryUpdate) (*Memory, error) {
+	existing, err := GetMemory(db, projectID, id)
+	if err != nil {
+		return nil, err
+	}
+	if existing == nil {
+		return nil, fmt.Errorf("memory %s not found in project", id)
+	}
+
+	what := existing.What
+	if upd.What != nil {
+		what = *upd.What
+	}
+	why := existing.Why
+	if upd.Why != nil {
+		why = *upd.Why
+	}
+	learned := existing.Learned
+	if upd.Learned != nil {
+		learned = *upd.Learned
+	}
+	wherePath := existing.WherePath
+	if upd.WherePath != nil {
+		wherePath = *upd.WherePath
+	}
+	impact := existing.Impact
+	if upd.Impact != nil {
+		impact = *upd.Impact
+	}
+	errorsFaced := existing.ErrorsFaced
+	if upd.ErrorsFaced != nil {
+		errorsFaced = *upd.ErrorsFaced
+	}
+	nextSteps := existing.NextSteps
+	if upd.NextSteps != nil {
+		nextSteps = *upd.NextSteps
+	}
+
+	if len(what) > 1000 {
+		return nil, fmt.Errorf("field 'what' exceeds maximum length of 1000 characters")
+	}
+	if len(why) > 4000 {
+		return nil, fmt.Errorf("field 'why' exceeds maximum length of 4000 characters")
+	}
+	if len(learned) > 4000 {
+		return nil, fmt.Errorf("field 'learned' exceeds maximum length of 4000 characters")
+	}
+	if len(wherePath) > 1000 {
+		return nil, fmt.Errorf("field 'where_path' exceeds maximum length of 1000 characters")
+	}
+	if len(impact) > 4000 {
+		return nil, fmt.Errorf("field 'impact' exceeds maximum length of 4000 characters")
+	}
+	if len(errorsFaced) > 4000 {
+		return nil, fmt.Errorf("field 'errors_faced' exceeds maximum length of 4000 characters")
+	}
+	if len(nextSteps) > 4000 {
+		return nil, fmt.Errorf("field 'next_steps' exceeds maximum length of 4000 characters")
+	}
+
+	what = security.SanitizeText(what)
+	why = security.SanitizeText(why)
+	wherePath = security.SanitizeText(wherePath)
+	learned = security.SanitizeText(learned)
+	impact = security.SanitizeText(impact)
+	errorsFaced = security.SanitizeText(errorsFaced)
+	nextSteps = security.SanitizeText(nextSteps)
+
+	now := time.Now()
+	revision := existing.RevisionCount + 1
+	hash := computeHash(what, why, learned, wherePath)
+
+	_, err = db.Exec(`
+		UPDATE memories SET
+			what = ?, why = ?, where_path = ?, learned = ?,
+			impact = ?, errors_faced = ?, next_steps = ?,
+			revision_count = ?, normalized_hash = ?, last_seen_at = ?
+		WHERE project_id = ? AND id = ? AND deleted_at IS NULL`,
+		what, why, wherePath, learned, impact, errorsFaced, nextSteps,
+		revision, hash, now, projectID, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update memory: %w", err)
+	}
+
+	return GetMemory(db, projectID, id)
+}
+
 func computeHash(what, why, learned, wherePath string) string {
 	data := what + "\x00" + why + "\x00" + learned + "\x00" + wherePath
 	h := sha256.Sum256([]byte(data))

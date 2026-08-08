@@ -62,6 +62,7 @@ type Tool struct {
 // registered tool name appears here.
 var AllTools = []Tool{
 	{Name: "sv_mem_save", Description: "Persist a decision, bugfix, journal, or standard to project memory (with optional topic_key upsert)."},
+	{Name: "sv_mem_update", Description: "Partially update an existing memory by ID (what, why, learned, where_path, impact, errors_faced, next_steps)."},
 	{Name: "sv_mem_suggest_topic_key", Description: "Generate a stable 'category/kebab-case' topic_key for upsert semantics."},
 	{Name: "sv_mem_session_start", Description: "Register a new coding session and receive the Auto-Boot Context Bundle (previous session summary, key decisions, standards, recent bugfixes, journals, top graph hubs)."},
 	{Name: "sv_mem_session_end", Description: "End the active session with a summary to enable context recovery."},
@@ -73,9 +74,10 @@ var AllTools = []Tool{
 	{Name: "sv_mem_timeline", Description: "Get chronological context around a specific memory observation."},
 	{Name: "sv_mem_judge", Description: "Create a relation between memories (supersedes, conflicts_with, relates_to)."},
 	{Name: "sv_mem_compare", Description: "Compare two memories side by side in a Markdown table."},
-	{Name: "sv_mem_review", Description: "List stale, duplicate, or consolidation-candidate memories."},
+	{Name: "sv_mem_review", Description: "List stale, duplicate, or consolidation-candidate memories, or mark a memory as reviewed (action='mark_reviewed')."},
 	{Name: "sv_mem_stats", Description: "Get aggregate memory statistics per category and session counts."},
 	{Name: "sv_mem_current_project", Description: "Get the current project's ID and display name."},
+	{Name: "sv_mem_diagnose", Description: "Run read-only health checks (database, FTS5, project, graph integrity) and return a report."},
 	{Name: "sv_mem_delete", Description: "Soft-delete (default) or hard-delete a memory."},
 	{Name: "sv_mem_pin", Description: "Pin a local memory so it surfaces first in session context (key decisions stay visible)."},
 	{Name: "sv_mem_unpin", Description: "Clear the pinned flag on a local memory."},
@@ -101,7 +103,7 @@ var (
 // Server holds the long-lived state shared by every MCP tool handler: the
 // connection pool, the active project config, the debounced Git sync state,
 // and the per-project graph load lock. Splitting this state onto the Server
-// struct (instead of closures in NewServer) keeps the 28 tool handlers in
+// struct (instead of closures in NewServer) keeps the tool handlers in
 // focused per-domain files.
 type Server struct {
 	pool *db.Pool
@@ -401,7 +403,7 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 	return err
 }
 
-// NewServer initializes the MCP server, registers all 28 tools, and returns it.
+// NewServer initializes the MCP server, registers all tools, and returns it.
 // Split from StartServer for programmatic unit testing. Tool definitions and
 // handler wiring live here (single source of truth for the tool surface, kept
 // in sync with AllTools); the handlers themselves are Server methods defined
@@ -430,6 +432,20 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		mcp.WithString("session_id", mcp.Description("Optional session ID to associate this memory with an active session.")),
 	)
 	ms.AddTool(saveTool, s.handleSave)
+
+	// 1b. Tool: sv_mem_update
+	updateTool := mcp.NewTool("sv_mem_update",
+		mcp.WithDescription("Partially update an existing memory by ID. Only the provided fields are changed; identity fields (id, category, session, topic_key) are preserved. The revision counter advances and the change is synced to Git. Use sv_mem_get to inspect the current content before updating."),
+		mcp.WithString("id", mcp.Required(), mcp.Description("The memory ID to update")),
+		mcp.WithString("what", mcp.Description("Optional: new concise description")),
+		mcp.WithString("why", mcp.Description("Optional: new detailed reasoning")),
+		mcp.WithString("learned", mcp.Description("Optional: new rule or key lesson")),
+		mcp.WithString("where_path", mcp.Description("Optional: file or folder path affected (empty string clears it)")),
+		mcp.WithString("impact", mcp.Description("Optional: achievements or what went well (empty string clears it)")),
+		mcp.WithString("errors_faced", mcp.Description("Optional: errors faced or roadblocks (empty string clears it)")),
+		mcp.WithString("next_steps", mcp.Description("Optional: next actions or pending tasks (empty string clears it)")),
+	)
+	ms.AddTool(updateTool, s.handleUpdate)
 
 	// 2. Tool: sv_mem_suggest_topic_key
 	suggestTool := mcp.NewTool("sv_mem_suggest_topic_key",
@@ -534,8 +550,10 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 13. Tool: sv_mem_review
 	reviewTool := mcp.NewTool("sv_mem_review",
-		mcp.WithDescription("List memories that may need attention: old, stale, high duplicates, or candidates for consolidation. Useful for high-level maintenance."),
+		mcp.WithDescription("List memories that may need attention: old, stale, high duplicates, or candidates for consolidation. Use action='mark_reviewed' (with id) to reset a memory's policy-review deadline after it has been validated."),
 		mcp.WithDeferLoading(true),
+		mcp.WithString("action", mcp.Description("Action to perform: 'list' (default) or 'mark_reviewed'")),
+		mcp.WithString("id", mcp.Description("Required for action='mark_reviewed': the memory ID to mark as reviewed")),
 	)
 	ms.AddTool(reviewTool, s.handleReview)
 
@@ -550,6 +568,13 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		mcp.WithDescription("Get the current project's ID and display name. Useful for confirming which project context is active before saving or searching."),
 	)
 	ms.AddTool(currentProjectTool, s.handleCurrentProject)
+
+	// 15b. Tool: sv_mem_diagnose
+	diagnoseTool := mcp.NewTool("sv_mem_diagnose",
+		mcp.WithDescription("Run read-only health checks on the active project: database file, schema tables, FTS5 triggers, project registration, write permissions, chunk directory, and structural graph integrity (dangling edges, orphan nodes, self-loops, missing files)."),
+		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
+	)
+	ms.AddTool(diagnoseTool, s.handleDiagnose)
 
 	// 16. Tool: sv_mem_delete
 	deleteTool := mcp.NewTool("sv_mem_delete",

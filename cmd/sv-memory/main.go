@@ -121,7 +121,7 @@ func init() {
 	permissionsCmd.AddCommand(permissionsRevokeCmd)
 	rootCmd.AddCommand(permissionsCmd)
 	permissionsGrantCmd.Flags().String("platform", "", "Target platform (antigravity, claude-code, opencode, codex)")
-	permissionsGrantCmd.Flags().Bool("all", false, "Grant all 28 sv-memory tools")
+	permissionsGrantCmd.Flags().Bool("all", false, "Grant all sv-memory tools")
 	permissionsGrantCmd.Flags().StringSlice("tool", nil, "Comma-separated tool names to grant (see 'permissions list')")
 	permissionsGrantCmd.Flags().Bool("dry-run", false, "Show what would be granted without writing")
 	permissionsRevokeCmd.Flags().String("platform", "", "Target platform (antigravity, claude-code, opencode, codex)")

@@ -124,6 +124,27 @@ func CompareMemories(db *sql.DB, projectID, id1, id2 string) (string, error) {
 	return sb.String(), nil
 }
 
+// MarkMemoryReviewed resets the policy-review deadline for a memory so it stops
+// surfacing as "due for review" in sv_mem_review. The new deadline is now +
+// decayReviewAfter(category). It also bumps last_seen_at so the reset
+// propagates to the Git chunk on the next sync.
+func MarkMemoryReviewed(db *sql.DB, projectID, id string) error {
+	var category string
+	err := db.QueryRow("SELECT category FROM memories WHERE project_id = ? AND id = ? AND deleted_at IS NULL", projectID, id).Scan(&category)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("memory %s not found in project", id)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to load memory category: %w", err)
+	}
+	now := time.Now()
+	next := now.Add(decayReviewAfter(category))
+	if _, err := db.Exec("UPDATE memories SET review_after = ?, last_seen_at = ? WHERE project_id = ? AND id = ?", next, now, projectID, id); err != nil {
+		return fmt.Errorf("failed to mark memory as reviewed: %w", err)
+	}
+	return nil
+}
+
 // ReviewMemories returns memories that may need attention (old, stale, high
 // duplicates, or consolidation candidates). The relation count for every
 // memory is fetched with a single grouped query instead of one COUNT per row,

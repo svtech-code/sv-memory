@@ -135,6 +135,47 @@ func (s *Server) similarMemoriesHint(title, savedID string) string {
 	}
 }
 
+func (s *Server) handleUpdate(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := req.RequireString("id")
+	if err != nil {
+		return mcp.NewToolResultError("missing required field: id"), nil
+	}
+
+	// Only fields present in the request arguments are updated. An explicitly
+	// empty value clears the field; an absent value leaves it untouched.
+	args := req.GetArguments()
+	strPtr := func(key string) *string {
+		v, ok := args[key]
+		if !ok {
+			return nil
+		}
+		s, _ := v.(string)
+		return &s
+	}
+
+	upd := memory.MemoryUpdate{
+		What:        strPtr("what"),
+		Why:         strPtr("why"),
+		Learned:     strPtr("learned"),
+		WherePath:   strPtr("where_path"),
+		Impact:      strPtr("impact"),
+		ErrorsFaced: strPtr("errors_faced"),
+		NextSteps:   strPtr("next_steps"),
+	}
+	if upd.What == nil && upd.Why == nil && upd.Learned == nil && upd.WherePath == nil &&
+		upd.Impact == nil && upd.ErrorsFaced == nil && upd.NextSteps == nil {
+		return mcp.NewToolResultError("no updatable fields provided (what, why, learned, where_path, impact, errors_faced, next_steps)"), nil
+	}
+
+	updated, err := memory.UpdateMemory(s.pool.Writer, s.cfg.ProjectID, id, upd)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to update memory: %v", err)), nil
+	}
+	s.scheduleSync()
+
+	return mcp.NewToolResultText(fmt.Sprintf("Memory %s updated (revision %d). Changes will be synced to the Git workspace. Use sv_mem_get(id=\"%s\") to verify the new content.", updated.ID, updated.RevisionCount, updated.ID)), nil
+}
+
 func (s *Server) handleSuggestTopicKey(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	category, err := req.RequireString("category")
 	if err != nil {

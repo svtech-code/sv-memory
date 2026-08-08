@@ -84,7 +84,7 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 
 #### 2. `sv-memory mcp`
 - Inicia el servidor MCP JSON-RPC sobre `stdio` para el consumo por parte de agentes.
-- Registra las 28 herramientas MCP.
+- Registra las 30 herramientas MCP.
 - Mantiene un caché de grafo en memoria para recorridos BFS sin SQL.
 - Aplica debounce a las escrituras de Git sync (coalescencia de 500ms).
 
@@ -109,14 +109,14 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 
 #### 9. `sv-memory configure`
 - Asistente interactivo para configuraciones automáticas/manuales de editores (Cursor, VS Code, Zed, Windsurf, OpenCode) y CLIs (Claude Code, Codex, Antigravity).
-- **Fase 4 (Permisos MCP):** Lista las 28 herramientas MCP de sv-memory con descripciones y otorga las entradas de allow-list seleccionadas a las plataformas con allow-list elegidas previamente (Antigravity CLI, Claude Code).
+- **Fase 4 (Permisos MCP):** Lista las 30 herramientas MCP de sv-memory con descripciones y otorga las entradas de allow-list seleccionadas a las plataformas con allow-list elegidas previamente (Antigravity CLI, Claude Code).
 - **Subcomandos** para leer/escribir configuración (YAML, global `~/.sv-memory/config.yaml` o local `.sv-memory/config.yaml`):
   - `sv-memory configure get <key>`: imprime un único valor de configuración.
   - `sv-memory configure set <key> <value> [--local]`: escribe un valor de forma global (por defecto) o local al proyecto.
   - `sv-memory configure list`: imprime todos los valores de configuración activos (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`).
 
 #### 10. `sv-memory permissions`
-- `list`: muestra las 28 herramientas MCP de sv-memory con descripciones legibles.
+- `list`: muestra las 30 herramientas MCP de sv-memory con descripciones legibles.
 - `grant --platform <p> [--all | --tool a,b] [--dry-run]`: escribe entradas de allow-list (`mcp(sv-memory/<tool>)` para Antigravity, `mcp__sv-memory__<tool>` para Claude Code), conservando entradas no relacionadas.
 - `revoke --platform <p> [--dry-run]`: elimina las entradas de sv-memory de la allow-list.
 - `status [--platform <p>]`: reporta herramientas otorgadas vs faltantes por plataforma.
@@ -366,7 +366,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_relations_target ON memory_relations(proje
 
 ## 6. Definición de Herramientas MCP
 
-`sv-memory` registra **28 herramientas MCP** para agentes de IA:
+`sv-memory` registra **30 herramientas MCP** para agentes de IA:
 
 ### 1. `sv_mem_save`
 Persiste una decisión arquitectónica clave, una corrección de bug, un diario de progreso o una pauta estándar.
@@ -381,6 +381,18 @@ Persiste una decisión arquitectónica clave, una corrección de bug, un diario 
   - `next_steps` (string, opcional): Tareas pendientes.
   - `topic_key` (string, opcional): Clave estable para semántica de upsert (actualiza en el lugar).
   - `session_id` (string, opcional): ID de sesión asociado (se auto-detecta si se omite).
+
+### 1b. `sv_mem_update`
+Actualiza parcialmente una memoria existente por ID. Solo cambian los campos proporcionados; los campos de identidad (id, category, session, topic_key) se conservan y el contador de revisión avanza.
+- **Parámetros:**
+  - `id` (string, requerido): El ID de la memoria a actualizar.
+  - `what` (string, opcional): Nueva descripción concisa.
+  - `why` (string, opcional): Nuevo razonamiento detallado.
+  - `learned` (string, opcional): Nueva regla o lección clave.
+  - `where_path` (string, opcional): Nueva ruta de archivo/carpeta afectada (cadena vacía la limpia).
+  - `impact` (string, opcional): Nuevos logros/lo que salió bien (cadena vacía lo limpia).
+  - `errors_faced` (string, opcional): Nuevos errores/bloqueos (cadena vacía los limpia).
+  - `next_steps` (string, opcional): Nuevas tareas pendientes (cadena vacía las limpia).
 
 ### 2. `sv_mem_suggest_topic_key`
 Genera un topic key estable en formato kebab-case antes de guardar.
@@ -462,8 +474,10 @@ Compara dos memorias lado a lado en formato Markdown.
   - `id2` (string, requerido): ID de la segunda memoria.
 
 ### 13. `sv_mem_review`
-Encuentra memorias que necesitan mantenimiento (p. ej. obsoletas, conteos de duplicados excesivos, candidatas a consolidación).
-- **Parámetros:** Ninguno.
+Encuentra memorias que necesitan mantenimiento (p. ej. obsoletas, conteos de duplicados excesivos, candidatas a consolidación) o reinicia el plazo de revisión de política de una memoria.
+- **Parámetros:**
+  - `action` (string, opcional): `'list'` (por defecto) o `'mark_reviewed'`.
+  - `id` (string, opcional): Requerido para `action='mark_reviewed'`: el ID de la memoria a marcar como revisada. Reinicia `review_after` a `now + decay(category)`.
 
 ### 14. `sv_mem_stats`
 Proporciona métricas agregadas (conteos, desglose por categoría).
@@ -472,6 +486,11 @@ Proporciona métricas agregadas (conteos, desglose por categoría).
 ### 15. `sv_mem_current_project`
 Recupera el nombre, la ruta y el ID del proyecto activo.
 - **Parámetros:** Ninguno.
+
+### 15b. `sv_mem_diagnose`
+Ejecuta chequeos de salud de solo lectura para el proyecto activo: archivo de base de datos, tablas del esquema, triggers FTS5, registro del proyecto, permisos de escritura, directorio de chunks e integridad estructural del grafo (aristas colgantes, nodos huérfanos, self-loops, archivos faltantes). Combina los checks de `RunDiagnostics` de memoria con `graph.DiagnoseGraph`.
+- **Parámetros:**
+  - `token_budget` (string, opcional): Máximo de tokens para la respuesta; se trunca con un aviso al superarse (por defecto `'0'` = ilimitado).
 
 ### 16. `sv_mem_delete`
 Elimina una memoria. Por defecto hace soft-delete; establece `hard` en `'true'` para borrarla permanentemente.
@@ -670,9 +689,9 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 ## Tool Quick Reference:
 
 - **Session:** sv_mem_session_start, sv_mem_session_summary, sv_mem_session_end, sv_mem_context
-- **Memory CRUD:** sv_mem_save, sv_mem_get, sv_mem_delete, sv_mem_search, sv_mem_timeline
+- **Memory CRUD:** sv_mem_save, sv_mem_update, sv_mem_get, sv_mem_delete, sv_mem_search, sv_mem_timeline
 - **Pin / Priority:** sv_mem_pin, sv_mem_unpin
-- **Knowledge quality:** sv_mem_suggest_topic_key, sv_mem_judge, sv_mem_compare, sv_mem_compact, sv_mem_review, sv_mem_capture_passive, sv_mem_conflicts, sv_mem_stats, sv_mem_current_project
+- **Knowledge quality:** sv_mem_suggest_topic_key, sv_mem_judge, sv_mem_compare, sv_mem_compact, sv_mem_review, sv_mem_capture_passive, sv_mem_conflicts, sv_mem_stats, sv_mem_current_project, sv_mem_diagnose
 - **Graph:** sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_viz, sv_graph_merge
 
 ## Repository Restrictions & Commit Standards:
@@ -710,7 +729,7 @@ sv-memory/
 │   │   ├── extractor/           # Extractor tree-sitter, respaldo regex, semántica markdown
 │   │   └── schema/              # Estructuras Node/Edge
 │   ├── hook/                    # Generación y plantillas de hooks PreToolUse
-│   ├── mcp/                     # Servidor MCP + 28 handlers de herramientas; lee del caché LRU de internal/graph
+│   ├── mcp/                     # Servidor MCP + 30 handlers de herramientas; lee del caché LRU de internal/graph
 │   ├── memory/                  # CRUD, almacenamiento de sesiones, dedup, conflictos, compactación,
 │   │                            # git sync por chunks, exportación Obsidian/Cypher, stats
 │   ├── perm/                    # Gestión de allow-lists de herramientas MCP (antigravity/claude-code)

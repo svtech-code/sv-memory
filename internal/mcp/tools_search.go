@@ -254,6 +254,19 @@ func (s *Server) handleCompare(ctx context.Context, req mcp.CallToolRequest) (*m
 }
 
 func (s *Server) handleReview(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	action := req.GetString("action", "list")
+	if action == "mark_reviewed" {
+		id, err := req.RequireString("id")
+		if err != nil {
+			return mcp.NewToolResultError("missing required field: id (needed for action='mark_reviewed')"), nil
+		}
+		if err := memory.MarkMemoryReviewed(s.pool.Writer, s.cfg.ProjectID, id); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to mark memory as reviewed: %v", err)), nil
+		}
+		s.scheduleSync()
+		return mcp.NewToolResultText(fmt.Sprintf("Memory %s marked as reviewed. Its policy-review deadline was reset and the change will be synced to Git.", id)), nil
+	}
+
 	reviewLimit := viper.GetInt("default_review_limit")
 	items, err := memory.ReviewMemories(s.pool.Reader, s.cfg.ProjectID, reviewLimit)
 	if err != nil {

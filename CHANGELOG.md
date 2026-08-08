@@ -5,6 +5,12 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+### Added
+
+- `sv_mem_update` MCP tool: partially update an existing memory by ID (fields `what`, `why`, `learned`, `where_path`, `impact`, `errors_faced`, `next_steps`). Identity fields are preserved, the revision counter advances, and the change is synced to Git.
+- `sv_mem_diagnose` MCP tool: read-only health checks (database, schema tables, FTS5 triggers, project registration, write permissions, chunks) combined with structural graph diagnostics (dangling edges, orphan nodes, self-loops, missing files).
+- `sv_mem_review` `action="mark_reviewed"`: reset a memory's policy-review deadline (`review_after`) after it has been validated, closing the review lifecycle loop.
+
 ## [v0.6.0] - 2026-08-07
 
 ### Added
