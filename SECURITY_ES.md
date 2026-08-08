@@ -12,11 +12,11 @@ Soportamos y parcheamos activamente los problemas de seguridad de las siguientes
 
 | Versión  | Soportada         |
 | ------- | ----------------- |
-| 0.6.x   | :white_check_mark: |
-| < 0.6.0 | :x:               |
+| 0.7.x   | :white_check_mark: |
+| < 0.7.0 | :x:               |
 
 > Política: **solo el minor más reciente.** Los arreglos de seguridad llegan al minor actual
-> (p. ej., 0.6.x). Se espera que los minors anteriores actualicen.
+> (p. ej., 0.7.x). Se espera que los minors anteriores actualicen.
 
 ---
 

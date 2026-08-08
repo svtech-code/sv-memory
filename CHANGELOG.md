@@ -3,7 +3,7 @@
 All notable changes follow [Conventional Commits](https://www.conventionalcommits.org/).
 Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automatically.
 
-## [Unreleased]
+## [v0.7.0] - 2026-08-08
 
 ### Added
 
@@ -14,6 +14,11 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 - **Installer checksum verification:** `install.sh` and `install.ps1` now verify the downloaded binary against the release's `checksums.txt` (SHA-256). A mismatched hash aborts the install; missing checksums warn instead of failing.
 - **CI on Windows:** the test job now runs `go vet`, `go test -race -cover`, and a build check on `windows-latest` too, covering the Windows binaries that releases publish.
 - **Semantic LLM conflict judging:** `sv-memory conflicts scan --semantic [--agent claude|opencode] [--max-semantic N] [--concurrency N]` and `sv_mem_conflicts action=scan semantic=true` LLM-judge candidate conflict pairs using the configured agent CLI. Verdicts (`supersedes`/`conflicts_with`/`relates_to`/`none`) are persisted with `judged_by='llm'`; failed judgments stay pending for retry.
+
+### Changed
+
+- The injected protocol (`AGENTS.md` / `.cursorrules` / `.windsurfrules`) gains a **Tool Usage in Any Mode** section: the sv-memory MCP tools may be used in any operational mode (plan, build, or review), since they persist only to the project memory store (`.sv-memory/`).
+- `sv_mem_conflicts` tool surface expanded with `semantic`, `agent`, `max_semantic`, and `concurrency` parameters.
 
 ## [v0.6.0] - 2026-08-07
 
@@ -272,4 +277,6 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 [v0.4.0]: https://github.com/svtech-code/sv-memory/releases/tag/v0.4.0
 [v0.4.1]: https://github.com/svtech-code/sv-memory/releases/tag/v0.4.1
 [v0.5.0]: https://github.com/svtech-code/sv-memory/releases/tag/v0.5.0
-[Unreleased]: https://github.com/svtech-code/sv-memory/compare/v0.5.0...main
+[v0.6.0]: https://github.com/svtech-code/sv-memory/releases/tag/v0.6.0
+[v0.7.0]: https://github.com/svtech-code/sv-memory/releases/tag/v0.7.0
+[Unreleased]: https://github.com/svtech-code/sv-memory/compare/v0.6.0...main

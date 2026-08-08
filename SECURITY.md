@@ -10,11 +10,11 @@ We actively support and patch security issues for the following versions:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.6.x   | :white_check_mark: |
-| < 0.6.0 | :x:                |
+| 0.7.x   | :white_check_mark: |
+| < 0.7.0 | :x:                |
 
 > Policy: **latest minor only.** Security fixes land on the current minor release
-> (e.g. 0.6.x). Older minors are expected to upgrade.
+> (e.g. 0.7.x). Older minors are expected to upgrade.
 
 ---
 
