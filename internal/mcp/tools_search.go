@@ -100,12 +100,8 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 			}
 		}
 	}
-	// Token estimate for the response
-	responseText := sb.String()
-	estTokens := len(responseText) / 4
-	fmt.Fprintf(&sb, "\n*Response: ~%d tokens*", estTokens)
 
-	return mcp.NewToolResultText(sb.String()), nil
+	return mcp.NewToolResultText(truncateToTokenBudget(sb.String(), resolveTokenBudget(req, req.GetString("token_budget", "")))), nil
 }
 
 // escapeTableCell sanitizes a string for safe embedding in a markdown table
@@ -168,11 +164,7 @@ func (s *Server) handleGet(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 		fmt.Fprintf(&sb, "* **Next steps / Pending:** %s\n", truncateField(mem.NextSteps, maxChars))
 	}
 	fmt.Fprintf(&sb, "* **Date:** %s\n", mem.CreatedAt.Format("2006-01-02"))
-	// Token estimate
-	responseText := sb.String()
-	estTokens := len(responseText) / 4
-	fmt.Fprintf(&sb, "* **Estimated tokens:** ~%d\n", estTokens)
-	return mcp.NewToolResultText(sb.String()), nil
+	return mcp.NewToolResultText(truncateToTokenBudget(sb.String(), resolveTokenBudget(req, req.GetString("token_budget", "")))), nil
 }
 
 func (s *Server) handleTimeline(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -232,7 +224,7 @@ func (s *Server) handleTimeline(ctx context.Context, req mcp.CallToolRequest) (*
 		sb.WriteString("No other memories found nearby in time.\n")
 	}
 
-	return mcp.NewToolResultText(sb.String()), nil
+	return mcp.NewToolResultText(truncateToTokenBudget(sb.String(), resolveTokenBudget(req, req.GetString("token_budget", "")))), nil
 }
 
 func (s *Server) handleCompare(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -298,7 +290,5 @@ func (s *Server) handleReview(ctx context.Context, req mcp.CallToolRequest) (*mc
 		}
 		sb.WriteString("\n")
 	}
-	estTokens := sb.Len() / 4
-	fmt.Fprintf(&sb, "*Response: ~%d tokens*\n", estTokens)
-	return mcp.NewToolResultText(sb.String()), nil
+	return mcp.NewToolResultText(truncateToTokenBudget(sb.String(), resolveTokenBudget(req, req.GetString("token_budget", "")))), nil
 }

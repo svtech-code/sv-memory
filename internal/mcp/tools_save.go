@@ -119,11 +119,13 @@ func (s *Server) similarMemoriesHint(title, savedID string) string {
 			return ""
 		}
 		var sb strings.Builder
-		sb.WriteString("\n\n**Similar memories detected (consider reviewing with sv_mem_judge if these are conflicts):**\n")
+		sb.WriteString("\n\n**Similar memories detected (call `sv_mem_judge` to record a relation if these are superseded/conflicting):**\n")
 		for _, c := range r.candidates {
 			if c.ID != savedID {
 				fmt.Fprintf(&sb, "- [%s] **%s** (ID: %s, similarity: %.0f%%)\n",
 					strings.ToUpper(c.Category), c.What, c.ID, c.Similarity*100)
+				fmt.Fprintf(&sb, "  → `sv_mem_judge(source_id=\"%s\", target_id=\"%s\", relation_type=supersedes|conflicts_with|relates_to)`\n",
+					savedID, c.ID)
 			}
 		}
 		return sb.String()

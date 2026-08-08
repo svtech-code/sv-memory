@@ -37,13 +37,7 @@ func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) 
 
 	relationType := req.GetString("relation_type", "")
 	direction := req.GetString("direction", "out")
-	tokenBudgetStr := req.GetString("token_budget", "0")
-	tokenBudget := 0
-	if tokenBudgetStr != "" {
-		if t, convErr := strconv.Atoi(tokenBudgetStr); convErr == nil && t > 0 {
-			tokenBudget = t
-		}
-	}
+	tokenBudget := resolveTokenBudget(req, req.GetString("token_budget", ""))
 
 	// Load or retrieve the in-memory graph cache.
 	startQuery := time.Now()
@@ -451,7 +445,7 @@ func (s *Server) handleGraphExplain(ctx context.Context, req mcp.CallToolRequest
 		fmt.Fprintf(&sb, "3. \"Show me the source code implementation details of `%s`.\"\n", node.Label)
 	}
 
-	return mcp.NewToolResultText(sb.String()), nil
+	return mcp.NewToolResultText(truncateToTokenBudget(sb.String(), resolveTokenBudget(req, req.GetString("token_budget", "")))), nil
 }
 
 func (s *Server) handleGodNodes(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -537,9 +531,7 @@ func (s *Server) handleGodNodes(ctx context.Context, req mcp.CallToolRequest) (*
 		sb.WriteString("\n" + benchmark + "\n")
 	}
 
-	fmt.Fprintf(&sb, "\n*Response: ~%d tokens*", sb.Len()/4)
-
-	return mcp.NewToolResultText(sb.String()), nil
+	return mcp.NewToolResultText(truncateToTokenBudget(sb.String(), resolveTokenBudget(req, req.GetString("token_budget", "")))), nil
 }
 
 func (s *Server) handleSurprisingConnections(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -591,9 +583,7 @@ func (s *Server) handleSurprisingConnections(ctx context.Context, req mcp.CallTo
 	}
 
 	sb.WriteString("\n*Higher surprise score means a more unexpected bridge between communities.*\n")
-	fmt.Fprintf(&sb, "\n*Response: ~%d tokens*", sb.Len()/4)
-
-	return mcp.NewToolResultText(sb.String()), nil
+	return mcp.NewToolResultText(truncateToTokenBudget(sb.String(), resolveTokenBudget(req, req.GetString("token_budget", "")))), nil
 }
 
 func (s *Server) handleGraphViz(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

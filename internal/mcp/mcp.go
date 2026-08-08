@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -302,7 +303,8 @@ func (s *Server) getOrLoadGraph() (*graph.InMemoryGraph, error) {
 // maxFieldChars is the default maximum character count per text field in
 // sv_mem_get responses. When a field exceeds this limit it is truncated
 // with a "[truncated N chars]" suffix to keep token consumption bounded.
-const maxFieldChars = 1500
+// Callers can override with the max_chars tool argument (0 = unlimited).
+const maxFieldChars = 1000
 
 // timelineWhyChars caps the rationale shown for the central observation in
 // sv_mem_timeline, keeping the response lean while avoiding a full
@@ -324,6 +326,42 @@ func truncateField(s string, maxChars int) string {
 		return s
 	}
 	return s[:maxChars] + fmt.Sprintf("... [truncated %d chars]", len(s)-maxChars)
+}
+
+// resolveTokenBudget returns the token budget for a tool response. An explicit
+// per-tool token_budget argument wins when positive; otherwise the global
+// max_response_tokens config default applies (0 = unlimited).
+func resolveTokenBudget(req mcp.CallToolRequest, explicit string) int {
+	budget := 0
+	if explicit != "" {
+		if t, convErr := strconv.Atoi(explicit); convErr == nil && t > 0 {
+			budget = t
+		}
+	}
+	if budget <= 0 {
+		budget = viper.GetInt("max_response_tokens")
+	}
+	if budget < 0 {
+		budget = 0
+	}
+	return budget
+}
+
+// truncateToTokenBudget caps a built response to roughly tokenBudget tokens
+// (chars/4) when it exceeds that limit. Truncation cuts at the last newline so
+// lines stay intact, and a notice explains how to get the full output.
+func truncateToTokenBudget(responseText string, tokenBudget int) string {
+	if tokenBudget <= 0 || len(responseText) <= tokenBudget*4 {
+		return responseText
+	}
+	maxChars := tokenBudget * 4
+	truncated := responseText[:maxChars]
+	if lastNewline := strings.LastIndex(truncated, "\n"); lastNewline > 0 {
+		truncated = truncated[:lastNewline]
+	}
+	return fmt.Sprintf(
+		"[!] Response truncated to ~%d tokens (~%d chars) of estimated %d total. Narrow the query or increase token_budget.\n\n%s",
+		tokenBudget, maxChars, len(responseText)/4, truncated)
 }
 
 // StartServer starts the MCP server using stdio transport.
@@ -431,12 +469,14 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	contextTool := mcp.NewTool("sv_mem_context",
 		mcp.WithDescription("Recover context from the last completed session. Call this first after a compaction or context reset to resume work. Returns the last session's goal, summary, and up to the given number of associated memories."),
 		mcp.WithString("limit", mcp.Description("Optional limit of memories to include (default '10')")),
+		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
 	)
 	ms.AddTool(contextTool, s.handleContext)
 
 	// 7. Tool: sv_mem_compact
 	compactTool := mcp.NewTool("sv_mem_compact",
 		mcp.WithDescription("Trigger automatic memory compaction for the project. Consolidates historical topic key revisions and duplicates into clean, high-quality summary records to keep search fast and token usage minimal. Call periodically or after many topic-key upserts."),
+		mcp.WithDeferLoading(true),
 	)
 	ms.AddTool(compactTool, s.handleCompact)
 
@@ -448,6 +488,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		mcp.WithString("path", mcp.Description("Optional path/directory scope filter to narrow memories relevant to a specific file or directory")),
 		mcp.WithString("limit", mcp.Description("Optional limit of results to return (default is '10')")),
 		mcp.WithString("offset", mcp.Description("Optional offset for pagination (default is '0')")),
+		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
 	)
 	ms.AddTool(searchTool, s.handleSearch)
 
@@ -455,7 +496,8 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	getTool := mcp.NewTool("sv_mem_get",
 		mcp.WithDescription("Retrieve the full content of a specific memory by its ID. This is the third layer of progressive disclosure: use after sv_mem_search to inspect a memory in detail. Long text fields are truncated beyond max_chars to limit tokens."),
 		mcp.WithString("id", mcp.Required(), mcp.Description("The memory ID to retrieve")),
-		mcp.WithString("max_chars", mcp.Description("Optional max characters per text field (default '2000', '0' = unlimited)")),
+		mcp.WithString("max_chars", mcp.Description("Optional max characters per text field (default '1000', '0' = unlimited)")),
+		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
 	)
 	ms.AddTool(getTool, s.handleGet)
 
@@ -490,6 +532,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	// 13. Tool: sv_mem_review
 	reviewTool := mcp.NewTool("sv_mem_review",
 		mcp.WithDescription("List memories that may need attention: old, stale, high duplicates, or candidates for consolidation. Useful for high-level maintenance."),
+		mcp.WithDeferLoading(true),
 	)
 	ms.AddTool(reviewTool, s.handleReview)
 
@@ -508,6 +551,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	// 16. Tool: sv_mem_delete
 	deleteTool := mcp.NewTool("sv_mem_delete",
 		mcp.WithDescription("Delete a memory. Soft delete (default) marks it as deleted but preserves it in the database for potential recovery. Hard delete removes it permanently."),
+		mcp.WithDeferLoading(true),
 		mcp.WithString("id", mcp.Required(), mcp.Description("The memory ID to delete")),
 		mcp.WithString("hard", mcp.Description("Set to 'true' for permanent hard delete (default: 'false' = soft delete)")),
 	)
@@ -550,6 +594,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	// 21. Tool: sv_mem_conflicts
 	conflictsTool := mcp.NewTool("sv_mem_conflicts",
 		mcp.WithDescription("Manage potential memory conflicts in the project: list, scan, or ignore conflicts."),
+		mcp.WithDeferLoading(true),
 		mcp.WithString("action", mcp.Required(), mcp.Description("Action to perform: list, scan, or ignore")),
 		mcp.WithString("status", mcp.Description("Optional status filter for list (pending, judged, ignored)")),
 		mcp.WithString("relation_id", mcp.Description("Required for ignore action: the conflict relation ID to ignore")),
@@ -582,6 +627,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	// 25. Tool: sv_graph_viz
 	vizTool := mcp.NewTool("sv_graph_viz",
 		mcp.WithDescription("Generate an interactive HTML visualization (graph.html) of the project dependency graph"),
+		mcp.WithDeferLoading(true),
 		mcp.WithString("output", mcp.Description("Output HTML file path (default 'graph.html')")),
 	)
 	ms.AddTool(vizTool, s.handleGraphViz)
@@ -589,6 +635,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	// 26. Tool: sv_graph_merge
 	mergeTool := mcp.NewTool("sv_graph_merge",
 		mcp.WithDescription("Merge two project graphs into one (union-merge by node ID)"),
+		mcp.WithDeferLoading(true),
 		mcp.WithString("project_a", mcp.Required(), mcp.Description("First project ID")),
 		mcp.WithString("project_b", mcp.Required(), mcp.Description("Second project ID")),
 		mcp.WithString("output", mcp.Description("Output JSON file path")),
