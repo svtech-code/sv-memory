@@ -8,6 +8,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/svtech-code/sv-memory/internal/graph"
 	"github.com/svtech-code/sv-memory/internal/memory"
 )
 
@@ -28,6 +29,17 @@ func (s *Server) handleSessionStart(ctx context.Context, req mcp.CallToolRequest
 	autoBundle, bundleErr := memory.GetAutoBootBundle(s.pool.Reader, s.cfg.ProjectID)
 	if bundleErr == nil && autoBundle != "" {
 		sb.WriteString(autoBundle)
+	}
+
+	// Graph Hubs (E2): surface the top architectural hotspots cheaply (single
+	// aggregate query, no centrality) so the agent can orient without an
+	// explicit sv_graph_god_nodes call at session start.
+	if hubs, hErr := graph.TopDegreeNodes(s.pool.Reader, s.cfg.ProjectID, 3); hErr == nil && len(hubs) > 0 {
+		sb.WriteString("\n\n### 🕸️ Graph Hubs (top connected code nodes):\n")
+		for _, h := range hubs {
+			fmt.Fprintf(&sb, "- **%s** (`%s`, degree: %d)\n", h.Label, h.ID, h.Degree)
+		}
+		sb.WriteString("\n*Use `sv_graph_explain` on a hub before refactoring it.*\n")
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil

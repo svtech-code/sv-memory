@@ -7,6 +7,14 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ### Added
 
+- `sv_mem_session_start` Auto-Boot bundle now includes a **Graph Hubs** section:
+  top code nodes by degree (fan-in + fan-out) computed with a single cheap
+  aggregate query (documents excluded, no centrality), so agents orient without
+  a separate `sv_graph_god_nodes` call.
+- `sv_graph_explain` adds an **Actionable Suggestions** section (refactor risk
+  level + concrete next steps) derived from fan-in/fan-out/betweenness.
+- `sv_graph_surprising_connections` now highlights the most surprising bridge
+  with a score summary and a `sv_graph_path` drill-down hint.
 - `sv_mem_pin` / `sv_mem_unpin`: pin local memories so key decisions surface
   first in `sv_mem_context` (📌 Pinned section). Pinned state is local-only.
 - `sv_mem_search` `match_mode` (`all` default / `any`): broader FTS5 recall
@@ -23,6 +31,8 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 - Incremental compaction tests: `TestCompactMemoriesIncrementalOnlyProcessesNewTopics`
   (watermark behavior) and `TestCompactMemoriesSkipsSingleRowHighRevision`
   (inflation fix).
+- `TestTopDegreeNodes` (ranking + document exclusion) and
+  `TestSessionStartIncludesGraphHubs` (bundle integration).
 
 ### Changed
 

@@ -2,12 +2,15 @@ package mcp
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/svtech-code/sv-memory/internal/graph"
 	"github.com/svtech-code/sv-memory/internal/memory"
 )
 
@@ -105,5 +108,43 @@ func TestSearchMatchModeHandler(t *testing.T) {
 	}
 	if !strings.Contains(anyMode, "mm-h-1") && !strings.Contains(anyMode, "mm-h-2") {
 		t.Fatalf("any-mode should return at least one result, got:\n%s", anyMode)
+	}
+}
+
+func TestSessionStartIncludesGraphHubs(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	// Write two Go files with an import edge so the graph has a real hub.
+	if err := os.WriteFile(filepath.Join(tempDir, "main.go"),
+		[]byte(`package main; import "./utils"; func main() { helper() }`), 0644); err != nil {
+		t.Fatalf("failed writing main.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "utils.go"),
+		[]byte(`package main; func helper() {}`), 0644); err != nil {
+		t.Fatalf("failed writing utils.go: %v", err)
+	}
+	if err := graph.SyncGraph(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
+		t.Fatalf("failed syncing graph: %v", err)
+	}
+
+	srv := NewServer(pool, cfg)
+	ctx := context.Background()
+	req := mcpgo.CallToolRequest{}
+	req.Params.Name = "sv_mem_session_start"
+	req.Params.Arguments = map[string]any{"goal": "session with graph hubs"}
+	res, err := srv.GetTool("sv_mem_session_start").Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("session_start failed: %v", err)
+	}
+	out := textContent(res.Content[0])
+	if !strings.Contains(out, "Session started") {
+		t.Fatalf("expected started session, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Graph Hubs") {
+		t.Fatalf("expected Graph Hubs section in session_start bundle, got:\n%s", out)
+	}
+	if !strings.Contains(out, "main.go") && !strings.Contains(out, "utils.go") {
+		t.Fatalf("expected a hub node to be listed, got:\n%s", out)
 	}
 }

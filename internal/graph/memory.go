@@ -45,6 +45,52 @@ func (g *InMemoryGraph) ComputeHubThreshold() int {
 	return th
 }
 
+// DegreeNode describes a node ranked by total degree (fan-in + fan-out).
+type DegreeNode struct {
+	ID     string
+	Label  string
+	Type   string
+	Degree int
+}
+
+// TopDegreeNodes returns the top n code nodes by total degree (fan-in +
+// fan-out) using a single aggregate query, without loading the full graph or
+// computing centrality. Document nodes (.md) are excluded so the result is a
+// list of actionable code hubs. Used by the Auto-Boot session bundle to show
+// architectural hotspots cheaply at session start.
+func TopDegreeNodes(db *sql.DB, projectID string, n int) ([]DegreeNode, error) {
+	if n <= 0 {
+		n = 3
+	}
+	rows, err := db.Query(`
+		SELECT n.id, n.label, n.node_type,
+			COALESCE(fi.cnt, 0) + COALESCE(fo.cnt, 0) AS degree
+		FROM graph_nodes n
+		LEFT JOIN (
+			SELECT source_id, COUNT(*) AS cnt FROM graph_edges WHERE project_id = ? GROUP BY source_id
+		) fi ON fi.source_id = n.id
+		LEFT JOIN (
+			SELECT target_id, COUNT(*) AS cnt FROM graph_edges WHERE project_id = ? GROUP BY target_id
+		) fo ON fo.target_id = n.id
+		WHERE n.project_id = ? AND n.node_type != 'document'
+		ORDER BY degree DESC
+		LIMIT ?`, projectID, projectID, projectID, n)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []DegreeNode
+	for rows.Next() {
+		var d DegreeNode
+		if err := rows.Scan(&d.ID, &d.Label, &d.Type, &d.Degree); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
 // LoadFullGraph executes two queries to load all nodes and edges for a project
 // into an InMemoryGraph.
 func LoadFullGraph(db *sql.DB, projectID string) (*InMemoryGraph, error) {

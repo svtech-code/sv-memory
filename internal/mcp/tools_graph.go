@@ -353,6 +353,33 @@ func (s *Server) handleGraphExplain(ctx context.Context, req mcp.CallToolRequest
 		sb.WriteString("🟢 **Isolated Node:** This node currently has no connections in the dependency graph.\n")
 	}
 
+	// Actionable suggestions (E1): turn the metrics above into concrete next
+	// steps the agent can take without re-deriving them.
+	sb.WriteString("\n### 💡 Actionable Suggestions:\n")
+	switch {
+	case isGod:
+		sb.WriteString("- **Refactor risk:** 🔴 **HIGH** (hub node)\n")
+		sb.WriteString("- Before changing this node, map ripple effects: run `sv_graph_query` on the key dependents/dependencies listed above and `sv_graph_path` to trace worst-case cascades.\n")
+		sb.WriteString("- Consider splitting its responsibilities along community boundaries (see community in Network Metrics).\n")
+	case fanIn > 5 || fanOut > 8:
+		sb.WriteString("- **Refactor risk:** 🟠 **MEDIUM** (above-average connectivity)\n")
+		sb.WriteString("- Prefer additive changes (new exported function/type) over signature changes to limit breakage.\n")
+	default:
+		sb.WriteString("- **Refactor risk:** 🟢 **LOW**\n")
+	}
+	if fanIn > 0 && fanOut == 0 {
+		sb.WriteString("- Low-level utility: changing its signature may break every dependent listed above — review them first.\n")
+	}
+	if fanIn == 0 && fanOut > 0 {
+		sb.WriteString("- Likely an entry point: renaming is safe, but verify launch/CLI references before doing it.\n")
+	}
+	if fanOut > fanIn {
+		sb.WriteString("- Depends on more modules than depend on it: upstream changes could cascade into this node.\n")
+	}
+	if bc > 50.0 {
+		sb.WriteString("- High betweenness: this node bridges communities. Removing it could disconnect otherwise-unrelated parts of the codebase.\n")
+	}
+
 	// Neighbors
 	sb.WriteString("\n### 🔗 Immediate Neighbors:\n")
 	var dependents []string
@@ -569,17 +596,48 @@ func (s *Server) handleSurprisingConnections(ctx context.Context, req mcp.CallTo
 
 	commLabels := computeCommLabels(g, centrality)
 
+	// Rank the top connection once so it can be highlighted in a summary line
+	// before the full table (E3: bridge-score formatting for the LLM).
+	type scoredConn struct {
+		idx   int
+		score float64
+		src   string
+		tgt   string
+		etype string
+		srcC  string
+		dstC  string
+	}
+	rowsFormatted := make([]scoredConn, 0, len(conns))
+	for i, c := range conns {
+		rowsFormatted = append(rowsFormatted, scoredConn{
+			idx:   i + 1,
+			score: c.SurpriseScore,
+			src:   c.SourceLabel,
+			tgt:   c.TargetLabel,
+			etype: c.EdgeType,
+			srcC:  commLabelStr(c.SrcCommunity, commLabels),
+			dstC:  commLabelStr(c.DstCommunity, commLabels),
+		})
+	}
+	best := rowsFormatted[0]
+	for _, r := range rowsFormatted[1:] {
+		if r.score > best.score {
+			best = r
+		}
+	}
+
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "## Surprising Connections (Top %d)\n\n", len(conns))
-	sb.WriteString("Cross-community bridges that link otherwise separate parts of the codebase.\n\n")
+	fmt.Fprintf(&sb, "**%d cross-community bridge(s)** linking otherwise separate parts of the codebase.\n\n", len(conns))
+	fmt.Fprintf(&sb, "🔥 **Most surprising bridge:** `%s` → `%s` (`%s`, score **%.2f**) between **%s** and **%s**.\n",
+		best.src, best.tgt, best.etype, best.score, best.srcC, best.dstC)
+	sb.WriteString("Drill down with `sv_graph_path(source=\"<node>\", target=\"<node>\")` to trace the full dependency chain.\n\n")
 
 	sb.WriteString("| Rank | Source | Target | Edge Type | Surprise Score | Communities |\n")
 	sb.WriteString("|------|--------|--------|-----------|----------------|-------------|\n")
-	for i, c := range conns {
-		srcComm := commLabelStr(c.SrcCommunity, commLabels)
-		dstComm := commLabelStr(c.DstCommunity, commLabels)
+	for _, r := range rowsFormatted {
 		fmt.Fprintf(&sb, "| %d | **%s** | **%s** | `%s` | %.2f | %s ↔ %s |\n",
-			i+1, c.SourceLabel, c.TargetLabel, c.EdgeType, c.SurpriseScore, srcComm, dstComm)
+			r.idx, r.src, r.tgt, r.etype, r.score, r.srcC, r.dstC)
 	}
 
 	sb.WriteString("\n*Higher surprise score means a more unexpected bridge between communities.*\n")

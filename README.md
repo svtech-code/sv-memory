@@ -39,7 +39,7 @@
 | Category             | Feature                    | Description                                                                                               |
 | :------------------- | :------------------------- | :-------------------------------------------------------------------------------------------------------- |
 | 🧠 **Memory**        | **FTS5 BM25 & Scoping**    | SQLite Full-Text Search with BM25 relevance ranking and path-scoped directory filtering.                  |
-| ⚡ **Autonomy**      | **Auto-Boot Context**      | `sv_mem_session_start` delivers previous session summaries and key decisions in 1 tool call.              |
+| ⚡ **Autonomy**      | **Auto-Boot Context**      | `sv_mem_session_start` delivers previous session summaries, key decisions, and top graph hubs in 1 tool call.              |
 | 🧹 **Maintenance**   | **Auto-Compaction Worker** | `sv_mem_compact` consolidates historical topic key revisions to keep storage ultra-lean.                  |
 | 🕸️ **Graph**         | **Sub-ms LRU Cache**       | Parses 18 languages, Leiden communities, god nodes & bridge nodes with `<1ms` mtime-validated RAM cache. |
 | 🔍 **Diagnostics**   | **Graph Health Gate**      | `DiagnoseGraph` detects dangling edges, orphan nodes, and unlinked Markdown/SQL AST entities.             |
@@ -243,9 +243,9 @@ sv-memory tui
 - **`sv_graph_query`**: BFS dependency query with sub-millisecond LRU cache. Returns Mermaid diagram.
 - **`sv_graph_path`**: Shortest dependency path between two nodes.
 - **`sv_graph_sync`**: Incrementally syncs dependency graph from file changes.
-- **`sv_graph_explain`**: Detailed node information with fan-in/fan-out metrics.
+- **`sv_graph_explain`**: Detailed node information with fan-in/fan-out metrics and actionable refactor suggestions.
 - **`sv_graph_god_nodes`**: Identifies highly-connected hub nodes.
-- **`sv_graph_surprising_connections`**: Finds unexpected or non-obvious dependencies.
+- **`sv_graph_surprising_connections`**: Finds unexpected or non-obvious dependencies with bridge-score highlights.
 - **`sv_graph_viz`**: Generates interactive HTML visualization (`vis.js`).
 - **`sv_graph_merge`**: Union-merges two project graphs by node ID into a JSON snapshot.
 

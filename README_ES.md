@@ -243,9 +243,9 @@ sv-memory tui
 - **`sv_graph_query`**: Consulta BFS de dependencias con caché LRU sub-milisegundo. Devuelve diagrama Mermaid.
 - **`sv_graph_path`**: Ruta de dependencia más corta entre dos nodos.
 - **`sv_graph_sync`**: Sincronización incremental del grafo desde cambios de archivos.
-- **`sv_graph_explain`**: Información detallada de un nodo con métricas fan-in/fan-out.
+- **`sv_graph_explain`**: Información detallada de un nodo con métricas fan-in/fan-out y sugerencias accionables de refactor.
 - **`sv_graph_god_nodes`**: Identifica nodos centralizados / altamente conectados.
-- **`sv_graph_surprising_connections`**: Encuentra dependencias inesperadas o no obvias.
+- **`sv_graph_surprising_connections`**: Encuentra dependencias inesperadas o no obvias con resaltado de bridge score.
 - **`sv_graph_viz`**: Genera visualización HTML interactiva (`vis.js`).
 - **`sv_graph_merge`**: Union-merge de dos grafos de proyecto por ID de nodo en un snapshot JSON.
 
