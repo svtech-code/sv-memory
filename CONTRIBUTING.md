@@ -118,5 +118,5 @@ To register a new Model Context Protocol (MCP) tool:
         return mcp.NewToolResultText("Success"), nil
     }
     ```
-2.  **Document the Tool:** Update the MCP tools list in [spect.md](documentation/spect.md) with details on parameters and return formats.
+2.  **Document the Tool:** Update the MCP tools list in [spect.md](documentation/spect.md) (or its [Spanish version](documentation/spect_ES.md)) with details on parameters and return formats.
 3.  **Write Integration Tests:** Open [mcp_test.go](internal/mcp/mcp_test.go) and add a test case retrieving your tool and verifying its response for valid and invalid parameters.

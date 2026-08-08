@@ -23,14 +23,15 @@
   <a href="#-inicio-rápido">Inicio Rápido</a> •
   <a href="#-referencia-de-comandos-cli">Comandos CLI</a> •
   <a href="#-herramientas-mcp-28-herramientas">Herramientas MCP</a> •
-  <a href="documentation/getting_started_guide.md">Guía</a>
+  <a href="documentation/getting_started_guide_ES.md">Guía (ES)</a> •
+  <a href="documentation/getting_started_guide.md">Guide (EN)</a>
 </p>
 
 ---
 
 ## 📖 Enlaces Rápidos
 
-> 💡 **¿Nuevo en sv-memory?** Revisa la [Guía Completa de Inicio e Instalación](documentation/getting_started_guide.md) paso a paso o la versión en [Inglés (README.md)](README.md).
+> 💡 **¿Nuevo en sv-memory?** Revisa la [Guía Completa de Inicio e Instalación](documentation/getting_started_guide_ES.md) paso a paso ([English](documentation/getting_started_guide.md)) o la versión en [Inglés (README.md)](README.md).
 
 ---
 

@@ -1,10 +1,12 @@
-# Requerimientos
+# Requirements
 
-El sistema debe ser una memoria local del proyecto, el cual registra decisiones, ideas, metodologías, contexto, estructura y todo lo necesario para seguir el hilo del proyecto. Sin embargo, también debe manejar cómo todo está conectado mediante grafos de conocimiento tal como lo hace graphify.
+> **Language:** English | [Español](requirement_ES.md)
 
-La idea:
+The system must be a local memory of the project, recording decisions, ideas, methodologies, context, structure, and everything needed to keep track of the project's thread. However, it must also handle how everything is connected through knowledge graphs, just like graphify does.
 
-- Se inicializa una vez por proyecto
-- Actualiza o crea el AGENTS.md con las indicaciones para el agente utilizado
-- De manera autónoma debe almacenar y registrar decisiones, contexto, metodología y todo lo relacionado.
-- También debe poder generar y actualizar el grafo de conocimientos y las relaciones entre todas las funcionalidades del proyecto
+The idea:
+
+- Initialized once per project
+- Updates or creates the AGENTS.md with the instructions for the agent in use
+- Autonomously stores and records decisions, context, methodology, and everything related
+- Must also be able to generate and update the knowledge graph and the relations between all the project's features

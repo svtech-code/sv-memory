@@ -1,5 +1,7 @@
 # SPEC.md — SV-Memory Specification v3
 
+> **Language:** English | [Español](spect_ES.md)
+
 ## 1. Vision & Core Goal
 
 `sv-memory` is a high-performance, single-binary CLI tool and Model Context Protocol (MCP) server written in **Go**. Its purpose is to eliminate AI agent context amnesia by combining:

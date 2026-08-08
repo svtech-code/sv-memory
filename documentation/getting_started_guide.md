@@ -1,40 +1,42 @@
-# 📖 Guía de Inicio Rápido: Instalación y Flujo Inicial de sv-memory
+# 📖 Getting Started Guide: Installing and Initial Workflow for sv-memory
 
-**sv-memory** es un sistema de memoria arquitectónica persistente y grafo de dependencias de código diseñado para eliminar la amnesia de contexto en agentes de IA (Cursor, Claude Code, Antigravity CLI, Windsurf, etc.).
+> **Language:** English | [Español](getting_started_guide_ES.md)
 
-Esta guía explica paso a paso cómo instalar **sv-memory**, configurarlo en tu sistema y comenzar a usarlo en tus proyectos de desarrollo.
+**sv-memory** is a persistent architectural memory and code dependency graph system designed to eliminate context amnesia in AI agents (Cursor, Claude Code, Antigravity CLI, Windsurf, etc.).
 
----
-
-## 🎯 ¿Por qué usar sv-memory?
-
-Cuando trabajas con asistentes de IA en repositorios medianos o grandes, suceden tres problemas recurrentes:
-1. **Amnesia de Sesión:** La IA olvida las decisiones arquitectónicas tomadas en sesiones anteriores.
-2. **Desperdicio de Tokens:** La IA necesita leer decenas de archivos fuente una y otra vez para entender la estructura del código.
-3. **Falta de Continuidad:** Las decisiones técnicas quedan atrapadas en chats individuales en lugar de compartirse con el equipo.
-
-**sv-memory** resuelve esto combinando **memorias persistentes indexadas con SQLite FTS5 BM25** y un **grafo de dependencias estructural de código** expuesto a través de 28 herramientas MCP (*Model Context Protocol*).
+This guide explains step by step how to install **sv-memory**, configure it on your system, and start using it in your development projects.
 
 ---
 
-## 🚀 Flujo de Inicio en 5 Pasos
+## 🎯 Why Use sv-memory?
+
+When working with AI assistants in medium or large repositories, three recurring problems arise:
+1. **Session Amnesia:** The AI forgets architectural decisions made in previous sessions.
+2. **Token Waste:** The AI needs to read dozens of source files over and over to understand the code structure.
+3. **Lack of Continuity:** Technical decisions stay trapped in individual chats instead of being shared with the team.
+
+**sv-memory** solves this by combining **persistent memories indexed with SQLite FTS5 BM25** and a **structural code dependency graph** exposed through 28 MCP (*Model Context Protocol*) tools.
+
+---
+
+## 🚀 5-Step Startup Flow
 
 ```mermaid
 flowchart TD
-    P1[Paso 1: Instalación del Binario Global] --> P2[Paso 2: Configuración de Editores y CLIs con 'sv-memory configure']
-    P2 --> P3[Paso 3: Inicialización del Proyecto con 'sv-memory init']
-    P3 --> P4[Paso 4: Instalación de Hooks con 'sv-memory hooks install']
-    P4 --> P5[Paso 5: Reinicio del Agente y Verificación]
-    P5 --> D[Flujo de Trabajo Diario con IA & TUI]
+    P1[Step 1: Global Binary Installation] --> P2[Step 2: Configuring Editors and CLIs with 'sv-memory configure']
+    P2 --> P3[Step 3: Project Initialization with 'sv-memory init']
+    P3 --> P4[Step 4: Installing Hooks with 'sv-memory hooks install']
+    P4 --> P5[Step 5: Restarting the Agent and Verifying]
+    P5 --> D[Daily Workflow with AI & TUI]
 ```
 
 ---
 
-### Paso 1: Instalación del Binario Global (Global Setup)
+### Step 1: Global Binary Installation (Global Setup)
 
-El ejecutable de `sv-memory` es un binario único en Go, completamente autocontenido y sin dependencias externas (usa SQLite integrado en puro Go).
+The `sv-memory` executable is a single Go binary, fully self-contained and with no external dependencies (it uses SQLite embedded in pure Go).
 
-#### Instalación con binario precompilado (recomendada):
+#### Installing with a prebuilt binary (recommended):
 ```bash
 # macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/svtech-code/sv-memory/main/install.sh | bash
@@ -43,114 +45,114 @@ curl -fsSL https://raw.githubusercontent.com/svtech-code/sv-memory/main/install.
 iwr -useb https://raw.githubusercontent.com/svtech-code/sv-memory/main/install.ps1 | iex
 ```
 
-#### Compilación desde código fuente:
+#### Building from source:
 ```bash
-# 1. Clonar el repositorio
+# 1. Clone the repository
 git clone https://github.com/svtech-code/sv-memory.git
 cd sv-memory
 
-# 2. Compilar el binario ejecutable
+# 2. Build the executable binary
 go build -o sv-memory ./cmd/sv-memory
 
-# 3. Mover el binario a una ruta global del PATH (sin sudo)
+# 3. Move the binary to a global PATH location (no sudo needed)
 mkdir -p ~/.local/bin
 mv sv-memory ~/.local/bin/
 
-# 4. Verificar la instalación
+# 4. Verify the installation
 sv-memory --help
 ```
 
-> **¿Por qué este paso?** 
-> Al ubicar el ejecutable en `~/.local/bin/` (una ruta estándar del PATH de usuario), cualquier herramienta de terminal o editor de código en tu sistema podrá invocar `sv-memory mcp` o ejecutar comandos de diagnóstico sin importar en qué directorio te encuentres. El instalador automático (`install.sh` / `install.ps1`) hace este paso por ti sin requerir `sudo`.
+> **Why this step?**
+> By placing the executable in `~/.local/bin/` (a standard user PATH location), any terminal tool or code editor on your system can invoke `sv-memory mcp` or run diagnostic commands no matter which directory you are in. The automatic installer (`install.sh` / `install.ps1`) does this step for you without requiring `sudo`.
 
-#### Actualizar sv-memory:
+#### Updating sv-memory:
 
 ```bash
 sv-memory update
 ```
 
-El comando busca la última release publicada en GitHub, la compara con tu versión actual
-(`sv-memory version`), y si hay una más nueva:
+The command looks for the latest release published on GitHub, compares it with your current version
+(`sv-memory version`), and if there is a newer one:
 
-1. Te muestra ambas versiones y **pide confirmación** antes de hacer nada.
-2. Descarga el binario correcto para tu sistema operativo y arquitectura.
-3. **Verifica su checksum SHA-256** contra el publicado en la release (protección contra descargas corruptas o manipuladas).
-4. Reemplaza el binario de forma atómica (en Windows te indica el comando manual, porque no puede sobrescribir un `.exe` en ejecución).
+1. It shows you both versions and **asks for confirmation** before doing anything.
+2. It downloads the correct binary for your operating system and architecture.
+3. It **verifies its SHA-256 checksum** against the one published in the release (protection against corrupt or tampered downloads).
+4. It replaces the binary atomically (on Windows it tells you the manual command, because it cannot overwrite a running `.exe`).
 
-> Tus memorias (BD SQLite en `~/.config/sv-memory/`) y la configuración de tus editores no se ven afectadas al actualizar — solo se reemplaza el binario.
+> Your memories (SQLite DB in `~/.config/sv-memory/`) and your editor configuration are not affected by the update — only the binary is replaced.
 
 ---
 
-### Paso 2: Configuración Interactiva de Editores y CLIs (`sv-memory configure`)
+### Step 2: Interactive Configuration of Editors and CLIs (`sv-memory configure`)
 
-Para que tu editor o asistente de terminal (Cursor, Claude Code, Windsurf, Antigravity CLI, OpenCode, etc.) reconozca el servidor MCP de `sv-memory`, ejecuta el asistente interactivo:
+For your editor or terminal assistant (Cursor, Claude Code, Windsurf, Antigravity CLI, OpenCode, etc.) to recognize the `sv-memory` MCP server, run the interactive wizard:
 
 ```bash
 sv-memory configure
 ```
 
-#### ¿Qué hace este comando?
-El asistente te guiará a través de fases interactivas en la terminal, navegables con las flechas `↑/↓`, selección múltiple con `ESPACIO`, `Enter` para avanzar, `Esc` para retroceder y `Ctrl+C` para salir:
+#### What does this command do?
+The wizard guides you through interactive phases in the terminal, navigable with the `↑/↓` arrows, multiple selection with `SPACE`, `Enter` to advance, `Esc` to go back, and `Ctrl+C` to exit:
 
-1. **Fase 1 (Editores GUI):** Te permite seleccionar editores como **Cursor**, **VS Code**, **Zed** o **Windsurf**. Registra automáticamente el servidor MCP en sus archivos de configuración de usuario (ej. `claude_desktop_config.json` o settings de Cursor).
-2. **Fase 2 (Asistentes de Terminal):** Te permite seleccionar clientes CLI como **Claude Code**, **Antigravity CLI (agy)** u **OpenCode**.
-3. **Fase 3 (Confirmación y aplicación):** Muestra el resumen de herramientas seleccionadas y aplica las configuraciones automáticas o manuales.
-4. **Fase 4 (Permisos MCP):** Lista las **28 herramientas MCP de sv-memory** para que selecciones cuáles autorizar (con `a` seleccionas todas y `x` ninguna). Otorga los permisos en las plataformas configuradas que usan allow-list estática (Antigravity CLI, Claude Code).
+1. **Phase 1 (GUI Editors):** Lets you select editors such as **Cursor**, **VS Code**, **Zed**, or **Windsurf**. It automatically registers the MCP server in their user configuration files (e.g. `claude_desktop_config.json` or Cursor settings).
+2. **Phase 2 (Terminal Assistants):** Lets you select CLI clients such as **Claude Code**, **Antigravity CLI (agy)**, or **OpenCode**.
+3. **Phase 3 (Confirmation and application):** Shows the summary of selected tools and applies the automatic or manual configurations.
+4. **Phase 4 (MCP Permissions):** Lists the **28 sv-memory MCP tools** for you to select which ones to authorize (press `a` to select all and `x` to select none). It grants the permissions on the configured platforms that use a static allow-list (Antigravity CLI, Claude Code).
 
-> **¿Por qué este paso?**
-> Evita que tengas que editar manualmente archivos JSON de configuración complejos. Con un par de teclas en la terminal, todos tus editores quedan enlazados al servidor MCP de `sv-memory` y los permisos de las herramientas quedan otorgados con total transparencia.
+> **Why this step?**
+> It prevents you from having to manually edit complex JSON configuration files. With a couple of keystrokes in the terminal, all your editors get linked to the `sv-memory` MCP server and the tool permissions are granted with full transparency.
 
 ---
 
-### Paso 3: Inicialización dentro de tu Proyecto (`sv-memory init`)
+### Step 3: Initialization inside Your Project (`sv-memory init`)
 
-Navega a la raíz del repositorio o proyecto de código en el que deseas comenzar a trabajar e inicializa `sv-memory`:
+Navigate to the root of the repository or code project where you want to start working and initialize `sv-memory`:
 
 ```bash
-cd /ruta/a/tu-proyecto
+cd /path/to/your-project
 sv-memory init
 ```
 
-#### ¿Qué sucede internamente al ejecutar `sv-memory init`?
-1. **Calcula el Project ID:** Deriva un identificador único basado en el hash del repositorio Git.
-2. **Registro en SQLite:** Registra el proyecto en la base de datos local SQLite (`~/.config/sv-memory/storage.db`).
-3. **Escaneo del Grafo de Código:** Analiza el árbol de archivos y construye el grafo inicial de dependencias (imports, nodos god, comunidades Leiden).
-4. **Sincronización Git:** Importa memorias previas compartidas por tu equipo si existe la carpeta `.sv-memory/chunks/`.
-5. **Inyección de Reglas de Protocolo (`AGENTS.md`):** Crea o actualiza el archivo `AGENTS.md` en la raíz del proyecto. Este archivo contiene las instrucciones para que cualquier agente de IA sepa automáticamente **cuándo consultar**, **cuándo guardar** y **cuándo compactar** información de manera autónoma.
+#### What happens internally when running `sv-memory init`?
+1. **Calculates the Project ID:** Derives a unique identifier based on the Git repository hash.
+2. **SQLite Registration:** Registers the project in the local SQLite database (`~/.config/sv-memory/storage.db`).
+3. **Code Graph Scan:** Analyzes the file tree and builds the initial dependency graph (imports, god nodes, Leiden communities).
+4. **Git Sync:** Imports previous memories shared by your team if the `.sv-memory/chunks/` folder exists.
+5. **Protocol Rules Injection (`AGENTS.md`):** Creates or updates the `AGENTS.md` file at the project root. This file contains the instructions so any AI agent automatically knows **when to consult**, **when to save**, and **when to compact** information autonomously.
 
 ---
 
-### Paso 4: Instalación de Hooks PreToolUse (`sv-memory hooks install`)
+### Step 4: Installing PreToolUse Hooks (`sv-memory hooks install`)
 
-Ejecuta este paso **dentro de la raíz de tu proyecto** (los hooks se instalan en `.agents/` del proyecto, no de forma global):
+Run this step **inside your project root** (hooks are installed in the project's `.agents/`, not globally):
 
 ```bash
-cd /ruta/a/tu-proyecto
+cd /path/to/your-project
 sv-memory hooks install --platform antigravity
 ```
 
-#### ¿Qué hace este comando?
-Crea `.agents/hooks.json` y `.agents/hooks/sv-memory.sh` para que el agente intercepte las lecturas de archivos (`view_file`, `grep_search`, `list_dir`) y consulte la memoria del proyecto antes de leer código a ciegas.
+#### What does this command do?
+It creates `.agents/hooks.json` and `.agents/hooks/sv-memory.sh` so the agent intercepts file reads (`view_file`, `grep_search`, `list_dir`) and queries the project memory before reading code blindly.
 
-Existen dos modos:
+There are two modes:
 
-| Modo | Comando | Comportamiento |
+| Mode | Command | Behavior |
 | :--- | :--- | :--- |
-| **Soft** (por defecto) | `sv-memory hooks install --platform antigravity` | No bloquea nada. El "nudge" real lo hace el `AGENTS.md` inyectado en el Paso 3, que obliga al agente a consultar memoria. |
-| **Strict** | `sv-memory hooks install --platform antigravity --strict` | Bloquea la **primera** lectura de archivo de cada sesión, forzando al agente a ejecutar `sv_mem_search`/`sv_graph_query` antes de leer. |
+| **Soft** (default) | `sv-memory hooks install --platform antigravity` | Blocks nothing. The real "nudge" is done by the `AGENTS.md` injected in Step 3, which forces the agent to query memory. |
+| **Strict** | `sv-memory hooks install --platform antigravity --strict` | Blocks the **first** file read of each session, forcing the agent to run `sv_mem_search`/`sv_graph_query` before reading. |
 
-> Puedes cambiar de modo re-ejecutando el comando con o sin `--strict`.
+> You can switch modes by re-running the command with or without `--strict`.
 
-> **Por proyecto:** Repite este comando en cada repositorio donde trabajes con IA. Las plataformas soportadas son `claude-code`, `codex`, `antigravity` y `opencode` (omite `--platform` para instalarlo en todas).
+> **Per project:** Repeat this command in every repository where you work with AI. The supported platforms are `claude-code`, `codex`, `antigravity`, and `opencode` (omit `--platform` to install it on all of them).
 
 ---
 
-### Paso 5: Reinicio del Agente y Verificación
+### Step 5: Restarting the Agent and Verifying
 
-Cierra y vuelve a abrir tu asistente de IA para que cargue el MCP, los permisos y los hooks recién configurados. Luego verifica el estado:
+Close and reopen your AI assistant so it loads the MCP, permissions, and freshly configured hooks. Then verify the status:
 
 ```bash
-cd /ruta/a/tu-proyecto
+cd /path/to/your-project
 sv-memory permissions status --platform antigravity   # Granted: 28 / 28
 sv-memory hooks status                                # antigravity: ✅ installed
 sv-memory diagnose                                    # 17 pass, 0 failures
@@ -158,55 +160,55 @@ sv-memory diagnose                                    # 17 pass, 0 failures
 
 ---
 
-### Paso 6: Flujo de Trabajo Diario (Agentes de IA y Uso Humano)
+### Step 6: Daily Workflow (AI Agents and Human Use)
 
-Una vez completados los pasos anteriores, ya estás listo para trabajar.
+Once the previous steps are complete, you are ready to work.
 
-#### 🤖 1. Autonomía del Agente de IA (Transparente para ti)
-Al abrir tu editor (Cursor, Windsurf, Claude Code, etc.) y enviar cualquier mensaje o tarea a la IA:
+#### 🤖 1. AI Agent Autonomy (Transparent to you)
+When you open your editor (Cursor, Windsurf, Claude Code, etc.) and send any message or task to the AI:
 
-- **Arranque de Sesión (Auto-Boot Context Bundle):** El agente ejecuta de forma transparente `sv_mem_session_start`, recibiendo de inmediato las metas de la sesión anterior y las 3 principales decisiones arquitectónicas del repositorio.
-- **Búsqueda Inteligente (FTS5 BM25 + Path Scoping):** Cuando le haces una pregunta sobre un módulo o bug, la IA llama a `sv_mem_search` con filtrado por ruta para encontrar decisiones pasadas sin gastar miles de tokens.
-- **Consulta de Grafo (<1ms):** Si la IA necesita saber qué archivos importan a un módulo antes de refactorizar, consulta `sv_graph_query`, recibiendo una respuesta instantánea gracias al caché LRU en RAM.
-- **Guardado Automático:** Al resolver un problema o definir un estándar, la IA ejecuta `sv_mem_save` registrando el aprendizaje en SQLite y sincronizándolo en `.sv-memory/chunks/` para tu control de versiones en Git.
+- **Session Startup (Auto-Boot Context Bundle):** The agent transparently runs `sv_mem_session_start`, immediately receiving the previous session's goals and the top 3 architectural decisions of the repository.
+- **Smart Search (FTS5 BM25 + Path Scoping):** When you ask it about a module or bug, the AI calls `sv_mem_search` with path filtering to find past decisions without spending thousands of tokens.
+- **Graph Query (<1ms):** If the AI needs to know which files import a module before refactoring, it queries `sv_graph_query`, getting an instant answer thanks to the in-RAM LRU cache.
+- **Automatic Saving:** When solving a problem or defining a standard, the AI runs `sv_mem_save`, recording the learning in SQLite and syncing it to `.sv-memory/chunks/` for your Git version control.
 
-#### 👤 2. Exploración e Inspección Humana en Terminal (`sv-memory tui`)
-Como desarrollador, puedes inspeccionar interactivamente el estado del conocimiento y la salud de tu proyecto ejecutando:
+#### 👤 2. Human Exploration and Inspection in the Terminal (`sv-memory tui`)
+As a developer, you can interactively inspect the state of knowledge and the health of your project by running:
 
 ```bash
 sv-memory tui
 ```
 
-Desde la interfaz TUI puedes:
-- **[1] Listar memorias recientes** clasificadas por categoría (`architecture`, `bugfix`, `decision`, etc.).
-- **[2] Buscar en memoria** con motor FTS5 BM25.
-- **[3] Inspeccionar detalles completos** de una decisión por su ID o Topic Key.
-- **[4] Diagnosticar la salud del grafo** (enlaces rotos, nodos huérfanos).
-- **[5] Exportar a una Bóveda de Obsidian** (notas `.md` vinculadas).
-- **[6] Exportar scripts Cypher para Neo4j / FalkorDB**.
+From the TUI interface you can:
+- **[1] List recent memories** categorized by category (`architecture`, `bugfix`, `decision`, etc.).
+- **[2] Search memory** with the FTS5 BM25 engine.
+- **[3] Inspect full details** of a decision by its ID or Topic Key.
+- **[4] Diagnose graph health** (broken links, orphan nodes).
+- **[5] Export to an Obsidian Vault** (linked `.md` notes).
+- **[6] Export Cypher scripts for Neo4j / FalkorDB**.
 
 ---
 
-## 🛠️ Comandos de Referencia Rápida
+## 🛠️ Quick Reference Commands
 
-| Comando | Descripción | ¿Cuándo usarlo? |
+| Command | Description | When to use it? |
 | :--- | :--- | :--- |
-| `sv-memory configure` | Asistente interactivo de instalación MCP (incluye Fase 4 de permisos) | Al instalar por primera vez o agregar un nuevo editor |
-| `sv-memory init` | Inicializa el proyecto actual y crea `AGENTS.md` | Al comenzar a trabajar en un nuevo repositorio |
-| `sv-memory hooks install` | Instala hooks PreToolUse para consultar memoria antes de leer archivos | Al configurar Claude Code, Antigravity CLI u OpenCode |
-| `sv-memory permissions grant` | Otorga herramientas MCP en la allow-list del agente (`--all` o `--tool`) | Cuando el agente pide permiso en cada llamada MCP |
-| `sv-memory permissions status` | Muestra permisos MCP otorgados/faltantes por plataforma | Para auditar el estado de permisos de los agentes |
-| `sv-memory permissions revoke` | Elimina los permisos MCP de sv-memory conservando el resto | Si quieres quitar accesos de un agente |
-| `sv-memory tui` | Interfaz gráfica en terminal para consultar memorias | Cuando quieras explorar decisiones pasadas interactivamente |
-| `sv-memory sync` | Sincroniza SQLite con archivos Git `.sv-memory/chunks/` | Antes de hacer `git commit` o tras hacer `git pull` |
-| `sv-memory diagnose` | Chequeo de salud del sistema, permisos y BD | Si experimentas algún problema de conexión con la IA |
-| `sv-memory graph viz` | Genera una visualización HTML del grafo de código | Para auditar visualmente la arquitectura de tu software |
-| `sv-memory obsidian-export` | Exporta memorias como notas vinculadas para Obsidian | Para integrar el conocimiento técnico en tu Obsidian personal |
+| `sv-memory configure` | Interactive MCP setup wizard (includes Phase 4 permissions) | On first install or when adding a new editor |
+| `sv-memory init` | Initializes the current project and creates `AGENTS.md` | When starting work on a new repository |
+| `sv-memory hooks install` | Installs PreToolUse hooks to query memory before reading files | When configuring Claude Code, Antigravity CLI, or OpenCode |
+| `sv-memory permissions grant` | Grants MCP tools in the agent's allow-list (`--all` or `--tool`) | When the agent asks for permission on every MCP call |
+| `sv-memory permissions status` | Shows granted/missing MCP permissions per platform | To audit the permission state of agents |
+| `sv-memory permissions revoke` | Removes sv-memory MCP permissions while keeping the rest | If you want to remove an agent's access |
+| `sv-memory tui` | Graphical terminal interface for querying memories | When you want to explore past decisions interactively |
+| `sv-memory sync` | Syncs SQLite with Git files `.sv-memory/chunks/` | Before running `git commit` or after `git pull` |
+| `sv-memory diagnose` | Health check of the system, permissions, and DB | If you experience any connection issue with the AI |
+| `sv-memory graph viz` | Generates an HTML visualization of the code graph | To visually audit your software architecture |
+| `sv-memory obsidian-export` | Exports memories as linked notes for Obsidian | To integrate technical knowledge into your personal Obsidian |
 
 ---
 
-## 📌 Mejores Prácticas recomendadas para Equipos
+## 📌 Recommended Best Practices for Teams
 
-1. **Incluye `.sv-memory/chunks/` en Git:** Permite que todo el equipo comparta las decisiones arquitectónicas sin conflictos de merge.
-2. **Revisa los commits antes de subir:** `sv-memory` actualiza los JSON de memoria localmente, pero nunca ejecuta `git commit` o `git push` automáticamente.
-3. **Ejecuta `sv_mem_compact` periódicamente:** Si notas que un tema ha acumulado muchas revisiones, la IA o tú pueden ejecutar compactación para resumir el historial en una síntesis limpia.
+1. **Include `.sv-memory/chunks/` in Git:** Allows the whole team to share architectural decisions without merge conflicts.
+2. **Review commits before pushing:** `sv-memory` updates memory JSONs locally, but it never runs `git commit` or `git push` automatically.
+3. **Run `sv_mem_compact` periodically:** If you notice a topic has accumulated many revisions, the AI or you can run compaction to summarize the history into a clean synthesis.

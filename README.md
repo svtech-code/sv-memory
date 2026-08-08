@@ -23,14 +23,15 @@
   <a href="#-getting-started">Getting Started</a> •
   <a href="#-cli-commands-reference">CLI Commands</a> •
   <a href="#-model-context-protocol-mcp-28-tools">MCP Tools</a> •
-  <a href="documentation/getting_started_guide.md">Guide</a>
+  <a href="documentation/getting_started_guide.md">Guide (EN)</a> •
+  <a href="documentation/getting_started_guide_ES.md">Guía (ES)</a>
 </p>
 
 ---
 
 ## 📖 Quick Links
 
-> 💡 **New to sv-memory?** Check out the step-by-step [Getting Started & Installation Guide](documentation/getting_started_guide.md) or read the [Español README](README_ES.md).
+> 💡 **New to sv-memory?** Check out the step-by-step [Getting Started & Installation Guide](documentation/getting_started_guide.md) ([Español](documentation/getting_started_guide_ES.md)) or read the [Español README](README_ES.md).
 
 ---
 
