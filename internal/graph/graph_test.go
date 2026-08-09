@@ -1090,16 +1090,16 @@ func TestSyncGraphRedactsSecrets(t *testing.T) {
 
 	secret := "sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
 	mdContent := "# MyDoc\n\n## Configure the client with " + secret + " here\n"
-	if err := os.WriteFile(filepath.Join(tempDir, "notes.md"), []byte(mdContent), 0644); err != nil {
+	if err = os.WriteFile(filepath.Join(tempDir, "notes.md"), []byte(mdContent), 0644); err != nil {
 		t.Fatalf("failed writing notes.md: %v", err)
 	}
 
 	goCode := "package main\n\n// WHY: keep the token " + secret + " private\nfunc main() {}\n"
-	if err := os.WriteFile(filepath.Join(tempDir, "main.go"), []byte(goCode), 0644); err != nil {
+	if err = os.WriteFile(filepath.Join(tempDir, "main.go"), []byte(goCode), 0644); err != nil {
 		t.Fatalf("failed writing main.go: %v", err)
 	}
 
-	if err := SyncGraph(database, projectID, tempDir); err != nil {
+	if err = SyncGraph(database, projectID, tempDir); err != nil {
 		t.Fatalf("SyncGraph failed: %v", err)
 	}
 
@@ -1113,7 +1113,7 @@ func TestSyncGraphRedactsSecrets(t *testing.T) {
 	checked := 0
 	for rows.Next() {
 		var id, label, meta string
-		if err := rows.Scan(&id, &label, &meta); err != nil {
+		if err = rows.Scan(&id, &label, &meta); err != nil {
 			t.Fatalf("scan err: %v", err)
 		}
 		checked++
@@ -1129,7 +1129,7 @@ func TestSyncGraphRedactsSecrets(t *testing.T) {
 
 	// The file-node metadata must still carry the (redacted) rationale.
 	var metaStr string
-	if err := database.QueryRow("SELECT metadata FROM graph_nodes WHERE project_id = ? AND id = 'main.go'", projectID).Scan(&metaStr); err != nil {
+	if err = database.QueryRow("SELECT metadata FROM graph_nodes WHERE project_id = ? AND id = 'main.go'", projectID).Scan(&metaStr); err != nil {
 		t.Fatalf("failed querying main.go metadata: %v", err)
 	}
 	if !strings.Contains(metaStr, "WHY: keep the token") {

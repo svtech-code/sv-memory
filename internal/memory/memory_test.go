@@ -1605,7 +1605,7 @@ func TestSyncFromGitSkipsUnparseableChunks(t *testing.T) {
 	}
 
 	chunkDir := filepath.Join(tempDir, ".sv-memory", "chunks")
-	if err := os.MkdirAll(chunkDir, 0755); err != nil {
+	if err = os.MkdirAll(chunkDir, 0755); err != nil {
 		t.Fatalf("failed to create chunks dir: %v", err)
 	}
 
@@ -1615,11 +1615,11 @@ func TestSyncFromGitSkipsUnparseableChunks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to marshal good chunk: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(chunkDir, "ok-1.json"), data, 0644); err != nil {
+	if err = os.WriteFile(filepath.Join(chunkDir, "ok-1.json"), data, 0644); err != nil {
 		t.Fatalf("failed to write good chunk: %v", err)
 	}
 	conflicted := "<<<<<<< HEAD\n{\"id\":\"bad-1\"}\n=======\n{\"id\":\"bad-1\",\"what\":\"other\"}\n>>>>>>> remote\n"
-	if err := os.WriteFile(filepath.Join(chunkDir, "bad-1.json"), []byte(conflicted), 0644); err != nil {
+	if err = os.WriteFile(filepath.Join(chunkDir, "bad-1.json"), []byte(conflicted), 0644); err != nil {
 		t.Fatalf("failed to write conflicted chunk: %v", err)
 	}
 
@@ -1629,7 +1629,7 @@ func TestSyncFromGitSkipsUnparseableChunks(t *testing.T) {
 	}
 
 	var count int
-	if err := database.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ?", projectID).Scan(&count); err != nil {
+	if err = database.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ?", projectID).Scan(&count); err != nil {
 		t.Fatalf("query count err: %v", err)
 	}
 	if count != 1 {
@@ -1668,10 +1668,10 @@ func TestSyncFromGitWarnsOnLastWriterWins(t *testing.T) {
 		t.Fatalf("failed to marshal remote chunk: %v", err)
 	}
 	chunkDir := filepath.Join(tempDir, ".sv-memory", "chunks")
-	if err := os.MkdirAll(chunkDir, 0755); err != nil {
+	if err = os.MkdirAll(chunkDir, 0755); err != nil {
 		t.Fatalf("failed to create chunks dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(chunkDir, "lww-1.json"), data, 0644); err != nil {
+	if err = os.WriteFile(filepath.Join(chunkDir, "lww-1.json"), data, 0644); err != nil {
 		t.Fatalf("failed to write remote chunk: %v", err)
 	}
 
@@ -1694,7 +1694,7 @@ func TestSyncFromGitWarnsOnLastWriterWins(t *testing.T) {
 
 	// The imported row reflects the git chunk (last-writer-wins).
 	var what string
-	if err := database.QueryRow("SELECT what FROM memories WHERE project_id = ? AND id = 'lww-1'", projectID).Scan(&what); err != nil {
+	if err = database.QueryRow("SELECT what FROM memories WHERE project_id = ? AND id = 'lww-1'", projectID).Scan(&what); err != nil {
 		t.Fatalf("query err: %v", err)
 	}
 	if what != "Remote v2" {
@@ -1728,14 +1728,14 @@ func TestSyncFromGitRedactsSecretsInChunks(t *testing.T) {
 		t.Fatalf("failed to marshal chunk: %v", err)
 	}
 	chunkDir := filepath.Join(tempDir, ".sv-memory", "chunks")
-	if err := os.MkdirAll(chunkDir, 0755); err != nil {
+	if err = os.MkdirAll(chunkDir, 0755); err != nil {
 		t.Fatalf("failed to create chunks dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(chunkDir, "red-1.json"), data, 0644); err != nil {
+	if err = os.WriteFile(filepath.Join(chunkDir, "red-1.json"), data, 0644); err != nil {
 		t.Fatalf("failed to write chunk: %v", err)
 	}
 
-	if err := SyncFromGit(database, projectID, tempDir); err != nil {
+	if err = SyncFromGit(database, projectID, tempDir); err != nil {
 		t.Fatalf("SyncFromGit failed: %v", err)
 	}
 
