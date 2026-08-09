@@ -343,6 +343,29 @@ Run `sv-memory sync` after `git pull`/`git merge` so the server picks up team ch
 
 ---
 
+## 🔐 Secret Hygiene
+
+sv-memory is designed not to persist credentials, API keys, or `.env` contents.
+
+- **Secret redaction:** every memory text field is scanned by `SanitizeText` (OpenAI `sk-…`,
+  Anthropic `sk-ant-…`, Google `AIzaSy…`, JWTs, PEM/private keys, DB connection strings, and
+  generic `password=…`/`token=…` assignments) **before** being written to SQLite — on the
+  normal save path, on imports (`sv-memory import`, git chunk sync), and on session summaries.
+  The redaction is re-applied on read and on every export so sanitized values stay sanitized.
+- **Graph:** `.env`, `*.pem`, `*.key`, `id_rsa`, and `credentials` files are never indexed
+  (not in the scanned extensions), and the default `.sv-memoryignore` also excludes them plus
+  `.ssh/`, `.aws/`, `.gcp/`, and `secrets.yaml`. Content-derived graph text (markdown
+  headings, `TODO:`/`WHY:` comments, SQL defaults) is redacted before persistence.
+- **Storage:** the SQLite database lives outside the repo (`~/.config/sv-memory/storage.db` by
+  default) and `.gitignore` covers `*.db`/`*.sqlite`; only the per-memory chunk JSON (already
+  redacted) is committed to Git for team sharing.
+- **Defense in depth:** because the graph indexes `.md`/`.sql` files (which can embed secrets),
+  keep `SECRETS.md` and similar files out of the graph by adding them to `.sv-memoryignore`.
+- **Local tools:** the MCP server speaks stdio only (no network), project IDs are hashed, and
+  all SQL is parameterized; no shell is ever invoked with interpolated user input.
+
+---
+
 ## 📄 License
 
 Developed under the **SVTech** ecosystem. Released under the [MIT License](LICENSE).

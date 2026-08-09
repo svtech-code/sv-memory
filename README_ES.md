@@ -343,6 +343,33 @@ cambios del equipo.
 
 ---
 
+## 🔐 Higiene de Secretos
+
+sv-memory está diseñado para no persistir credenciales, claves de API ni contenidos de `.env`.
+
+- **Redacción de secretos:** todo campo de texto de una memoria es escaneado por `SanitizeText`
+  (claves de OpenAI `sk-…`, Anthropic `sk-ant-…`, Google `AIzaSy…`, JWTs, claves privadas PEM,
+  cadenas de conexión a BD y asignaciones genéricas `password=…`/`token=…`) **antes** de
+  escribirse en SQLite — tanto en el guardado normal, como en importaciones (`sv-memory import`,
+  sync de chunks de git) y en los resúmenes de sesión. La redacción se re-aplica en lectura y en
+  cada exportación para que los valores saneados permanezcan saneados.
+- **Grafo:** los archivos `.env`, `*.pem`, `*.key`, `id_rsa` y `credentials` nunca se indexan
+  (no están en las extensiones escaneadas), y el `.sv-memoryignore` por defecto también los
+  excluye junto con `.ssh/`, `.aws/`, `.gcp/` y `secrets.yaml`. El texto del grafo derivado de
+  contenido (encabezados markdown, comentarios `TODO:`/`WHY:`, defaults de SQL) se redacta antes
+  de persistir.
+- **Almacenamiento:** la base de datos SQLite vive fuera del repo (`~/.config/sv-memory/storage.db`
+  por defecto) y `.gitignore` cubre `*.db`/`*.sqlite`; solo los chunks JSON por memoria (ya
+  redactados) se commitean a Git para compartir con el equipo.
+- **Defensa en profundidad:** como el grafo indexa archivos `.md`/`.sql` (que pueden contener
+  secretos), mantén `SECRETS.md` y archivos similares fuera del grafo añadiéndolos a
+  `.sv-memoryignore`.
+- **Herramientas locales:** el servidor MCP solo usa stdio (sin red), los IDs de proyecto están
+  hasheados y todo SQL está parametrizado; nunca se invoca una shell con entrada de usuario
+  interpolada.
+
+---
+
 ## 📄 Licencia
 
 Desarrollado bajo el ecosistema de **SVTech**. Publicado bajo la [Licencia MIT](LICENSE).

@@ -606,6 +606,13 @@ Before any save, 7 regex patterns redact:
 
 All replaced with `[REDACTED_SECRET]`. Key names in assignments are preserved.
 
+**Redaction is applied end-to-end, not only on the save path:**
+- **Writes:** `SanitizeText` runs on the normal save/update path, on session summaries (`EndSession`, `SaveSessionSummary`), on relations/judgments, and — via the shared `sanitizeMemoryFields` helper — on every import path (`ImportJSON`, git chunk import, monolithic `memories.json`).
+- **Graph:** content-derived node text (markdown headings, rationale comments `TODO:`/`WHY:`, SQL DDL defaults/values) is redacted at parse time and again by `sanitizeNodeForPersist` before `graph_nodes` upserts. `.env`/key/PEM/credential files are never scanned (not in the supported extensions), and the default `.sv-memoryignore` additionally excludes `.env*`, `*.pem`, `*.key`, `*.p12`, `id_rsa*`, `credentials*`, `.ssh/`, `.aws/`, `.gcp/`, `secrets.yaml`.
+- **Reads/exports:** search/get, the Auto-Boot bundle, session context, the Obsidian vault exporters, wiki, and Cypher re-apply redaction so sanitized values never re-surface raw. The generated `graph.html` escapes node id/type/path/metadata, closing the stored-XSS sink in the detail panel.
+
+The SQLite store lives outside the repository (`~/.config/sv-memory/storage.db`), so only the redacted per-memory chunk JSON is committed to Git.
+
 ---
 
 ## 8. Agent Protocol Template

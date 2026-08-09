@@ -605,6 +605,13 @@ Antes de cada guardado, 7 patrones regex redactan:
 
 Todo se reemplaza con `[REDACTED_SECRET]`. Se conservan los nombres de las claves en las asignaciones.
 
+**La redacción se aplica de extremo a extremo, no solo en el guardado:**
+- **Escrituras:** `SanitizeText` corre en el camino normal de guardado/actualización, en los resúmenes de sesión (`EndSession`, `SaveSessionSummary`), en relaciones/juicios y — vía el helper compartido `sanitizeMemoryFields` — en todos los caminos de importación (`ImportJSON`, import de chunks git, `memories.json` monolítico).
+- **Grafo:** el texto de nodos derivado de contenido (encabezados markdown, comentarios rationale `TODO:`/`WHY:`, defaults/valores de DDL SQL) se redacta al parsearse y de nuevo en `sanitizeNodeForPersist` antes del upsert en `graph_nodes`. Los archivos `.env`/key/PEM/credentials nunca se escanean (no están en las extensiones soportadas), y el `.sv-memoryignore` por defecto excluye además `.env*`, `*.pem`, `*.key`, `*.p12`, `id_rsa*`, `credentials*`, `.ssh/`, `.aws/`, `.gcp/`, `secrets.yaml`.
+- **Lecturas/exportaciones:** search/get, el paquete Auto-Boot, el contexto de sesión, los exportadores de bóveda Obsidian, wiki y Cypher re-aplican la redacción para que los valores saneados nunca vuelvan a aparecer crudos. El `graph.html` generado escapa el id/tipo/ruta/metadata de cada nodo, cerrando el sink de XSS almacenado en el panel de detalle.
+
+El almacén SQLite vive fuera del repositorio (`~/.config/sv-memory/storage.db`), de modo que solo los chunks JSON por memoria (ya redactados) se commitean a Git.
+
 ---
 
 ## 8. Plantilla de Protocolo del Agente

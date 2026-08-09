@@ -214,3 +214,4 @@ Desde la interfaz TUI puedes:
 1. **Incluye `.sv-memory/chunks/` en Git:** Permite que todo el equipo comparta las decisiones arquitectónicas. Los IDs de memoria distintos nunca entran en conflicto al hacer merge; si dos agentes editan la *misma* memoria, resuelve los marcadores de conflicto de `{id}.json` y vuelve a ejecutar `sv-memory sync`.
 2. **Revisa los commits antes de subir:** `sv-memory` actualiza los JSON de memoria localmente, pero nunca ejecuta `git commit` o `git push` automáticamente.
 3. **Ejecuta `sv_mem_compact` periódicamente:** Si notas que un tema ha acumulado muchas revisiones, la IA o tú pueden ejecutar compactación para resumir el historial en una síntesis limpia.
+4. **Mantén los secretos fuera del grafo:** `.env`, claves y credenciales nunca se indexan, y el texto de las memorias se redacta al guardar/importar. Añade `SECRETS.md` y archivos similares a `.sv-memoryignore` para que tampoco se indexen.
