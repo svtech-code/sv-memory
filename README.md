@@ -228,11 +228,10 @@ sv-memory tui
 - **`sv_mem_judge`**: Creates relations between memories (`supersedes`, `conflicts_with`, `relates_to`).
 - **`sv_mem_compare`**: Side-by-side comparison of two memories.
 - **`sv_mem_review`**: Lists stale, duplicate, or consolidation candidates; `action="mark_reviewed"` resets a memory's policy-review deadline.
-- **`sv_mem_stats`**: Aggregate memory statistics and per-category breakdowns.
-- **`sv_mem_current_project`**: Retrieves active project ID, name, and path.
+- **`sv_mem_stats`**: Aggregate memory statistics and per-category breakdowns, plus the current active project (ID, name, path).
 - **`sv_mem_diagnose`**: Runs read-only health checks (database, FTS5, project, and graph integrity).
 - **`sv_mem_delete`**: Soft-deletes (or hard-deletes) a memory.
-- **`sv_mem_pin`** / **`sv_mem_unpin`**: Pins a local memory so it surfaces first in session context.
+- **`sv_mem_pin`**: Pins a local memory so it surfaces first in session context; `action="unpin"` clears it.
 - **`sv_mem_capture_passive`**: Logs lightweight journal entries automatically.
 - **`sv_mem_conflicts`**: Surfaces memory conflicts with semantic overlap analysis; `action=scan semantic=true` LLM-judges candidate pairs via the agent CLI (claude/opencode).
 - **`sv_mem_compact`**: Consolidates historical topic key revisions into unified summary records.

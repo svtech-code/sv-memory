@@ -500,7 +500,6 @@ func TestSessionLifecycleAndJudges(t *testing.T) {
 	judgeTool := server.GetTool("sv_mem_judge")
 	compareTool := server.GetTool("sv_mem_compare")
 	statsTool := server.GetTool("sv_mem_stats")
-	currentProjTool := server.GetTool("sv_mem_current_project")
 	deleteTool := server.GetTool("sv_mem_delete")
 	passiveTool := server.GetTool("sv_mem_capture_passive")
 	suggestTool := server.GetTool("sv_mem_suggest_topic_key")
@@ -624,10 +623,10 @@ func TestSessionLifecycleAndJudges(t *testing.T) {
 		t.Errorf("stats failed: %v", err)
 	}
 
-	// 8. Current Project
-	resProj, err := currentProjTool.Handler(ctx, mcpgo.CallToolRequest{})
-	if err != nil || !strings.Contains(textContent(resProj.Content[0]), cfg.ProjName) {
-		t.Errorf("current_project failed: %v", err)
+	// 8. Stats includes current project info (folded from sv_mem_current_project)
+	resProj, err := statsTool.Handler(ctx, mcpgo.CallToolRequest{})
+	if err != nil || !strings.Contains(textContent(resProj.Content[0]), "Current project") || !strings.Contains(textContent(resProj.Content[0]), cfg.ProjName) {
+		t.Errorf("stats should report current project, got: %v", err)
 	}
 
 	// 9. Review

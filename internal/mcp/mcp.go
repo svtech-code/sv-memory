@@ -75,12 +75,10 @@ var AllTools = []Tool{
 	{Name: "sv_mem_judge", Description: "Create a relation between memories (supersedes, conflicts_with, relates_to)."},
 	{Name: "sv_mem_compare", Description: "Compare two memories side by side in a Markdown table."},
 	{Name: "sv_mem_review", Description: "List stale, duplicate, or consolidation-candidate memories, or mark a memory as reviewed (action='mark_reviewed')."},
-	{Name: "sv_mem_stats", Description: "Get aggregate memory statistics per category and session counts."},
-	{Name: "sv_mem_current_project", Description: "Get the current project's ID and display name."},
+	{Name: "sv_mem_stats", Description: "Get aggregate memory statistics per category, session counts, and the current active project (ID, name, path)."},
 	{Name: "sv_mem_diagnose", Description: "Run read-only health checks (database, FTS5, project, graph integrity) and return a report."},
 	{Name: "sv_mem_delete", Description: "Soft-delete (default) or hard-delete a memory."},
-	{Name: "sv_mem_pin", Description: "Pin a local memory so it surfaces first in session context (key decisions stay visible)."},
-	{Name: "sv_mem_unpin", Description: "Clear the pinned flag on a local memory."},
+	{Name: "sv_mem_pin", Description: "Pin (default) or unpin (action='unpin') a local memory so key decisions stay visible in session context."},
 	{Name: "sv_mem_capture_passive", Description: "Log lightweight observations (files modified, tests failing) without a save decision."},
 	{Name: "sv_mem_conflicts", Description: "List, scan, or ignore potential memory conflicts."},
 	{Name: "sv_graph_query", Description: "Query the dependency graph for a module, file, or package (returns Mermaid)."},
@@ -571,19 +569,14 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	)
 	ms.AddTool(reviewTool, s.handleReview)
 
-	// 14. Tool: sv_mem_stats
+	// 14. Tool: sv_mem_stats (includes current project info)
 	statsTool := mcp.NewTool("sv_mem_stats",
-		mcp.WithDescription("Get aggregate memory statistics for the current project: total memories, per-category breakdown, session counts, recent activity, and relation count."),
+		mcp.WithDescription("Get aggregate memory statistics for the current project: total memories, per-category breakdown, session counts, recent activity, relation count, and the active project (ID, name, path)."),
+		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
 	)
 	ms.AddTool(statsTool, s.handleStats)
 
-	// 15. Tool: sv_mem_current_project
-	currentProjectTool := mcp.NewTool("sv_mem_current_project",
-		mcp.WithDescription("Get the current project's ID and display name. Useful for confirming which project context is active before saving or searching."),
-	)
-	ms.AddTool(currentProjectTool, s.handleCurrentProject)
-
-	// 15b. Tool: sv_mem_diagnose
+	// 15. Tool: sv_mem_diagnose
 	diagnoseTool := mcp.NewTool("sv_mem_diagnose",
 		mcp.WithDescription("Run read-only health checks on the active project: database file, schema tables, FTS5 triggers, project registration, write permissions, chunk directory, and structural graph integrity (dangling edges, orphan nodes, self-loops, missing files)."),
 		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
@@ -599,19 +592,13 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	)
 	ms.AddTool(deleteTool, s.handleDelete)
 
-	// 17. Tool: sv_mem_pin
+	// 17. Tool: sv_mem_pin (pin/unpin consolidated via action)
 	pinTool := mcp.NewTool("sv_mem_pin",
-		mcp.WithDescription("Pin a local memory so it surfaces first in sv_mem_context (key decisions stay visible). Pinned state is local to this device."),
-		mcp.WithString("id", mcp.Required(), mcp.Description("The memory ID to pin")),
+		mcp.WithDescription("Pin a local memory so it surfaces first in sv_mem_context (key decisions stay visible). Use action='unpin' to clear the pinned flag. Pinned state is local to this device."),
+		mcp.WithString("id", mcp.Required(), mcp.Description("The memory ID to pin or unpin")),
+		mcp.WithString("action", mcp.Description("Action to perform: 'pin' (default) or 'unpin'")),
 	)
 	ms.AddTool(pinTool, s.handlePin)
-
-	// 17b. Tool: sv_mem_unpin
-	unpinTool := mcp.NewTool("sv_mem_unpin",
-		mcp.WithDescription("Clear the pinned flag on a local memory."),
-		mcp.WithString("id", mcp.Required(), mcp.Description("The memory ID to unpin")),
-	)
-	ms.AddTool(unpinTool, s.handleUnpin)
 
 	// 18. Tool: sv_mem_capture_passive
 	captureTool := mcp.NewTool("sv_mem_capture_passive",

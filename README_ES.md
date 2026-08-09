@@ -228,11 +228,10 @@ sv-memory tui
 - **`sv_mem_judge`**: Crea relaciones entre memorias (`supersedes`, `conflicts_with`, `relates_to`).
 - **`sv_mem_compare`**: Comparación lado a lado de dos memorias.
 - **`sv_mem_review`**: Lista memorias obsoletas, duplicadas o candidatas a consolidación; `action="mark_reviewed"` reinicia el plazo de revisión de política de una memoria.
-- **`sv_mem_stats`**: Estadísticas agregadas de memorias y desglose por categoría.
-- **`sv_mem_current_project`**: Recupera el ID, nombre y ruta del proyecto activo.
+- **`sv_mem_stats`**: Estadísticas agregadas de memorias y desglose por categoría, más el proyecto activo actual (ID, nombre y ruta).
 - **`sv_mem_diagnose`**: Ejecuta chequeos de salud de solo lectura (base de datos, FTS5, proyecto e integridad del grafo).
 - **`sv_mem_delete`**: Soft-delete (o hard-delete) de una memoria.
-- **`sv_mem_pin`** / **`sv_mem_unpin`**: Fija una memoria local para que aparezca primero en el contexto de sesión.
+- **`sv_mem_pin`**: Fija una memoria local para que aparezca primero en el contexto de sesión; `action="unpin"` la desfija.
 - **`sv_mem_capture_passive`**: Registra entradas de diario ligeras automáticamente.
 - **`sv_mem_conflicts`**: Muestra conflictos de memoria con análisis de superposición semántica; `action=scan semantic=true` juzga los pares candidatos con LLM vía el CLI del agente (claude/opencode).
 - **`sv_mem_compact`**: Consolida revisiones históricas de topic keys en registros de síntesis unificados.

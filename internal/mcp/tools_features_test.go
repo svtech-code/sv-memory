@@ -56,7 +56,7 @@ func TestPinUnpinTools(t *testing.T) {
 		t.Fatalf("expected 1 pinned memory, got %d", len(pinned))
 	}
 
-	out = call("sv_mem_unpin", map[string]any{"id": saved.ID})
+	out = call("sv_mem_pin", map[string]any{"id": saved.ID, "action": "unpin"})
 	if !strings.Contains(out, "unpinned") {
 		t.Fatalf("expected unpin confirmation, got %q", out)
 	}

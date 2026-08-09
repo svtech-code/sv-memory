@@ -183,7 +183,7 @@ func GetSessionContext(db *sql.DB, projectID string) (string, error) {
 	}
 
 	// Pinned memories surface first so key decisions stay visible regardless
-	// of session recency (sv_mem_pin / sv_mem_unpin).
+	// of session recency (sv_mem_pin with action='pin' / 'unpin').
 	pinned, perr := SearchPinnedMemories(db, projectID, 5)
 	if perr == nil && len(pinned) > 0 {
 		fmt.Fprintf(&sb, "\n**📌 Pinned memories (%d):**\n", len(pinned))

@@ -482,14 +482,11 @@ Find memories needing maintenance (e.g. stale, excessive duplicate counts, conso
   - `id` (string, optional): Required for `action='mark_reviewed'`: the memory ID to mark as reviewed. Resets `review_after` to `now + decay(category)`.
 
 ### 14. `sv_mem_stats`
-Provides aggregate metrics (counts, breakdown by category).
-- **Parameters:** None.
+Provides aggregate metrics (counts, breakdown by category) plus the current active project (ID, name, path).
+- **Parameters:**
+  - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default `'0'` = unlimited).
 
-### 15. `sv_mem_current_project`
-Retrieves the active project name, path, and ID.
-- **Parameters:** None.
-
-### 15b. `sv_mem_diagnose`
+### 15. `sv_mem_diagnose`
 Run read-only health checks for the active project: database file, schema tables, FTS5 triggers, project registration, write permissions, chunk directory, and structural graph integrity (dangling edges, orphan nodes, self-loops, missing files). Combines the memory `RunDiagnostics` checks with `graph.DiagnoseGraph`.
 - **Parameters:**
   - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default `'0'` = unlimited).
@@ -501,16 +498,12 @@ Deletes a memory. Soft-deletes by default; set `hard` to `'true'` to erase perma
   - `hard` (string, optional): `'true'` for permanent delete.
 
 ### 17. `sv_mem_pin`
-Pin a local memory so it surfaces first in `sv_mem_context` (key decisions stay visible). Pinned state is local to this device.
+Pin a local memory so it surfaces first in `sv_mem_context` (key decisions stay visible), or clear it with `action='unpin'`. Pinned state is local to this device.
 - **Parameters:**
   - `id` (string, required): Memory ID.
+  - `action` (string, optional): `'pin'` (default) or `'unpin'`.
 
-### 18. `sv_mem_unpin`
-Clear the pinned flag on a local memory.
-- **Parameters:**
-  - `id` (string, required): Memory ID.
-
-### 19. `sv_mem_capture_passive`
+### 18. `sv_mem_capture_passive`
 Logs a lightweight journal entry automatically (e.g., test outcomes, file changes).
 - **Parameters:**
   - `what` (string, required): Summary description.
@@ -696,8 +689,8 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 
 - **Session:** sv_mem_session_start, sv_mem_session_summary, sv_mem_session_end, sv_mem_context
 - **Memory CRUD:** sv_mem_save, sv_mem_update, sv_mem_get, sv_mem_delete, sv_mem_search, sv_mem_timeline
-- **Pin / Priority:** sv_mem_pin, sv_mem_unpin
-- **Knowledge quality:** sv_mem_suggest_topic_key, sv_mem_judge, sv_mem_compare, sv_mem_compact, sv_mem_review, sv_mem_capture_passive, sv_mem_conflicts, sv_mem_stats, sv_mem_current_project, sv_mem_diagnose
+- **Pin / Priority:** sv_mem_pin (action='unpin' to clear)
+- **Knowledge quality:** sv_mem_suggest_topic_key, sv_mem_judge, sv_mem_compare, sv_mem_compact, sv_mem_review, sv_mem_capture_passive, sv_mem_conflicts, sv_mem_stats, sv_mem_diagnose
 - **Graph:** sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_viz, sv_graph_merge
 
 ## Repository Restrictions & Commit Standards:

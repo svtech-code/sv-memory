@@ -103,6 +103,17 @@ func (s *Server) handleStats(ctx context.Context, req mcp.CallToolRequest) (*mcp
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "## Memory Statistics for %s\n\n", s.cfg.ProjName)
+
+	// Current project info (folded in from the former sv_mem_current_project).
+	fmt.Fprintf(&sb, "**Current project:** `%s` (ID: `%s`", s.cfg.ProjName, s.cfg.ProjectID)
+	var projName, projPath string
+	if err := s.pool.Reader.QueryRow("SELECT name, path FROM projects WHERE id=?", s.cfg.ProjectID).Scan(&projName, &projPath); err == nil {
+		fmt.Fprintf(&sb, ", path: `%s`)", projPath)
+	} else {
+		sb.WriteString(")")
+	}
+	sb.WriteString("\n")
+
 	fmt.Fprintf(&sb, "**Total memories:** %d\n", stats.TotalMemories)
 	fmt.Fprintf(&sb, "**Deleted memories:** %d\n", stats.DeletedMemories)
 	fmt.Fprintf(&sb, "**Recent (24h):** %d\n", stats.Recent24h)
@@ -116,12 +127,4 @@ func (s *Server) handleStats(ctx context.Context, req mcp.CallToolRequest) (*mcp
 		}
 	}
 	return mcp.NewToolResultText(truncateToTokenBudget(sb.String(), resolveTokenBudget(req, req.GetString("token_budget", "")))), nil
-}
-
-func (s *Server) handleCurrentProject(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	var projName, projPath string
-	if err := s.pool.Reader.QueryRow("SELECT name, path FROM projects WHERE id=?", s.cfg.ProjectID).Scan(&projName, &projPath); err != nil {
-		return mcp.NewToolResultText(fmt.Sprintf("**Current project:** %s (ID: `%s`)", s.cfg.ProjName, s.cfg.ProjectID)), nil
-	}
-	return mcp.NewToolResultText(fmt.Sprintf("**Current project:** %s (ID: `%s`, path: `%s`)", projName, s.cfg.ProjectID, projPath)), nil
 }
