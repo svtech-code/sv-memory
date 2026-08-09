@@ -75,15 +75,13 @@ func searchChangedMemories(db *sql.DB, projectID string, lastSync time.Time) ([]
 	return scanMemories(rows)
 }
 
-func SyncToGitChunked(db *sql.DB, projectID string, projPath string) error {
-	chunkDir := chunkedSyncDir(projPath)
+// writeChunkFiles writes each memory in mems to its own {id}.json chunk file
+// inside chunkDir using atomic tmp+rename writes. It returns the set of chunk
+// IDs that existed on disk before writing, so callers can remove orphans that
+// no longer correspond to a live memory. Used by the incremental syncToGit path.
+func writeChunkFiles(chunkDir string, mems []*Memory) (map[string]bool, error) {
 	if err := os.MkdirAll(chunkDir, 0755); err != nil {
-		return fmt.Errorf("failed to create chunks directory: %w", err)
-	}
-
-	memories, err := searchAllMemories(db, projectID)
-	if err != nil {
-		return err
+		return nil, fmt.Errorf("failed to create chunks directory: %w", err)
 	}
 
 	existingChunks := make(map[string]bool)
@@ -96,28 +94,24 @@ func SyncToGitChunked(db *sql.DB, projectID string, projPath string) error {
 		}
 	}
 
-	for _, mem := range memories {
-		data, err := json.Marshal(mem)
-		if err != nil {
-			return fmt.Errorf("failed to marshal chunk %s: %w", mem.ID, err)
+	for _, mem := range mems {
+		data, marshalErr := json.Marshal(mem)
+		if marshalErr != nil {
+			return nil, fmt.Errorf("failed to marshal chunk %s: %w", mem.ID, marshalErr)
 		}
 		chunkPath := filepath.Join(chunkDir, mem.ID+".json")
 		tmpPath := chunkPath + ".tmp"
-		if err := os.WriteFile(tmpPath, data, 0644); err != nil {
-			return fmt.Errorf("failed to write chunk %s: %w", mem.ID, err)
+		if writeErr := os.WriteFile(tmpPath, data, 0644); writeErr != nil {
+			return nil, fmt.Errorf("failed to write chunk %s: %w", mem.ID, writeErr)
 		}
-		if err := os.Rename(tmpPath, chunkPath); err != nil {
+		if renameErr := os.Rename(tmpPath, chunkPath); renameErr != nil {
 			os.Remove(tmpPath)
-			return fmt.Errorf("failed to rename chunk %s: %w", mem.ID, err)
+			return nil, fmt.Errorf("failed to rename chunk %s: %w", mem.ID, renameErr)
 		}
 		delete(existingChunks, mem.ID)
 	}
 
-	for id := range existingChunks {
-		os.Remove(filepath.Join(chunkDir, id+".json"))
-	}
-
-	return nil
+	return existingChunks, nil
 }
 
 // logSyncWarning writes a sync warning to stderr. In the MCP stdio transport
@@ -276,31 +270,9 @@ func syncToGit(db *sql.DB, projectID string, projPath string, forceJSON bool) er
 		return nil
 	}
 
-	existingChunks := make(map[string]bool)
-	entries, err := os.ReadDir(chunkDir)
-	if err == nil {
-		for _, e := range entries {
-			if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
-				existingChunks[strings.TrimSuffix(e.Name(), ".json")] = true
-			}
-		}
-	}
-
-	for _, mem := range writeSet {
-		data, marshalErr := json.Marshal(mem)
-		if marshalErr != nil {
-			return fmt.Errorf("failed to marshal chunk %s: %w", mem.ID, marshalErr)
-		}
-		chunkPath := filepath.Join(chunkDir, mem.ID+".json")
-		tmpPath := chunkPath + ".tmp"
-		if writeErr := os.WriteFile(tmpPath, data, 0644); writeErr != nil {
-			return fmt.Errorf("failed to write chunk %s: %w", mem.ID, writeErr)
-		}
-		if renameErr := os.Rename(tmpPath, chunkPath); renameErr != nil {
-			os.Remove(tmpPath)
-			return fmt.Errorf("failed to rename chunk %s: %w", mem.ID, renameErr)
-		}
-		delete(existingChunks, mem.ID)
+	existingChunks, err := writeChunkFiles(chunkDir, writeSet)
+	if err != nil {
+		return err
 	}
 
 	// Remove chunks whose memory no longer exists (soft-deleted or pruned).

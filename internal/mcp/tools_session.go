@@ -13,6 +13,11 @@ import (
 )
 
 func (s *Server) handleSessionStart(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Import any team-shared memories pulled via git before assembling the
+	// Auto-Boot bundle, so a fresh session always starts from the latest
+	// context even without an explicit sv_mem_search.
+	s.maybeSyncFromGit()
+
 	goal := req.GetString("goal", "")
 	dir := req.GetString("directory", "")
 	if dir == "" {
