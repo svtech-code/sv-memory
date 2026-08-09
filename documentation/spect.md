@@ -54,7 +54,7 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 
 ## 3. Technology Stack & Key Libraries
 
-- **Language:** Go 1.22+ (1.26.3 required by `go.mod`)
+- **Language:** Go 1.26+ (1.26.3 required by `go.mod`)
 - **Storage Engine:** SQLite via `modernc.org/sqlite` (pure Go, no CGO, fully portable) with **FTS5** full-text search.
 - **Protocol Server:** MCP Go SDK (`github.com/mark3labs/mcp-go`, v0.57.0).
 - **CLI Framework:** `github.com/spf13/cobra` for command handling.
@@ -113,7 +113,7 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 - **Sub-commands** for reading/writing configuration (YAML, global `~/.sv-memory/config.yaml` or local `.sv-memory/config.yaml`):
   - `sv-memory configure get <key>`: prints a single configuration value.
   - `sv-memory configure set <key> <value> [--local]`: writes a value globally (default) or project-locally.
-  - `sv-memory configure list`: prints all active configuration values (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`).
+  - `sv-memory configure list`: prints all active configuration values (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`, `auto_compaction_enabled`, `compaction_interval_minutes`, `max_response_tokens`).
 
 #### 10. `sv-memory permissions`
 - `list`: shows the 28 sv-memory MCP tools with human-readable descriptions.
@@ -385,7 +385,7 @@ Persist a key architectural decision, bug fix, progress journal, or standard gui
   - `topic_key` (string, optional): Stable key for upsert semantics (updates in-place).
   - `session_id` (string, optional): Associated session ID (auto-detected if omitted).
 
-### 1b. `sv_mem_update`
+### 2. `sv_mem_update`
 Partially update an existing memory by ID. Only the provided fields change; identity fields (id, category, session, topic_key) are preserved and the revision counter advances.
 - **Parameters:**
   - `id` (string, required): The memory ID to update.
@@ -397,26 +397,26 @@ Partially update an existing memory by ID. Only the provided fields change; iden
   - `errors_faced` (string, optional): New errors/roadblocks (empty string clears it).
   - `next_steps` (string, optional): New pending tasks (empty string clears it).
 
-### 2. `sv_mem_suggest_topic_key`
+### 3. `sv_mem_suggest_topic_key`
 Generate a stable topic key in kebab-case format before saving.
 - **Parameters:**
   - `category` (string, required): Memory category.
   - `what` (string, required): Title or description.
 - **Returns:** Suggested key like `category/kebab-case-description`.
 
-### 3. `sv_mem_session_start`
+### 4. `sv_mem_session_start`
 Register a new coding session.
 - **Parameters:**
   - `goal` (string, optional): Session objective.
   - `directory` (string, optional): Working directory.
 
-### 4. `sv_mem_session_end`
+### 5. `sv_mem_session_end`
 Close an active session.
 - **Parameters:**
   - `session_id` (string, required): Session ID.
   - `summary` (string, optional): Accomplishments.
 
-### 5. `sv_mem_session_summary`
+### 6. `sv_mem_session_summary`
 Update goals, discoveries, and next steps for the session.
 - **Parameters:**
   - `session_id` (string, required): Session ID.
@@ -426,17 +426,17 @@ Update goals, discoveries, and next steps for the session.
   - `next_steps` (string, optional): Upcoming goals.
   - `files` (string, optional): Edited files list.
 
-### 6. `sv_mem_context`
+### 7. `sv_mem_context`
 Recover context from the last completed session.
 - **Parameters:**
   - `limit` (string, optional): Max memories to retrieve (default `10`).
-  - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default `'0'` = unlimited).
+  - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default from config `max_response_tokens`, 4000; `'0'` = unlimited).
 
-### 7. `sv_mem_compact`
+### 8. `sv_mem_compact`
 Trigger automatic memory compaction: consolidates historical topic-key revisions and duplicates into clean summary records.
 - **Parameters:** None.
 
-### 8. `sv_mem_search` (Layer 1 — Progressive Disclosure)
+### 9. `sv_mem_search` (Layer 1 — Progressive Disclosure)
 FTS5-powered memory search. Returns only IDs, categories, dates, titles, and topic keys.
 - **Parameters:**
   - `query` (string, required): Keyword search terms.
@@ -445,23 +445,23 @@ FTS5-powered memory search. Returns only IDs, categories, dates, titles, and top
   - `limit` (string, optional): Max results (default `10`).
   - `offset` (string, optional): Pagination offset.
   - `match_mode` (string, optional): `'all'` (default) requires every token to match; `'any'` matches memories matching one or more tokens for broader recall.
-  - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default `'0'` = unlimited).
+  - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default from config `max_response_tokens`, 4000; `'0'` = unlimited).
 
-### 9. `sv_mem_timeline` (Layer 2 — Progressive Disclosure)
+### 10. `sv_mem_timeline` (Layer 2 — Progressive Disclosure)
 Retrieve a chronological list of observations centered around a specific memory.
 - **Parameters:**
   - `observation_id` (string, required): Memory ID.
   - `before` (string, optional): Count of memories preceding (default `5`).
   - `after` (string, optional): Count of memories succeeding (default `5`).
 
-### 10. `sv_mem_get` (Layer 3 — Progressive Disclosure)
+### 11. `sv_mem_get` (Layer 3 — Progressive Disclosure)
 Retrieve all fields of a specific memory. Text fields are truncated beyond `max_chars`.
 - **Parameters:**
   - `id` (string, required): Memory ID.
   - `max_chars` (string, optional): Max characters per field (default `1000`; `'0'` = unlimited).
-  - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default `'0'` = unlimited).
+  - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default from config `max_response_tokens`, 4000; `'0'` = unlimited).
 
-### 11. `sv_mem_judge`
+### 12. `sv_mem_judge`
 Create a relation (judgment) between two memories to maintain continuity or record conflicts.
 - **Parameters:**
   - `source_id` (string, required): Newer memory ID.
@@ -470,41 +470,41 @@ Create a relation (judgment) between two memories to maintain continuity or reco
   - `reason` (string, optional): Reasoning.
   - `judged_by` (string, optional): Judge identity (default `'agent'`).
 
-### 12. `sv_mem_compare`
+### 13. `sv_mem_compare`
 Compare two memories side-by-side in Markdown format.
 - **Parameters:**
   - `id1` (string, required): First memory ID.
   - `id2` (string, required): Second memory ID.
 
-### 13. `sv_mem_review`
+### 14. `sv_mem_review`
 Find memories needing maintenance (e.g. stale, excessive duplicate counts, consolidation candidates) or reset a memory's policy-review deadline.
 - **Parameters:**
   - `action` (string, optional): `'list'` (default) or `'mark_reviewed'`.
   - `id` (string, optional): Required for `action='mark_reviewed'`: the memory ID to mark as reviewed. Resets `review_after` to `now + decay(category)`.
 
-### 14. `sv_mem_stats`
+### 15. `sv_mem_stats`
 Provides aggregate metrics (counts, breakdown by category) plus the current active project (ID, name, path).
 - **Parameters:**
-  - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default `'0'` = unlimited).
+  - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default from config `max_response_tokens`, 4000; `'0'` = unlimited).
 
-### 15. `sv_mem_diagnose`
+### 16. `sv_mem_diagnose`
 Run read-only health checks for the active project: database file, schema tables, FTS5 triggers, project registration, write permissions, chunk directory, and structural graph integrity (dangling edges, orphan nodes, self-loops, missing files). Combines the memory `RunDiagnostics` checks with `graph.DiagnoseGraph`.
 - **Parameters:**
-  - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default `'0'` = unlimited).
+  - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default from config `max_response_tokens`, 4000; `'0'` = unlimited).
 
-### 16. `sv_mem_delete`
+### 17. `sv_mem_delete`
 Deletes a memory. Soft-deletes by default; set `hard` to `'true'` to erase permanently.
 - **Parameters:**
   - `id` (string, required): Memory ID.
   - `hard` (string, optional): `'true'` for permanent delete.
 
-### 17. `sv_mem_pin`
+### 18. `sv_mem_pin`
 Pin a local memory so it surfaces first in `sv_mem_context` (key decisions stay visible), or clear it with `action='unpin'`. Pinned state is local to this device.
 - **Parameters:**
   - `id` (string, required): Memory ID.
   - `action` (string, optional): `'pin'` (default) or `'unpin'`.
 
-### 18. `sv_mem_capture_passive`
+### 19. `sv_mem_capture_passive`
 Logs a lightweight journal entry automatically (e.g., test outcomes, file changes).
 - **Parameters:**
   - `what` (string, required): Summary description.
@@ -517,7 +517,7 @@ Queries structural relations using a Breadth-First Search (BFS). Returns a Merma
   - `depth` (string, optional): Hop distance (default `1`).
   - `relation_type` (string, optional): Filter (e.g., `'imports'`, `'calls'`, `'depends_on'`).
   - `direction` (string, optional): Traversal direction: `'in'` | `'out'` | `'all'` (default `'out'`).
-  - `token_budget` (string, optional): Max tokens for the response; the response is truncated with a notice when exceeded (default `'0'` = unlimited).
+  - `token_budget` (string, optional): Max tokens for the response; the response is truncated with a notice when exceeded (default from config `max_response_tokens`, 4000; `'0'` = unlimited).
 
 ### 21. `sv_graph_path`
 Finds the shortest dependency route between two graph nodes.
@@ -635,6 +635,10 @@ This project uses 'sv-memory' for persistent architectural memory, progress jour
 
 After a compaction or context reset, call 'sv_mem_context' to recover the last session state (goal, summary, associated memories).
 
+## Tool Usage in Any Mode:
+
+The sv-memory tools (session, memory, graph, diagnostics) may be called in ANY operational mode — plan, build, or review. They persist only to the project memory store ('.sv-memory/'), which is project data, not source code. Do not skip memory capture, context recovery, or the session lifecycle because of the current mode.
+
 ## Context Initialization (Search-Before-Work):
 
 Memory must be consulted before proposing or executing changes:
@@ -689,7 +693,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 ## Memory Maintenance (periodic):
 
 - **Review:** Call 'sv_mem_review' to list stale, duplicate, or consolidation-candidate memories.
-- **Conflicts:** Call 'sv_mem_conflicts action=scan' to detect potential duplicate memories; judge them with 'sv_mem_judge' (supersedes / conflicts_with / relates_to) to keep relations coherent.
+- **Conflicts:** Call 'sv_mem_conflicts action=scan' to detect potential duplicate memories; judge them with 'sv_mem_judge' (supersedes / conflicts_with / relates_to) or with 'action=scan semantic=true' to LLM-judge candidates via the agent CLI. Keep relations coherent.
 - **Compare:** Call 'sv_mem_compare(id1, id2)' before judging two similar memories.
 - **Compact:** Call 'sv_mem_compact' periodically or after many topic-key upserts to consolidate revisions and keep search fast.
 

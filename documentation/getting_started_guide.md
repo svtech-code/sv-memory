@@ -169,7 +169,7 @@ Once the previous steps are complete, you are ready to work.
 #### 🤖 1. AI Agent Autonomy (Transparent to you)
 When you open your editor (Cursor, Windsurf, Claude Code, etc.) and send any message or task to the AI:
 
-- **Session Startup (Auto-Boot Context Bundle):** The agent transparently runs `sv_mem_session_start`, immediately receiving the previous session's goals and the top 3 architectural decisions of the repository.
+- **Session Startup (Auto-Boot Context Bundle):** The agent transparently runs `sv_mem_session_start`, immediately receiving the previous session's goals and the top 3 code hubs of the repository.
 - **Smart Search (FTS5 BM25 + Path Scoping):** When you ask it about a module or bug, the AI calls `sv_mem_search` with path filtering to find past decisions without spending thousands of tokens.
 - **Graph Query (<1ms):** If the AI needs to know which files import a module before refactoring, it queries `sv_graph_query`, getting an instant answer thanks to the in-RAM LRU cache.
 - **Automatic Saving:** When solving a problem or defining a standard, the AI runs `sv_mem_save`, recording the learning in SQLite and syncing it to `.sv-memory/chunks/` for your Git version control.

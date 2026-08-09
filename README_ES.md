@@ -46,7 +46,7 @@
 | 🔍 **Diagnóstico**   | **Diagnóstico de Grafo**   | `DiagnoseGraph` detecta enlaces rotos, nodos huérfanos y entidades AST no vinculadas.                                   |
 | 🎨 **Interfaz**      | **TUI Interactiva**        | Interfaz de Usuario en Terminal (`sv-memory tui`) para inspección, búsqueda BM25 y diagnósticos.                        |
 | 📦 **Exportación**   | **Obsidian & Cypher**      | Exporta a notas Markdown vinculadas de Obsidian (`[[wikilinks]]`) y scripts Cypher para Neo4j / FalkorDB.               |
-| 🔄 **Colaboración**  | **Git Sync Chunks**        | Sincronización Git sin conflictos mediante archivos `.sv-memory/chunks/{id}.json` por memoria.                          |
+| 🔄 **Colaboración**  | **Git Sync Chunks**        | Sincronización Git mediante archivos `.sv-memory/chunks/{id}.json` por memoria — sin conflictos para IDs distintos; las ediciones del mismo ID producen marcadores resolubles. |
 | 🛡️ **Integración**   | **Hooks PreToolUse**       | Intercepta lecturas raw de archivos en Claude Code, Antigravity CLI (agy) y OpenCode para consultar la memoria primero. |
 
 ---
@@ -274,6 +274,9 @@ Añade el siguiente fragmento al archivo JSON de configuración MCP de tu client
   }
 }
 ```
+
+> Usa la ruta completa a tu binario instalado: `~/.local/bin/sv-memory` en macOS/Linux,
+> o `%LOCALAPPDATA%\sv-memory\sv-memory.exe` en Windows.
 
 ### Otorgar permisos a las herramientas MCP
 
