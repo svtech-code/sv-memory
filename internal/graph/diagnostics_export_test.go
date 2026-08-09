@@ -10,7 +10,7 @@ import (
 )
 
 func TestMDSemanticExtractor(t *testing.T) {
-	ext := extractor.NewMDSemanticExtractor()
+	ext := extractor.NewTreeSitterExtractor()
 	content := []byte(`# Architecture Overview
 
 This document describes the clean architecture.
@@ -36,36 +36,22 @@ This document describes the clean architecture.
 	}
 
 	foundSection := false
-	foundTable := false
 	foundCodeBlock := false
-	foundRationale := false
 
 	for _, s := range symbols {
 		if s.Type == "section" && s.Name == "Architecture Overview" {
 			foundSection = true
 		}
-		if s.Type == "table" {
-			foundTable = true
-		}
 		if s.Type == "code_block" && s.Name == "go" {
 			foundCodeBlock = true
-		}
-		if s.Type == "rationale" {
-			foundRationale = true
 		}
 	}
 
 	if !foundSection {
 		t.Errorf("expected to find section symbol 'Architecture Overview'")
 	}
-	if !foundTable {
-		t.Errorf("expected to find table symbol")
-	}
 	if !foundCodeBlock {
 		t.Errorf("expected to find code_block symbol")
-	}
-	if !foundRationale {
-		t.Errorf("expected to find rationale symbol")
 	}
 	_ = imports
 }

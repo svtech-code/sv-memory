@@ -73,28 +73,6 @@ var platformInfos = map[Platform]platformInfo{
 	},
 }
 
-// Info describes a platform for display purposes.
-type Info struct {
-	ID          string
-	Name        string
-	AllowListed bool
-	ConfigPath  string
-}
-
-// Infos returns display metadata for all supported platforms.
-func Infos() []Info {
-	var out []Info
-	for _, p := range SupportedPlatforms {
-		out = append(out, Info{
-			ID:          string(p),
-			Name:        platformInfos[p].Name,
-			AllowListed: platformInfos[p].AllowListed,
-			ConfigPath:  resolveSettingsPath(p),
-		})
-	}
-	return out
-}
-
 // resolveSettingsPath locates the platform's configuration file that holds the
 // permission allow-list. Returns "" for platforms without a file-based list.
 func resolveSettingsPath(p Platform) string {

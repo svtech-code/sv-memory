@@ -24,7 +24,6 @@ var (
 const jsonSyncInterval = 10
 
 type syncCacheEntry struct {
-	memoryCount   int
 	lastSyncTime  time.Time
 	jsonSyncCount int
 }
@@ -310,7 +309,6 @@ func syncToGit(db *sql.DB, projectID string, projPath string, forceJSON bool) er
 
 	syncCacheMu.Lock()
 	lastWriteInfo[projectID] = syncCacheEntry{
-		memoryCount:   len(full),
 		lastSyncTime:  time.Now(),
 		jsonSyncCount: nextJSON,
 	}

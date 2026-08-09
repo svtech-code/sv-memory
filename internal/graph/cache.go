@@ -2,7 +2,6 @@ package graph
 
 import (
 	"database/sql"
-	"time"
 
 	lru "github.com/hashicorp/golang-lru/v2"
 )
@@ -11,7 +10,6 @@ type cacheEntry struct {
 	graph      *InMemoryGraph
 	maxMtimeMs int64
 	fileCount  int
-	cachedAt   time.Time
 }
 
 // GraphCache provides a thread-safe fixed-capacity LRU cache for InMemoryGraph
@@ -74,7 +72,6 @@ func (c *GraphCache) Put(projectID string, g *InMemoryGraph, fileCount int, maxM
 		graph:      g,
 		fileCount:  fileCount,
 		maxMtimeMs: maxMtimeMs,
-		cachedAt:   time.Now(),
 	})
 }
 

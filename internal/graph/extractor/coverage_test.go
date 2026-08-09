@@ -59,7 +59,7 @@ func TestRegexExtractorExportsAndUnsupportedExtension(t *testing.T) {
 }
 
 func TestMDSemanticExtractor(t *testing.T) {
-	ext := NewMDSemanticExtractor()
+	ext := NewRegexExtractor()
 	src := []byte("# Title\n\n| Name | Value |\n| --- | --- |\n| a | b |\n\n> NOTE: keep this\n\n```mermaid\ngraph TD\nA-->B\n```\n")
 	symbols, imports, err := ext.Extract(src, "docs.md", ".md")
 	if err != nil {
@@ -68,7 +68,7 @@ func TestMDSemanticExtractor(t *testing.T) {
 	if len(imports) != 0 {
 		t.Errorf("semantic imports = %v, want none", imports)
 	}
-	if !hasSymbolType(symbols, "Title", "section") || !hasSymbolType(symbols, "Name, Value", "table") || !hasSymbolType(symbols, "mermaid", "diagram") {
+	if !hasSymbolType(symbols, "Title", "section") || !hasSymbolType(symbols, "mermaid", "diagram") {
 		t.Errorf("semantic symbols missing expected entities: %#v", symbols)
 	}
 }

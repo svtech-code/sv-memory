@@ -56,11 +56,6 @@ var entryPointNames = map[string]bool{
 // Current parser engine mapping to tree-sitter or regex fallback.
 var currentExtractor extractor.Extractor = extractor.NewTreeSitterExtractor()
 
-// SetExtractor allows dynamically switching the extractor engine (e.g. for testing).
-func SetExtractor(ext extractor.Extractor) {
-	currentExtractor = ext
-}
-
 // parseSymbols reads file content and returns child nodes (function/class) plus
 // enriched metadata for the parent file node.
 func parseSymbols(relPath, ext string, content []byte) ([]*Node, map[string]interface{}) {

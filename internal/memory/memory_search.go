@@ -11,27 +11,6 @@ import (
 	"github.com/svtech-code/sv-memory/internal/security"
 )
 
-func SearchMemoriesBySession(db *sql.DB, projectID, sessionID string, limit int) ([]*Memory, error) {
-	query := `
-	SELECT id, project_id, category, what, why, where_path, learned,
-		git_branch, git_commit, author, impact, errors_faced, next_steps,
-		session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at
-	FROM memories WHERE project_id = ? AND session_id = ? AND deleted_at IS NULL
-	ORDER BY created_at ASC`
-	var args []interface{}
-	args = append(args, projectID, sessionID)
-	if limit > 0 {
-		query += " LIMIT ?"
-		args = append(args, limit)
-	}
-	rows, err := db.Query(query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to search memories by session: %w", err)
-	}
-	defer rows.Close()
-	return scanMemories(rows)
-}
-
 func SearchMemoriesBySessionCompact(db *sql.DB, projectID, sessionID string, limit int) ([]*MemorySearchResult, error) {
 	query := `
 	SELECT id, category, what,

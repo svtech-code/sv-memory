@@ -78,12 +78,6 @@ func GetRelations(db *sql.DB, projectID, memoryID string) ([]*MemoryRelation, er
 	return relations, rows.Err()
 }
 
-func CountRelations(db *sql.DB, projectID, memoryID string) (int, error) {
-	var n int
-	err := db.QueryRow("SELECT COUNT(*) FROM memory_relations WHERE project_id = ? AND (source_id = ? OR target_id = ?)", projectID, memoryID, memoryID).Scan(&n)
-	return n, err
-}
-
 func CompareMemories(db *sql.DB, projectID, id1, id2 string) (string, error) {
 	m1, err := GetMemory(db, projectID, id1)
 	if err != nil {
