@@ -147,11 +147,8 @@ func (s *Server) cachedGitMetadata() gitMetadata {
 	if !s.gitCacheAt.IsZero() && time.Since(s.gitCacheAt) < gitCacheTTL {
 		return s.gitCache
 	}
-	s.gitCache = gitMetadata{
-		branch: config.GetGitBranch(s.cfg.ProjPath),
-		commit: config.GetGitCommit(s.cfg.ProjPath),
-		author: config.GetGitAuthor(s.cfg.ProjPath),
-	}
+	branch, commit, author := config.GetGitMetadata(s.cfg.ProjPath)
+	s.gitCache = gitMetadata{branch: branch, commit: commit, author: author}
 	s.gitCacheAt = time.Now()
 	return s.gitCache
 }
@@ -378,6 +375,12 @@ func truncateToTokenBudget(responseText string, tokenBudget int) string {
 	return fmt.Sprintf(
 		"[!] Response truncated to ~%d tokens (~%d chars) of estimated %d total. Narrow the query or increase token_budget.\n\n%s",
 		tokenBudget, maxChars, len(responseText)/4, truncated)
+}
+
+// respond wraps a text response with the shared token-budget truncation. The
+// per-call token_budget argument wins; otherwise the global default applies.
+func (s *Server) respond(req mcp.CallToolRequest, text string) *mcp.CallToolResult {
+	return mcp.NewToolResultText(truncateToTokenBudget(text, resolveTokenBudget(req, req.GetString("token_budget", ""))))
 }
 
 // StartServer starts the MCP server using stdio transport.

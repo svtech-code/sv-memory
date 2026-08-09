@@ -211,15 +211,30 @@ func GetGitCommit(projPath string) string {
 	return out
 }
 
-// GetGitAuthor returns the git configuration user name or email.
+// GetGitAuthor returns the git configuration user name.
 func GetGitAuthor(projPath string) string {
 	out, err := runGit(projPath, "config", "user.name")
 	if err != nil || out == "" {
-		outEmail, errEmail := runGit(projPath, "config", "user.email")
-		if errEmail != nil {
-			return ""
+		// Fallback: derive the identity email from GIT_AUTHOR_IDENT
+		// ("Name <email> timestamp tz") without a second subprocess look-up.
+		if ident, identErr := runGit(projPath, "var", "GIT_AUTHOR_IDENT"); identErr == nil {
+			if start, end := strings.Index(ident, "<"), strings.Index(ident, ">"); start >= 0 && end > start {
+				return ident[start+1 : end]
+			}
 		}
-		return outEmail
+		return ""
 	}
 	return out
+}
+
+// GetGitMetadata returns the project's current branch, short commit hash, and
+// configured author in a single burst. Callers on the hot path (e.g. every
+// sv_mem_save) should invoke this once and cache the result instead of calling
+// GetGitBranch/GetGitCommit/GetGitAuthor separately, which would spawn up to
+// four git subprocesses.
+func GetGitMetadata(projPath string) (branch, commit, author string) {
+	branch = GetGitBranch(projPath)
+	commit = GetGitCommit(projPath)
+	author = GetGitAuthor(projPath)
+	return
 }

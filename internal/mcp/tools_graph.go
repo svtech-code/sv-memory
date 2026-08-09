@@ -480,7 +480,7 @@ func (s *Server) handleGraphExplain(ctx context.Context, req mcp.CallToolRequest
 		fmt.Fprintf(&sb, "3. \"Show me the source code implementation details of `%s`.\"\n", node.Label)
 	}
 
-	return mcp.NewToolResultText(truncateToTokenBudget(sb.String(), resolveTokenBudget(req, req.GetString("token_budget", "")))), nil
+	return s.respond(req, sb.String()), nil
 }
 
 func (s *Server) handleGodNodes(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -566,7 +566,7 @@ func (s *Server) handleGodNodes(ctx context.Context, req mcp.CallToolRequest) (*
 		sb.WriteString("\n" + benchmark + "\n")
 	}
 
-	return mcp.NewToolResultText(truncateToTokenBudget(sb.String(), resolveTokenBudget(req, req.GetString("token_budget", "")))), nil
+	return s.respond(req, sb.String()), nil
 }
 
 func (s *Server) handleSurprisingConnections(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -649,7 +649,7 @@ func (s *Server) handleSurprisingConnections(ctx context.Context, req mcp.CallTo
 	}
 
 	sb.WriteString("\n*Higher surprise score means a more unexpected bridge between communities.*\n")
-	return mcp.NewToolResultText(truncateToTokenBudget(sb.String(), resolveTokenBudget(req, req.GetString("token_budget", "")))), nil
+	return s.respond(req, sb.String()), nil
 }
 
 func (s *Server) handleGraphViz(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

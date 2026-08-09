@@ -383,50 +383,7 @@ func SearchMemoriesScoped(db *sql.DB, projectID string, searchTerm string, categ
 	}
 	defer rows.Close()
 
-	var memories []*Memory
-	for rows.Next() {
-		var mem Memory
-		var createdAtStr string
-		var lastSeenAtStr sql.NullString
-		var gitBranch, gitCommit, author, impact, errorsFaced, nextSteps, sessionID, topicKey sql.NullString
-		var revisionCount, duplicateCount sql.NullInt64
-		var normalizedHash sql.NullString
-		err := rows.Scan(&mem.ID, &mem.ProjectID, &mem.Category, &mem.What, &mem.Why, &mem.WherePath, &mem.Learned, &gitBranch, &gitCommit, &author, &impact, &errorsFaced, &nextSteps, &sessionID, &topicKey, &revisionCount, &duplicateCount, &lastSeenAtStr, &normalizedHash, &createdAtStr)
-		if err != nil {
-			return nil, fmt.Errorf("failed scanning memory row: %w", err)
-		}
-		mem.GitBranch = gitBranch.String
-		mem.GitCommit = gitCommit.String
-		mem.Author = author.String
-		mem.Impact = security.SanitizeText(impact.String)
-		mem.ErrorsFaced = security.SanitizeText(errorsFaced.String)
-		mem.NextSteps = security.SanitizeText(nextSteps.String)
-		mem.SessionID = sessionID.String
-		mem.TopicKey = topicKey.String
-		mem.What = security.SanitizeText(mem.What)
-		mem.Why = security.SanitizeText(mem.Why)
-		mem.Learned = security.SanitizeText(mem.Learned)
-		mem.WherePath = security.SanitizeText(mem.WherePath)
-		if revisionCount.Valid {
-			mem.RevisionCount = int(revisionCount.Int64)
-		}
-		if duplicateCount.Valid {
-			mem.DuplicateCount = int(duplicateCount.Int64)
-		}
-		mem.NormalizedHash = normalizedHash.String
-		if lastSeenAtStr.Valid && lastSeenAtStr.String != "" {
-			if t, err := parseTime(lastSeenAtStr.String); err == nil {
-				mem.LastSeenAt = t
-			}
-		}
-		if t, err := parseTime(createdAtStr); err == nil {
-			mem.CreatedAt = t
-		} else {
-			mem.CreatedAt = time.Now()
-		}
-		memories = append(memories, &mem)
-	}
-	return memories, nil
+	return scanMemories(rows)
 }
 
 // sanitizeFTS5Query tokenizes a raw user query into a safe FTS5 MATCH

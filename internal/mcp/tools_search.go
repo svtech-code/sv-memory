@@ -105,7 +105,7 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 		}
 	}
 
-	return mcp.NewToolResultText(truncateToTokenBudget(sb.String(), resolveTokenBudget(req, req.GetString("token_budget", "")))), nil
+	return s.respond(req, sb.String()), nil
 }
 
 // escapeTableCell sanitizes a string for safe embedding in a markdown table
@@ -174,7 +174,7 @@ func (s *Server) handleGet(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 		fmt.Fprintf(&sb, "* **Next steps / Pending:** %s\n", truncateField(mem.NextSteps, maxChars))
 	}
 	fmt.Fprintf(&sb, "* **Date:** %s\n", mem.CreatedAt.Format("2006-01-02"))
-	return mcp.NewToolResultText(truncateToTokenBudget(sb.String(), resolveTokenBudget(req, req.GetString("token_budget", "")))), nil
+	return s.respond(req, sb.String()), nil
 }
 
 func (s *Server) handleTimeline(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -234,7 +234,7 @@ func (s *Server) handleTimeline(ctx context.Context, req mcp.CallToolRequest) (*
 		sb.WriteString("No other memories found nearby in time.\n")
 	}
 
-	return mcp.NewToolResultText(truncateToTokenBudget(sb.String(), resolveTokenBudget(req, req.GetString("token_budget", "")))), nil
+	return s.respond(req, sb.String()), nil
 }
 
 func (s *Server) handleCompare(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -320,5 +320,5 @@ func (s *Server) handleReview(ctx context.Context, req mcp.CallToolRequest) (*mc
 		}
 		sb.WriteString("\n")
 	}
-	return mcp.NewToolResultText(truncateToTokenBudget(sb.String(), resolveTokenBudget(req, req.GetString("token_budget", "")))), nil
+	return s.respond(req, sb.String()), nil
 }

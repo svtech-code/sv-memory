@@ -85,7 +85,7 @@ func (s *Server) handleContext(ctx context.Context, req mcp.CallToolRequest) (*m
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to get session context: %v", err)), nil
 	}
-	return mcp.NewToolResultText(truncateToTokenBudget(contextStr, resolveTokenBudget(req, req.GetString("token_budget", "")))), nil
+	return s.respond(req, contextStr), nil
 }
 
 func (s *Server) handleCompact(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -131,5 +131,5 @@ func (s *Server) handleStats(ctx context.Context, req mcp.CallToolRequest) (*mcp
 			fmt.Fprintf(&sb, "- %s: **%d**\n", cat, count)
 		}
 	}
-	return mcp.NewToolResultText(truncateToTokenBudget(sb.String(), resolveTokenBudget(req, req.GetString("token_budget", "")))), nil
+	return s.respond(req, sb.String()), nil
 }

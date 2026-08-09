@@ -51,5 +51,5 @@ func (s *Server) handleDiagnose(ctx context.Context, req mcp.CallToolRequest) (*
 		sb.WriteString("\n**Result:** ✅ all checks passed.\n")
 	}
 
-	return mcp.NewToolResultText(truncateToTokenBudget(sb.String(), resolveTokenBudget(req, req.GetString("token_budget", "")))), nil
+	return s.respond(req, sb.String()), nil
 }

@@ -73,15 +73,7 @@ func ImportJSON(db *sql.DB, projectID, filePath string) (int, error) {
 		if createdAt.IsZero() {
 			createdAt = time.Now()
 		}
-		_, err := stmt.Exec(
-			mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned,
-			mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact, mem.ErrorsFaced, mem.NextSteps,
-			nullString(mem.SessionID), nullString(mem.TopicKey),
-			mem.RevisionCount, mem.DuplicateCount,
-			nullTime(mem.LastSeenAt), nullString(mem.NormalizedHash),
-			nullTime(mem.ReviewAfter), mem.Pinned,
-			createdAt)
-		if err != nil {
+		if _, err := stmt.Exec(memoryInsertArgs(mem, createdAt)...); err != nil {
 			return 0, fmt.Errorf("failed to import memory %s: %w", mem.ID, err)
 		}
 	}

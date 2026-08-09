@@ -166,14 +166,7 @@ func importChunkFromFile(tx *sql.Tx, projectID, chunkPath, name string, stmt *sq
 		createdAt = time.Now()
 	}
 	warnIfLocalDiverges(tx, projectID, &mem)
-	if _, execErr := stmt.Exec(
-		mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned,
-		mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact, mem.ErrorsFaced, mem.NextSteps,
-		nullString(mem.SessionID), nullString(mem.TopicKey),
-		mem.RevisionCount, mem.DuplicateCount,
-		nullTime(mem.LastSeenAt), nullString(mem.NormalizedHash),
-		nullTime(mem.ReviewAfter), mem.Pinned,
-		createdAt); execErr != nil {
+	if _, execErr := stmt.Exec(memoryInsertArgs(&mem, createdAt)...); execErr != nil {
 		logSyncWarning("skipping %s: failed to import (%v)", name, execErr)
 		*skipped++
 	}
@@ -369,15 +362,7 @@ func SyncFromGit(db *sql.DB, projectID string, projPath string) error {
 			createdAt = time.Now()
 		}
 		warnIfLocalDiverges(tx, projectID, mem)
-		_, err := stmt.Exec(
-			mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned,
-			mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact, mem.ErrorsFaced, mem.NextSteps,
-			nullString(mem.SessionID), nullString(mem.TopicKey),
-			mem.RevisionCount, mem.DuplicateCount,
-			nullTime(mem.LastSeenAt), nullString(mem.NormalizedHash),
-			nullTime(mem.ReviewAfter), mem.Pinned,
-			createdAt)
-		if err != nil {
+		if _, err := stmt.Exec(memoryInsertArgs(mem, createdAt)...); err != nil {
 			logSyncWarning("skipping memory %s: failed to import (%v)", mem.ID, err)
 			skipped++
 		}

@@ -91,6 +91,21 @@ func sanitizeMemoryFields(mem *Memory) {
 	mem.TopicKey = security.SanitizeText(mem.TopicKey)
 }
 
+// memoryInsertArgs returns the ordered argument list matching
+// memoryInsertConflictQuery() column order. It must stay in sync with that
+// query and the memories table columns.
+func memoryInsertArgs(mem *Memory, createdAt time.Time) []interface{} {
+	return []interface{}{
+		mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned,
+		mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact, mem.ErrorsFaced, mem.NextSteps,
+		nullString(mem.SessionID), nullString(mem.TopicKey),
+		mem.RevisionCount, mem.DuplicateCount,
+		nullTime(mem.LastSeenAt), nullString(mem.NormalizedHash),
+		nullTime(mem.ReviewAfter), mem.Pinned,
+		createdAt,
+	}
+}
+
 func memoryInsertConflictQuery() string {
 	return `
 	INSERT INTO memories (id, project_id, category, what, why, where_path, learned, git_branch, git_commit, author, impact, errors_faced, next_steps, session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, review_after, pinned, created_at)
