@@ -29,6 +29,9 @@ func StartSession(db *sql.DB, projectID, goal, directory string) (*Session, erro
 }
 
 func EndSession(db *sql.DB, id, summary string) error {
+	// Redact secrets the same way SaveSessionSummary does, so a session summary
+	// never persists raw credentials that later surface via session context.
+	summary = security.SanitizeText(summary)
 	result, err := db.Exec(
 		"UPDATE sessions SET ended_at = ?, summary = ?, status = 'completed' WHERE id = ? AND status = 'active'",
 		time.Now(), summary, id)
@@ -164,10 +167,10 @@ func GetSessionContext(db *sql.DB, projectID string) (string, error) {
 		fmt.Fprintf(&sb, "**Ended:** %s\n", session.EndedAt.Format("2006-01-02 15:04"))
 	}
 	if session.Goal != "" {
-		fmt.Fprintf(&sb, "**Goal:** %s\n", session.Goal)
+		fmt.Fprintf(&sb, "**Goal:** %s\n", security.SanitizeText(session.Goal))
 	}
 	if session.Summary != "" {
-		fmt.Fprintf(&sb, "**Summary:** %s\n", session.Summary)
+		fmt.Fprintf(&sb, "**Summary:** %s\n", security.SanitizeText(session.Summary))
 	}
 
 	mems, err := SearchMemoriesBySessionCompact(db, projectID, session.ID, 10)
@@ -261,10 +264,10 @@ func writeBundleSection(sb *strings.Builder, db *sql.DB, projectID, title, query
 			continue
 		}
 		if withWhy {
-			why = truncateText(why, bundleWhyChars)
-			items = append(items, fmt.Sprintf("- **[%s] %s** (ID: %s)\n  *Why:* %s", strings.ToUpper(cat), what, id, why))
+			why = truncateText(security.SanitizeText(why), bundleWhyChars)
+			items = append(items, fmt.Sprintf("- **[%s] %s** (ID: %s)\n  *Why:* %s", strings.ToUpper(cat), security.SanitizeText(what), id, why))
 		} else {
-			items = append(items, fmt.Sprintf("- **[%s] %s** (ID: %s)", strings.ToUpper(cat), what, id))
+			items = append(items, fmt.Sprintf("- **[%s] %s** (ID: %s)", strings.ToUpper(cat), security.SanitizeText(what), id))
 		}
 	}
 	if len(items) > 0 {

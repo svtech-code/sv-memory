@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/svtech-code/sv-memory/internal/security"
 )
 
 // ExportObsidianVault exports the project's graph nodes and memories as an Obsidian Vault folder.
@@ -67,7 +69,7 @@ func ExportObsidianVault(db *sql.DB, projectID, outputDir string) error {
 		_ = os.WriteFile(filePath, []byte(sb.String()), 0644)
 	}
 
-	// 2. Export Memories
+	// 2. Export Memories (redact secrets before writing notes)
 	memRows, err := db.Query("SELECT id, category, what, why, learned, created_at FROM memories WHERE project_id = ? AND deleted_at IS NULL", projectID)
 	if err == nil {
 		defer memRows.Close()
@@ -76,12 +78,12 @@ func ExportObsidianVault(db *sql.DB, projectID, outputDir string) error {
 			if mScan := memRows.Scan(&id, &cat, &what, &why, &learned, &createdAt); mScan == nil {
 				filePath := filepath.Join(memDir, id+".md")
 				var sb strings.Builder
-				fmt.Fprintf(&sb, "# %s\n\n", what)
+				fmt.Fprintf(&sb, "# %s\n\n", security.SanitizeText(what))
 				fmt.Fprintf(&sb, "- **Memory ID:** `%s`\n", id)
 				fmt.Fprintf(&sb, "- **Category:** `%s`\n", strings.ToUpper(cat))
 				fmt.Fprintf(&sb, "- **Created:** `%s`\n\n", createdAt)
-				fmt.Fprintf(&sb, "### Why\n%s\n\n", why)
-				fmt.Fprintf(&sb, "### Learned\n%s\n", learned)
+				fmt.Fprintf(&sb, "### Why\n%s\n\n", security.SanitizeText(why))
+				fmt.Fprintf(&sb, "### Learned\n%s\n", security.SanitizeText(learned))
 				_ = os.WriteFile(filePath, []byte(sb.String()), 0644)
 			}
 		}

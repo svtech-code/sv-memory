@@ -68,6 +68,7 @@ func ImportJSON(db *sql.DB, projectID, filePath string) (int, error) {
 
 	for _, mem := range memories {
 		mem.ProjectID = projectID
+		sanitizeMemoryFields(mem)
 		createdAt := mem.CreatedAt
 		if createdAt.IsZero() {
 			createdAt = time.Now()

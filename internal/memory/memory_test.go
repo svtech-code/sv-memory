@@ -1701,3 +1701,56 @@ func TestSyncFromGitWarnsOnLastWriterWins(t *testing.T) {
 		t.Errorf("expected last-writer-wins to apply the git chunk, got %q", what)
 	}
 }
+
+// TestSyncFromGitRedactsSecretsInChunks verifies that a team-shared chunk
+// containing a secret in a free-text field is redacted on import, so raw
+// credentials never enter the DB through the git-sync path.
+func TestSyncFromGitRedactsSecretsInChunks(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_redact.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-redact"
+	err = db.RegisterProject(database, projectID, "Redact Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	secret := "sk-proj-RtY8kLs9NpQ2xW7vZ4mC6jH1gB5eA0dFqX3nM2pL9kR8tY7wQ"
+	chunk := &Memory{ID: "red-1", ProjectID: projectID, Category: "journal",
+		What: "deploy uses " + secret, Why: "token=" + secret, Learned: secret, CreatedAt: time.Now()}
+	data, err := json.Marshal(chunk)
+	if err != nil {
+		t.Fatalf("failed to marshal chunk: %v", err)
+	}
+	chunkDir := filepath.Join(tempDir, ".sv-memory", "chunks")
+	if err := os.MkdirAll(chunkDir, 0755); err != nil {
+		t.Fatalf("failed to create chunks dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(chunkDir, "red-1.json"), data, 0644); err != nil {
+		t.Fatalf("failed to write chunk: %v", err)
+	}
+
+	if err := SyncFromGit(database, projectID, tempDir); err != nil {
+		t.Fatalf("SyncFromGit failed: %v", err)
+	}
+
+	var what, why, learned string
+	err = database.QueryRow("SELECT what, why, learned FROM memories WHERE project_id = ? AND id = 'red-1'", projectID).
+		Scan(&what, &why, &learned)
+	if err != nil {
+		t.Fatalf("query err: %v", err)
+	}
+	for name, field := range map[string]string{"what": what, "why": why, "learned": learned} {
+		if strings.Contains(field, secret) {
+			t.Errorf("raw secret persisted via git chunk in %s: %q", name, field)
+		}
+	}
+	if !strings.Contains(what, "deploy uses") {
+		t.Errorf("expected redacted text preserved in what, got %q", what)
+	}
+}

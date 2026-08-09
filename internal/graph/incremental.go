@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/svtech-code/sv-memory/internal/security"
 )
 
 // SyncGraph scans the project directory and builds or incrementally updates the
@@ -260,6 +262,37 @@ func trySyncGraphIncrementalFiltered(db *sql.DB, projectID string, projPath stri
 	return true, nil
 }
 
+// sanitizeNodeForPersist redacts secrets from a node's label and metadata before
+// it is written to graph_nodes. Node paths are file paths produced by the
+// filesystem walk (not file content) and are kept untouched so path-based
+// lookups keep working. Metadata (rationales, SQL defaults/values) and labels
+// (markdown headings) derive from scanned file content and can embed secrets,
+// so they are redacted here as a final gate.
+func sanitizeNodeForPersist(node *Node) {
+	node.Label = security.SanitizeText(node.Label)
+	if len(node.Metadata) == 0 {
+		return
+	}
+	for k, v := range node.Metadata {
+		switch t := v.(type) {
+		case string:
+			node.Metadata[k] = security.SanitizeText(t)
+		case []string:
+			for i, s := range t {
+				t[i] = security.SanitizeText(s)
+			}
+			node.Metadata[k] = t
+		case []interface{}:
+			for i, s := range t {
+				if str, ok := s.(string); ok {
+					t[i] = security.SanitizeText(str)
+				}
+			}
+			node.Metadata[k] = t
+		}
+	}
+}
+
 func bulkInsertNodes(tx *sql.Tx, projectID string, nodes map[string]*Node) error {
 	stmt, err := tx.Prepare("INSERT INTO graph_nodes (id, project_id, node_type, label, path, metadata) VALUES (?, ?, ?, ?, ?, ?)")
 	if err != nil {
@@ -267,6 +300,7 @@ func bulkInsertNodes(tx *sql.Tx, projectID string, nodes map[string]*Node) error
 	}
 	defer stmt.Close()
 	for _, node := range nodes {
+		sanitizeNodeForPersist(node)
 		metaBytes, _ := json.Marshal(node.Metadata)
 		metaStr := string(metaBytes)
 		if metaStr == "null" {
@@ -301,6 +335,7 @@ func bulkInsertEdges(tx *sql.Tx, projectID string, edges []*Edge) error {
 }
 
 func upsertNode(tx *sql.Tx, projectID string, node *Node) error {
+	sanitizeNodeForPersist(node)
 	metaBytes, _ := json.Marshal(node.Metadata)
 	metaStr := string(metaBytes)
 	if metaStr == "null" {

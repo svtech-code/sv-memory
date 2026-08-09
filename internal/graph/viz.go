@@ -3,6 +3,7 @@ package graph
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"sort"
 )
@@ -65,13 +66,13 @@ func (g *InMemoryGraph) ExportHTML(w io.Writer, comms map[string]int, commLabels
 		}
 
 		detail := fmt.Sprintf("ID: %s<br>Type: %s<br>Fan-In: %d<br>Fan-Out: %d<br>BC: %.2f<br>Community: %d<br>Path: %s",
-			n.ID, n.Type, g.FanIn[id], g.FanOut[id], bc, comm, n.Path)
+			html.EscapeString(n.ID), html.EscapeString(n.Type), g.FanIn[id], g.FanOut[id], bc, comm, html.EscapeString(n.Path))
 		if n.Metadata != nil {
 			if lang, ok := n.Metadata["language"]; ok {
-				detail += fmt.Sprintf("<br>Language: %v", lang)
+				detail += fmt.Sprintf("<br>Language: %v", html.EscapeString(fmt.Sprint(lang)))
 			}
 			if loc, ok := n.Metadata["loc"]; ok {
-				detail += fmt.Sprintf("<br>LOC: %v", loc)
+				detail += fmt.Sprintf("<br>LOC: %v", html.EscapeString(fmt.Sprint(loc)))
 			}
 		}
 

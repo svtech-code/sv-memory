@@ -1065,6 +1065,81 @@ func processData() {
 	}
 }
 
+// TestSyncGraphRedactsSecrets verifies that secrets embedded in scanned file
+// content (markdown headings, rationale comments) are redacted before being
+// persisted to graph_nodes, so they never surface through graph exports.
+func TestSyncGraphRedactsSecrets(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-graph-secrets-test")
+	if err != nil {
+		t.Fatalf("failed to create temp workspace: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_secrets.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-secrets-test"
+	err = db.RegisterProject(database, projectID, "Secrets Test Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	secret := "sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+	mdContent := "# MyDoc\n\n## Configure the client with " + secret + " here\n"
+	if err := os.WriteFile(filepath.Join(tempDir, "notes.md"), []byte(mdContent), 0644); err != nil {
+		t.Fatalf("failed writing notes.md: %v", err)
+	}
+
+	goCode := "package main\n\n// WHY: keep the token " + secret + " private\nfunc main() {}\n"
+	if err := os.WriteFile(filepath.Join(tempDir, "main.go"), []byte(goCode), 0644); err != nil {
+		t.Fatalf("failed writing main.go: %v", err)
+	}
+
+	if err := SyncGraph(database, projectID, tempDir); err != nil {
+		t.Fatalf("SyncGraph failed: %v", err)
+	}
+
+	// The markdown heading node id and label must not contain the raw secret.
+	rows, err := database.Query("SELECT id, label, metadata FROM graph_nodes WHERE project_id = ?", projectID)
+	if err != nil {
+		t.Fatalf("failed querying graph_nodes: %v", err)
+	}
+	defer rows.Close()
+
+	checked := 0
+	for rows.Next() {
+		var id, label, meta string
+		if err := rows.Scan(&id, &label, &meta); err != nil {
+			t.Fatalf("scan err: %v", err)
+		}
+		checked++
+		for _, field := range []string{id, label, meta} {
+			if strings.Contains(field, secret) {
+				t.Errorf("raw secret persisted in graph node (id=%q label=%q metadata=%q)", id, label, meta)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("expected at least one graph node to check")
+	}
+
+	// The file-node metadata must still carry the (redacted) rationale.
+	var metaStr string
+	if err := database.QueryRow("SELECT metadata FROM graph_nodes WHERE project_id = ? AND id = 'main.go'", projectID).Scan(&metaStr); err != nil {
+		t.Fatalf("failed querying main.go metadata: %v", err)
+	}
+	if !strings.Contains(metaStr, "WHY: keep the token") {
+		t.Errorf("expected rationale present (redacted) in file metadata, got: %s", metaStr)
+	}
+	if strings.Contains(metaStr, secret) {
+		t.Errorf("raw secret persisted in file rationale metadata: %s", metaStr)
+	}
+}
+
 func TestSyncGraphWithMarkdownDeep(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-mem-graph-md-deep-test")
 	if err != nil {

@@ -161,6 +161,7 @@ func importChunkFromFile(tx *sql.Tx, projectID, chunkPath, name string, stmt *sq
 		return
 	}
 	mem.ProjectID = projectID
+	sanitizeMemoryFields(&mem)
 	createdAt := mem.CreatedAt
 	if createdAt.IsZero() {
 		createdAt = time.Now()
@@ -364,6 +365,7 @@ func SyncFromGit(db *sql.DB, projectID string, projPath string) error {
 	var skipped int
 	for _, mem := range memories {
 		mem.ProjectID = projectID
+		sanitizeMemoryFields(mem)
 		createdAt := mem.CreatedAt
 		if createdAt.IsZero() {
 			createdAt = time.Now()

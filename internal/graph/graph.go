@@ -11,6 +11,7 @@ import (
 
 	"github.com/svtech-code/sv-memory/internal/graph/extractor"
 	"github.com/svtech-code/sv-memory/internal/graph/schema"
+	"github.com/svtech-code/sv-memory/internal/security"
 )
 
 // Node represents a vertex in the code dependency graph.
@@ -93,7 +94,7 @@ func parseSymbols(relPath, ext string, content []byte) ([]*Node, map[string]inte
 	for _, sym := range symbols {
 		if sym.Type == "rationale" {
 			if sym.Name != "" {
-				rationales = append(rationales, sym.Name)
+				rationales = append(rationales, security.SanitizeText(sym.Name))
 			}
 			continue
 		}
@@ -102,6 +103,11 @@ func parseSymbols(relPath, ext string, content []byte) ([]*Node, map[string]inte
 		if !isStructural && !isValidSymbolName(sym.Name) {
 			continue
 		}
+		// Structural names and rationale text derive from file content and may
+		// embed secrets (e.g. "## API key: sk-ant-..."). Redact them before the
+		// name becomes a node id/label, so the id stays consistent with the
+		// contains-edges built from the node map.
+		sym.Name = security.SanitizeText(sym.Name)
 		symMeta := map[string]interface{}{
 			"line":     sym.Line,
 			"exported": sym.Exported,

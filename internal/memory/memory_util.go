@@ -72,6 +72,25 @@ func truncateText(s string, maxChars int) string {
 	return string(runes[:maxChars]) + fmt.Sprintf("... [truncated %d chars]", len(runes)-maxChars)
 }
 
+// sanitizeMemoryFields redacts secrets from every free-text field of a memory
+// before it is persisted. Used by the import paths (ImportJSON, git-sync chunk
+// import) that receive raw data from outside the normal sanitizing save path.
+func sanitizeMemoryFields(mem *Memory) {
+	mem.Category = security.SanitizeText(mem.Category)
+	mem.What = security.SanitizeText(mem.What)
+	mem.Why = security.SanitizeText(mem.Why)
+	mem.WherePath = security.SanitizeText(mem.WherePath)
+	mem.Learned = security.SanitizeText(mem.Learned)
+	mem.GitBranch = security.SanitizeText(mem.GitBranch)
+	mem.GitCommit = security.SanitizeText(mem.GitCommit)
+	mem.Author = security.SanitizeText(mem.Author)
+	mem.Impact = security.SanitizeText(mem.Impact)
+	mem.ErrorsFaced = security.SanitizeText(mem.ErrorsFaced)
+	mem.NextSteps = security.SanitizeText(mem.NextSteps)
+	mem.SessionID = security.SanitizeText(mem.SessionID)
+	mem.TopicKey = security.SanitizeText(mem.TopicKey)
+}
+
 func memoryInsertConflictQuery() string {
 	return `
 	INSERT INTO memories (id, project_id, category, what, why, where_path, learned, git_branch, git_commit, author, impact, errors_faced, next_steps, session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, review_after, pinned, created_at)

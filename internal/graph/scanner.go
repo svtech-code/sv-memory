@@ -59,6 +59,28 @@ __pycache__/
 .cache/
 .coverage
 
+# Secrets & credentials (defense in depth — keep these out of the graph)
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+credentials
+credentials.*
+*.htpasswd
+.aws/
+.gcp/
+.ssh/
+secrets.yaml
+secrets.yml
+
 # IDEs & System files
 .idea/
 .vscode/
