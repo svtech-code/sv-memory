@@ -89,5 +89,6 @@ The top search result is already expanded inline — only drill further when nec
 
 - **Session:** `sv_mem_session_start`, `sv_mem_session_summary`, `sv_mem_session_end`, `sv_mem_context`
 - **Memory CRUD:** `sv_mem_save`, `sv_mem_get`, `sv_mem_delete`, `sv_mem_search`, `sv_mem_timeline`
-- **Knowledge quality:** `sv_mem_suggest_topic_key`, `sv_mem_judge`, `sv_mem_compare`, `sv_mem_compact`, `sv_mem_review`, `sv_mem_capture_passive`, `sv_mem_conflicts`, `sv_mem_stats`, `sv_mem_current_project`
+- **Pin / Priority:** `sv_mem_pin` (action='unpin' to clear)
+- **Knowledge quality:** `sv_mem_suggest_topic_key`, `sv_mem_judge`, `sv_mem_compare`, `sv_mem_compact`, `sv_mem_review`, `sv_mem_capture_passive`, `sv_mem_conflicts`, `sv_mem_stats`
 - **Graph:** `sv_graph_query`, `sv_graph_explain`, `sv_graph_god_nodes`, `sv_graph_path`, `sv_graph_sync`, `sv_graph_surprising_connections`, `sv_graph_viz`, `sv_graph_merge`
