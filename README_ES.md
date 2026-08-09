@@ -22,7 +22,7 @@
   <a href="#-arquitectura">Arquitectura</a> •
   <a href="#-inicio-rápido">Inicio Rápido</a> •
   <a href="#-referencia-de-comandos-cli">Comandos CLI</a> •
-  <a href="#-herramientas-mcp-30-herramientas">Herramientas MCP</a> •
+  <a href="#-herramientas-mcp-28-herramientas">Herramientas MCP</a> •
   <a href="documentation/getting_started_guide_ES.md">Guía (ES)</a> •
   <a href="documentation/getting_started_guide.md">Guide (EN)</a>
 </p>
@@ -210,14 +210,14 @@ sv-memory tui
 | `sv-memory obsidian-export`        | **Exportación** | Exporta memorias a una bóveda de notas Markdown de Obsidian (`[[wikilinks]]`).                        |
 | `sv-memory conflicts`              | **Memoria**     | Detecta superposiciones semánticas y conflictos entre memorias del proyecto.                          |
 | `sv-memory hooks install`          | **Hooks**       | Instala hooks PreToolUse para Claude Code, Antigravity CLI y OpenCode.                                |
-| `sv-memory permissions list`       | **Permisos**    | Lista las 30 herramientas MCP de sv-memory con descripciones.                                         |
+| `sv-memory permissions list`       | **Permisos**    | Lista las 28 herramientas MCP de sv-memory con descripciones.                                         |
 | `sv-memory permissions status`     | **Permisos**    | Muestra permisos MCP otorgados/faltantes por plataforma.                                              |
 | `sv-memory permissions grant`      | **Permisos**    | Escribe allow-lists de herramientas MCP (`--all`/`--tool`, `--dry-run`) para Antigravity/Claude Code. |
 | `sv-memory permissions revoke`     | **Permisos**    | Elimina entradas de sv-memory de la allow-list conservando permisos no relacionados.                  |
 
 ---
 
-## 🧩 Herramientas MCP (30 Herramientas)
+## 🧩 Herramientas MCP (28 Herramientas)
 
 ### 🧠 Herramientas de Memoria
 
@@ -283,10 +283,10 @@ gestionar esa allow-list automáticamente, ya sea desde el asistente `configure`
 (Fase 4) o de forma independiente:
 
 ```bash
-# Muestra las 30 herramientas con descripciones
+# Muestra las 28 herramientas con descripciones
 sv-memory permissions list
 
-# Otorga las 30 herramientas a Antigravity CLI (usa --dry-run primero para previsualizar)
+# Otorga las 28 herramientas a Antigravity CLI (usa --dry-run primero para previsualizar)
 sv-memory permissions grant --platform antigravity --all --dry-run
 sv-memory permissions grant --platform antigravity --all
 
@@ -304,9 +304,42 @@ sv-memory permissions revoke --platform antigravity
 - Las entradas no relacionadas (p. ej. `command(npm run)`) siempre se conservan.
 - Reinicia tu asistente de IA tras otorgar permisos para que cargue los cambios.
 
-En el asistente `sv-memory configure`, la **Fase 4** lista las 30 herramientas para que
+En el asistente `sv-memory configure`, la **Fase 4** lista las 28 herramientas para que
 selecciones cuáles autorizar (con `a` seleccionas todas y `x` ninguna) en las plataformas
 configuradas.
+
+---
+
+## 🔄 Sync con Git y conflictos de merge
+
+sv-memory sincroniza tu almacén SQLite (local por clon) con los archivos `.sv-memory/chunks/{id}.json`
+commiteados en Git, de modo que el equipo comparte el contexto arquitectónico entre clones.
+Como cada memoria vive en su propio archivo, los agentes que editan **memorias distintas**
+nunca entran en conflicto.
+
+**Editar la *misma* memoria no es zero-conflict.** Cuando dos clones editan la misma memoria
+(típicamente vía topic-key upserts), Git deja marcadores de conflicto dentro de `{id}.json`:
+
+```json
+<<<<<<< HEAD
+{ "id": "abc123", "what": "mi cambio local" }
+=======
+{ "id": "abc123", "what": "su cambio" }
+>>>>>>> remote
+```
+
+Qué ocurre en `sv-memory sync` / auto-importación:
+- Un chunk con marcadores de conflicto sin resolver (o cualquier JSON ilegible) se **omite con
+  un warning**; el resto de los chunks sí se importa. No aborta todo el sync.
+- Cuando un chunk traído por pull sobreescribiría una versión local **más nueva** (mayor
+  `revision_count`) o **divergida en la misma revisión**, se registra un warning de
+  last-writer-wins: gana el chunk de git, pero la edición local perdida queda en superficie
+  en vez de descartarse en silencio.
+
+Para resolver un chunk en conflicto: edita `{id}.json` al contenido deseado (quitando los
+marcadores `<<<<<<<`/`=======`/`>>>>>>>`), haz `git add`, y vuelve a ejecutar `sv-memory sync`.
+Ejecuta `sv-memory sync` después de `git pull`/`git merge` para que el servidor recoja los
+cambios del equipo.
 
 ---
 

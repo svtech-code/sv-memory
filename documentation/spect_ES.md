@@ -84,7 +84,7 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 
 #### 2. `sv-memory mcp`
 - Inicia el servidor MCP JSON-RPC sobre `stdio` para el consumo por parte de agentes.
-- Registra las 30 herramientas MCP.
+- Registra las 28 herramientas MCP.
 - Mantiene un caché de grafo en memoria para recorridos BFS sin SQL.
 - Aplica debounce a las escrituras de Git sync (coalescencia de 500ms).
 
@@ -102,21 +102,21 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 - Muestra estadísticas del proyecto: memorias totales, memorias eliminadas, guardados recientes en 24h, número de sesiones, sesiones activas y conteos de relaciones.
 
 #### 7. `sv-memory sync`
-- Extrae desde `.sv-memory/chunks/` y empuja los cambios locales de SQLite de vuelta a dicha carpeta (JSON por memoria en chunks para colaboración Git sin conflictos).
+- Extrae desde `.sv-memory/chunks/` y empuja los cambios locales de SQLite de vuelta a dicha carpeta (JSON por memoria en chunks). Los IDs de memoria distintos nunca entran en conflicto; una edición concurrente del *mismo* ID deja marcadores de conflicto en `{id}.json`, que la importación **omite con un warning** en vez de abortar todo el sync. Importar un chunk que sobreescribiría una edición local más nueva (mayor `revision_count`) o divergida en la misma revisión registra un **warning de last-writer-wins**: gana el chunk de git, pero la edición local perdida queda en superficie. Resuelve un chunk en conflicto quitando los marcadores y volviendo a ejecutar `sv-memory sync`.
 
 #### 8. `sv-memory tui`
 - Inicia una interfaz de terminal interactiva (`charmbracelet/huh`/bubbletea) para inspección de memorias, búsqueda BM25, diagnósticos de grafo, exportación a bóveda Obsidian y exportación Cypher para Neo4j/FalkorDB.
 
 #### 9. `sv-memory configure`
 - Asistente interactivo para configuraciones automáticas/manuales de editores (Cursor, VS Code, Zed, Windsurf, OpenCode) y CLIs (Claude Code, Codex, Antigravity).
-- **Fase 4 (Permisos MCP):** Lista las 30 herramientas MCP de sv-memory con descripciones y otorga las entradas de allow-list seleccionadas a las plataformas con allow-list elegidas previamente (Antigravity CLI, Claude Code).
+- **Fase 4 (Permisos MCP):** Lista las 28 herramientas MCP de sv-memory con descripciones y otorga las entradas de allow-list seleccionadas a las plataformas con allow-list elegidas previamente (Antigravity CLI, Claude Code).
 - **Subcomandos** para leer/escribir configuración (YAML, global `~/.sv-memory/config.yaml` o local `.sv-memory/config.yaml`):
   - `sv-memory configure get <key>`: imprime un único valor de configuración.
   - `sv-memory configure set <key> <value> [--local]`: escribe un valor de forma global (por defecto) o local al proyecto.
   - `sv-memory configure list`: imprime todos los valores de configuración activos (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`).
 
 #### 10. `sv-memory permissions`
-- `list`: muestra las 30 herramientas MCP de sv-memory con descripciones legibles.
+- `list`: muestra las 28 herramientas MCP de sv-memory con descripciones legibles.
 - `grant --platform <p> [--all | --tool a,b] [--dry-run]`: escribe entradas de allow-list (`mcp(sv-memory/<tool>)` para Antigravity, `mcp__sv-memory__<tool>` para Claude Code), conservando entradas no relacionadas.
 - `revoke --platform <p> [--dry-run]`: elimina las entradas de sv-memory de la allow-list.
 - `status [--platform <p>]`: reporta herramientas otorgadas vs faltantes por plataforma.
@@ -368,7 +368,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_relations_target ON memory_relations(proje
 
 ## 6. Definición de Herramientas MCP
 
-`sv-memory` registra **30 herramientas MCP** para agentes de IA:
+`sv-memory` registra **28 herramientas MCP** para agentes de IA:
 
 ### 1. `sv_mem_save`
 Persiste una decisión arquitectónica clave, una corrección de bug, un diario de progreso o una pauta estándar.
@@ -728,7 +728,7 @@ sv-memory/
 │   │   ├── extractor/           # Extractor tree-sitter, respaldo regex, semántica markdown
 │   │   └── schema/              # Estructuras Node/Edge
 │   ├── hook/                    # Generación y plantillas de hooks PreToolUse
-│   ├── mcp/                     # Servidor MCP + 30 handlers de herramientas; lee del caché LRU de internal/graph
+│   ├── mcp/                     # Servidor MCP + 28 handlers de herramientas; lee del caché LRU de internal/graph
 │   ├── memory/                  # CRUD, almacenamiento de sesiones, dedup, conflictos, compactación,
 │   │                            # git sync por chunks, exportación Obsidian/Cypher, stats
 │   ├── perm/                    # Gestión de allow-lists de herramientas MCP (antigravity/claude-code)

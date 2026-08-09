@@ -15,7 +15,7 @@ When working with AI assistants in medium or large repositories, three recurring
 2. **Token Waste:** The AI needs to read dozens of source files over and over to understand the code structure.
 3. **Lack of Continuity:** Technical decisions stay trapped in individual chats instead of being shared with the team.
 
-**sv-memory** solves this by combining **persistent memories indexed with SQLite FTS5 BM25** and a **structural code dependency graph** exposed through 30 MCP (*Model Context Protocol*) tools.
+**sv-memory** solves this by combining **persistent memories indexed with SQLite FTS5 BM25** and a **structural code dependency graph** exposed through 28 MCP (*Model Context Protocol*) tools.
 
 ---
 
@@ -97,7 +97,7 @@ The wizard guides you through interactive phases in the terminal, navigable with
 1. **Phase 1 (GUI Editors):** Lets you select editors such as **Cursor**, **VS Code**, **Zed**, or **Windsurf**. It automatically registers the MCP server in their user configuration files (e.g. `claude_desktop_config.json` or Cursor settings).
 2. **Phase 2 (Terminal Assistants):** Lets you select CLI clients such as **Claude Code**, **Antigravity CLI (agy)**, or **OpenCode**.
 3. **Phase 3 (Confirmation and application):** Shows the summary of selected tools and applies the automatic or manual configurations.
-4. **Phase 4 (MCP Permissions):** Lists the **30 sv-memory MCP tools** for you to select which ones to authorize (press `a` to select all and `x` to select none). It grants the permissions on the configured platforms that use a static allow-list (Antigravity CLI, Claude Code).
+4. **Phase 4 (MCP Permissions):** Lists the **28 sv-memory MCP tools** for you to select which ones to authorize (press `a` to select all and `x` to select none). It grants the permissions on the configured platforms that use a static allow-list (Antigravity CLI, Claude Code).
 
 > **Why this step?**
 > It prevents you from having to manually edit complex JSON configuration files. With a couple of keystrokes in the terminal, all your editors get linked to the `sv-memory` MCP server and the tool permissions are granted with full transparency.
@@ -211,6 +211,6 @@ From the TUI interface you can:
 
 ## 📌 Recommended Best Practices for Teams
 
-1. **Include `.sv-memory/chunks/` in Git:** Allows the whole team to share architectural decisions without merge conflicts.
+1. **Include `.sv-memory/chunks/` in Git:** Allows the whole team to share architectural decisions. Distinct memory IDs never conflict on merge; if two agents edit the *same* memory, resolve the resulting `{id}.json` conflict markers and re-run `sv-memory sync`.
 2. **Review commits before pushing:** `sv-memory` updates memory JSONs locally, but it never runs `git commit` or `git push` automatically.
 3. **Run `sv_mem_compact` periodically:** If you notice a topic has accumulated many revisions, the AI or you can run compaction to summarize the history into a clean synthesis.

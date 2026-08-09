@@ -1584,3 +1584,120 @@ func TestSyncToGitPeriodicJSON(t *testing.T) {
 		t.Errorf("expected 8 memories in forced memories.json, got %d", len(all))
 	}
 }
+
+// TestSyncFromGitSkipsUnparseableChunks verifies that a chunk left with git
+// merge conflict markers (same-ID concurrent edit in two clones) no longer
+// aborts the whole import: the unparseable chunk is skipped with a warning and
+// the remaining valid chunks still arrive.
+func TestSyncFromGitSkipsUnparseableChunks(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_skip.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-skip"
+	err = db.RegisterProject(database, projectID, "Skip Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	chunkDir := filepath.Join(tempDir, ".sv-memory", "chunks")
+	if err := os.MkdirAll(chunkDir, 0755); err != nil {
+		t.Fatalf("failed to create chunks dir: %v", err)
+	}
+
+	// One healthy chunk + one chunk containing git conflict markers.
+	good := &Memory{ID: "ok-1", ProjectID: projectID, Category: "decision", What: "Good", Why: "fine", Learned: "fine", CreatedAt: time.Now()}
+	data, err := json.Marshal(good)
+	if err != nil {
+		t.Fatalf("failed to marshal good chunk: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(chunkDir, "ok-1.json"), data, 0644); err != nil {
+		t.Fatalf("failed to write good chunk: %v", err)
+	}
+	conflicted := "<<<<<<< HEAD\n{\"id\":\"bad-1\"}\n=======\n{\"id\":\"bad-1\",\"what\":\"other\"}\n>>>>>>> remote\n"
+	if err := os.WriteFile(filepath.Join(chunkDir, "bad-1.json"), []byte(conflicted), 0644); err != nil {
+		t.Fatalf("failed to write conflicted chunk: %v", err)
+	}
+
+	err = SyncFromGit(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("SyncFromGit should not fail on an unparseable chunk, got: %v", err)
+	}
+
+	var count int
+	if err := database.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ?", projectID).Scan(&count); err != nil {
+		t.Fatalf("query count err: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected the healthy chunk to import (1 memory), got %d", count)
+	}
+}
+
+// TestSyncFromGitWarnsOnLastWriterWins verifies that importing a chunk that
+// would overwrite a newer local edit (revision rollback) emits a divergence
+// warning instead of silently losing the local change.
+func TestSyncFromGitWarnsOnLastWriterWins(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_lww.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-lww"
+	err = db.RegisterProject(database, projectID, "LWW Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// Local edit is newer (revision 5); the git chunk is older (revision 2).
+	local := &Memory{ID: "lww-1", ProjectID: projectID, Category: "decision", What: "Local v5", Why: "local", Learned: "local", RevisionCount: 5, CreatedAt: time.Now()}
+	_, err = SaveMemory(database, local)
+	if err != nil {
+		t.Fatalf("failed to save local: %v", err)
+	}
+
+	remote := &Memory{ID: "lww-1", ProjectID: projectID, Category: "decision", What: "Remote v2", Why: "remote", Learned: "remote", RevisionCount: 2, CreatedAt: time.Now()}
+	data, err := json.Marshal(remote)
+	if err != nil {
+		t.Fatalf("failed to marshal remote chunk: %v", err)
+	}
+	chunkDir := filepath.Join(tempDir, ".sv-memory", "chunks")
+	if err := os.MkdirAll(chunkDir, 0755); err != nil {
+		t.Fatalf("failed to create chunks dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(chunkDir, "lww-1.json"), data, 0644); err != nil {
+		t.Fatalf("failed to write remote chunk: %v", err)
+	}
+
+	// Capture stderr to assert the divergence warning is emitted.
+	old := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+	err = SyncFromGit(database, projectID, tempDir)
+	w.Close()
+	os.Stderr = old
+	if err != nil {
+		t.Fatalf("SyncFromGit failed: %v", err)
+	}
+	buf := make([]byte, 4096)
+	n, _ := r.Read(buf)
+	output := string(buf[:n])
+	if !strings.Contains(output, "overwrites a newer local edit") {
+		t.Errorf("expected a last-writer-wins divergence warning on stderr, got: %q", output)
+	}
+
+	// The imported row reflects the git chunk (last-writer-wins).
+	var what string
+	if err := database.QueryRow("SELECT what FROM memories WHERE project_id = ? AND id = 'lww-1'", projectID).Scan(&what); err != nil {
+		t.Fatalf("query err: %v", err)
+	}
+	if what != "Remote v2" {
+		t.Errorf("expected last-writer-wins to apply the git chunk, got %q", what)
+	}
+}

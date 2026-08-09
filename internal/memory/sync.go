@@ -120,6 +120,71 @@ func SyncToGitChunked(db *sql.DB, projectID string, projPath string) error {
 	return nil
 }
 
+// logSyncWarning writes a sync warning to stderr. In the MCP stdio transport
+// stderr is a safe channel (stdout carries JSON-RPC), so these warnings never
+// corrupt a tool response.
+func logSyncWarning(format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, "[sv-memory] sync warning: "+format+"\n", args...)
+}
+
+// warnIfLocalDiverges emits a warning when importing the incoming (git) chunk
+// would overwrite a local version that appears newer or diverged. This surfaces
+// the last-writer-wins semantics of the upsert so a pulled chunk that silently
+// replaces a local edit does not go unnoticed. It is best-effort: a missing row
+// (pure insert) or a query error simply skips the check.
+func warnIfLocalDiverges(tx *sql.Tx, projectID string, mem *Memory) {
+	var localRev int
+	var localHash sql.NullString
+	if err := tx.QueryRow(
+		"SELECT revision_count, normalized_hash FROM memories WHERE project_id = ? AND id = ?",
+		projectID, mem.ID,
+	).Scan(&localRev, &localHash); err != nil {
+		return
+	}
+	switch {
+	case mem.RevisionCount < localRev:
+		logSyncWarning("memory %s: git chunk is revision %d but local DB is %d — pulling it overwrites a newer local edit (last-writer-wins). Check for a lost change.", mem.ID, mem.RevisionCount, localRev)
+	case mem.RevisionCount == localRev && localHash.Valid && localHash.String != "" && mem.NormalizedHash != "" && localHash.String != mem.NormalizedHash:
+		logSyncWarning("memory %s: local and git versions diverge at revision %d (different content) — the git chunk wins (last-writer-wins). Check for a lost local edit.", mem.ID, localRev)
+	}
+}
+
+// importChunkFromFile reads a chunk (or memories.json entry) and imports it into
+// the running transaction. Unparseable content (e.g. a file left with git merge
+// conflict markers after a same-ID concurrent edit) is skipped with a warning
+// instead of aborting the whole import, so the remaining chunks still arrive.
+func importChunkFromFile(tx *sql.Tx, projectID, chunkPath, name string, stmt *sql.Stmt, skipped *int) {
+	data, err := os.ReadFile(chunkPath)
+	if err != nil {
+		logSyncWarning("skipping %s: failed to read (%v)", name, err)
+		*skipped++
+		return
+	}
+	var mem Memory
+	if unmarshalErr := json.Unmarshal(data, &mem); unmarshalErr != nil {
+		logSyncWarning("skipping %s: failed to parse (unresolved git merge conflict markers or corrupt JSON) — resolve the file and re-run 'sv-memory sync' (%v)", name, unmarshalErr)
+		*skipped++
+		return
+	}
+	mem.ProjectID = projectID
+	createdAt := mem.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = time.Now()
+	}
+	warnIfLocalDiverges(tx, projectID, &mem)
+	if _, execErr := stmt.Exec(
+		mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned,
+		mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact, mem.ErrorsFaced, mem.NextSteps,
+		nullString(mem.SessionID), nullString(mem.TopicKey),
+		mem.RevisionCount, mem.DuplicateCount,
+		nullTime(mem.LastSeenAt), nullString(mem.NormalizedHash),
+		nullTime(mem.ReviewAfter), mem.Pinned,
+		createdAt); execErr != nil {
+		logSyncWarning("skipping %s: failed to import (%v)", name, execErr)
+		*skipped++
+	}
+}
+
 func SyncFromGitChunked(db *sql.DB, projectID string, projPath string) error {
 	chunkDir := chunkedSyncDir(projPath)
 	if _, err := os.Stat(chunkDir); os.IsNotExist(err) {
@@ -144,38 +209,21 @@ func SyncFromGitChunked(db *sql.DB, projectID string, projPath string) error {
 	}
 	defer stmt.Close()
 
+	var skipped int
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
-		chunkPath := filepath.Join(chunkDir, entry.Name())
-		data, err := os.ReadFile(chunkPath)
-		if err != nil {
-			return fmt.Errorf("failed to read chunk %s: %w", entry.Name(), err)
-		}
-		var mem Memory
-		if unmarshalErr := json.Unmarshal(data, &mem); unmarshalErr != nil {
-			return fmt.Errorf("failed to parse chunk %s: %w", entry.Name(), unmarshalErr)
-		}
-		mem.ProjectID = projectID
-		createdAt := mem.CreatedAt
-		if createdAt.IsZero() {
-			createdAt = time.Now()
-		}
-		_, err = stmt.Exec(
-			mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned,
-			mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact, mem.ErrorsFaced, mem.NextSteps,
-			nullString(mem.SessionID), nullString(mem.TopicKey),
-			mem.RevisionCount, mem.DuplicateCount,
-			nullTime(mem.LastSeenAt), nullString(mem.NormalizedHash),
-			nullTime(mem.ReviewAfter), mem.Pinned,
-			createdAt)
-		if err != nil {
-			return fmt.Errorf("failed to import chunk %s: %w", entry.Name(), err)
-		}
+		importChunkFromFile(tx, projectID, filepath.Join(chunkDir, entry.Name()), entry.Name(), stmt, &skipped)
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if skipped > 0 {
+		logSyncWarning("%d of %d chunk(s) skipped; the rest imported successfully", skipped, len(entries))
+	}
+	return nil
 }
 
 func SyncToGit(db *sql.DB, projectID string, projPath string) error {
@@ -324,7 +372,8 @@ func SyncFromGit(db *sql.DB, projectID string, projPath string) error {
 
 	var memories []*Memory
 	if unmarshalErr := json.Unmarshal(data, &memories); unmarshalErr != nil {
-		return fmt.Errorf("failed to parse memories JSON: %w", unmarshalErr)
+		logSyncWarning("memories.json failed to parse (unresolved git merge conflict markers or corrupt JSON) — resolve the file and re-run 'sv-memory sync' (%v)", unmarshalErr)
+		return nil
 	}
 
 	tx, err := db.Begin()
@@ -340,12 +389,14 @@ func SyncFromGit(db *sql.DB, projectID string, projPath string) error {
 	}
 	defer stmt.Close()
 
+	var skipped int
 	for _, mem := range memories {
 		mem.ProjectID = projectID
 		createdAt := mem.CreatedAt
 		if createdAt.IsZero() {
 			createdAt = time.Now()
 		}
+		warnIfLocalDiverges(tx, projectID, mem)
 		_, err := stmt.Exec(
 			mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned,
 			mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact, mem.ErrorsFaced, mem.NextSteps,
@@ -355,9 +406,16 @@ func SyncFromGit(db *sql.DB, projectID string, projPath string) error {
 			nullTime(mem.ReviewAfter), mem.Pinned,
 			createdAt)
 		if err != nil {
-			return fmt.Errorf("failed to sync memory %s: %w", mem.ID, err)
+			logSyncWarning("skipping memory %s: failed to import (%v)", mem.ID, err)
+			skipped++
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if skipped > 0 {
+		logSyncWarning("%d of %d memory(ies) skipped; the rest imported successfully", skipped, len(memories))
+	}
+	return nil
 }

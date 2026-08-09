@@ -22,7 +22,7 @@
   <a href="#-architecture">Architecture</a> •
   <a href="#-getting-started">Getting Started</a> •
   <a href="#-cli-commands-reference">CLI Commands</a> •
-  <a href="#-model-context-protocol-mcp-30-tools">MCP Tools</a> •
+  <a href="#-model-context-protocol-mcp-28-tools">MCP Tools</a> •
   <a href="documentation/getting_started_guide.md">Guide (EN)</a> •
   <a href="documentation/getting_started_guide_ES.md">Guía (ES)</a>
 </p>
@@ -210,14 +210,14 @@ sv-memory tui
 | `sv-memory obsidian-export`        | **Export**      | Exports memories into linked Obsidian Markdown notes (`[[wikilinks]]`).                  |
 | `sv-memory conflicts`              | **Memory**      | Detects semantic overlap and memory conflicts across the project.                        |
 | `sv-memory hooks install`          | **Hooks**       | Installs PreToolUse hooks for Claude Code, Antigravity CLI, and OpenCode.                |
-| `sv-memory permissions list`       | **Permissions** | Lists the 30 sv-memory MCP tools with descriptions.                                      |
+| `sv-memory permissions list`       | **Permissions** | Lists the 28 sv-memory MCP tools with descriptions.                                      |
 | `sv-memory permissions status`     | **Permissions** | Shows granted/missing MCP permissions per platform.                                      |
 | `sv-memory permissions grant`      | **Permissions** | Writes MCP tool allow-lists (`--all`/`--tool`, `--dry-run`) for Antigravity/Claude Code. |
 | `sv-memory permissions revoke`     | **Permissions** | Removes sv-memory allow-list entries, preserving unrelated permissions.                  |
 
 ---
 
-## 🧩 Model Context Protocol (MCP) — 30 Tools
+## 🧩 Model Context Protocol (MCP) — 28 Tools
 
 ### 🧠 Memory Tools
 
@@ -285,10 +285,10 @@ approval on every unlisted MCP tool call. `sv-memory` can manage that allow-list
 for you, either from the `configure` wizard (Phase 4) or standalone:
 
 ```bash
-# Show the 30 tools with descriptions
+# Show the 28 tools with descriptions
 sv-memory permissions list
 
-# Grant all 30 tools to Antigravity CLI (dry-run first to preview)
+# Grant all 28 tools to Antigravity CLI (dry-run first to preview)
 sv-memory permissions grant --platform antigravity --all --dry-run
 sv-memory permissions grant --platform antigravity --all
 
@@ -306,9 +306,40 @@ sv-memory permissions revoke --platform antigravity
 - Unrelated entries (e.g. `command(npm run)`) are always preserved.
 - Restart your AI assistant after granting to load the new permissions.
 
-In the `sv-memory configure` wizard, **Phase 4** lists the 30 tools for you to choose
+In the `sv-memory configure` wizard, **Phase 4** lists the 28 tools for you to choose
 which to authorize (press `a` to select all and `x` to select none) on the configured
 platforms.
+
+---
+
+## 🔄 Git Sync & Merge Conflicts
+
+sv-memory syncs your SQLite store (local per clone) with `.sv-memory/chunks/{id}.json`
+files committed to Git, so a team shares architectural context across clones. Because
+each memory lives in its own file, agents editing **different** memories never conflict.
+
+**Same-memory edits are *not* zero-conflict.** When two clones edit the *same* memory
+ID (typically via topic-key upserts), Git produces conflict markers inside `{id}.json`:
+
+```json
+<<<<<<< HEAD
+{ "id": "abc123", "what": "my local change" }
+=======
+{ "id": "abc123", "what": "their change" }
+>>>>>>> remote
+```
+
+What happens on `sv-memory sync` / auto-import:
+- A chunk with unresolved conflict markers (or any unparseable JSON) is **skipped with
+  a warning**; the rest of the chunks still import. It does **not** abort the whole sync.
+- When a pulled chunk would overwrite a local version that is **newer** (higher
+  `revision_count`) or **diverged at the same revision**, a last-writer-wins warning is
+  logged — the git chunk wins, but the lost local edit is surfaced instead of silently
+  dropped.
+
+To resolve a conflicted chunk: edit `{id}.json` to the desired content (removing the
+`<<<<<<<`/`=======`/`>>>>>>>` markers), `git add` it, and re-run `sv-memory sync`.
+Run `sv-memory sync` after `git pull`/`git merge` so the server picks up team changes.
 
 ---
 
