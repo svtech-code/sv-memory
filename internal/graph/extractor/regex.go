@@ -33,8 +33,6 @@ var (
 	mdLinkRegex        = regexp.MustCompile(`\[[^\]]*\]\(([^)]+)\)`)
 	mdWikilinkRegex    = regexp.MustCompile(`\[\[([^\]|]+)(?:\|[^\]]*)?\]\]`)
 	mdHeadingRegex     = regexp.MustCompile(`(?m)^(#{1,6})\s+(.+)$`)
-	mdFenceOpenRegex   = regexp.MustCompile(`^` + "```" + `(\w*)`)
-	mdFenceCloseRegex  = regexp.MustCompile(`^` + "```")
 	shImportRegex      = regexp.MustCompile(`(?m)^\s*(?:source|\.)\s+['"]?([^'"\s#;]+)['"]?`)
 	luaImportRegex     = regexp.MustCompile(`(?m)(?:require|dofile|loadfile)\s*\(?\s*['"]([^'"]+)['"]\s*\)?`)
 

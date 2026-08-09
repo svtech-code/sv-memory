@@ -7,11 +7,20 @@ import (
 	"testing"
 )
 
-func TestHookScriptContent(t *testing.T) {
-	content, err := HookScriptContent(PlatformClaudeCode, ModeSoft)
-	if err != nil {
-		t.Fatalf("failed to get claude-code soft script: %v", err)
+// mustHookScript loads a hook template and fails the test if none exists.
+// The exported HookScriptContent wrapper was removed (production uses the
+// unexported hookScript directly), so tests call the unexported one.
+func mustHookScript(t *testing.T, p Platform, m Mode) string {
+	t.Helper()
+	content := hookScript(p, m)
+	if content == "" {
+		t.Fatalf("no hook template for platform %s mode %s", p, m)
 	}
+	return content
+}
+
+func TestHookScriptContent(t *testing.T) {
+	content := mustHookScript(t, PlatformClaudeCode, ModeSoft)
 	if !strings.Contains(content, "sv-memory") {
 		t.Error("claude-code soft script should contain 'sv-memory'")
 	}
@@ -21,10 +30,7 @@ func TestHookScriptContent(t *testing.T) {
 }
 
 func TestHookScriptContentStrict(t *testing.T) {
-	content, err := HookScriptContent(PlatformClaudeCode, ModeStrict)
-	if err != nil {
-		t.Fatalf("failed to get claude-code strict script: %v", err)
-	}
+	content := mustHookScript(t, PlatformClaudeCode, ModeStrict)
 	if !strings.Contains(content, "strict") {
 		t.Error("claude-code strict script should contain 'strict'")
 	}
@@ -34,10 +40,7 @@ func TestHookScriptContentStrict(t *testing.T) {
 }
 
 func TestHookScriptContentCodex(t *testing.T) {
-	content, err := HookScriptContent(PlatformCodex, ModeSoft)
-	if err != nil {
-		t.Fatalf("failed to get codex noop script: %v", err)
-	}
+	content := mustHookScript(t, PlatformCodex, ModeSoft)
 	if !strings.Contains(content, "no-op") {
 		t.Error("codex script should be a no-op")
 	}
@@ -205,20 +208,14 @@ func TestUninstallCodex(t *testing.T) {
 }
 
 func TestHookScriptContentAntigravity(t *testing.T) {
-	content, err := HookScriptContent(PlatformAntigravity, ModeSoft)
-	if err != nil {
-		t.Fatalf("failed to get antigravity soft script: %v", err)
-	}
+	content := mustHookScript(t, PlatformAntigravity, ModeSoft)
 	if !strings.Contains(content, "allow") {
 		t.Error("antigravity soft script should contain 'allow' decision")
 	}
 }
 
 func TestHookScriptContentAntigravityStrict(t *testing.T) {
-	content, err := HookScriptContent(PlatformAntigravity, ModeStrict)
-	if err != nil {
-		t.Fatalf("failed to get antigravity strict script: %v", err)
-	}
+	content := mustHookScript(t, PlatformAntigravity, ModeStrict)
 	if !strings.Contains(content, "FLAG_FILE") {
 		t.Error("antigravity strict script should have FLAG_FILE session tracking")
 	}
@@ -234,10 +231,7 @@ func TestHookScriptContentAntigravityStrict(t *testing.T) {
 }
 
 func TestHookScriptContentClaudeCodeStrictIsNudgeOnly(t *testing.T) {
-	content, err := HookScriptContent(PlatformClaudeCode, ModeStrict)
-	if err != nil {
-		t.Fatalf("failed to get claude-code strict script: %v", err)
-	}
+	content := mustHookScript(t, PlatformClaudeCode, ModeStrict)
 	if strings.Contains(content, "exit 2") {
 		t.Error("claude-code strict script must never block (nudge-only)")
 	}
@@ -307,10 +301,7 @@ func TestUninstallAntigravity(t *testing.T) {
 }
 
 func TestHookScriptContentOpenCode(t *testing.T) {
-	content, err := HookScriptContent(PlatformOpenCode, ModeSoft)
-	if err != nil {
-		t.Fatalf("failed to get opencode skill: %v", err)
-	}
+	content := mustHookScript(t, PlatformOpenCode, ModeSoft)
 	if !strings.Contains(content, "sv_mem_search") {
 		t.Error("opencode skill should contain sv_mem_search instructions")
 	}

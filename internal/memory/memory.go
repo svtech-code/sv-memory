@@ -47,7 +47,6 @@ type Memory struct {
 	NormalizedHash string    `json:"normalized_hash,omitempty"`
 	ReviewAfter    time.Time `json:"review_after,omitempty"`
 	Pinned         bool      `json:"pinned,omitempty"`
-	DeletedAt      time.Time `json:"deleted_at,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 

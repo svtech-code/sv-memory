@@ -91,3 +91,4 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 
 ## Project-Specific Rules (sv-memory):
 - **Commit Language:** For this repository specifically, all commit messages must be written in English.
+- **Phase-Gated Workflow:** Multi-phase tasks run one phase at a time. After completing and verifying each phase (go build, go vet, go test -race, gofmt), deliver the commit message (Conventional Commits, English) for the user to apply manually, then ASK FOR CONFIRMATION before starting the next phase. Never run git add/commit/push autonomously. Keep docs EN/ES, skills, and CHANGELOG in sync within each phase.

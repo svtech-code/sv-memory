@@ -1,9 +1,6 @@
 package hook
 
-import (
-	"embed"
-	"fmt"
-)
+import "embed"
 
 //go:embed scripts/claude-code-soft.sh scripts/claude-code-strict.sh scripts/codex-noop.sh scripts/antigravity-soft.sh scripts/antigravity-strict.sh scripts/opencode-skill.md
 var hookScriptsFS embed.FS
@@ -36,12 +33,4 @@ func hookScript(platform Platform, mode Mode) string {
 		return ""
 	}
 	return string(data)
-}
-
-func HookScriptContent(platform Platform, mode Mode) (string, error) {
-	content := hookScript(platform, mode)
-	if content == "" {
-		return "", fmt.Errorf("no hook template for platform %s mode %s", platform, mode)
-	}
-	return content, nil
 }
