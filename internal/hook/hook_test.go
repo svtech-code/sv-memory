@@ -225,6 +225,22 @@ func TestHookScriptContentAntigravityStrict(t *testing.T) {
 	if !strings.Contains(content, "exit 2") {
 		t.Error("antigravity strict script should have exit 2 for blocked tools")
 	}
+	if !strings.Contains(content, "SV_MEMORY_STRICT_DISABLE") {
+		t.Error("antigravity strict script should support the SV_MEMORY_STRICT_DISABLE opt-out")
+	}
+	if !strings.Contains(content, ".sv-memory") {
+		t.Error("antigravity strict script should fail open when .sv-memory is absent")
+	}
+}
+
+func TestHookScriptContentClaudeCodeStrictIsNudgeOnly(t *testing.T) {
+	content, err := HookScriptContent(PlatformClaudeCode, ModeStrict)
+	if err != nil {
+		t.Fatalf("failed to get claude-code strict script: %v", err)
+	}
+	if strings.Contains(content, "exit 2") {
+		t.Error("claude-code strict script must never block (nudge-only)")
+	}
 }
 
 func TestInstallAntigravity(t *testing.T) {

@@ -157,12 +157,14 @@ sv-memory hooks install --platform antigravity
 sv-memory hooks install --platform antigravity --strict
 ```
 
+**Hook modes and degradation:** the hook scripts never call the sv-memory server — they are lightweight shell nudges that only inspect local files. **Soft** mode never blocks and always allows the read; **strict** blocks the *first* file read of each session (per boot/PWD) so the agent must consult `sv_mem_search`/`sv_graph_query` first. Blocking is only implemented where the platform supports it (Antigravity CLI); on Claude Code, strict mode is nudge-only and never blocks. Strict is **fail-open**: if sv-memory is not initialized (no `.sv-memory/`), the binary is missing, or `SV_MEMORY_STRICT_DISABLE=1` is set, the hook allows the read instead of deadlocking the agent.
+
 ### 5. Restart the Agent & Verify
 
 Restart your AI assistant, then confirm everything is wired up:
 
 ```bash
-sv-memory permissions status --platform antigravity   # Granted: 30 / 30
+sv-memory permissions status --platform antigravity   # Granted: 28 / 28
 sv-memory hooks status                                # antigravity: ✅ installed
 sv-memory diagnose
 ```

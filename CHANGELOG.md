@@ -8,6 +8,7 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 ### Changed
 
 - **MCP tool surface reduced (30 → 28):** `sv_mem_unpin` merged into `sv_mem_pin` via `action` (`'pin'` default, `'unpin'`), and `sv_mem_current_project` folded into `sv_mem_stats`, which now reports the active project ID, name, and path. Fewer tools reduce model-selection friction and per-session context overhead. Existing permission allow-lists retain the removed tool names as harmless stale entries; re-run the grant to refresh them.
+- **PreToolUse strict hooks are now fail-open:** the Antigravity strict hook only blocks the first file read when sv-memory is detected (`.sv-memory/` present, binary on PATH) and honors the `SV_MEMORY_STRICT_DISABLE=1` opt-out; otherwise it allows the read, so a missing/unconfigured sv-memory never deadlocks the agent. Docs now state that Claude Code strict mode is nudge-only (never blocks), aligning the documented behavior with the scripts.
 
 ## [v0.7.0] - 2026-08-08
 

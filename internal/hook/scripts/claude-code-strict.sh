@@ -4,6 +4,9 @@
 # On the FIRST file-read tool call of the session, it emits a strong redirect
 # to the sv-memory graph. Subsequent calls get a soft nudge.
 # The session flag is reset automatically when the temp is cleared or on reboot.
+# NOTE: On Claude Code this script NEVER blocks (always exit 0) — it only adds
+# context to the tool call. Strict blocking is implemented only on platforms
+# whose PreToolUse protocol supports it (Antigravity CLI).
 
 TOOL_NAME="${CLAUDE_TOOL_CALL_NAME:-}"
 

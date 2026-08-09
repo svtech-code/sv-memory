@@ -55,7 +55,7 @@ var hooksInstallCmd = &cobra.Command{
 		if success > 0 {
 			modeLabel := "soft (nudge)"
 			if strict {
-				modeLabel = "strict (blocks first raw read)"
+				modeLabel = "strict (blocks first raw read on Antigravity; nudge-only elsewhere)"
 			}
 			fmt.Printf("\nHooks/skills installed successfully (%s mode).\n", modeLabel)
 			fmt.Println("Restart your AI assistant to activate.")

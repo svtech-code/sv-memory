@@ -143,6 +143,8 @@ Existen dos modos:
 
 > Puedes cambiar de modo re-ejecutando el comando con o sin `--strict`.
 
+> **Degradación y fail-open:** los scripts de hook nunca llaman al servidor sv-memory — solo inspeccionan archivos locales y variables de entorno. Si sv-memory no está inicializado (sin `.sv-memory/`), el binario no está en el PATH, o está `SV_MEMORY_STRICT_DISABLE=1`, el modo strict **permite** la lectura en lugar de bloquearla, de modo que un sv-memory ausente o mal configurado nunca deje al agente atascado. Ten en cuenta que el *bloqueo* strict solo está implementado en Antigravity CLI; en Claude Code el modo strict es solo nudge (nunca bloquea).
+
 > **Por proyecto:** Repite este comando en cada repositorio donde trabajes con IA. Las plataformas soportadas son `claude-code`, `codex`, `antigravity` y `opencode` (omite `--platform` para instalarlo en todas).
 
 ---
@@ -153,7 +155,7 @@ Cierra y vuelve a abrir tu asistente de IA para que cargue el MCP, los permisos 
 
 ```bash
 cd /ruta/a/tu-proyecto
-sv-memory permissions status --platform antigravity   # Granted: 30 / 30
+sv-memory permissions status --platform antigravity   # Granted: 28 / 28
 sv-memory hooks status                                # antigravity: ✅ installed
 sv-memory diagnose                                    # 17 pass, 0 failures
 ```

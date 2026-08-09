@@ -124,6 +124,7 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 
 #### 11. `sv-memory hooks`
 - `install [--strict] [--platform <p>]`: instala hooks PreToolUse (`.agents/hooks.json` + `.agents/hooks/sv-memory.sh`) para que los agentes consulten la memoria antes de leer archivos. `--strict` bloquea la primera lectura raw de cada sesión. Plataforma por defecto: todas (`claude-code`, `codex`, `antigravity`, `opencode`).
+- **Degradación del modo strict (fail-open):** los scripts de hook nunca llaman al servidor sv-memory. El bloqueo strict solo está implementado en Antigravity CLI; en Claude Code el modo strict es solo nudge (siempre `exit 0`). El bloqueo se omite cuando sv-memory no está disponible (sin `.sv-memory/`, binario ausente, o `SV_MEMORY_STRICT_DISABLE=1`), de modo que el agente nunca queda atascado por un sv-memory ausente o mal configurado.
 - `uninstall [--platform <p>]`: elimina los hooks.
 - `status`: reporta qué plataformas tienen hooks instalados.
 

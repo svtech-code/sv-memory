@@ -157,12 +157,14 @@ sv-memory hooks install --platform antigravity
 sv-memory hooks install --platform antigravity --strict
 ```
 
+**Modos de hook y degradación:** los scripts de hook nunca llaman al servidor sv-memory — son nudges ligeros de shell que solo inspeccionan archivos locales. El modo **soft** nunca bloquea y siempre permite la lectura; el modo **strict** bloquea la *primera* lectura de archivo de cada sesión (por boot/PWD) para que el agente consulte primero `sv_mem_search`/`sv_graph_query`. El bloqueo solo existe donde la plataforma lo soporta (Antigravity CLI); en Claude Code el modo strict es solo nudge y nunca bloquea. El modo strict es **fail-open**: si sv-memory no está inicializado (sin `.sv-memory/`), el binario no existe, o está `SV_MEMORY_STRICT_DISABLE=1`, el hook permite la lectura en lugar de bloquear al agente.
+
 ### 5. Reiniciar el Agente y Verificar
 
 Reinicia tu asistente de IA y confirma que todo quedó conectado:
 
 ```bash
-sv-memory permissions status --platform antigravity   # Granted: 30 / 30
+sv-memory permissions status --platform antigravity   # Granted: 28 / 28
 sv-memory hooks status                                # antigravity: ✅ installed
 sv-memory diagnose
 ```
