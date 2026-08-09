@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -135,6 +136,65 @@ func parseSemanticVerdict(output string) (relation, reason string, err error) {
 		return "", "", fmt.Errorf("agent returned invalid relation_type %q", relation)
 	}
 	return relation, reason, nil
+}
+
+// ResolveSemanticAgent returns the agent CLI to use for semantic judging: the
+// explicitly configured value wins, then $SV_MEMORY_SEMANTIC_AGENT, then the
+// "claude" default.
+func ResolveSemanticAgent(explicit string) string {
+	if explicit != "" {
+		return explicit
+	}
+	if env := os.Getenv("SV_MEMORY_SEMANTIC_AGENT"); env != "" {
+		return env
+	}
+	return "claude"
+}
+
+// SemanticConflictScanResult summarizes a semantic judging pass.
+type SemanticConflictScanResult struct {
+	Verdicts []*SemanticVerdict
+	Judged   int
+	Ignored  int
+	Failed   int
+}
+
+// JudgeConflictCandidates runs the semantic-judging workflow shared by the CLI
+// (`conflicts scan --semantic`) and the MCP tool (`sv_mem_conflicts action=scan
+// semantic=true`): falls back to still-pending candidates when none were just
+// surfaced, runs the agent judgments, and persists them when apply is true.
+// Callers format the returned verdicts; an empty Verdicts slice means there was
+// nothing to judge.
+func JudgeConflictCandidates(ctx context.Context, db *sql.DB, projectID string, candidates []*MemoryRelation, agent string, maxSemantic, concurrency int, apply bool) (*SemanticConflictScanResult, error) {
+	if len(candidates) == 0 {
+		pending, err := ListConflicts(db, projectID, "pending")
+		if err != nil {
+			return nil, err
+		}
+		candidates = pending
+	}
+	verdicts, err := SemanticJudgeCandidates(ctx, db, projectID, candidates, agent, maxSemantic, concurrency)
+	if err != nil {
+		return nil, err
+	}
+	res := &SemanticConflictScanResult{Verdicts: verdicts}
+	for _, v := range verdicts {
+		if v.Error != "" {
+			res.Failed++
+			continue
+		}
+		if v.Relation == SemanticNone {
+			res.Ignored++
+		} else {
+			res.Judged++
+		}
+		if apply {
+			if err := ApplySemanticVerdict(db, projectID, v); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return res, nil
 }
 
 // SemanticJudgeCandidates runs the configured agent over up to maxSemantic

@@ -61,10 +61,10 @@ func nullTime(t time.Time) interface{} {
 	return t
 }
 
-// truncateText shortens s to maxChars (by runes to avoid splitting UTF-8
+// TruncateText shortens s to maxChars (by runes to avoid splitting UTF-8
 // sequences) and appends a notice when it was cut, keeping compact renders
-// (Auto-Boot bundle, search expansion) token-efficient.
-func truncateText(s string, maxChars int) string {
+// (Auto-Boot bundle, search expansion, MCP responses) token-efficient.
+func TruncateText(s string, maxChars int) string {
 	if maxChars <= 0 || len([]rune(s)) <= maxChars {
 		return s
 	}
@@ -90,6 +90,18 @@ func sanitizeMemoryFields(mem *Memory) {
 	mem.SessionID = security.SanitizeText(mem.SessionID)
 	mem.TopicKey = security.SanitizeText(mem.TopicKey)
 }
+
+// memoryColumns is the shared SELECT column list for queries returning a full
+// Memory row (without review_after/pinned, which only GetMemory adds). Keep in
+// sync with scanMemories and the memories table schema.
+const memoryColumns = `id, project_id, category, what, why, where_path, learned,
+		git_branch, git_commit, author, impact, errors_faced, next_steps,
+		session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at`
+
+// compactColumns is the shared SELECT column list for the compact
+// (MemorySearchResult) queries: session, pinned, and scoped search.
+const compactColumns = `id, category, what,
+		topic_key, revision_count, duplicate_count, created_at`
 
 // memoryInsertArgs returns the ordered argument list matching
 // memoryInsertConflictQuery() column order. It must stay in sync with that

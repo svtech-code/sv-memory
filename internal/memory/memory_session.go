@@ -238,7 +238,7 @@ func writeBundleSection(sb *strings.Builder, db *sql.DB, projectID, title, query
 			continue
 		}
 		if withWhy {
-			why = truncateText(security.SanitizeText(why), bundleWhyChars)
+			why = TruncateText(security.SanitizeText(why), bundleWhyChars)
 			items = append(items, fmt.Sprintf("- **[%s] %s** (ID: %s)\n  *Why:* %s", strings.ToUpper(cat), security.SanitizeText(what), id, why))
 		} else {
 			items = append(items, fmt.Sprintf("- **[%s] %s** (ID: %s)", strings.ToUpper(cat), security.SanitizeText(what), id))

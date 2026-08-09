@@ -87,9 +87,13 @@ var configListCmd = &cobra.Command{
 		_, _ = config.LoadConfig(cwd)
 
 		fmt.Println("=== Active Configuration ===")
-		keys := []string{"default_db_path", "git_sync_enabled", "conflict_threshold", "default_review_limit"}
+		keys := []string{
+			"default_db_path", "git_sync_enabled", "conflict_threshold",
+			"default_review_limit", "auto_compaction_enabled",
+			"compaction_interval_minutes", "max_response_tokens",
+		}
 		for _, key := range keys {
-			fmt.Printf("  %-22s: %v\n", key, viper.Get(key))
+			fmt.Printf("  %-26s: %v\n", key, viper.Get(key))
 		}
 		return nil
 	},

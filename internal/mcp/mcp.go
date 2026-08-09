@@ -332,13 +332,11 @@ const similarCheckTimeout = 200 * time.Millisecond
 // search result, keeping the expanded section token-efficient.
 const searchExpandChars = 300
 
-// truncateField shortens a string to maxChars and appends a truncation
-// notice when the original length exceeds the limit.
+// truncateField shortens a string to maxChars with a truncation notice. It
+// delegates to memory.TruncateText (rune-safe) so all truncation in the tool
+// responses shares one implementation.
 func truncateField(s string, maxChars int) string {
-	if maxChars <= 0 || len(s) <= maxChars {
-		return s
-	}
-	return s[:maxChars] + fmt.Sprintf("... [truncated %d chars]", len(s)-maxChars)
+	return memory.TruncateText(s, maxChars)
 }
 
 // resolveTokenBudget returns the token budget for a tool response. An explicit

@@ -144,37 +144,27 @@ var conflictsScanCmd = &cobra.Command{
 		}
 
 		// Semantic mode: LLM-judge candidate pairs using the configured agent CLI.
-		agent, _ := cmd.Flags().GetString("agent")
-		if agent == "" {
-			agent = os.Getenv("SV_MEMORY_SEMANTIC_AGENT")
-		}
-		if agent == "" {
-			agent = "claude"
-		}
+		cmdAgent, _ := cmd.Flags().GetString("agent")
+		agent := memory.ResolveSemanticAgent(cmdAgent)
 		maxSemantic, _ := cmd.Flags().GetInt("max-semantic")
 		concurrency, _ := cmd.Flags().GetInt("concurrency")
 
-		candidates := found
-		if len(candidates) == 0 {
-			candidates, _ = memory.ListConflicts(database, cfg.ProjectID, "pending")
+		result, err := memory.JudgeConflictCandidates(context.Background(), database, cfg.ProjectID, found, agent, maxSemantic, concurrency, apply)
+		if err != nil {
+			return err
 		}
-		if len(candidates) == 0 {
+		if len(result.Verdicts) == 0 {
 			fmt.Println("No candidate conflicts to judge semantically. Run 'sv-memory conflicts scan --apply' first to surface candidates.")
 			return nil
 		}
 
 		fmt.Printf("Judging %d conflict candidate(s) with agent '%s' (max: %d, concurrency: %d)...\n",
-			len(candidates), agent, maxSemantic, concurrency)
-		verdicts, err := memory.SemanticJudgeCandidates(context.Background(), database, cfg.ProjectID, candidates, agent, maxSemantic, concurrency)
-		if err != nil {
-			return err
-		}
+			len(result.Verdicts), agent, maxSemantic, concurrency)
 
-		judged, ignored, failed := 0, 0, 0
+		judged, ignored, failed := result.Judged, result.Ignored, result.Failed
 		fmt.Println("\nSemantic judgments:")
-		for _, v := range verdicts {
+		for _, v := range result.Verdicts {
 			if v.Error != "" {
-				failed++
 				fmt.Printf("- ❌ %s vs %s: %s\n", v.SourceID, v.TargetID, v.Error)
 				continue
 			}
@@ -182,16 +172,8 @@ var conflictsScanCmd = &cobra.Command{
 			icon := "🔀"
 			if v.Relation == memory.SemanticNone {
 				icon = "➖"
-				ignored++
-			} else {
-				judged++
 			}
 			fmt.Printf("- %s **%s** %s ↔ %s (score %.2f)\n  Reason: %s\n", icon, label, v.SourceID, v.TargetID, v.Score, v.Reason)
-			if apply {
-				if err := memory.ApplySemanticVerdict(database, cfg.ProjectID, v); err != nil {
-					return err
-				}
-			}
 		}
 
 		if failed > 0 {

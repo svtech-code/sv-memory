@@ -12,9 +12,7 @@ import (
 )
 
 func SearchMemoriesBySessionCompact(db *sql.DB, projectID, sessionID string, limit int) ([]*MemorySearchResult, error) {
-	query := `
-	SELECT id, category, what,
-		topic_key, revision_count, duplicate_count, created_at
+	query := "SELECT " + compactColumns + `
 	FROM memories WHERE project_id = ? AND session_id = ? AND deleted_at IS NULL
 	ORDER BY created_at ASC`
 	var args []interface{}
@@ -39,9 +37,7 @@ func SearchMemoriesCompact(db *sql.DB, projectID string, searchTerm string, cate
 // created first. Pinned memories surface first in session context so key
 // decisions stay visible regardless of session recency.
 func SearchPinnedMemories(db *sql.DB, projectID string, limit int) ([]*MemorySearchResult, error) {
-	query := `
-	SELECT id, category, what,
-		topic_key, revision_count, duplicate_count, created_at
+	query := "SELECT " + compactColumns + `
 	FROM memories
 	WHERE project_id = ? AND pinned = 1 AND deleted_at IS NULL
 	ORDER BY created_at DESC`
@@ -69,9 +65,7 @@ func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string
 	var args []interface{}
 
 	if searchTerm == "" {
-		query = `
-		SELECT id, category, what,
-			topic_key, revision_count, duplicate_count, created_at
+		query = "SELECT " + compactColumns + `
 		FROM memories
 		WHERE project_id = ? AND deleted_at IS NULL
 		`
@@ -328,10 +322,7 @@ func SearchMemoriesScoped(db *sql.DB, projectID string, searchTerm string, categ
 	var args []interface{}
 
 	if searchTerm == "" {
-		query = `
-		SELECT id, project_id, category, what, why, where_path, learned,
-			git_branch, git_commit, author, impact, errors_faced, next_steps,
-			session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at
+		query = "SELECT " + memoryColumns + `
 		FROM memories
 		WHERE project_id = ? AND deleted_at IS NULL
 		`

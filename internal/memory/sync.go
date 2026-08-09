@@ -39,13 +39,8 @@ func countMemories(db *sql.DB, projectID string) (int, error) {
 }
 
 func searchAllMemories(db *sql.DB, projectID string) ([]*Memory, error) {
-	rows, err := db.Query(`
-		SELECT id, project_id, category, what, why, where_path, learned,
-			git_branch, git_commit, author, impact, errors_faced, next_steps,
-			session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at
-		FROM memories WHERE project_id = ? AND deleted_at IS NULL
-		ORDER BY created_at ASC
-	`, projectID)
+	rows, err := db.Query("SELECT "+memoryColumns+
+		" FROM memories WHERE project_id = ? AND deleted_at IS NULL ORDER BY created_at ASC", projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -58,15 +53,11 @@ func searchAllMemories(db *sql.DB, projectID string) ([]*Memory, error) {
 // instead of the whole set. New inserts are found via created_at; topic-key
 // updates and duplicate touches advance last_seen_at, which is also checked.
 func searchChangedMemories(db *sql.DB, projectID string, lastSync time.Time) ([]*Memory, error) {
-	rows, err := db.Query(`
-		SELECT id, project_id, category, what, why, where_path, learned,
-			git_branch, git_commit, author, impact, errors_faced, next_steps,
-			session_id, topic_key, revision_count, duplicate_count, last_seen_at, normalized_hash, created_at
-		FROM memories WHERE project_id = ? AND deleted_at IS NULL AND (
-			created_at > ? OR (last_seen_at IS NOT NULL AND last_seen_at > ?)
-		)
-		ORDER BY created_at ASC
-	`, projectID, lastSync.Format("2006-01-02 15:04:05"), lastSync.Format("2006-01-02 15:04:05"))
+	rows, err := db.Query("SELECT "+memoryColumns+
+		" FROM memories WHERE project_id = ? AND deleted_at IS NULL AND ("+
+		"created_at > ? OR (last_seen_at IS NOT NULL AND last_seen_at > ?)"+
+		") ORDER BY created_at ASC",
+		projectID, lastSync.Format("2006-01-02 15:04:05"), lastSync.Format("2006-01-02 15:04:05"))
 	if err != nil {
 		return nil, err
 	}
