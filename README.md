@@ -37,17 +37,17 @@
 
 ## 🚀 Key Features
 
-| Category             | Feature                    | Description                                                                                               |
-| :------------------- | :------------------------- | :-------------------------------------------------------------------------------------------------------- |
-| 🧠 **Memory**        | **FTS5 BM25 & Scoping**    | SQLite Full-Text Search with BM25 relevance ranking and path-scoped directory filtering.                  |
-| ⚡ **Autonomy**      | **Auto-Boot Context**      | `sv_mem_session_start` delivers previous session summaries, key decisions, and top graph hubs in 1 tool call.              |
-| 🧹 **Maintenance**   | **Auto-Compaction Worker** | `sv_mem_compact` consolidates historical topic key revisions to keep storage ultra-lean.                  |
-| 🕸️ **Graph**         | **Sub-ms LRU Cache**       | Parses 17 languages, Leiden communities, god nodes & bridge nodes with `<1ms` mtime-validated RAM cache. |
-| 🔍 **Diagnostics**   | **Graph Health Gate**      | `DiagnoseGraph` detects dangling edges, orphan nodes, and unlinked Markdown/SQL AST entities.             |
-| 🎨 **Interfaces**    | **Interactive TUI**        | Terminal User Interface (`sv-memory tui`) for memory inspection, search, and graph diagnostics.           |
-| 📦 **Export**        | **Obsidian & Cypher**      | Exports to linked Markdown Obsidian Vaults (`[[wikilinks]]`) and Neo4j / FalkorDB Cypher scripts.         |
+| Category             | Feature                    | Description                                                                                                                             |
+| :------------------- | :------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------- |
+| 🧠 **Memory**        | **FTS5 BM25 & Scoping**    | SQLite Full-Text Search with BM25 relevance ranking and path-scoped directory filtering.                                                |
+| ⚡ **Autonomy**      | **Auto-Boot Context**      | `sv_mem_session_start` delivers previous session summaries, key decisions, and top graph hubs in 1 tool call.                           |
+| 🧹 **Maintenance**   | **Auto-Compaction Worker** | `sv_mem_compact` consolidates historical topic key revisions to keep storage ultra-lean.                                                |
+| 🕸️ **Graph**         | **Sub-ms LRU Cache**       | Parses 17 languages, Leiden communities, god nodes & bridge nodes with `<1ms` mtime-validated RAM cache.                                |
+| 🔍 **Diagnostics**   | **Graph Health Gate**      | `DiagnoseGraph` detects dangling edges, orphan nodes, and unlinked Markdown/SQL AST entities.                                           |
+| 🎨 **Interfaces**    | **Interactive TUI**        | Terminal User Interface (`sv-memory tui`) for memory inspection, search, and graph diagnostics.                                         |
+| 📦 **Export**        | **Obsidian & Cypher**      | Exports to linked Markdown Obsidian Vaults (`[[wikilinks]]`) and Neo4j / FalkorDB Cypher scripts.                                       |
 | 🔄 **Collaboration** | **Git Sync Chunks**        | Git sync via `.sv-memory/chunks/{id}.json` files per memory — conflict-free for distinct IDs; same-ID edits surface resolvable markers. |
-| 🛡️ **Integration**   | **PreToolUse Hooks**       | Intercepts raw file reads in Claude Code, Antigravity CLI (agy), and OpenCode to query memory first.      |
+| 🛡️ **Integration**   | **PreToolUse Hooks**       | Intercepts raw file reads in Claude Code, Antigravity CLI (agy), and OpenCode to query memory first.                                    |
 
 ---
 
@@ -94,7 +94,7 @@ flowchart TD
 
 ### 1. Installation
 
-**Prebuilt binary (recommended)** — a single self-contained binary for macOS, Linux, and Windows:
+**Prebuilt binary (recommended)** a single self-contained binary for macOS, Linux, and Windows:
 
 ```bash
 # macOS / Linux
@@ -105,7 +105,7 @@ iwr -useb https://raw.githubusercontent.com/svtech-code/sv-memory/main/install.p
 ```
 
 > The installer verifies the downloaded binary against the release's SHA-256
-> `checksums.txt` — a mismatched hash aborts the installation.
+> `checksums.txt` a mismatched hash aborts the installation.
 
 > On macOS/Linux the binary is installed to `$HOME/.local/bin` (no `sudo` needed).
 > On Windows it is installed to `%LOCALAPPDATA%\sv-memory` and added to your user PATH.
@@ -157,7 +157,7 @@ sv-memory hooks install --platform antigravity
 sv-memory hooks install --platform antigravity --strict
 ```
 
-**Hook modes and degradation:** the hook scripts never call the sv-memory server — they are lightweight shell nudges that only inspect local files. **Soft** mode never blocks and always allows the read; **strict** blocks the *first* file read of each session (per boot/PWD) so the agent must consult `sv_mem_search`/`sv_graph_query` first. Blocking is only implemented where the platform supports it (Antigravity CLI); on Claude Code, strict mode is nudge-only and never blocks. Strict is **fail-open**: if sv-memory is not initialized (no `.sv-memory/`), the binary is missing, or `SV_MEMORY_STRICT_DISABLE=1` is set, the hook allows the read instead of deadlocking the agent.
+**Hook modes and degradation:** the hook scripts never call the sv-memory server they are lightweight shell nudges that only inspect local files. **Soft** mode never blocks and always allows the read; **strict** blocks the _first_ file read of each session (per boot/PWD) so the agent must consult `sv_mem_search`/`sv_graph_query` first. Blocking is only implemented where the platform supports it (Antigravity CLI); on Claude Code, strict mode is nudge-only and never blocks. Strict is **fail-open**: if sv-memory is not initialized (no `.sv-memory/`), the binary is missing, or `SV_MEMORY_STRICT_DISABLE=1` is set, the hook allows the read instead of deadlocking the agent.
 
 ### 5. Restart the Agent & Verify
 
@@ -318,7 +318,7 @@ sv-memory syncs your SQLite store (local per clone) with `.sv-memory/chunks/{id}
 files committed to Git, so a team shares architectural context across clones. Because
 each memory lives in its own file, agents editing **different** memories never conflict.
 
-**Same-memory edits are *not* zero-conflict.** When two clones edit the *same* memory
+**Same-memory edits are _not_ zero-conflict.** When two clones edit the _same_ memory
 ID (typically via topic-key upserts), Git produces conflict markers inside `{id}.json`:
 
 ```json
@@ -330,6 +330,7 @@ ID (typically via topic-key upserts), Git produces conflict markers inside `{id}
 ```
 
 What happens on `sv-memory sync` / auto-import:
+
 - A chunk with unresolved conflict markers (or any unparseable JSON) is **skipped with
   a warning**; the rest of the chunks still import. It does **not** abort the whole sync.
 - When a pulled chunk would overwrite a local version that is **newer** (higher
@@ -349,7 +350,7 @@ sv-memory is designed not to persist credentials, API keys, or `.env` contents.
 
 - **Secret redaction:** every memory text field is scanned by `SanitizeText` (OpenAI `sk-…`,
   Anthropic `sk-ant-…`, Google `AIzaSy…`, JWTs, PEM/private keys, DB connection strings, and
-  generic `password=…`/`token=…` assignments) **before** being written to SQLite — on the
+  generic `password=…`/`token=…` assignments) **before** being written to SQLite on the
   normal save path, on imports (`sv-memory import`, git chunk sync), and on session summaries.
   The redaction is re-applied on read and on every export so sanitized values stay sanitized.
 - **Graph:** `.env`, `*.pem`, `*.key`, `id_rsa`, and `credentials` files are never indexed

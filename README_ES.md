@@ -37,17 +37,17 @@
 
 ## 🚀 Características Clave
 
-| Categoría            | Característica             | Descripción                                                                                                             |
-| :------------------- | :------------------------- | :---------------------------------------------------------------------------------------------------------------------- |
-| 🧠 **Memoria**       | **FTS5 BM25 & Scoping**    | Búsqueda de texto completo SQLite con clasificación BM25 y filtrado restringido por subdirectorio.                      |
-| ⚡ **Autonomía**     | **Auto-Boot Context**      | `sv_mem_session_start` entrega el resumen de la sesión anterior, decisiones clave y hubs del grafo en 1 sola llamada.   |
-| 🧹 **Mantenimiento** | **Auto-Compaction Worker** | `sv_mem_compact` consolida revisiones históricas de topic keys para mantener la BD liviana.                             |
-| 🕸️ **Grafo**         | **Caché LRU Sub-ms**       | Parsea 17 lenguajes, comunidades Leiden, nodos god y nodos puente con caché RAM `<1ms` validado por mtime.             |
-| 🔍 **Diagnóstico**   | **Diagnóstico de Grafo**   | `DiagnoseGraph` detecta enlaces rotos, nodos huérfanos y entidades AST no vinculadas.                                   |
-| 🎨 **Interfaz**      | **TUI Interactiva**        | Interfaz de Usuario en Terminal (`sv-memory tui`) para inspección, búsqueda BM25 y diagnósticos.                        |
-| 📦 **Exportación**   | **Obsidian & Cypher**      | Exporta a notas Markdown vinculadas de Obsidian (`[[wikilinks]]`) y scripts Cypher para Neo4j / FalkorDB.               |
+| Categoría            | Característica             | Descripción                                                                                                                                                                    |
+| :------------------- | :------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🧠 **Memoria**       | **FTS5 BM25 & Scoping**    | Búsqueda de texto completo SQLite con clasificación BM25 y filtrado restringido por subdirectorio.                                                                             |
+| ⚡ **Autonomía**     | **Auto-Boot Context**      | `sv_mem_session_start` entrega el resumen de la sesión anterior, decisiones clave y hubs del grafo en 1 sola llamada.                                                          |
+| 🧹 **Mantenimiento** | **Auto-Compaction Worker** | `sv_mem_compact` consolida revisiones históricas de topic keys para mantener la BD liviana.                                                                                    |
+| 🕸️ **Grafo**         | **Caché LRU Sub-ms**       | Parsea 17 lenguajes, comunidades Leiden, nodos god y nodos puente con caché RAM `<1ms` validado por mtime.                                                                     |
+| 🔍 **Diagnóstico**   | **Diagnóstico de Grafo**   | `DiagnoseGraph` detecta enlaces rotos, nodos huérfanos y entidades AST no vinculadas.                                                                                          |
+| 🎨 **Interfaz**      | **TUI Interactiva**        | Interfaz de Usuario en Terminal (`sv-memory tui`) para inspección, búsqueda BM25 y diagnósticos.                                                                               |
+| 📦 **Exportación**   | **Obsidian & Cypher**      | Exporta a notas Markdown vinculadas de Obsidian (`[[wikilinks]]`) y scripts Cypher para Neo4j / FalkorDB.                                                                      |
 | 🔄 **Colaboración**  | **Git Sync Chunks**        | Sincronización Git mediante archivos `.sv-memory/chunks/{id}.json` por memoria — sin conflictos para IDs distintos; las ediciones del mismo ID producen marcadores resolubles. |
-| 🛡️ **Integración**   | **Hooks PreToolUse**       | Intercepta lecturas raw de archivos en Claude Code, Antigravity CLI (agy) y OpenCode para consultar la memoria primero. |
+| 🛡️ **Integración**   | **Hooks PreToolUse**       | Intercepta lecturas raw de archivos en Claude Code, Antigravity CLI (agy) y OpenCode para consultar la memoria primero.                                                        |
 
 ---
 
@@ -94,7 +94,7 @@ flowchart TD
 
 ### 1. Instalación
 
-**Binario precompilado (recomendado)** — un único binario autocontenido para macOS, Linux y Windows:
+**Binario precompilado (recomendado)** un único binario autocontenido para macOS, Linux y Windows:
 
 ```bash
 # macOS / Linux
@@ -105,7 +105,7 @@ iwr -useb https://raw.githubusercontent.com/svtech-code/sv-memory/main/install.p
 ```
 
 > El instalador verifica el binario descargado contra el `checksums.txt` SHA-256
-> de la release — un hash que no coincida aborta la instalación.
+> de la release un hash que no coincida aborta la instalación.
 
 > En macOS/Linux el binario se instala en `$HOME/.local/bin` (sin `sudo`).
 > En Windows se instala en `%LOCALAPPDATA%\sv-memory` y se agrega al PATH del usuario.
@@ -157,7 +157,7 @@ sv-memory hooks install --platform antigravity
 sv-memory hooks install --platform antigravity --strict
 ```
 
-**Modos de hook y degradación:** los scripts de hook nunca llaman al servidor sv-memory — son nudges ligeros de shell que solo inspeccionan archivos locales. El modo **soft** nunca bloquea y siempre permite la lectura; el modo **strict** bloquea la *primera* lectura de archivo de cada sesión (por boot/PWD) para que el agente consulte primero `sv_mem_search`/`sv_graph_query`. El bloqueo solo existe donde la plataforma lo soporta (Antigravity CLI); en Claude Code el modo strict es solo nudge y nunca bloquea. El modo strict es **fail-open**: si sv-memory no está inicializado (sin `.sv-memory/`), el binario no existe, o está `SV_MEMORY_STRICT_DISABLE=1`, el hook permite la lectura en lugar de bloquear al agente.
+**Modos de hook y degradación:** los scripts de hook nunca llaman al servidor sv-memory son nudges ligeros de shell que solo inspeccionan archivos locales. El modo **soft** nunca bloquea y siempre permite la lectura; el modo **strict** bloquea la _primera_ lectura de archivo de cada sesión (por boot/PWD) para que el agente consulte primero `sv_mem_search`/`sv_graph_query`. El bloqueo solo existe donde la plataforma lo soporta (Antigravity CLI); en Claude Code el modo strict es solo nudge y nunca bloquea. El modo strict es **fail-open**: si sv-memory no está inicializado (sin `.sv-memory/`), el binario no existe, o está `SV_MEMORY_STRICT_DISABLE=1`, el hook permite la lectura en lugar de bloquear al agente.
 
 ### 5. Reiniciar el Agente y Verificar
 
@@ -181,39 +181,39 @@ sv-memory tui
 
 ## 💻 Referencia de Comandos CLI
 
-| Comando                            | Categoría       | Descripción                                                                                           |
-| :--------------------------------- | :-------------- | :---------------------------------------------------------------------------------------------------- |
-| `sv-memory init`                   | **Proyecto**    | Inicializa el repositorio, escanea el grafo de dependencias e inyecta `AGENTS.md`.                    |
-| `sv-memory version`                | **Información** | Muestra la versión actual, el hash del commit y el runtime de Go.                                    |
-| `sv-memory update`                 | **Mantenimiento** | Busca nuevas releases, verifica el checksum del binario (SHA-256) y se auto-actualiza.              |
-| `sv-memory mcp`                    | **Servidor**    | Inicia el servidor Model Context Protocol sobre stdio para clientes de IA.                            |
-| `sv-memory tui`                    | **Interfaz**    | Inicia la interfaz interactiva de terminal para explorar memorias y diagnósticos.                     |
-| `sv-memory configure`              | **Instalación** | Asistente interactivo en terminal para configurar Cursor, Claude Code, agy, Zed, etc.                 |
-| `sv-memory configure get/set/list` | **Instalación** | Lee/escribe valores de configuración YAML global o por proyecto (`--local`).                          |
-| `sv-memory sync`                   | **Git Sync**    | Sincronización bidireccional entre la BD SQLite y `.sv-memory/chunks/*.json`.                         |
-| `sv-memory diagnose`               | **Diagnóstico** | Verifica conexiones SQLite, integridad de esquema, permisos de escritura y rutas.                     |
-| `sv-memory stats`                  | **Analítica**   | Muestra conteos de memorias, guardados en 24h, sesiones activas y relaciones.                         |
-| `sv-memory export [archivo]`       | **Exportación** | Exporta las memorias no eliminadas del proyecto a un archivo JSON portátil.                           |
-| `sv-memory import <archivo>`       | **Importación** | Importa memorias desde un archivo JSON usando upsert por ID.                                          |
-| `sv-memory delete session <id>`    | **Mantenimiento** | Elimina una sesión vacía (falla si contiene memorias).                                              |
-| `sv-memory delete project <id>`    | **Mantenimiento** | Elimina en cascada los datos de un proyecto (`--hard` los borra permanentemente).                    |
-| `sv-memory projects list`          | **Proyecto**    | Lista todos los proyectos registrados con conteos de memorias/sesiones.                              |
-| `sv-memory projects prune`         | **Proyecto**    | Elimina proyectos vacíos del registro central.                                                       |
-| `sv-memory projects consolidate`   | **Proyecto**    | Fusiona los datos de un proyecto origen en uno destino y luego limpia el origen.                     |
-| `sv-memory graph rebuild`          | **Grafo**       | Fuerza un re-escaneo completo del árbol de archivos y actualiza las tablas del grafo.                 |
-| `sv-memory graph path <src> <tgt>` | **Grafo**       | Encuentra la ruta de dependencia más corta entre dos nodos de código (hasta 10 saltos).               |
-| `sv-memory graph explain <nodo>`   | **Grafo**       | Muestra fan-in/fan-out, centralidad y metadatos de un símbolo o archivo.                              |
-| `sv-memory graph communities`      | **Grafo**       | Detecta comunidades Leiden, nodos god y nodos puente.                                                 |
-| `sv-memory graph wiki`             | **Exportación** | Genera páginas wiki en Markdown por cada comunidad Leiden.                                            |
-| `sv-memory graph viz`              | **Exportación** | Genera una visualización HTML interactiva (`vis.js`).                                                 |
-| `sv-memory graph merge <a> <b>`    | **Grafo**       | Union-merge de dos grafos de proyecto en un snapshot JSON.                                            |
-| `sv-memory obsidian-export`        | **Exportación** | Exporta memorias a una bóveda de notas Markdown de Obsidian (`[[wikilinks]]`).                        |
-| `sv-memory conflicts`              | **Memoria**     | Detecta superposiciones semánticas y conflictos entre memorias del proyecto.                          |
-| `sv-memory hooks install`          | **Hooks**       | Instala hooks PreToolUse para Claude Code, Antigravity CLI y OpenCode.                                |
-| `sv-memory permissions list`       | **Permisos**    | Lista las 28 herramientas MCP de sv-memory con descripciones.                                         |
-| `sv-memory permissions status`     | **Permisos**    | Muestra permisos MCP otorgados/faltantes por plataforma.                                              |
-| `sv-memory permissions grant`      | **Permisos**    | Escribe allow-lists de herramientas MCP (`--all`/`--tool`, `--dry-run`) para Antigravity/Claude Code. |
-| `sv-memory permissions revoke`     | **Permisos**    | Elimina entradas de sv-memory de la allow-list conservando permisos no relacionados.                  |
+| Comando                            | Categoría         | Descripción                                                                                           |
+| :--------------------------------- | :---------------- | :---------------------------------------------------------------------------------------------------- |
+| `sv-memory init`                   | **Proyecto**      | Inicializa el repositorio, escanea el grafo de dependencias e inyecta `AGENTS.md`.                    |
+| `sv-memory version`                | **Información**   | Muestra la versión actual, el hash del commit y el runtime de Go.                                     |
+| `sv-memory update`                 | **Mantenimiento** | Busca nuevas releases, verifica el checksum del binario (SHA-256) y se auto-actualiza.                |
+| `sv-memory mcp`                    | **Servidor**      | Inicia el servidor Model Context Protocol sobre stdio para clientes de IA.                            |
+| `sv-memory tui`                    | **Interfaz**      | Inicia la interfaz interactiva de terminal para explorar memorias y diagnósticos.                     |
+| `sv-memory configure`              | **Instalación**   | Asistente interactivo en terminal para configurar Cursor, Claude Code, agy, Zed, etc.                 |
+| `sv-memory configure get/set/list` | **Instalación**   | Lee/escribe valores de configuración YAML global o por proyecto (`--local`).                          |
+| `sv-memory sync`                   | **Git Sync**      | Sincronización bidireccional entre la BD SQLite y `.sv-memory/chunks/*.json`.                         |
+| `sv-memory diagnose`               | **Diagnóstico**   | Verifica conexiones SQLite, integridad de esquema, permisos de escritura y rutas.                     |
+| `sv-memory stats`                  | **Analítica**     | Muestra conteos de memorias, guardados en 24h, sesiones activas y relaciones.                         |
+| `sv-memory export [archivo]`       | **Exportación**   | Exporta las memorias no eliminadas del proyecto a un archivo JSON portátil.                           |
+| `sv-memory import <archivo>`       | **Importación**   | Importa memorias desde un archivo JSON usando upsert por ID.                                          |
+| `sv-memory delete session <id>`    | **Mantenimiento** | Elimina una sesión vacía (falla si contiene memorias).                                                |
+| `sv-memory delete project <id>`    | **Mantenimiento** | Elimina en cascada los datos de un proyecto (`--hard` los borra permanentemente).                     |
+| `sv-memory projects list`          | **Proyecto**      | Lista todos los proyectos registrados con conteos de memorias/sesiones.                               |
+| `sv-memory projects prune`         | **Proyecto**      | Elimina proyectos vacíos del registro central.                                                        |
+| `sv-memory projects consolidate`   | **Proyecto**      | Fusiona los datos de un proyecto origen en uno destino y luego limpia el origen.                      |
+| `sv-memory graph rebuild`          | **Grafo**         | Fuerza un re-escaneo completo del árbol de archivos y actualiza las tablas del grafo.                 |
+| `sv-memory graph path <src> <tgt>` | **Grafo**         | Encuentra la ruta de dependencia más corta entre dos nodos de código (hasta 10 saltos).               |
+| `sv-memory graph explain <nodo>`   | **Grafo**         | Muestra fan-in/fan-out, centralidad y metadatos de un símbolo o archivo.                              |
+| `sv-memory graph communities`      | **Grafo**         | Detecta comunidades Leiden, nodos god y nodos puente.                                                 |
+| `sv-memory graph wiki`             | **Exportación**   | Genera páginas wiki en Markdown por cada comunidad Leiden.                                            |
+| `sv-memory graph viz`              | **Exportación**   | Genera una visualización HTML interactiva (`vis.js`).                                                 |
+| `sv-memory graph merge <a> <b>`    | **Grafo**         | Union-merge de dos grafos de proyecto en un snapshot JSON.                                            |
+| `sv-memory obsidian-export`        | **Exportación**   | Exporta memorias a una bóveda de notas Markdown de Obsidian (`[[wikilinks]]`).                        |
+| `sv-memory conflicts`              | **Memoria**       | Detecta superposiciones semánticas y conflictos entre memorias del proyecto.                          |
+| `sv-memory hooks install`          | **Hooks**         | Instala hooks PreToolUse para Claude Code, Antigravity CLI y OpenCode.                                |
+| `sv-memory permissions list`       | **Permisos**      | Lista las 28 herramientas MCP de sv-memory con descripciones.                                         |
+| `sv-memory permissions status`     | **Permisos**      | Muestra permisos MCP otorgados/faltantes por plataforma.                                              |
+| `sv-memory permissions grant`      | **Permisos**      | Escribe allow-lists de herramientas MCP (`--all`/`--tool`, `--dry-run`) para Antigravity/Claude Code. |
+| `sv-memory permissions revoke`     | **Permisos**      | Elimina entradas de sv-memory de la allow-list conservando permisos no relacionados.                  |
 
 ---
 
@@ -320,7 +320,7 @@ commiteados en Git, de modo que el equipo comparte el contexto arquitectónico e
 Como cada memoria vive en su propio archivo, los agentes que editan **memorias distintas**
 nunca entran en conflicto.
 
-**Editar la *misma* memoria no es zero-conflict.** Cuando dos clones editan la misma memoria
+**Editar la _misma_ memoria no es zero-conflict.** Cuando dos clones editan la misma memoria
 (típicamente vía topic-key upserts), Git deja marcadores de conflicto dentro de `{id}.json`:
 
 ```json
@@ -332,6 +332,7 @@ nunca entran en conflicto.
 ```
 
 Qué ocurre en `sv-memory sync` / auto-importación:
+
 - Un chunk con marcadores de conflicto sin resolver (o cualquier JSON ilegible) se **omite con
   un warning**; el resto de los chunks sí se importa. No aborta todo el sync.
 - Cuando un chunk traído por pull sobreescribiría una versión local **más nueva** (mayor
@@ -353,7 +354,7 @@ sv-memory está diseñado para no persistir credenciales, claves de API ni conte
 - **Redacción de secretos:** todo campo de texto de una memoria es escaneado por `SanitizeText`
   (claves de OpenAI `sk-…`, Anthropic `sk-ant-…`, Google `AIzaSy…`, JWTs, claves privadas PEM,
   cadenas de conexión a BD y asignaciones genéricas `password=…`/`token=…`) **antes** de
-  escribirse en SQLite — tanto en el guardado normal, como en importaciones (`sv-memory import`,
+  escribirse en SQLite tanto en el guardado normal, como en importaciones (`sv-memory import`,
   sync de chunks de git) y en los resúmenes de sesión. La redacción se re-aplica en lectura y en
   cada exportación para que los valores saneados permanezcan saneados.
 - **Grafo:** los archivos `.env`, `*.pem`, `*.key`, `id_rsa` y `credentials` nunca se indexan

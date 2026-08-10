@@ -11,11 +11,12 @@ Esta guía explica paso a paso cómo instalar **sv-memory**, configurarlo en tu 
 ## 🎯 ¿Por qué usar sv-memory?
 
 Cuando trabajas con asistentes de IA en repositorios medianos o grandes, suceden tres problemas recurrentes:
+
 1. **Amnesia de Sesión:** La IA olvida las decisiones arquitectónicas tomadas en sesiones anteriores.
 2. **Desperdicio de Tokens:** La IA necesita leer decenas de archivos fuente una y otra vez para entender la estructura del código.
 3. **Falta de Continuidad:** Las decisiones técnicas quedan atrapadas en chats individuales en lugar de compartirse con el equipo.
 
-**sv-memory** resuelve esto combinando **memorias persistentes indexadas con SQLite FTS5 BM25** y un **grafo de dependencias estructural de código** expuesto a través de 28 herramientas MCP (*Model Context Protocol*).
+**sv-memory** resuelve esto combinando **memorias persistentes indexadas con SQLite FTS5 BM25** y un **grafo de dependencias estructural de código** expuesto a través de 28 herramientas MCP (_Model Context Protocol_).
 
 ---
 
@@ -36,7 +37,8 @@ flowchart TD
 
 El ejecutable de `sv-memory` es un binario único en Go, completamente autocontenido y sin dependencias externas (usa SQLite integrado en puro Go).
 
-#### Instalación con binario precompilado (recomendada):
+#### Instalación con binario precompilado (recomendada)
+
 ```bash
 # macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/svtech-code/sv-memory/main/install.sh | bash
@@ -45,7 +47,8 @@ curl -fsSL https://raw.githubusercontent.com/svtech-code/sv-memory/main/install.
 iwr -useb https://raw.githubusercontent.com/svtech-code/sv-memory/main/install.ps1 | iex
 ```
 
-#### Compilación desde código fuente:
+#### Compilación desde código fuente
+
 ```bash
 # 1. Clonar el repositorio
 git clone https://github.com/svtech-code/sv-memory.git
@@ -62,10 +65,10 @@ mv sv-memory ~/.local/bin/
 sv-memory --help
 ```
 
-> **¿Por qué este paso?** 
+> **¿Por qué este paso?**
 > Al ubicar el ejecutable en `~/.local/bin/` (una ruta estándar del PATH de usuario), cualquier herramienta de terminal o editor de código en tu sistema podrá invocar `sv-memory mcp` o ejecutar comandos de diagnóstico sin importar en qué directorio te encuentres. El instalador automático (`install.sh` / `install.ps1`) hace este paso por ti sin requerir `sudo`.
 
-#### Actualizar sv-memory:
+#### Actualizar sv-memory
 
 ```bash
 sv-memory update
@@ -79,7 +82,7 @@ El comando busca la última release publicada en GitHub, la compara con tu versi
 3. **Verifica su checksum SHA-256** contra el publicado en la release (protección contra descargas corruptas o manipuladas).
 4. Reemplaza el binario de forma atómica (en Windows te indica el comando manual, porque no puede sobrescribir un `.exe` en ejecución).
 
-> Tus memorias (BD SQLite en `~/.config/sv-memory/`) y la configuración de tus editores no se ven afectadas al actualizar — solo se reemplaza el binario.
+> Tus memorias (BD SQLite en `~/.config/sv-memory/`) y la configuración de tus editores no se ven afectadas al actualizar solo se reemplaza el binario.
 
 ---
 
@@ -92,6 +95,7 @@ sv-memory configure
 ```
 
 #### ¿Qué hace este comando?
+
 El asistente te guiará a través de fases interactivas en la terminal, navegables con las flechas `↑/↓`, selección múltiple con `ESPACIO`, `Enter` para avanzar, `Esc` para retroceder y `Ctrl+C` para salir:
 
 1. **Fase 1 (Editores GUI):** Te permite seleccionar editores como **Cursor**, **VS Code**, **Zed** o **Windsurf**. Registra automáticamente el servidor MCP en sus archivos de configuración de usuario (ej. `claude_desktop_config.json` o settings de Cursor).
@@ -114,6 +118,7 @@ sv-memory init
 ```
 
 #### ¿Qué sucede internamente al ejecutar `sv-memory init`?
+
 1. **Calcula el Project ID:** Deriva un identificador único basado en el hash del repositorio Git.
 2. **Registro en SQLite:** Registra el proyecto en la base de datos local SQLite (`~/.config/sv-memory/storage.db`).
 3. **Escaneo del Grafo de Código:** Analiza el árbol de archivos y construye el grafo inicial de dependencias (imports, nodos god, comunidades Leiden).
@@ -132,18 +137,19 @@ sv-memory hooks install --platform antigravity
 ```
 
 #### ¿Qué hace este comando?
+
 Crea `.agents/hooks.json` y `.agents/hooks/sv-memory.sh` para que el agente intercepte las lecturas de archivos (`view_file`, `grep_search`, `list_dir`) y consulte la memoria del proyecto antes de leer código a ciegas.
 
 Existen dos modos:
 
-| Modo | Comando | Comportamiento |
-| :--- | :--- | :--- |
-| **Soft** (por defecto) | `sv-memory hooks install --platform antigravity` | No bloquea nada. El "nudge" real lo hace el `AGENTS.md` inyectado en el Paso 3, que obliga al agente a consultar memoria. |
-| **Strict** | `sv-memory hooks install --platform antigravity --strict` | Bloquea la **primera** lectura de archivo de cada sesión, forzando al agente a ejecutar `sv_mem_search`/`sv_graph_query` antes de leer. |
+| Modo                   | Comando                                                   | Comportamiento                                                                                                                          |
+| :--------------------- | :-------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------- |
+| **Soft** (por defecto) | `sv-memory hooks install --platform antigravity`          | No bloquea nada. El "nudge" real lo hace el `AGENTS.md` inyectado en el Paso 3, que obliga al agente a consultar memoria.               |
+| **Strict**             | `sv-memory hooks install --platform antigravity --strict` | Bloquea la **primera** lectura de archivo de cada sesión, forzando al agente a ejecutar `sv_mem_search`/`sv_graph_query` antes de leer. |
 
 > Puedes cambiar de modo re-ejecutando el comando con o sin `--strict`.
 
-> **Degradación y fail-open:** los scripts de hook nunca llaman al servidor sv-memory — solo inspeccionan archivos locales y variables de entorno. Si sv-memory no está inicializado (sin `.sv-memory/`), el binario no está en el PATH, o está `SV_MEMORY_STRICT_DISABLE=1`, el modo strict **permite** la lectura en lugar de bloquearla, de modo que un sv-memory ausente o mal configurado nunca deje al agente atascado. Ten en cuenta que el *bloqueo* strict solo está implementado en Antigravity CLI; en Claude Code el modo strict es solo nudge (nunca bloquea).
+> **Degradación y fail-open:** los scripts de hook nunca llaman al servidor sv-memory solo inspeccionan archivos locales y variables de entorno. Si sv-memory no está inicializado (sin `.sv-memory/`), el binario no está en el PATH, o está `SV_MEMORY_STRICT_DISABLE=1`, el modo strict **permite** la lectura en lugar de bloquearla, de modo que un sv-memory ausente o mal configurado nunca deje al agente atascado. Ten en cuenta que el _bloqueo_ strict solo está implementado en Antigravity CLI; en Claude Code el modo strict es solo nudge (nunca bloquea).
 
 > **Por proyecto:** Repite este comando en cada repositorio donde trabajes con IA. Las plataformas soportadas son `claude-code`, `codex`, `antigravity` y `opencode` (omite `--platform` para instalarlo en todas).
 
@@ -167,6 +173,7 @@ sv-memory diagnose                                    # 17 pass, 0 failures
 Una vez completados los pasos anteriores, ya estás listo para trabajar.
 
 #### 🤖 1. Autonomía del Agente de IA (Transparente para ti)
+
 Al abrir tu editor (Cursor, Windsurf, Claude Code, etc.) y enviar cualquier mensaje o tarea a la IA:
 
 - **Arranque de Sesión (Auto-Boot Context Bundle):** El agente ejecuta de forma transparente `sv_mem_session_start`, recibiendo de inmediato las metas de la sesión anterior y los 3 principales hubs de código del repositorio.
@@ -175,6 +182,7 @@ Al abrir tu editor (Cursor, Windsurf, Claude Code, etc.) y enviar cualquier mens
 - **Guardado Automático:** Al resolver un problema o definir un estándar, la IA ejecuta `sv_mem_save` registrando el aprendizaje en SQLite y sincronizándolo en `.sv-memory/chunks/` para tu control de versiones en Git.
 
 #### 👤 2. Exploración e Inspección Humana en Terminal (`sv-memory tui`)
+
 Como desarrollador, puedes inspeccionar interactivamente el estado del conocimiento y la salud de tu proyecto ejecutando:
 
 ```bash
@@ -182,6 +190,7 @@ sv-memory tui
 ```
 
 Desde la interfaz TUI puedes:
+
 - **[1] Listar memorias recientes** clasificadas por categoría (`architecture`, `bugfix`, `decision`, etc.).
 - **[2] Buscar en memoria** con motor FTS5 BM25.
 - **[3] Inspeccionar detalles completos** de una decisión por su ID o Topic Key.
@@ -193,25 +202,25 @@ Desde la interfaz TUI puedes:
 
 ## 🛠️ Comandos de Referencia Rápida
 
-| Comando | Descripción | ¿Cuándo usarlo? |
-| :--- | :--- | :--- |
-| `sv-memory configure` | Asistente interactivo de instalación MCP (incluye Fase 4 de permisos) | Al instalar por primera vez o agregar un nuevo editor |
-| `sv-memory init` | Inicializa el proyecto actual y crea `AGENTS.md` | Al comenzar a trabajar en un nuevo repositorio |
-| `sv-memory hooks install` | Instala hooks PreToolUse para consultar memoria antes de leer archivos | Al configurar Claude Code, Antigravity CLI u OpenCode |
-| `sv-memory permissions grant` | Otorga herramientas MCP en la allow-list del agente (`--all` o `--tool`) | Cuando el agente pide permiso en cada llamada MCP |
-| `sv-memory permissions status` | Muestra permisos MCP otorgados/faltantes por plataforma | Para auditar el estado de permisos de los agentes |
-| `sv-memory permissions revoke` | Elimina los permisos MCP de sv-memory conservando el resto | Si quieres quitar accesos de un agente |
-| `sv-memory tui` | Interfaz gráfica en terminal para consultar memorias | Cuando quieras explorar decisiones pasadas interactivamente |
-| `sv-memory sync` | Sincroniza SQLite con archivos Git `.sv-memory/chunks/` | Antes de hacer `git commit` o tras hacer `git pull` |
-| `sv-memory diagnose` | Chequeo de salud del sistema, permisos y BD | Si experimentas algún problema de conexión con la IA |
-| `sv-memory graph viz` | Genera una visualización HTML del grafo de código | Para auditar visualmente la arquitectura de tu software |
-| `sv-memory obsidian-export` | Exporta memorias como notas vinculadas para Obsidian | Para integrar el conocimiento técnico en tu Obsidian personal |
+| Comando                        | Descripción                                                              | ¿Cuándo usarlo?                                               |
+| :----------------------------- | :----------------------------------------------------------------------- | :------------------------------------------------------------ |
+| `sv-memory configure`          | Asistente interactivo de instalación MCP (incluye Fase 4 de permisos)    | Al instalar por primera vez o agregar un nuevo editor         |
+| `sv-memory init`               | Inicializa el proyecto actual y crea `AGENTS.md`                         | Al comenzar a trabajar en un nuevo repositorio                |
+| `sv-memory hooks install`      | Instala hooks PreToolUse para consultar memoria antes de leer archivos   | Al configurar Claude Code, Antigravity CLI u OpenCode         |
+| `sv-memory permissions grant`  | Otorga herramientas MCP en la allow-list del agente (`--all` o `--tool`) | Cuando el agente pide permiso en cada llamada MCP             |
+| `sv-memory permissions status` | Muestra permisos MCP otorgados/faltantes por plataforma                  | Para auditar el estado de permisos de los agentes             |
+| `sv-memory permissions revoke` | Elimina los permisos MCP de sv-memory conservando el resto               | Si quieres quitar accesos de un agente                        |
+| `sv-memory tui`                | Interfaz gráfica en terminal para consultar memorias                     | Cuando quieras explorar decisiones pasadas interactivamente   |
+| `sv-memory sync`               | Sincroniza SQLite con archivos Git `.sv-memory/chunks/`                  | Antes de hacer `git commit` o tras hacer `git pull`           |
+| `sv-memory diagnose`           | Chequeo de salud del sistema, permisos y BD                              | Si experimentas algún problema de conexión con la IA          |
+| `sv-memory graph viz`          | Genera una visualización HTML del grafo de código                        | Para auditar visualmente la arquitectura de tu software       |
+| `sv-memory obsidian-export`    | Exporta memorias como notas vinculadas para Obsidian                     | Para integrar el conocimiento técnico en tu Obsidian personal |
 
 ---
 
 ## 📌 Mejores Prácticas recomendadas para Equipos
 
-1. **Incluye `.sv-memory/chunks/` en Git:** Permite que todo el equipo comparta las decisiones arquitectónicas. Los IDs de memoria distintos nunca entran en conflicto al hacer merge; si dos agentes editan la *misma* memoria, resuelve los marcadores de conflicto de `{id}.json` y vuelve a ejecutar `sv-memory sync`.
+1. **Incluye `.sv-memory/chunks/` en Git:** Permite que todo el equipo comparta las decisiones arquitectónicas. Los IDs de memoria distintos nunca entran en conflicto al hacer merge; si dos agentes editan la _misma_ memoria, resuelve los marcadores de conflicto de `{id}.json` y vuelve a ejecutar `sv-memory sync`.
 2. **Revisa los commits antes de subir:** `sv-memory` actualiza los JSON de memoria localmente, pero nunca ejecuta `git commit` o `git push` automáticamente.
 3. **Ejecuta `sv_mem_compact` periódicamente:** Si notas que un tema ha acumulado muchas revisiones, la IA o tú pueden ejecutar compactación para resumir el historial en una síntesis limpia.
 4. **Mantén los secretos fuera del grafo:** `.env`, claves y credenciales nunca se indexan, y el texto de las memorias se redacta al guardar/importar. Añade `SECRETS.md` y archivos similares a `.sv-memoryignore` para que tampoco se indexen.
