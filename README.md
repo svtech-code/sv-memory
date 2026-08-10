@@ -37,17 +37,17 @@
 
 ## 🚀 Key Features
 
-| Category             | Feature                    | Description                                                                                                                             |
-| :------------------- | :------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------- |
-| 🧠 **Memory**        | **FTS5 BM25 & Scoping**    | SQLite Full-Text Search with BM25 relevance ranking and path-scoped directory filtering.                                                |
-| ⚡ **Autonomy**      | **Auto-Boot Context**      | `sv_mem_session_start` delivers previous session summaries, key decisions, and top graph hubs in 1 tool call.                           |
-| 🧹 **Maintenance**   | **Auto-Compaction Worker** | `sv_mem_compact` consolidates historical topic key revisions to keep storage ultra-lean.                                                |
-| 🕸️ **Graph**         | **Sub-ms LRU Cache**       | Parses 17 languages, Leiden communities, god nodes & bridge nodes with `<1ms` mtime-validated RAM cache.                                |
-| 🔍 **Diagnostics**   | **Graph Health Gate**      | `DiagnoseGraph` detects dangling edges, orphan nodes, and unlinked Markdown/SQL AST entities.                                           |
-| 🎨 **Interfaces**    | **Interactive TUI**        | Terminal User Interface (`sv-memory tui`) for memory inspection, search, and graph diagnostics.                                         |
-| 📦 **Export**        | **Obsidian & Cypher**      | Exports to linked Markdown Obsidian Vaults (`[[wikilinks]]`) and Neo4j / FalkorDB Cypher scripts.                                       |
-| 🔄 **Collaboration** | **Git Sync Chunks**        | Git sync via `.sv-memory/chunks/{id}.json` files per memory — conflict-free for distinct IDs; same-ID edits surface resolvable markers. |
-| 🛡️ **Integration**   | **PreToolUse Hooks**       | Intercepts raw file reads in Claude Code, Antigravity CLI (agy), and OpenCode to query memory first.                                    |
+| Category             | Feature                    | Description                                                                                                                           |
+| :------------------- | :------------------------- | :------------------------------------------------------------------------------------------------------------------------------------ |
+| 🧠 **Memory**        | **FTS5 BM25 & Scoping**    | SQLite Full-Text Search with BM25 relevance ranking and path-scoped directory filtering.                                              |
+| ⚡ **Autonomy**      | **Auto-Boot Context**      | `sv_mem_session_start` delivers previous session summaries, key decisions, and top graph hubs in 1 tool call.                         |
+| 🧹 **Maintenance**   | **Auto-Compaction Worker** | `sv_mem_compact` consolidates historical topic key revisions to keep storage ultra-lean.                                              |
+| 🕸️ **Graph**         | **Sub-ms LRU Cache**       | Parses 17 languages, Leiden communities, god nodes & bridge nodes with `<1ms` mtime-validated RAM cache.                              |
+| 🔍 **Diagnostics**   | **Graph Health Gate**      | `DiagnoseGraph` detects dangling edges, orphan nodes, and unlinked Markdown/SQL AST entities.                                         |
+| 🎨 **Interfaces**    | **Interactive TUI**        | Terminal User Interface (`sv-memory tui`) for memory inspection, search, and graph diagnostics.                                       |
+| 📦 **Export**        | **Obsidian & Cypher**      | Exports to linked Markdown Obsidian Vaults (`[[wikilinks]]`) and Neo4j / FalkorDB Cypher scripts.                                     |
+| 🔄 **Collaboration** | **Git Sync Chunks**        | Git sync via `.sv-memory/chunks/{id}.json` files per memory conflict-free for distinct IDs; same-ID edits surface resolvable markers. |
+| 🛡️ **Integration**   | **PreToolUse Hooks**       | Intercepts raw file reads in Claude Code, Antigravity CLI (agy), and OpenCode to query memory first.                                  |
 
 ---
 
@@ -217,7 +217,7 @@ sv-memory tui
 
 ---
 
-## 🧩 Model Context Protocol (MCP) — 28 Tools
+## 🧩 Model Context Protocol (MCP) 28 Tools
 
 ### 🧠 Memory Tools
 
@@ -335,7 +335,7 @@ What happens on `sv-memory sync` / auto-import:
   a warning**; the rest of the chunks still import. It does **not** abort the whole sync.
 - When a pulled chunk would overwrite a local version that is **newer** (higher
   `revision_count`) or **diverged at the same revision**, a last-writer-wins warning is
-  logged — the git chunk wins, but the lost local edit is surfaced instead of silently
+  logged the git chunk wins, but the lost local edit is surfaced instead of silently
   dropped.
 
 To resolve a conflicted chunk: edit `{id}.json` to the desired content (removing the
