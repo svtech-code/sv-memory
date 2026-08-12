@@ -5,6 +5,13 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+### Fixed
+
+- **Compaction now preserves the synthesized row's full metadata:** the unified memory created when multiple `topic_key` revisions are consolidated now carries over `last_seen_at`, `normalized_hash` (recomputed from the consolidated content so future dedup detection works), `review_after` (falls back to the category decay deadline when unset, so the row stays on the policy-review radar), and `pinned`. It also keeps the latest source row's `created_at` instead of resetting it to `CURRENT_TIMESTAMP`, so chronological queries (timeline, recent activity) are not disrupted. The insert goes through the shared `memoryInsertArgs` helper instead of a hand-rolled 18-column statement.
+- **`sv_mem_compact` advances the compaction watermark:** the manual tool now routes through `CompactMemoriesIncremental`, sharing the same `last_compaction_at` watermark as the background worker. After the first full pass, a manual trigger only re-processes topic keys with new activity instead of re-scanning the entire history on the next worker tick.
+- **Session lookup no longer blocks the single writer connection:** the auto-association of saves and passive observations (`GetActiveSession`) now reads through the reader pool instead of the writer, removing a serialization point on every `sv_mem_save` / `sv_mem_capture_passive` call.
+- **Spec dedup hash drift fixed:** the rolling-window dedup hash is documented as `what + why + learned + where_path` (was `what + why + learned`), matching the actual `computeHash` implementation.
+
 ## [v0.8.0] - 2026-08-09
 
 ### Changed

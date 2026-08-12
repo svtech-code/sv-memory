@@ -107,7 +107,8 @@ func compactMemoriesSince(db *sql.DB, projectID string, since time.Time) (*Compa
 	for _, tk := range topicKeysToCompact {
 		memQuery := `
 		SELECT id, category, what, why, learned, where_path, git_branch, git_commit,
-			author, impact, errors_faced, next_steps, session_id, revision_count, created_at
+			author, impact, errors_faced, next_steps, session_id, revision_count, created_at,
+			last_seen_at, normalized_hash, review_after, pinned
 		FROM memories
 		WHERE project_id = ? AND topic_key = ? AND deleted_at IS NULL
 		ORDER BY created_at ASC`
@@ -119,26 +120,8 @@ func compactMemoriesSince(db *sql.DB, projectID string, since time.Time) (*Compa
 
 		var group []*Memory
 		for memRows.Next() {
-			var m Memory
-			var createdAtStr string
-			var wherePath, why, learned sql.NullString
-			var gitBranch, gitCommit, author sql.NullString
-			var impact, errorsFaced, nextSteps, sessionID sql.NullString
-			if sErr := memRows.Scan(&m.ID, &m.Category, &m.What, &why, &learned, &wherePath,
-				&gitBranch, &gitCommit, &author, &impact, &errorsFaced, &nextSteps, &sessionID,
-				&m.RevisionCount, &createdAtStr); sErr == nil {
-				m.Why = why.String
-				m.Learned = learned.String
-				m.WherePath = wherePath.String
-				m.GitBranch = gitBranch.String
-				m.GitCommit = gitCommit.String
-				m.Author = author.String
-				m.Impact = impact.String
-				m.ErrorsFaced = errorsFaced.String
-				m.NextSteps = nextSteps.String
-				m.SessionID = sessionID.String
-				m.TopicKey = tk
-				group = append(group, &m)
+			if m := scanCompactMemoryRow(memRows, tk); m != nil {
+				group = append(group, m)
 			}
 		}
 		memRows.Close()
@@ -194,17 +177,43 @@ func compactMemoriesSince(db *sql.DB, projectID string, since time.Time) (*Compa
 		}
 
 		// Create clean unified memory, preserving session + metadata of the
-		// chosen source entry so session context recovery keeps working.
-		synthID := newID()
-		insertStmt := `
-		INSERT INTO memories (id, project_id, category, what, why, where_path, learned,
-			git_branch, git_commit, author, impact, errors_faced, next_steps, session_id,
-			topic_key, revision_count, duplicate_count, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
+		// chosen source entry so session context recovery keeps working. The
+		// synthesized row keeps the source created_at for chronological
+		// continuity, recomputes the dedup hash from the consolidated content,
+		// and carries over last_seen_at/review_after/pinned so the row stays on
+		// the policy-review and dedup radar after compaction.
+		synth := &Memory{
+			ID:             newID(),
+			ProjectID:      projectID,
+			Category:       latest.Category,
+			What:           latest.What,
+			Why:            consolidatedWhy,
+			WherePath:      latest.WherePath,
+			Learned:        consolidatedLearned,
+			GitBranch:      meta.GitBranch,
+			GitCommit:      meta.GitCommit,
+			Author:         meta.Author,
+			Impact:         meta.Impact,
+			ErrorsFaced:    meta.ErrorsFaced,
+			NextSteps:      meta.NextSteps,
+			SessionID:      meta.SessionID,
+			TopicKey:       tk,
+			RevisionCount:  newRev,
+			DuplicateCount: len(group),
+			LastSeenAt:     meta.LastSeenAt,
+			NormalizedHash: computeHash(latest.What, consolidatedWhy, consolidatedLearned, latest.WherePath),
+			ReviewAfter:    meta.ReviewAfter,
+			Pinned:         meta.Pinned,
+			CreatedAt:      latest.CreatedAt,
+		}
+		if synth.CreatedAt.IsZero() {
+			synth.CreatedAt = now
+		}
+		if synth.ReviewAfter.IsZero() {
+			synth.ReviewAfter = now.Add(decayReviewAfter(synth.Category))
+		}
 
-		_, insErr := tx.Exec(insertStmt, synthID, projectID, latest.Category, latest.What, consolidatedWhy,
-			latest.WherePath, consolidatedLearned, meta.GitBranch, meta.GitCommit, meta.Author,
-			meta.Impact, meta.ErrorsFaced, meta.NextSteps, meta.SessionID, tk, newRev, len(group))
+		_, insErr := tx.Exec(memoryInsertConflictQuery(), memoryInsertArgs(synth, synth.CreatedAt)...)
 		if insErr == nil {
 			report.ProcessedTopics++
 			report.MemoriesCompacted += len(group)
@@ -218,6 +227,53 @@ func compactMemoriesSince(db *sql.DB, projectID string, since time.Time) (*Compa
 	}
 
 	return report, nil
+}
+
+// scanCompactMemoryRow reads one compaction group row (the extended column set:
+// base fields plus last_seen_at/normalized_hash/review_after/pinned) into a
+// Memory, applying best-effort time parsing. Returns nil when the row cannot be
+// scanned, mirroring the caller's skip behavior. Parsing helpers live here so
+// compactMemoriesSince stays under the gocyclo budget.
+func scanCompactMemoryRow(rows *sql.Rows, tk string) *Memory {
+	var m Memory
+	var createdAtStr string
+	var wherePath, why, learned sql.NullString
+	var gitBranch, gitCommit, author sql.NullString
+	var impact, errorsFaced, nextSteps, sessionID sql.NullString
+	var lastSeenAt, normalizedHash, reviewAfter sql.NullString
+	var pinned sql.NullInt64
+	if sErr := rows.Scan(&m.ID, &m.Category, &m.What, &why, &learned, &wherePath,
+		&gitBranch, &gitCommit, &author, &impact, &errorsFaced, &nextSteps, &sessionID,
+		&m.RevisionCount, &createdAtStr, &lastSeenAt, &normalizedHash, &reviewAfter, &pinned); sErr != nil {
+		return nil
+	}
+	m.Why = why.String
+	m.Learned = learned.String
+	m.WherePath = wherePath.String
+	m.GitBranch = gitBranch.String
+	m.GitCommit = gitCommit.String
+	m.Author = author.String
+	m.Impact = impact.String
+	m.ErrorsFaced = errorsFaced.String
+	m.NextSteps = nextSteps.String
+	m.SessionID = sessionID.String
+	m.TopicKey = tk
+	m.NormalizedHash = normalizedHash.String
+	m.Pinned = pinned.Valid && pinned.Int64 == 1
+	if t, pErr := parseTime(createdAtStr); pErr == nil {
+		m.CreatedAt = t
+	}
+	if lastSeenAt.Valid {
+		if t, pErr := parseTime(lastSeenAt.String); pErr == nil {
+			m.LastSeenAt = t
+		}
+	}
+	if reviewAfter.Valid {
+		if t, pErr := parseTime(reviewAfter.String); pErr == nil {
+			m.ReviewAfter = t
+		}
+	}
+	return &m
 }
 
 func containsStr(slice []string, s string) bool {

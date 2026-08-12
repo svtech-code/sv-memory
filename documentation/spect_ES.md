@@ -670,7 +670,7 @@ Caso de uso: funcionalidades de larga duración, patrones arquitectónicos recur
 
 Cuando NO se proporciona `topic_key`:
 
-1. Calcula el hash SHA256 de `what + "\x00" + why + "\x00" + learned`.
+1. Calcula el hash SHA256 de `what + "\x00" + why + "\x00" + learned + "\x00" + where_path`.
 2. Consulta: `SELECT id, duplicate_count FROM memories WHERE project_id = ? AND normalized_hash = ? AND category = ? AND created_at > datetime('now', '-24 hours')`
 3. Si existe: `UPDATE duplicate_count++`, actualiza `last_seen_at`. Sin nueva fila.
 4. Si no existe: Inserta una nueva fila.

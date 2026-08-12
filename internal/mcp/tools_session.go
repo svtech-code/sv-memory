@@ -89,7 +89,11 @@ func (s *Server) handleContext(ctx context.Context, req mcp.CallToolRequest) (*m
 }
 
 func (s *Server) handleCompact(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	report, err := memory.CompactMemories(s.pool.Writer, s.cfg.ProjectID)
+	// Route through the incremental path so the manual trigger and the
+	// background worker share the same last_compaction_at watermark: after the
+	// first full pass, a manual call only re-processes topic keys with new
+	// activity instead of re-scanning the entire history on the next tick.
+	report, err := memory.CompactMemoriesIncremental(s.pool.Writer, s.cfg.ProjectID)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to compact memories: %v", err)), nil
 	}

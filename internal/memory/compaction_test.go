@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/svtech-code/sv-memory/internal/db"
 )
@@ -137,6 +138,99 @@ func TestCompactMemoriesPreservesSessionID(t *testing.T) {
 	}
 	if !strings.Contains(bundle, "Use Bun exclusively") {
 		t.Errorf("expected bundle to surface synthesized decision after compaction, got:\n%s", bundle)
+	}
+}
+
+func TestCompactMemoriesPreservesMetadata(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_compact_meta.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-compact-meta"
+	if regErr := db.RegisterProject(database, projectID, "Compact Meta Proj", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
+	}
+
+	// Two rows under the same topic_key. The latest carries the metadata that
+	// must survive compaction: created_at continuity, pinned, last_seen_at, and
+	// a review_after deadline. normalized_hash must be recomputed from the
+	// consolidated content so future dedup detection keeps working.
+	_, err = database.Exec(`
+		INSERT INTO memories (id, project_id, category, what, why, learned, topic_key,
+			last_seen_at, normalized_hash, review_after, pinned, revision_count, created_at)
+		VALUES
+		('m-1', ?, 'decision', 'Use Bun', 'Avoid npm', 'Bun is the package manager',
+			'decision/use-bun', '2026-08-09 10:00:00', 'deadbeef', '2026-08-09 11:00:00', 0, 1, '2026-08-09 12:00:00'),
+		('m-2', ?, 'decision', 'Use Bun exclusively', 'No npm allowed', 'Always use bun',
+			'decision/use-bun', '2026-08-10 10:00:00', 'deadbeef2', '2026-08-10 11:00:00', 1, 2, '2026-08-10 12:00:00');
+	`, projectID, projectID)
+	if err != nil {
+		t.Fatalf("failed inserting test memories: %v", err)
+	}
+
+	report, err := CompactMemories(database, projectID)
+	if err != nil {
+		t.Fatalf("failed CompactMemories: %v", err)
+	}
+	if report.NewSynthesesCreated != 1 {
+		t.Fatalf("expected 1 synthesis created, got %d", report.NewSynthesesCreated)
+	}
+
+	active, err := SearchMemories(database, projectID, "", "", 10)
+	if err != nil {
+		t.Fatalf("failed searching active memories: %v", err)
+	}
+	if len(active) != 1 {
+		t.Fatalf("expected 1 active memory post compaction, got %d", len(active))
+	}
+
+	var normalizedHash string
+	var pinned int
+	var createdAt, lastSeenAt, reviewAfter sql.NullString
+	err = database.QueryRow(`
+		SELECT created_at, last_seen_at, normalized_hash, review_after, pinned
+		FROM memories WHERE id = ?`, active[0].ID).Scan(
+		&createdAt, &lastSeenAt, &normalizedHash, &reviewAfter, &pinned)
+	if err != nil {
+		t.Fatalf("failed reading synthesis metadata: %v", err)
+	}
+
+	// created_at must be preserved from the latest source row, not reset to now.
+	if !createdAt.Valid {
+		t.Fatal("expected synthesis created_at to be set")
+	}
+	createdAtTime, _ := parseTime(createdAt.String)
+	if !createdAtTime.Equal(time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)) {
+		t.Errorf("expected synthesis created_at preserved as 2026-08-10 12:00:00 UTC, got %q", createdAt.String)
+	}
+	// last_seen_at carried over from the latest source row.
+	if !lastSeenAt.Valid {
+		t.Fatal("expected synthesis last_seen_at to be preserved")
+	}
+	lastSeenTime, _ := parseTime(lastSeenAt.String)
+	if !lastSeenTime.Equal(time.Date(2026, 8, 10, 10, 0, 0, 0, time.UTC)) {
+		t.Errorf("expected synthesis last_seen_at preserved, got %q", lastSeenAt.String)
+	}
+	// review_after carried over (still on the policy-review radar).
+	if !reviewAfter.Valid {
+		t.Fatal("expected synthesis review_after to be preserved")
+	}
+	reviewTime, _ := parseTime(reviewAfter.String)
+	if !reviewTime.Equal(time.Date(2026, 8, 10, 11, 0, 0, 0, time.UTC)) {
+		t.Errorf("expected synthesis review_after preserved, got %q", reviewAfter.String)
+	}
+	// pinned flag carried over.
+	if pinned != 1 {
+		t.Errorf("expected synthesis pinned=1, got %d", pinned)
+	}
+	// normalized_hash recomputed from the consolidated content (dedup works again).
+	expectedHash := computeHash("Use Bun exclusively", "Avoid npm | No npm allowed", "Bun is the package manager | Always use bun", "")
+	if normalizedHash != expectedHash {
+		t.Errorf("expected synthesis normalized_hash %s, got %q", expectedHash, normalizedHash)
 	}
 }
 

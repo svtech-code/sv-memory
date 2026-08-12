@@ -671,7 +671,7 @@ Use case: Long-running features, recurring architectural patterns, evolving stan
 
 When `topic_key` is NOT provided:
 
-1. Compute SHA256 hash of `what + "\x00" + why + "\x00" + learned`.
+1. Compute SHA256 hash of `what + "\x00" + why + "\x00" + learned + "\x00" + where_path`.
 2. Query: `SELECT id, duplicate_count FROM memories WHERE project_id = ? AND normalized_hash = ? AND category = ? AND created_at > datetime('now', '-24 hours')`
 3. If found: `UPDATE duplicate_count++`, bump `last_seen_at`. No new row.
 4. If not found: Insert new row.
