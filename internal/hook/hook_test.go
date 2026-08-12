@@ -46,6 +46,52 @@ func TestHookScriptContentCodex(t *testing.T) {
 	}
 }
 
+func TestClaudeScriptsContainContextInjectionBlock(t *testing.T) {
+	for _, mode := range []Mode{ModeSoft, ModeStrict} {
+		content := mustHookScript(t, PlatformClaudeCode, mode)
+		if !strings.Contains(content, "context-injection-enabled") {
+			t.Errorf("claude-code %s script should contain the context-injection block", mode)
+		}
+		if !strings.Contains(content, "run_with_timeout") {
+			t.Errorf("claude-code %s script should have the portable timeout helper", mode)
+		}
+		if !strings.Contains(content, "--max-memories") {
+			t.Errorf("claude-code %s script should call sv-memory context with a bounded --max-memories", mode)
+		}
+	}
+}
+
+func TestContextInjectionMarker(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-hook-marker")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	eng := New(tempDir, ModeSoft)
+	if eng.ContextInjectionEnabled() {
+		t.Fatal("expected context injection disabled by default")
+	}
+
+	if err := eng.SetContextInjection(true); err != nil {
+		t.Fatalf("failed enabling context injection: %v", err)
+	}
+	if !eng.ContextInjectionEnabled() {
+		t.Fatal("expected context injection enabled after SetContextInjection(true)")
+	}
+	marker := filepath.Join(tempDir, ".sv-memory", "context-injection-enabled")
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("expected marker file at %s: %v", marker, err)
+	}
+
+	if err := eng.SetContextInjection(false); err != nil {
+		t.Fatalf("failed disabling context injection: %v", err)
+	}
+	if eng.ContextInjectionEnabled() {
+		t.Fatal("expected context injection disabled after SetContextInjection(false)")
+	}
+}
+
 func TestInstallClaudeCodeSoft(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-hook-test")
 	if err != nil {

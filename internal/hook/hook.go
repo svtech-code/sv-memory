@@ -50,6 +50,42 @@ type InstallResult struct {
 	Err      error    `json:"-"`
 }
 
+// contextInjectionMarkerPath returns the marker file whose presence enables the
+// silent context-injection block in the Claude Code hook scripts. Created by
+// `sv-memory hooks install --context-injection` (opt-in, default off). It is a
+// filesystem marker rather than a config key so the hook script can check it
+// without spawning the sv-memory binary just to read configuration.
+func (e *HookEngine) contextInjectionMarkerPath() string {
+	return filepath.Join(e.projPath, ".sv-memory", "context-injection-enabled")
+}
+
+// ContextInjectionEnabled reports whether the silent context-injection marker
+// is present for this project.
+func (e *HookEngine) ContextInjectionEnabled() bool {
+	_, err := os.Stat(e.contextInjectionMarkerPath())
+	return err == nil
+}
+
+// SetContextInjection creates (enabled) or removes (disabled) the marker that
+// activates the silent context-injection block in the Claude Code hook scripts.
+// It never fails when the directory cannot be created — a best-effort toggle.
+func (e *HookEngine) SetContextInjection(enabled bool) error {
+	marker := e.contextInjectionMarkerPath()
+	if !enabled {
+		if err := os.Remove(marker); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove context-injection marker: %w", err)
+		}
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(marker), 0755); err != nil {
+		return fmt.Errorf("failed to create .sv-memory dir for marker: %w", err)
+	}
+	if err := os.WriteFile(marker, []byte("enabled\n"), 0644); err != nil {
+		return fmt.Errorf("failed to write context-injection marker: %w", err)
+	}
+	return nil
+}
+
 // Install installs PreToolUse hooks for the given platforms.
 // If platforms is empty, it installs for all supported platforms.
 func (e *HookEngine) Install(platforms []Platform) []InstallResult {

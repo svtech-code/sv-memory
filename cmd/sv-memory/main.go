@@ -108,7 +108,9 @@ func init() {
 	conflictsScanCmd.Flags().Float64("threshold", 0.45, "Jaccard similarity threshold for descriptions")
 
 	hooksInstallCmd.Flags().Bool("strict", false, "Enable strict mode (blocks the first raw source read)")
+	hooksInstallCmd.Flags().Bool("context-injection", false, "Enable silent context injection (Claude Code first-read context packs)")
 	hooksInstallCmd.Flags().String("platform", "", "Target platform (claude-code, codex, antigravity, opencode). Default: all")
+	hooksUninstallCmd.Flags().Bool("context-injection", false, "Also disable silent context injection (remove the marker)")
 	hooksUninstallCmd.Flags().String("platform", "", "Target platform (claude-code, codex, antigravity, opencode). Default: all")
 
 	hooksCmd.AddCommand(hooksInstallCmd)

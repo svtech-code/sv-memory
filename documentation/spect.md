@@ -134,10 +134,11 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 
 #### 11. `sv-memory hooks`
 
-- `install [--strict] [--platform <p>]`: installs PreToolUse hooks (`.agents/hooks.json` + `.agents/hooks/sv-memory.sh`) so agents query memory before reading files. `--strict` blocks the first raw file read of each session. Default platform: all (`claude-code`, `codex`, `antigravity`, `opencode`).
+- `install [--strict] [--context-injection] [--platform <p>]`: installs PreToolUse hooks (`.agents/hooks.json` + `.agents/hooks/sv-memory.sh`) so agents query memory before reading files. `--strict` blocks the first raw file read of each session. Default platform: all (`claude-code`, `codex`, `antigravity`, `opencode`).
+- **Silent context injection (`--context-injection`, opt-in, default off):** when enabled, the Claude Code PreToolUse hook calls `sv-memory context <file>` on the first `Read` of each file and injects the compact graph+memory context pack (title + truncated `why`, bounded to 3 memories) as `additionalContext`. Output is cached per file for the session and time-bounded (2s, portable timeout); the hook always exits 0 (fail-open) so a missing binary or `.sv-memory` never breaks the tool call. Enabled by a `.sv-memory/context-injection-enabled` marker created by the flag. Antigravity, Codex, and OpenCode do not support `additionalContext` injection and keep the nudge/skill mechanism.
 - **Strict degradation (fail-open):** the hook scripts never call the sv-memory server. Strict blocking is only implemented on Antigravity CLI; Claude Code strict is nudge-only (always `exit 0`). The block is skipped when sv-memory is unavailable (no `.sv-memory/`, binary missing, or `SV_MEMORY_STRICT_DISABLE=1`), so the agent is never deadlocked by a missing/unconfigured sv-memory.
-- `uninstall [--platform <p>]`: removes the hooks.
-- `status`: reports which platforms have hooks installed.
+- `uninstall [--context-injection] [--platform <p>]`: removes the hooks (and the context-injection marker when `--context-injection` is passed).
+- `status`: reports which platforms have hooks installed and whether silent context injection is enabled.
 
 #### 12. `sv-memory obsidian-export [-o output-dir]`
 
@@ -913,6 +914,7 @@ Parsing uses **tree-sitter** (`gotreesitter`) for the primary languages, with a 
 | Tunable truncation thresholds                           | `max_field_chars`, `search_expand_chars`, `timeline_why_chars`, `bundle_why_chars` config keys override the compiled-in caps via YAML     | Tune response size without recompiling                    |
 | Session-start token guard (`sv_mem_session_start`)      | Auto-Boot Bundle + Graph Hubs bounded by `max_response_tokens` / per-call `token_budget`                                                  | Bounds the largest pre-tool payload of each session       |
 | Context Pack (`sv_mem_context_pack`)                     | One bounded call fuses graph role + linked memories for a path (`where_path`/`rationale_for`), replacing explain+search+get round-trips      | 1 call instead of 3+; title + truncated `why` only        |
+| Silent context injection (hooks `--context-injection`)    | Claude Code first-Read injects `sv-memory context <file>` as additionalContext (bounded to 3 memories, cached per file)                    | Relevant context at the exact moment, no search round-trip |
 | Topic key upsert                                       | Update in-place instead of accumulating revisions                                                                                         | 50% fewer redundant search results                        |
 | Rolling-window dedup                                   | Suppress identical saves within 24h                                                                                                       | Prevents duplicate bloat                                  |
 | Compact search SQL                                     | SELECT only 7 needed columns instead of all 20                                                                                            | ~60% less I/O per search                                  |

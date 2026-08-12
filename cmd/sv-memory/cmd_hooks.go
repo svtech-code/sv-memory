@@ -52,6 +52,15 @@ var hooksInstallCmd = &cobra.Command{
 			}
 		}
 
+		// Optional silent context injection (Claude Code additionalContext).
+		if contextInjection, _ := cmd.Flags().GetBool("context-injection"); contextInjection {
+			if enableErr := eng.SetContextInjection(true); enableErr != nil {
+				fmt.Printf("⚠️  Could not enable context injection: %v\n", enableErr)
+			} else {
+				fmt.Println("✅ Silent context injection enabled (Claude Code first-read context packs).")
+			}
+		}
+
 		if success > 0 {
 			modeLabel := "soft (nudge)"
 			if strict {
@@ -93,6 +102,15 @@ var hooksUninstallCmd = &cobra.Command{
 				fmt.Printf("   Removed: %s\n", f)
 			}
 		}
+
+		// Disable the silent context-injection marker when requested.
+		if contextInjection, _ := cmd.Flags().GetBool("context-injection"); contextInjection {
+			if disableErr := eng.SetContextInjection(false); disableErr != nil {
+				fmt.Printf("⚠️  Could not disable context injection: %v\n", disableErr)
+			} else {
+				fmt.Println("✅ Silent context injection disabled.")
+			}
+		}
 		return nil
 	},
 }
@@ -117,6 +135,11 @@ var hooksStatusCmd = &cobra.Command{
 			} else {
 				fmt.Printf("  ❌ %s: not installed\n", p)
 			}
+		}
+		if eng.ContextInjectionEnabled() {
+			fmt.Println("\n  🔌 Silent context injection: ENABLED (Claude Code first-read context packs)")
+		} else {
+			fmt.Println("\n  🔌 Silent context injection: disabled (enable with `hooks install --context-injection`)")
 		}
 		return nil
 	},

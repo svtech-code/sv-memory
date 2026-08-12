@@ -155,9 +155,14 @@ cd /ruta/a/tu-proyecto
 sv-memory hooks install --platform antigravity
 # modo strict: bloquea la primera lectura raw para forzar la búsqueda en memoria
 sv-memory hooks install --platform antigravity --strict
+# inyección silenciosa de contexto (Claude Code): la 1ª Read de cada archivo
+# inyecta un context pack compacto grafo+memorias como additionalContext (opt-in, default off)
+sv-memory hooks install --platform claude-code --context-injection
 ```
 
 **Modos de hook y degradación:** los scripts de hook nunca llaman al servidor sv-memory son nudges ligeros de shell que solo inspeccionan archivos locales. El modo **soft** nunca bloquea y siempre permite la lectura; el modo **strict** bloquea la _primera_ lectura de archivo de cada sesión (por boot/PWD) para que el agente consulte primero `sv_mem_search`/`sv_graph_query`. El bloqueo solo existe donde la plataforma lo soporta (Antigravity CLI); en Claude Code el modo strict es solo nudge y nunca bloquea. El modo strict es **fail-open**: si sv-memory no está inicializado (sin `.sv-memory/`), el binario no existe, o está `SV_MEMORY_STRICT_DISABLE=1`, el hook permite la lectura en lugar de bloquear al agente.
+
+**Inyección silenciosa de contexto (`--context-injection`, opt-in):** con hooks de Claude Code, la primera `Read` de cada archivo inyecta la salida de `sv-memory context <file>` — el rol del nodo en el grafo más las memorias vinculadas (título + `why` truncado, acotado a 3) — como `additionalContext`. La salida se cachea por archivo para la sesión y está acotada en tiempo (timeout portable de 2s); el hook siempre sale con `exit 0`, así que un binario o `.sv-memory` ausente nunca rompe una llamada. Desactiva con `sv-memory hooks uninstall --context-injection`. Antigravity, Codex y OpenCode no soportan inyección por `additionalContext` y mantienen el mecanismo de nudge/skill.
 
 ### 5. Reiniciar el Agente y Verificar
 
