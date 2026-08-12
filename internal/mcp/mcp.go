@@ -80,6 +80,7 @@ var AllTools = []Tool{
 	{Name: "sv_mem_delete", Description: "Soft-delete (default) or hard-delete a memory."},
 	{Name: "sv_mem_pin", Description: "Pin (default) or unpin (action='unpin') a local memory so key decisions stay visible in session context."},
 	{Name: "sv_mem_capture_passive", Description: "Log lightweight observations (files modified, tests failing) without a save decision."},
+	{Name: "sv_mem_context_pack", Description: "Build a compact context pack for a code path: graph role (fan-in/fan-out, community) plus linked memories (decisions/standards/bugfixes). One bounded call."},
 	{Name: "sv_mem_conflicts", Description: "List, scan, or ignore potential memory conflicts."},
 	{Name: "sv_graph_query", Description: "Query the dependency graph for a module, file, or package (returns Mermaid)."},
 	{Name: "sv_graph_path", Description: "Find the shortest dependency path between two nodes."},
@@ -624,6 +625,14 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		mcp.WithString("why", mcp.Required(), mcp.Description("Context or reason for the observation")),
 	)
 	ms.AddTool(captureTool, s.handleCapturePassive)
+
+	// 18b. Tool: sv_mem_context_pack
+	contextPackTool := mcp.NewTool("sv_mem_context_pack",
+		mcp.WithDescription("Build a compact context pack for a code path (file, package, or symbol): the node's structural role in the dependency graph (type, fan-in/fan-out, community) plus the memories linked to that path via where_path or rationale_for edges (decisions, standards, bugfixes). One bounded call replaces the sv_graph_explain + sv_mem_search + sv_mem_get round-trips, saving tokens."),
+		mcp.WithString("path", mcp.Required(), mcp.Description("File path, package name, or symbol to resolve")),
+		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
+	)
+	ms.AddTool(contextPackTool, s.handleContextPack)
 
 	// 19. Tool: sv_graph_query
 	graphQueryTool := mcp.NewTool("sv_graph_query",

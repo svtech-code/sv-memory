@@ -24,7 +24,7 @@ func TestSubcommandsRegistered(t *testing.T) {
 	expected := []string{
 		"init", "mcp", "sync", "configure", "diagnose", "stats",
 		"graph", "export", "import", "delete", "projects", "conflicts",
-		"obsidian-export", "hooks",
+		"obsidian-export", "hooks", "context",
 	}
 
 	for _, name := range expected {

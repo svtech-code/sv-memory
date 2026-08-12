@@ -187,3 +187,43 @@ func TestConfiguredCharsFallback(t *testing.T) {
 		t.Errorf("expected fallback 123, got %d", got)
 	}
 }
+
+func TestContextPackTool(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	// Sync a tiny graph so the pack can resolve a node and its linked memory.
+	if err := os.WriteFile(filepath.Join(tempDir, "main.go"),
+		[]byte("package main\nfunc main() {}\n"), 0644); err != nil {
+		t.Fatalf("failed writing main.go: %v", err)
+	}
+	if err := graph.SyncGraph(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
+		t.Fatalf("failed syncing graph: %v", err)
+	}
+	if _, err := memory.SaveMemory(pool.Writer, &memory.Memory{
+		ProjectID: cfg.ProjectID,
+		Category:  "decision",
+		What:      "Keep main thin",
+		Why:       "Single responsibility",
+		Learned:   "Prefer small entry points",
+		WherePath: "main.go",
+	}); err != nil {
+		t.Fatalf("failed saving memory: %v", err)
+	}
+
+	srv := NewServer(pool, cfg)
+	req := mcpgo.CallToolRequest{}
+	req.Params.Name = "sv_mem_context_pack"
+	req.Params.Arguments = map[string]any{"path": "main.go"}
+	res, err := srv.GetTool("sv_mem_context_pack").Handler(context.Background(), req)
+	if err != nil {
+		t.Fatalf("sv_mem_context_pack failed: %v", err)
+	}
+	out := textContent(res.Content[0])
+	if !strings.Contains(out, "Context Pack") {
+		t.Fatalf("expected context pack header, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Keep main thin") {
+		t.Fatalf("expected linked memory in pack, got:\n%s", out)
+	}
+}

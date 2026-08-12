@@ -7,6 +7,7 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ### Added
 
+- **`sv_mem_context_pack` MCP tool + `sv-memory context <path>` CLI:** a compact, fused context pack for a file, package, or symbol — the node's structural role in the dependency graph (type, fan-in/fan-out, community, hub flag) plus the memories linked to that path via `where_path` or `rationale_for` edges (decisions, standards, bugfixes), each rendered as title + `why` truncated to `bundle_why_chars`. One bounded call replaces the `sv_graph_explain` + `sv_mem_search path=` + `sv_mem_get` round-trips (the proprietary graph→memory bridge that also powers the upcoming optional silent context-injection hook). Configurable via `context_pack_max_memories` (default 5, max 20). Tool count grows 28 → 29; docs (EN/ES), protocol, skills, and CHANGELOG synced.
 - **`token_budget` on `sv_mem_session_start` and `sv_mem_timeline`:** the two remaining large read paths now accept a per-call token budget (or fall back to the global `max_response_tokens` default), rounding out budget coverage across all bulk-returning tools.
 - **Configurable truncation thresholds:** the per-field caps `max_field_chars` (1000), `search_expand_chars` (300), `timeline_why_chars` (200), and `bundle_why_chars` (300) can now be tuned via `~/.sv-memory/config.yaml` or `.sv-memory/config.yaml` without recompiling; the compiled-in values remain the defaults. `sv-memory configure list` reports the new keys.
 

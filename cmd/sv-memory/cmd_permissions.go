@@ -19,8 +19,7 @@ var permissionsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all sv-memory MCP tools with descriptions",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("=== sv-memory MCP Tools (26) ===")
-		fmt.Println()
+		fmt.Printf("=== sv-memory MCP Tools (%d) ===\n\n", len(mcp.AllTools))
 		for _, t := range mcp.AllTools {
 			fmt.Printf("  %-30s %s\n", t.Name, t.Description)
 		}

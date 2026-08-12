@@ -39,6 +39,7 @@ func LoadGlobalAndLocalConfig(projPath string) {
 	viper.SetDefault("search_expand_chars", 300)
 	viper.SetDefault("timeline_why_chars", 200)
 	viper.SetDefault("bundle_why_chars", 300)
+	viper.SetDefault("context_pack_max_memories", 5)
 
 	// 1. Load global config: ~/.sv-memory/config.yaml
 	home, err := os.UserHomeDir()

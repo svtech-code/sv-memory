@@ -246,6 +246,13 @@ func bundleWhyCharsLimit() int {
 	return bundleWhyChars
 }
 
+// BundleWhyCharsLimit is the exported form of bundleWhyCharsLimit, used by
+// renderers outside the memory package (e.g. the context-pack MCP tool) so the
+// why truncation cap stays consistent across the Auto-Boot bundle and packs.
+func BundleWhyCharsLimit() int {
+	return bundleWhyCharsLimit()
+}
+
 // writeBundleSection appends a titled, compact list of memories to the
 // Auto-Boot bundle. When withWhy is false only the title is shown to keep
 // the bundle token-efficient; the agent can drill down with sv_mem_get.

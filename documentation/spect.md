@@ -86,7 +86,7 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 #### 2. `sv-memory mcp`
 
 - Starts the JSON-RPC MCP server over `stdio` for agent consumption.
-- Registers all 28 MCP tools.
+- Registers all 29 MCP tools.
 - Maintains an in-memory graph cache for zero-SQL BFS traversals.
 - Debounces Git sync writes (500ms coalescing).
 
@@ -118,15 +118,15 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 #### 9. `sv-memory configure`
 
 - Interactive wizard for automatic/manual configurations of editors (Cursor, VS Code, Zed, Windsurf, OpenCode) and CLIs (Claude Code, Codex, Antigravity).
-- **Phase 4 (MCP Permissions):** Lists the 28 sv-memory MCP tools with descriptions and grants the selected allow-list entries to the allow-listed platforms chosen earlier (Antigravity CLI, Claude Code).
+- **Phase 4 (MCP Permissions):** Lists the 29 sv-memory MCP tools with descriptions and grants the selected allow-list entries to the allow-listed platforms chosen earlier (Antigravity CLI, Claude Code).
 - **Sub-commands** for reading/writing configuration (YAML, global `~/.sv-memory/config.yaml` or local `.sv-memory/config.yaml`):
   - `sv-memory configure get <key>`: prints a single configuration value.
   - `sv-memory configure set <key> <value> [--local]`: writes a value globally (default) or project-locally.
-  - `sv-memory configure list`: prints all active configuration values (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`, `auto_compaction_enabled`, `compaction_interval_minutes`, `max_response_tokens`, `max_field_chars`, `search_expand_chars`, `timeline_why_chars`, `bundle_why_chars`).
+  - `sv-memory configure list`: prints all active configuration values (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`, `auto_compaction_enabled`, `compaction_interval_minutes`, `max_response_tokens`, `max_field_chars`, `search_expand_chars`, `timeline_why_chars`, `bundle_why_chars`, `context_pack_max_memories`).
 
 #### 10. `sv-memory permissions`
 
-- `list`: shows the 28 sv-memory MCP tools with human-readable descriptions.
+- `list`: shows the 29 sv-memory MCP tools with human-readable descriptions.
 - `grant --platform <p> [--all | --tool a,b] [--dry-run]`: writes allow-list entries (`mcp(sv-memory/<tool>)` for Antigravity, `mcp__sv-memory__<tool>` for Claude Code), preserving unrelated entries.
 - `revoke --platform <p> [--dry-run]`: removes sv-memory allow-list entries.
 - `status [--platform <p>]`: reports granted vs missing tools per platform.
@@ -214,6 +214,10 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 - `scan [--apply] [--dry-run] [--max-insert N] [--threshold T]`: runs incremental semantic-overlap scanning; by default reports without persisting (`--apply` saves the detected `potential_conflict` relations).
 - `scan --semantic [--agent claude|opencode|CMD] [--max-semantic N] [--concurrency N]`: after surfacing candidate pairs, LLM-judges them with the configured agent CLI. The agent compares full memory content and returns a verdict (`supersedes`, `conflicts_with`, `relates_to`, or `none`); verdicts are persisted with `judged_by='llm'` when `--apply`, and failed judgments stay pending for retry. Default agent: `$SV_MEMORY_SEMANTIC_AGENT` or `claude`.
 - `ignore <relation-id>`: marks a detected conflict as ignored.
+
+#### 28. `sv-memory context <path>`
+
+- Prints a **compact context pack** for a file, package, or symbol: the node's structural role (type, fan-in/fan-out, community, hub flag) plus the memories linked to that path (`where_path` or `rationale_for` edges), each as title + truncated `why`. Flags: `--max-memories N` (default 5), `--why-chars N` (default 300). Fast and bounded — this is the entry point the optional PreToolUse context-injection hook calls on first file read.
 
 ---
 
@@ -398,7 +402,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_relations_target ON memory_relations(proje
 
 ## 6. MCP Tools Definition
 
-`sv-memory` registers **28 MCP tools** for AI agents:
+`sv-memory` registers **29 MCP tools** for AI agents:
 
 ### 1. `sv_mem_save`
 
@@ -578,6 +582,15 @@ Logs a lightweight journal entry automatically (e.g., test outcomes, file change
 - **Parameters:**
   - `what` (string, required): Summary description.
   - `why` (string, required): Context or rationale.
+
+### 19b. `sv_mem_context_pack`
+
+Builds a **compact, fused context pack** for a code path (file, package, or symbol): the node's structural role in the dependency graph (type, fan-in/fan-out, community, hub flag) plus the memories linked to that path via `where_path` or `rationale_for` edges (decisions, standards, bugfixes), each rendered as title + truncated `why`. One bounded call replaces the `sv_graph_explain` + `sv_mem_search path=` + several `sv_mem_get` round-trips, saving tokens. This is the proprietary graph→memory bridge that feeds the optional silent context-injection hook.
+
+- **Parameters:**
+  - `path` (string, required): File path, package name, or symbol to resolve.
+  - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default from config `max_response_tokens`, 4000; `'0'` = unlimited).
+- **Config:** `context_pack_max_memories` (default `5`, max `20`) caps the linked memories; each `why` is truncated to `bundle_why_chars`.
 
 ### 20. `sv_graph_query`
 
@@ -834,7 +847,7 @@ sv-memory/
 │   │   ├── extractor/           # tree-sitter extractor, regex fallback, markdown semantics
 │   │   └── schema/              # Node/Edge structs
 │   ├── hook/                    # PreToolUse hooks generation & templates
-│   ├── mcp/                     # MCP server + 28 tool handlers; reads from internal/graph LRU cache
+│   ├── mcp/                     # MCP server + 29 tool handlers; reads from internal/graph LRU cache
 │   ├── memory/                  # CRUD, sessions storage, dedup, conflicts, compaction,
 │   │                            # chunked git sync, Obsidian/Cypher export, stats
 │   ├── perm/                    # MCP tool allow-list management (antigravity/claude-code)
@@ -899,6 +912,7 @@ Parsing uses **tree-sitter** (`gotreesitter`) for the primary languages, with a 
 | Field truncation (`sv_mem_get`)                        | `max_chars` cap per text field (default 1000)                                                                                             | Prevents unbounded token consumption                      |
 | Tunable truncation thresholds                           | `max_field_chars`, `search_expand_chars`, `timeline_why_chars`, `bundle_why_chars` config keys override the compiled-in caps via YAML     | Tune response size without recompiling                    |
 | Session-start token guard (`sv_mem_session_start`)      | Auto-Boot Bundle + Graph Hubs bounded by `max_response_tokens` / per-call `token_budget`                                                  | Bounds the largest pre-tool payload of each session       |
+| Context Pack (`sv_mem_context_pack`)                     | One bounded call fuses graph role + linked memories for a path (`where_path`/`rationale_for`), replacing explain+search+get round-trips      | 1 call instead of 3+; title + truncated `why` only        |
 | Topic key upsert                                       | Update in-place instead of accumulating revisions                                                                                         | 50% fewer redundant search results                        |
 | Rolling-window dedup                                   | Suppress identical saves within 24h                                                                                                       | Prevents duplicate bloat                                  |
 | Compact search SQL                                     | SELECT only 7 needed columns instead of all 20                                                                                            | ~60% less I/O per search                                  |

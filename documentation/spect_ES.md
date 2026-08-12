@@ -86,7 +86,7 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 #### 2. `sv-memory mcp`
 
 - Inicia el servidor MCP JSON-RPC sobre `stdio` para el consumo por parte de agentes.
-- Registra las 28 herramientas MCP.
+- Registra las 29 herramientas MCP.
 - Mantiene un caché de grafo en memoria para recorridos BFS sin SQL.
 - Aplica debounce a las escrituras de Git sync (coalescencia de 500ms).
 
@@ -118,15 +118,15 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 #### 9. `sv-memory configure`
 
 - Asistente interactivo para configuraciones automáticas/manuales de editores (Cursor, VS Code, Zed, Windsurf, OpenCode) y CLIs (Claude Code, Codex, Antigravity).
-- **Fase 4 (Permisos MCP):** Lista las 28 herramientas MCP de sv-memory con descripciones y otorga las entradas de allow-list seleccionadas a las plataformas con allow-list elegidas previamente (Antigravity CLI, Claude Code).
+- **Fase 4 (Permisos MCP):** Lista las 29 herramientas MCP de sv-memory con descripciones y otorga las entradas de allow-list seleccionadas a las plataformas con allow-list elegidas previamente (Antigravity CLI, Claude Code).
 - **Subcomandos** para leer/escribir configuración (YAML, global `~/.sv-memory/config.yaml` o local `.sv-memory/config.yaml`):
   - `sv-memory configure get <key>`: imprime un único valor de configuración.
   - `sv-memory configure set <key> <value> [--local]`: escribe un valor de forma global (por defecto) o local al proyecto.
-  - `sv-memory configure list`: imprime todos los valores de configuración activos (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`, `auto_compaction_enabled`, `compaction_interval_minutes`, `max_response_tokens`, `max_field_chars`, `search_expand_chars`, `timeline_why_chars`, `bundle_why_chars`).
+  - `sv-memory configure list`: imprime todos los valores de configuración activos (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`, `auto_compaction_enabled`, `compaction_interval_minutes`, `max_response_tokens`, `max_field_chars`, `search_expand_chars`, `timeline_why_chars`, `bundle_why_chars`, `context_pack_max_memories`).
 
 #### 10. `sv-memory permissions`
 
-- `list`: muestra las 28 herramientas MCP de sv-memory con descripciones legibles.
+- `list`: muestra las 29 herramientas MCP de sv-memory con descripciones legibles.
 - `grant --platform <p> [--all | --tool a,b] [--dry-run]`: escribe entradas de allow-list (`mcp(sv-memory/<tool>)` para Antigravity, `mcp__sv-memory__<tool>` para Claude Code), conservando entradas no relacionadas.
 - `revoke --platform <p> [--dry-run]`: elimina las entradas de sv-memory de la allow-list.
 - `status [--platform <p>]`: reporta herramientas otorgadas vs faltantes por plataforma.
@@ -214,6 +214,10 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 - `scan [--apply] [--dry-run] [--max-insert N] [--threshold T]`: ejecuta el escaneo incremental de superposición semántica; por defecto solo reporta sin persistir (`--apply` guarda las relaciones `potential_conflict` detectadas).
 - `scan --semantic [--agent claude|opencode|CMD] [--max-semantic N] [--concurrency N]`: tras exponer los pares candidatos, los juzga con el CLI del agente configurado. El agente compara el contenido completo de las memorias y devuelve un veredicto (`supersedes`, `conflicts_with`, `relates_to` o `none`); los veredictos se persisten con `judged_by='llm'` al usar `--apply`, y los juicios fallidos quedan pendientes para reintentar. Agente por defecto: `$SV_MEMORY_SEMANTIC_AGENT` o `claude`.
 - `ignore <relation-id>`: marca un conflicto detectado como ignorado.
+
+#### 28. `sv-memory context <path>`
+
+- Imprime un **context pack compacto** para un archivo, paquete o símbolo: el rol estructural del nodo (tipo, fan-in/fan-out, comunidad, flag de hub) más las memorias vinculadas a esa ruta (`where_path` o aristas `rationale_for`), cada una como título + `why` truncado. Flags: `--max-memories N` (default 5), `--why-chars N` (default 300). Rápido y acotado — es el punto de entrada que llama el hook opcional de inyección de contexto en la primera lectura de archivo.
 
 ---
 
@@ -397,7 +401,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_relations_target ON memory_relations(proje
 
 ## 6. Definición de Herramientas MCP
 
-`sv-memory` registra **28 herramientas MCP** para agentes de IA:
+`sv-memory` registra **29 herramientas MCP** para agentes de IA:
 
 ### 1. `sv_mem_save`
 
@@ -577,6 +581,15 @@ Registra automáticamente una entrada de diario ligera (p. ej., resultados de te
 - **Parámetros:**
   - `what` (string, requerido): Descripción resumida.
   - `why` (string, requerido): Contexto o justificación.
+
+### 19b. `sv_mem_context_pack`
+
+Construye un **context pack compacto y fusionado** para una ruta de código (archivo, paquete o símbolo): el rol estructural del nodo en el grafo de dependencias (tipo, fan-in/fan-out, comunidad, flag de hub) más las memorias vinculadas a esa ruta vía `where_path` o aristas `rationale_for` (decisiones, estándares, bugfixes), cada una renderizada como título + `why` truncado. Una sola llamada acotada reemplaza los round-trips de `sv_graph_explain` + `sv_mem_search path=` + varios `sv_mem_get`, ahorrando tokens. Es el puente propietario grafo→memoria que alimenta el hook opcional de inyección silenciosa de contexto.
+
+- **Parámetros:**
+  - `path` (string, requerido): Ruta de archivo, nombre de paquete o símbolo a resolver.
+  - `token_budget` (string, opcional): Máximo de tokens para la respuesta; se trunca con un aviso al superarse (por defecto desde config `max_response_tokens`, 4000; `'0'` = ilimitado).
+- **Config:** `context_pack_max_memories` (default `5`, máx `20`) limita las memorias vinculadas; cada `why` se trunca a `bundle_why_chars`.
 
 ### 20. `sv_graph_query`
 
@@ -833,7 +846,7 @@ sv-memory/
 │   │   ├── extractor/           # Extractor tree-sitter, respaldo regex, semántica markdown
 │   │   └── schema/              # Estructuras Node/Edge
 │   ├── hook/                    # Generación y plantillas de hooks PreToolUse
-│   ├── mcp/                     # Servidor MCP + 28 handlers de herramientas; lee del caché LRU de internal/graph
+│   ├── mcp/                     # Servidor MCP + 29 handlers de herramientas; lee del caché LRU de internal/graph
 │   ├── memory/                  # CRUD, almacenamiento de sesiones, dedup, conflictos, compactación,
 │   │                            # git sync por chunks, exportación Obsidian/Cypher, stats
 │   ├── perm/                    # Gestión de allow-lists de herramientas MCP (antigravity/claude-code)
@@ -898,6 +911,7 @@ El parseo usa **tree-sitter** (`gotreesitter`) para los lenguajes principales, c
 | Truncación de campos (`sv_mem_get`)                                | Límite `max_chars` por campo de texto (por defecto 1000)                                                                                    | Evita el consumo de tokens sin límite                                     |
 | Umbrales de truncación configurables                                | Las claves de config `max_field_chars`, `search_expand_chars`, `timeline_why_chars`, `bundle_why_chars` sobreescriben los límites compilados vía YAML | Ajusta el tamaño de las respuestas sin recompilar                   |
 | Guarda de tokens en arranque de sesión (`sv_mem_session_start`)     | Auto-Boot Bundle + Graph Hubs limitados por `max_response_tokens` / `token_budget` por llamada                                               | Acota el payload pre-herramienta más grande de cada sesión                |
+| Context Pack (`sv_mem_context_pack`)                                | Una llamada acotada fusiona el rol del grafo + memorias vinculadas para una ruta (`where_path`/`rationale_for`), reemplazando los round-trips de explain+search+get | 1 llamada en vez de 3+; solo título + `why` truncado                     |
 | Topic key upsert                                                   | Actualización en el lugar en lugar de acumular revisiones                                                                                   | 50% menos resultados de búsqueda redundantes                              |
 | Deduplicación de ventana móvil                                     | Suprime guardados idénticos dentro de 24h                                                                                                   | Evita el crecimiento por duplicados                                       |
 | SQL de búsqueda compacto                                           | SELECT de solo 7 columnas necesarias en lugar de las 20                                                                                     | ~60% menos I/O por búsqueda                                               |

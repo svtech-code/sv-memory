@@ -1,0 +1,50 @@
+package main
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/spf13/cobra"
+
+	"github.com/svtech-code/sv-memory/internal/config"
+	"github.com/svtech-code/sv-memory/internal/db"
+	"github.com/svtech-code/sv-memory/internal/memory"
+)
+
+var (
+	contextMaxMemories int
+	contextWhyChars    int
+)
+
+var contextCmd = &cobra.Command{
+	Use:   "context <path>",
+	Short: "Show a compact context pack (graph role + linked memories) for a code path",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		cfg, err := config.LoadConfig(cwd)
+		if err != nil {
+			return err
+		}
+		database, err := db.InitDB(cfg.DBPath)
+		if err != nil {
+			return err
+		}
+		defer database.Close()
+
+		pack, err := memory.GetContextPack(database, cfg.ProjectID, args[0], contextMaxMemories)
+		if err != nil {
+			return err
+		}
+		fmt.Println(memory.RenderContextPack(pack, contextWhyChars))
+		return nil
+	},
+}
+
+func init() {
+	contextCmd.Flags().IntVar(&contextMaxMemories, "max-memories", 5, "Maximum number of linked memories to include")
+	contextCmd.Flags().IntVar(&contextWhyChars, "why-chars", 300, "Maximum characters of each memory's why to render")
+}

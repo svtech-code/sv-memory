@@ -22,7 +22,7 @@
   <a href="#-architecture">Architecture</a> •
   <a href="#-getting-started">Getting Started</a> •
   <a href="#-cli-commands-reference">CLI Commands</a> •
-  <a href="#-model-context-protocol-mcp-28-tools">MCP Tools</a> •
+  <a href="#-model-context-protocol-mcp-29-tools">MCP Tools</a> •
   <a href="documentation/getting_started_guide.md">Guide (EN)</a> •
   <a href="documentation/getting_started_guide_ES.md">Guía (ES)</a>
 </p>
@@ -164,7 +164,7 @@ sv-memory hooks install --platform antigravity --strict
 Restart your AI assistant, then confirm everything is wired up:
 
 ```bash
-sv-memory permissions status --platform antigravity   # Granted: 28 / 28
+sv-memory permissions status --platform antigravity   # Granted: 29 / 29
 sv-memory hooks status                                # antigravity: ✅ installed
 sv-memory diagnose
 ```
@@ -210,14 +210,14 @@ sv-memory tui
 | `sv-memory obsidian-export`        | **Export**      | Exports memories into linked Obsidian Markdown notes (`[[wikilinks]]`).                  |
 | `sv-memory conflicts`              | **Memory**      | Detects semantic overlap and memory conflicts across the project.                        |
 | `sv-memory hooks install`          | **Hooks**       | Installs PreToolUse hooks for Claude Code, Antigravity CLI, and OpenCode.                |
-| `sv-memory permissions list`       | **Permissions** | Lists the 28 sv-memory MCP tools with descriptions.                                      |
+| `sv-memory permissions list`       | **Permissions** | Lists the 29 sv-memory MCP tools with descriptions.                                      |
 | `sv-memory permissions status`     | **Permissions** | Shows granted/missing MCP permissions per platform.                                      |
 | `sv-memory permissions grant`      | **Permissions** | Writes MCP tool allow-lists (`--all`/`--tool`, `--dry-run`) for Antigravity/Claude Code. |
 | `sv-memory permissions revoke`     | **Permissions** | Removes sv-memory allow-list entries, preserving unrelated permissions.                  |
 
 ---
 
-## 🧩 Model Context Protocol (MCP) 28 Tools
+## 🧩 Model Context Protocol (MCP) 29 Tools
 
 ### 🧠 Memory Tools
 
@@ -235,6 +235,7 @@ sv-memory tui
 - **`sv_mem_delete`**: Soft-deletes (or hard-deletes) a memory.
 - **`sv_mem_pin`**: Pins a local memory so it surfaces first in session context; `action="unpin"` clears it.
 - **`sv_mem_capture_passive`**: Logs lightweight journal entries automatically.
+- **`sv_mem_context_pack`**: Fuses graph role + linked memories for a code path in one bounded call (the graph→memory bridge for token-efficient context).
 - **`sv_mem_conflicts`**: Surfaces memory conflicts with semantic overlap analysis; `action=scan semantic=true` LLM-judges candidate pairs via the agent CLI (claude/opencode).
 - **`sv_mem_compact`**: Consolidates historical topic key revisions into unified summary records.
 
@@ -285,10 +286,10 @@ approval on every unlisted MCP tool call. `sv-memory` can manage that allow-list
 for you, either from the `configure` wizard (Phase 4) or standalone:
 
 ```bash
-# Show the 28 tools with descriptions
+# Show the 29 tools with descriptions
 sv-memory permissions list
 
-# Grant all 28 tools to Antigravity CLI (dry-run first to preview)
+# Grant all 29 tools to Antigravity CLI (dry-run first to preview)
 sv-memory permissions grant --platform antigravity --all --dry-run
 sv-memory permissions grant --platform antigravity --all
 
@@ -306,7 +307,7 @@ sv-memory permissions revoke --platform antigravity
 - Unrelated entries (e.g. `command(npm run)`) are always preserved.
 - Restart your AI assistant after granting to load the new permissions.
 
-In the `sv-memory configure` wizard, **Phase 4** lists the 28 tools for you to choose
+In the `sv-memory configure` wizard, **Phase 4** lists the 29 tools for you to choose
 which to authorize (press `a` to select all and `x` to select none) on the configured
 platforms.
 
