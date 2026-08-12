@@ -5,6 +5,8 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+## [v0.9.0] - 2026-08-11
+
 ### Added
 
 - **Session token ledger in `sv_mem_stats`:** the server tracks an atomic estimate of the tokens (chars/4) injected into the agent context by the Auto-Boot bundle and bulk-returning read tools since the last `sv_mem_session_start` (reset on session start). `sv_mem_stats` now reports `Estimated tokens injected this session` alongside the `max_response_tokens` budget, so the agent can decide when to compact.
