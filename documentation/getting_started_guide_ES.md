@@ -16,7 +16,7 @@ Cuando trabajas con asistentes de IA en repositorios medianos o grandes, suceden
 2. **Desperdicio de Tokens:** La IA necesita leer decenas de archivos fuente una y otra vez para entender la estructura del código.
 3. **Falta de Continuidad:** Las decisiones técnicas quedan atrapadas en chats individuales en lugar de compartirse con el equipo.
 
-**sv-memory** resuelve esto combinando **memorias persistentes indexadas con SQLite FTS5 BM25** y un **grafo de dependencias estructural de código** expuesto a través de 28 herramientas MCP (_Model Context Protocol_).
+**sv-memory** resuelve esto combinando **memorias persistentes indexadas con SQLite FTS5 BM25** y un **grafo de dependencias estructural de código** expuesto a través de 29 herramientas MCP (_Model Context Protocol_).
 
 ---
 
@@ -101,7 +101,7 @@ El asistente te guiará a través de fases interactivas en la terminal, navegabl
 1. **Fase 1 (Editores GUI):** Te permite seleccionar editores como **Cursor**, **VS Code**, **Zed** o **Windsurf**. Registra automáticamente el servidor MCP en sus archivos de configuración de usuario (ej. `claude_desktop_config.json` o settings de Cursor).
 2. **Fase 2 (Asistentes de Terminal):** Te permite seleccionar clientes CLI como **Claude Code**, **Antigravity CLI (agy)** u **OpenCode**.
 3. **Fase 3 (Confirmación y aplicación):** Muestra el resumen de herramientas seleccionadas y aplica las configuraciones automáticas o manuales.
-4. **Fase 4 (Permisos MCP):** Lista las **28 herramientas MCP de sv-memory** para que selecciones cuáles autorizar (con `a` seleccionas todas y `x` ninguna). Otorga los permisos en las plataformas configuradas que usan allow-list estática (Antigravity CLI, Claude Code).
+4. **Fase 4 (Permisos MCP):** Lista las **29 herramientas MCP de sv-memory** para que selecciones cuáles autorizar (con `a` seleccionas todas y `x` ninguna). Otorga los permisos en las plataformas configuradas que usan allow-list estática (Antigravity CLI, Claude Code).
 
 > **¿Por qué este paso?**
 > Evita que tengas que editar manualmente archivos JSON de configuración complejos. Con un par de teclas en la terminal, todos tus editores quedan enlazados al servidor MCP de `sv-memory` y los permisos de las herramientas quedan otorgados con total transparencia.
@@ -151,6 +151,8 @@ Existen dos modos:
 
 > **Degradación y fail-open:** los scripts de hook nunca llaman al servidor sv-memory solo inspeccionan archivos locales y variables de entorno. Si sv-memory no está inicializado (sin `.sv-memory/`), el binario no está en el PATH, o está `SV_MEMORY_STRICT_DISABLE=1`, el modo strict **permite** la lectura en lugar de bloquearla, de modo que un sv-memory ausente o mal configurado nunca deje al agente atascado. Ten en cuenta que el _bloqueo_ strict solo está implementado en Antigravity CLI; en Claude Code el modo strict es solo nudge (nunca bloquea).
 
+> **Inyección silenciosa de contexto (opt-in, default off):** los hooks de Claude Code pueden auto-inyectar un context pack compacto grafo+memorias (salida de `sv-memory context <file>`) como `additionalContext` en la primera `Read` de cada archivo. Actívala con `sv-memory hooks install --platform claude-code --context-injection`, que crea el marcador `.sv-memory/context-injection-enabled`. La salida se cachea por archivo para la sesión y está acotada en tiempo (2s); el hook siempre sale con `exit 0`, de modo que un binario o `.sv-memory` ausente nunca rompe una llamada. Desactívala con `sv-memory hooks uninstall --context-injection`. Antigravity, Codex y OpenCode no soportan inyección por `additionalContext` y mantienen el mecanismo de nudge/skill.
+
 > **Por proyecto:** Repite este comando en cada repositorio donde trabajes con IA. Las plataformas soportadas son `claude-code`, `codex`, `antigravity` y `opencode` (omite `--platform` para instalarlo en todas).
 
 ---
@@ -161,7 +163,7 @@ Cierra y vuelve a abrir tu asistente de IA para que cargue el MCP, los permisos 
 
 ```bash
 cd /ruta/a/tu-proyecto
-sv-memory permissions status --platform antigravity   # Granted: 28 / 28
+sv-memory permissions status --platform antigravity   # Granted: 29 / 29
 sv-memory hooks status                                # antigravity: ✅ installed
 sv-memory diagnose                                    # 17 pass, 0 failures
 ```
@@ -176,10 +178,13 @@ Una vez completados los pasos anteriores, ya estás listo para trabajar.
 
 Al abrir tu editor (Cursor, Windsurf, Claude Code, etc.) y enviar cualquier mensaje o tarea a la IA:
 
-- **Arranque de Sesión (Auto-Boot Context Bundle):** El agente ejecuta de forma transparente `sv_mem_session_start`, recibiendo de inmediato las metas de la sesión anterior y los 3 principales hubs de código del repositorio.
-- **Búsqueda Inteligente (FTS5 BM25 + Path Scoping):** Cuando le haces una pregunta sobre un módulo o bug, la IA llama a `sv_mem_search` con filtrado por ruta para encontrar decisiones pasadas sin gastar miles de tokens.
+- **Arranque de Sesión (Auto-Boot Context Bundle):** El agente ejecuta de forma transparente `sv_mem_session_start`, recibiendo de inmediato las metas de la sesión anterior, los 3 principales hubs de código y los últimos postmortems / Q&A.
+- **Búsqueda Inteligente (FTS5 BM25 + Path Scoping + Graph Boost):** Cuando le haces una pregunta sobre un módulo o bug, la IA llama a `sv_mem_search` con filtrado por ruta para encontrar decisiones pasadas sin gastar miles de tokens. Con `graph_boost` (default activado), una búsqueda de módulo se expande a toda la comunidad del grafo en una sola llamada, anotando las filas de comunidad con un marcador `[graph]`.
 - **Consulta de Grafo (<1ms):** Si la IA necesita saber qué archivos importan a un módulo antes de refactorizar, consulta `sv_graph_query`, recibiendo una respuesta instantánea gracias al caché LRU en RAM.
+- **Context Pack (Grafo + Memoria en una llamada):** Antes de tocar un archivo, la IA llama a `sv_mem_context_pack` (o al CLI `sv-memory context <path>`) para obtener el rol estructural del nodo (fan-in/fan-out, comunidad) más las decisiones, estándares y bugfixes vinculados a esa ruta — una llamada acotada en lugar de varias búsquedas, con cada `why` truncado.
+- **Inyección Silenciosa de Contexto (opt-in):** Con hooks de Claude Code + `--context-injection`, la primera `Read` de cada archivo inyecta automáticamente su context pack como `additionalContext` — contexto relevante en el momento exacto, sin round-trip de búsqueda.
 - **Guardado Automático:** Al resolver un problema o definir un estándar, la IA ejecuta `sv_mem_save` registrando el aprendizaje en SQLite y sincronizándolo en `.sv-memory/chunks/` para tu control de versiones en Git.
+- **Ledger de Tokens:** `sv_mem_stats` reporta los tokens estimados inyectados en la sesión desde `sv_mem_session_start` junto con el presupuesto `max_response_tokens`, para que el agente sepa cuándo compactar.
 
 #### 👤 2. Exploración e Inspección Humana en Terminal (`sv-memory tui`)
 

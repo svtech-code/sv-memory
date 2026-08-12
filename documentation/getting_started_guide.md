@@ -16,7 +16,7 @@ When working with AI assistants in medium or large repositories, three recurring
 2. **Token Waste:** The AI needs to read dozens of source files over and over to understand the code structure.
 3. **Lack of Continuity:** Technical decisions stay trapped in individual chats instead of being shared with the team.
 
-**sv-memory** solves this by combining **persistent memories indexed with SQLite FTS5 BM25** and a **structural code dependency graph** exposed through 28 MCP (_Model Context Protocol_) tools.
+**sv-memory** solves this by combining **persistent memories indexed with SQLite FTS5 BM25** and a **structural code dependency graph** exposed through 29 MCP (_Model Context Protocol_) tools.
 
 ---
 
@@ -101,7 +101,7 @@ The wizard guides you through interactive phases in the terminal, navigable with
 1. **Phase 1 (GUI Editors):** Lets you select editors such as **Cursor**, **VS Code**, **Zed**, or **Windsurf**. It automatically registers the MCP server in their user configuration files (e.g. `claude_desktop_config.json` or Cursor settings).
 2. **Phase 2 (Terminal Assistants):** Lets you select CLI clients such as **Claude Code**, **Antigravity CLI (agy)**, or **OpenCode**.
 3. **Phase 3 (Confirmation and application):** Shows the summary of selected tools and applies the automatic or manual configurations.
-4. **Phase 4 (MCP Permissions):** Lists the **28 sv-memory MCP tools** for you to select which ones to authorize (press `a` to select all and `x` to select none). It grants the permissions on the configured platforms that use a static allow-list (Antigravity CLI, Claude Code).
+4. **Phase 4 (MCP Permissions):** Lists the **29 sv-memory MCP tools** for you to select which ones to authorize (press `a` to select all and `x` to select none). It grants the permissions on the configured platforms that use a static allow-list (Antigravity CLI, Claude Code).
 
 > **Why this step?**
 > It prevents you from having to manually edit complex JSON configuration files. With a couple of keystrokes in the terminal, all your editors get linked to the `sv-memory` MCP server and the tool permissions are granted with full transparency.
@@ -151,6 +151,8 @@ There are two modes:
 
 > **Degradation & fail-open:** the hook scripts never call the sv-memory server they only inspect local files and env vars. If sv-memory is not initialized (no `.sv-memory/`), the binary is missing from PATH, or `SV_MEMORY_STRICT_DISABLE=1` is set, strict mode **allows** the read instead of blocking, so a missing/unconfigured sv-memory never deadlocks the agent. Note that strict _blocking_ is only implemented on Antigravity CLI; on Claude Code strict mode is nudge-only (it never blocks).
 
+> **Silent context injection (opt-in, default off):** Claude Code hooks can auto-inject a compact graph+memory context pack (`sv-memory context <file>` output) as `additionalContext` on the first `Read` of each file. Enable it with `sv-memory hooks install --platform claude-code --context-injection`, which creates a `.sv-memory/context-injection-enabled` marker. Output is cached per file for the session and time-bounded (2s); the hook always exits 0, so a missing binary or `.sv-memory` never breaks a tool call. Disable with `sv-memory hooks uninstall --context-injection`. Antigravity, Codex, and OpenCode do not support `additionalContext` injection and keep the nudge/skill mechanism.
+
 > **Per project:** Repeat this command in every repository where you work with AI. The supported platforms are `claude-code`, `codex`, `antigravity`, and `opencode` (omit `--platform` to install it on all of them).
 
 ---
@@ -161,7 +163,7 @@ Close and reopen your AI assistant so it loads the MCP, permissions, and freshly
 
 ```bash
 cd /path/to/your-project
-sv-memory permissions status --platform antigravity   # Granted: 28 / 28
+sv-memory permissions status --platform antigravity   # Granted: 29 / 29
 sv-memory hooks status                                # antigravity: ✅ installed
 sv-memory diagnose                                    # 17 pass, 0 failures
 ```
@@ -176,10 +178,13 @@ Once the previous steps are complete, you are ready to work.
 
 When you open your editor (Cursor, Windsurf, Claude Code, etc.) and send any message or task to the AI:
 
-- **Session Startup (Auto-Boot Context Bundle):** The agent transparently runs `sv_mem_session_start`, immediately receiving the previous session's goals and the top 3 code hubs of the repository.
-- **Smart Search (FTS5 BM25 + Path Scoping):** When you ask it about a module or bug, the AI calls `sv_mem_search` with path filtering to find past decisions without spending thousands of tokens.
+- **Session Startup (Auto-Boot Context Bundle):** The agent transparently runs `sv_mem_session_start`, immediately receiving the previous session's goals, the top 3 code hubs, and the latest postmortems / Q&A.
+- **Smart Search (FTS5 BM25 + Path Scoping + Graph Boost):** When you ask it about a module or bug, the AI calls `sv_mem_search` with path filtering to find past decisions without spending thousands of tokens. With `graph_boost` (default on), a module search expands to the whole graph community in one call, annotating community rows with a `[graph]` marker.
 - **Graph Query (<1ms):** If the AI needs to know which files import a module before refactoring, it queries `sv_graph_query`, getting an instant answer thanks to the in-RAM LRU cache.
+- **Context Pack (Graph + Memory in one call):** Before touching a file, the AI calls `sv_mem_context_pack` (or the `sv-memory context <path>` CLI) to get the node's structural role (fan-in/fan-out, community) plus the decisions, standards, and bugfixes linked to that path — one bounded call instead of several searches, with each `why` truncated.
+- **Silent Context Injection (opt-in):** With Claude Code hooks + `--context-injection`, the first Read of each file automatically injects its context pack as `additionalContext` — relevant context at the exact moment, with no search round-trip.
 - **Automatic Saving:** When solving a problem or defining a standard, the AI runs `sv_mem_save`, recording the learning in SQLite and syncing it to `.sv-memory/chunks/` for your Git version control.
+- **Token Ledger:** `sv_mem_stats` reports the estimated tokens injected into the session since `sv_mem_session_start` alongside the `max_response_tokens` budget, so the agent knows when to compact.
 
 #### 👤 2. Human Exploration and Inspection in the Terminal (`sv-memory tui`)
 
