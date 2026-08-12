@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/svtech-code/sv-memory/internal/security"
@@ -240,6 +241,75 @@ func contextNeighbors(db *sql.DB, projectID, nodeID, col string, limit int) ([]C
 		}
 	}
 	return out, rows.Err()
+}
+
+// CommunityPathSet returns the set of graph node paths structurally related to
+// node: every node in the same persisted community (community_id metadata) when
+// available, otherwise the node's own directory prefix. This is the graph-aware
+// recall used by the graph_boost search expansion: a module search surfaces
+// memories for the whole community, not just the exact path.
+func CommunityPathSet(db *sql.DB, projectID string, node *ContextNode) (map[string]bool, error) {
+	set := map[string]bool{}
+	if node == nil {
+		return set, nil
+	}
+	if node.Path != "" {
+		set[node.Path] = true
+	}
+	if node.CommunityID > 0 {
+		rows, err := db.Query(`SELECT path, COALESCE(metadata, '') FROM graph_nodes WHERE project_id = ? AND node_type != 'document'`, projectID)
+		if err != nil {
+			return set, fmt.Errorf("failed querying community nodes: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var p, meta string
+			if scanErr := rows.Scan(&p, &meta); scanErr == nil && p != "" && parseCommunityID(meta) == node.CommunityID {
+				set[p] = true
+			}
+		}
+		return set, rows.Err()
+	}
+
+	// Fallback before communities are computed: same-directory nodes are a
+	// cheap structural proxy for the module.
+	dir := path.Dir(node.Path)
+	if dir != "." && dir != "" && dir != "/" {
+		rows, err := db.Query(`SELECT path FROM graph_nodes WHERE project_id = ? AND node_type != 'document' AND path LIKE ? ESCAPE '\'`, projectID, dir+"/%")
+		if err != nil {
+			return set, fmt.Errorf("failed querying directory nodes: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var p string
+			if scanErr := rows.Scan(&p); scanErr == nil && p != "" {
+				set[p] = true
+			}
+		}
+		return set, rows.Err()
+	}
+	return set, nil
+}
+
+// parseCommunityID extracts the persisted community_id from a graph node's
+// metadata JSON. Returns 0 when absent or malformed.
+func parseCommunityID(metadata string) int {
+	if metadata == "" {
+		return 0
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(metadata), &m); err != nil {
+		return 0
+	}
+	switch v := m["community_id"].(type) {
+	case float64:
+		return int(v)
+	case int:
+		return v
+	case int64:
+		return int(v)
+	}
+	return 0
 }
 
 // RenderContextPack renders a context pack as compact markdown text. Each

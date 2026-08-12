@@ -122,7 +122,7 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 - **Subcomandos** para leer/escribir configuración (YAML, global `~/.sv-memory/config.yaml` o local `.sv-memory/config.yaml`):
   - `sv-memory configure get <key>`: imprime un único valor de configuración.
   - `sv-memory configure set <key> <value> [--local]`: escribe un valor de forma global (por defecto) o local al proyecto.
-  - `sv-memory configure list`: imprime todos los valores de configuración activos (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`, `auto_compaction_enabled`, `compaction_interval_minutes`, `max_response_tokens`, `max_field_chars`, `search_expand_chars`, `timeline_why_chars`, `bundle_why_chars`, `context_pack_max_memories`).
+  - `sv-memory configure list`: imprime todos los valores de configuración activos (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`, `auto_compaction_enabled`, `compaction_interval_minutes`, `max_response_tokens`, `max_field_chars`, `search_expand_chars`, `timeline_why_chars`, `bundle_why_chars`, `context_pack_max_memories`, `graph_boost`).
 
 #### 10. `sv-memory permissions`
 
@@ -492,7 +492,7 @@ Búsqueda de memoria basada en FTS5. Devuelve solo IDs, categorías, fechas, tí
 - **Parámetros:**
   - `query` (string, requerido): Términos de búsqueda por palabras clave.
   - `category` (string, opcional): Filtro por categoría.
-  - `path` (string, opcional): Filtro de alcance por ruta/directorio para limitar memorias relevantes a un archivo o directorio específico.
+  - `path` (string, opcional): Filtro de alcance por ruta/directorio para limitar memorias relevantes a un archivo o directorio específico. Con `graph_boost` (default `true`), el recall se expande a toda la comunidad del grafo de esa ruta: los resultados de todo el módulo surgen en una sola llamada, y las filas expandidas por comunidad se anotan con un marcador `[graph]`.
   - `limit` (string, opcional): Máximo de resultados (por defecto `10`).
   - `offset` (string, opcional): Desplazamiento de paginación.
   - `match_mode` (string, opcional): `'all'` (por defecto) exige que cada token coincida; `'any'` devuelve memorias que coinciden con uno o más tokens para una recuperación más amplia.

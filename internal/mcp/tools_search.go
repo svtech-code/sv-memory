@@ -59,8 +59,23 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 	debugLog("mem_search maybeSyncFromGit took %s", time.Since(startSync))
 
 	startSearch := time.Now()
-	results, err := memory.SearchMemoriesCompactScoped(s.pool.Reader, s.cfg.ProjectID, query, category, pathFilter, matchMode, limit, offset)
-	debugLog("mem_search query=%q category=%q offset=%d returned %d rows in %s", query, category, offset, len(results), time.Since(startSearch))
+	// Graph-aware search (graph_boost, default on): when a path is given, expand
+	// recall to the whole graph community of that path so a module search
+	// surfaces memories for the entire module, not just the exact file. Falls
+	// back to the plain path-filtered search when the graph has no community
+	// data or graph_boost is disabled.
+	communityPaths := s.searchCommunityPaths(pathFilter)
+	var results []*memory.MemorySearchResult
+	if len(communityPaths) > 0 {
+		paths := make([]string, 0, len(communityPaths))
+		for p := range communityPaths {
+			paths = append(paths, p)
+		}
+		results, err = memory.SearchMemoriesByPaths(s.pool.Reader, s.cfg.ProjectID, query, category, matchMode, pathFilter, paths, limit, offset)
+	} else {
+		results, err = memory.SearchMemoriesCompactScoped(s.pool.Reader, s.cfg.ProjectID, query, category, pathFilter, matchMode, limit, offset)
+	}
+	debugLog("mem_search query=%q category=%q offset=%d graphBoost=%t returned %d rows in %s", query, category, offset, len(communityPaths) > 0, len(results), time.Since(startSearch))
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed searching memories: %v", err)), nil
 	}
@@ -69,19 +84,38 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 		return mcp.NewToolResultText("No relevant project memories found matching the query."), nil
 	}
 
-	// Compact table output — progressive disclosure: one row per result with
-	// the essentials. Agent drills down with sv_mem_get for full content.
+	// Map each result to its where_path once so community-expanded rows can be
+	// annotated without a per-row query.
+	whereByID := s.resultWherePaths(results)
+
+	return s.respond(req, s.renderSearchResults(results, whereByID, communityPaths, pathFilter, offset)), nil
+}
+
+// renderSearchResults builds the compact table output (progressive disclosure:
+// one row per result with the essentials) plus the inline expansion of the top-1
+// hit, annotating graph-community rows with a [graph] marker when graph_boost
+// expanded the search beyond the exact path.
+func (s *Server) renderSearchResults(results []*memory.MemorySearchResult, whereByID map[string]string, communityPaths map[string]bool, pathFilter string, offset int) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Found %d relevant project memories (use `sv_mem_get` for full content, `sv_mem_timeline` for context):\n\n", len(results))
 	sb.WriteString("| # | ID | Category | Title | Topic | Date |\n")
 	sb.WriteString("|---|----|----------|-------|-------|------|\n")
+	graphRows := 0
 	for i, r := range results {
 		topic := "-"
 		if r.TopicKey != "" {
 			topic = r.TopicKey
 		}
+		title := escapeTableCell(r.What)
+		if pathFilter != "" && whereByID[r.ID] != "" && communityPaths[whereByID[r.ID]] && !strings.Contains(whereByID[r.ID], pathFilter) {
+			title += " `[graph]`"
+			graphRows++
+		}
 		fmt.Fprintf(&sb, "| %d | %s | %s | %s | %s | %s |\n",
-			i+1, r.ID, strings.ToUpper(r.Category), escapeTableCell(r.What), escapeTableCell(topic), r.CreatedAt.Format("2006-01-02"))
+			i+1, r.ID, strings.ToUpper(r.Category), title, escapeTableCell(topic), r.CreatedAt.Format("2006-01-02"))
+	}
+	if graphRows > 0 {
+		sb.WriteString("\n`[graph]` = memory for a file in the same graph community as the search path (graph_boost).\n")
 	}
 
 	// Expand the top-1 hit inline so the agent often skips the follow-up
@@ -104,8 +138,7 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 			}
 		}
 	}
-
-	return s.respond(req, sb.String()), nil
+	return sb.String()
 }
 
 // escapeTableCell sanitizes a string for safe embedding in a markdown table
@@ -113,6 +146,54 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 func escapeTableCell(s string) string {
 	s = strings.ReplaceAll(s, "|", "\\|")
 	return strings.ReplaceAll(s, "\n", " ")
+}
+
+// searchCommunityPaths resolves the graph community of a path filter for the
+// graph_boost expansion. Returns an empty set (no expansion) when the feature
+// is disabled, the path is empty, the node cannot be resolved, or the community
+// set collapses to just the node itself.
+func (s *Server) searchCommunityPaths(pathFilter string) map[string]bool {
+	if pathFilter == "" || !configuredBool("graph_boost", true) {
+		return nil
+	}
+	node, err := memory.ResolveContextNode(s.pool.Reader, s.cfg.ProjectID, pathFilter)
+	if err != nil || node == nil {
+		return nil
+	}
+	set, err := memory.CommunityPathSet(s.pool.Reader, s.cfg.ProjectID, node)
+	if err != nil || len(set) < 2 {
+		return nil
+	}
+	return set
+}
+
+// resultWherePaths loads the where_path for a batch of result IDs in one query
+// so the graph_boost annotation needs no per-row round-trip.
+func (s *Server) resultWherePaths(results []*memory.MemorySearchResult) map[string]string {
+	out := map[string]string{}
+	if len(results) == 0 {
+		return out
+	}
+	ph := make([]string, len(results))
+	ids := make([]interface{}, len(results))
+	for i, r := range results {
+		ph[i] = "?"
+		ids[i] = r.ID
+	}
+	query := "SELECT id, COALESCE(where_path, '') FROM memories WHERE project_id = ? AND id IN (" + strings.Join(ph, ", ") + ")"
+	args := append([]interface{}{s.cfg.ProjectID}, ids...)
+	rows, err := s.pool.Reader.Query(query, args...)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, wp string
+		if scanErr := rows.Scan(&id, &wp); scanErr == nil {
+			out[id] = wp
+		}
+	}
+	return out
 }
 
 func (s *Server) handleGet(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

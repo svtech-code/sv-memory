@@ -122,7 +122,7 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 - **Sub-commands** for reading/writing configuration (YAML, global `~/.sv-memory/config.yaml` or local `.sv-memory/config.yaml`):
   - `sv-memory configure get <key>`: prints a single configuration value.
   - `sv-memory configure set <key> <value> [--local]`: writes a value globally (default) or project-locally.
-  - `sv-memory configure list`: prints all active configuration values (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`, `auto_compaction_enabled`, `compaction_interval_minutes`, `max_response_tokens`, `max_field_chars`, `search_expand_chars`, `timeline_why_chars`, `bundle_why_chars`, `context_pack_max_memories`).
+  - `sv-memory configure list`: prints all active configuration values (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`, `auto_compaction_enabled`, `compaction_interval_minutes`, `max_response_tokens`, `max_field_chars`, `search_expand_chars`, `timeline_why_chars`, `bundle_why_chars`, `context_pack_max_memories`, `graph_boost`).
 
 #### 10. `sv-memory permissions`
 
@@ -493,7 +493,7 @@ FTS5-powered memory search. Returns only IDs, categories, dates, titles, and top
 - **Parameters:**
   - `query` (string, required): Keyword search terms.
   - `category` (string, optional): Category filter.
-  - `path` (string, optional): Path/directory scope filter to narrow memories relevant to a specific file or directory.
+  - `path` (string, optional): Path/directory scope filter to narrow memories relevant to a specific file or directory. With `graph_boost` (default `true`), the recall expands to the whole graph community of that path: results for the entire module surface in one call, and community-expanded rows are annotated with a `[graph]` marker.
   - `limit` (string, optional): Max results (default `10`).
   - `offset` (string, optional): Pagination offset.
   - `match_mode` (string, optional): `'all'` (default) requires every token to match; `'any'` matches memories matching one or more tokens for broader recall.

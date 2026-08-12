@@ -92,7 +92,7 @@ var configListCmd = &cobra.Command{
 			"default_review_limit", "auto_compaction_enabled",
 			"compaction_interval_minutes", "max_response_tokens",
 			"max_field_chars", "search_expand_chars", "timeline_why_chars", "bundle_why_chars",
-			"context_pack_max_memories",
+			"context_pack_max_memories", "graph_boost",
 		}
 		for _, key := range keys {
 			fmt.Printf("  %-26s: %v\n", key, viper.Get(key))

@@ -127,6 +127,92 @@ func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string
 	return scanCompactMemoriesScored(rows)
 }
 
+// SearchMemoriesByPaths is the graph-aware variant of SearchMemoriesCompactScoped:
+// it matches memories whose where_path equals/contains pathFilter OR belongs to
+// the given paths set (a graph community), so a module search surfaces memories
+// for the whole community in one call. When paths is empty it behaves exactly
+// like the plain path-filtered search.
+func SearchMemoriesByPaths(db *sql.DB, projectID string, searchTerm string, category string, matchMode string, pathFilter string, paths []string, limit int, offset int) ([]*MemorySearchResult, error) {
+	pathFilter = sanitizePathFilter(pathFilter)
+
+	// Build the path predicate: keep the precise filter and OR in the community
+	// paths. Placeholders are appended after the filter so arg order stays stable.
+	var pathClause string
+	var pathArgs []interface{}
+	if len(paths) > 0 {
+		ph := make([]string, len(paths))
+		for i := range paths {
+			ph[i] = "?"
+			pathArgs = append(pathArgs, paths[i])
+		}
+		in := "where_path IN (" + strings.Join(ph, ", ") + ")"
+		if pathFilter != "" {
+			pathClause = " AND ((where_path LIKE ? ESCAPE '\\' OR where_path = ?) OR " + in + ")"
+			pathArgs = append([]interface{}{"%" + pathFilter + "%", pathFilter}, pathArgs...)
+		} else {
+			pathClause = " AND " + in
+		}
+	} else if pathFilter != "" {
+		pathClause = " AND (where_path LIKE ? ESCAPE '\\' OR where_path = ?)"
+		pathArgs = append(pathArgs, "%"+pathFilter+"%", pathFilter)
+	}
+
+	var query string
+	var args []interface{}
+
+	if searchTerm == "" {
+		query = "SELECT " + compactColumns + `
+		FROM memories
+		WHERE project_id = ? AND deleted_at IS NULL` + pathClause
+		args = append(args, projectID)
+		args = append(args, pathArgs...)
+		if category != "" {
+			query += " AND category = ?"
+			args = append(args, category)
+		}
+		query += " ORDER BY created_at DESC"
+	} else {
+		searchTerm = sanitizeFTS5QueryWithMode(searchTerm, matchMode)
+		if searchTerm == "" {
+			return nil, nil
+		}
+		query = `
+		SELECT m.id, m.category, m.what,
+			m.topic_key, m.revision_count, m.duplicate_count, m.created_at,
+			bm25(memories_fts, 10.0, 5.0, 2.0) AS score
+		FROM memories m
+		JOIN memories_fts f ON m.rowid = f.rowid
+		WHERE m.project_id = ? AND memories_fts MATCH ? AND m.deleted_at IS NULL` + pathClause
+		args = append(args, projectID, searchTerm)
+		args = append(args, pathArgs...)
+		if category != "" {
+			query += " AND m.category = ?"
+			args = append(args, category)
+		}
+		query += " ORDER BY bm25(memories_fts, 10.0, 5.0, 2.0)"
+	}
+
+	if limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, limit)
+		if offset > 0 {
+			query += " OFFSET ?"
+			args = append(args, offset)
+		}
+	}
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed searching compact memories by paths: %w", err)
+	}
+	defer rows.Close()
+
+	if searchTerm == "" {
+		return scanCompactMemories(rows)
+	}
+	return scanCompactMemoriesScored(rows)
+}
+
 // scanCompactMemoriesScored is the FTS5 variant of scanCompactMemories; it also
 // reads the BM25 score column so the agent can see per-result relevance.
 func scanCompactMemoriesScored(rows *sql.Rows) ([]*MemorySearchResult, error) {

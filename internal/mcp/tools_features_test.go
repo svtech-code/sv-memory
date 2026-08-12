@@ -227,3 +227,50 @@ func TestContextPackTool(t *testing.T) {
 		t.Fatalf("expected linked memory in pack, got:\n%s", out)
 	}
 }
+
+func TestSearchGraphBoost(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	// Two files assigned to the same graph community so the boost fires.
+	if err := os.WriteFile(filepath.Join(tempDir, "a.go"), []byte("package main\nfunc a() {}\n"), 0644); err != nil {
+		t.Fatalf("failed writing a.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "b.go"), []byte("package main\nfunc b() {}\n"), 0644); err != nil {
+		t.Fatalf("failed writing b.go: %v", err)
+	}
+	if err := graph.SyncGraph(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
+		t.Fatalf("failed syncing graph: %v", err)
+	}
+	if _, err := pool.Writer.Exec(`UPDATE graph_nodes SET metadata = ? WHERE project_id = ? AND id IN (?, ?)`,
+		`{"community_id": 5}`, cfg.ProjectID, "a.go", "b.go"); err != nil {
+		t.Fatalf("failed setting community: %v", err)
+	}
+	for _, m := range []*memory.Memory{
+		{ProjectID: cfg.ProjectID, Category: "decision", What: "A decision", Why: "w", Learned: "l", WherePath: "a.go"},
+		{ProjectID: cfg.ProjectID, Category: "decision", What: "B decision", Why: "w", Learned: "l", WherePath: "b.go"},
+	} {
+		if _, err := memory.SaveMemory(pool.Writer, m); err != nil {
+			t.Fatalf("failed saving memory: %v", err)
+		}
+	}
+
+	srv := NewServer(pool, cfg)
+	req := mcpgo.CallToolRequest{}
+	req.Params.Name = "sv_mem_search"
+	req.Params.Arguments = map[string]any{"query": "", "path": "a.go"}
+	res, err := srv.GetTool("sv_mem_search").Handler(context.Background(), req)
+	if err != nil {
+		t.Fatalf("search failed: %v", err)
+	}
+	out := textContent(res.Content[0])
+	if !strings.Contains(out, "A decision") {
+		t.Fatalf("expected a.go memory in results, got:\n%s", out)
+	}
+	if !strings.Contains(out, "B decision") {
+		t.Fatalf("expected community-expanded b.go memory (graph_boost), got:\n%s", out)
+	}
+	if !strings.Contains(out, "[graph]") {
+		t.Fatalf("expected [graph] marker on the community-expanded row, got:\n%s", out)
+	}
+}

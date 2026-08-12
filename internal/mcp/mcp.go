@@ -347,6 +347,19 @@ func configuredChars(key string, fallback int) int {
 	return fallback
 }
 
+// configuredBool returns a configured boolean flag, falling back to the given
+// default when the config key is unset (viper.Get returns nil for unset keys).
+// Used for feature toggles like graph_boost that default on in production but
+// must not depend on config loading inside unit tests.
+func configuredBool(key string, fallback bool) bool {
+	if v := viper.Get(key); v != nil {
+		if b, ok := v.(bool); ok {
+			return b
+		}
+	}
+	return fallback
+}
+
 // truncateField shortens a string to maxChars with a truncation notice. It
 // delegates to memory.TruncateText (rune-safe) so all truncation in the tool
 // responses shares one implementation.
