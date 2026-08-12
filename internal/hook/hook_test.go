@@ -73,18 +73,18 @@ func TestContextInjectionMarker(t *testing.T) {
 		t.Fatal("expected context injection disabled by default")
 	}
 
-	if err := eng.SetContextInjection(true); err != nil {
+	if err = eng.SetContextInjection(true); err != nil {
 		t.Fatalf("failed enabling context injection: %v", err)
 	}
 	if !eng.ContextInjectionEnabled() {
 		t.Fatal("expected context injection enabled after SetContextInjection(true)")
 	}
 	marker := filepath.Join(tempDir, ".sv-memory", "context-injection-enabled")
-	if _, err := os.Stat(marker); err != nil {
+	if _, err = os.Stat(marker); err != nil {
 		t.Fatalf("expected marker file at %s: %v", marker, err)
 	}
 
-	if err := eng.SetContextInjection(false); err != nil {
+	if err = eng.SetContextInjection(false); err != nil {
 		t.Fatalf("failed disabling context injection: %v", err)
 	}
 	if eng.ContextInjectionEnabled() {
