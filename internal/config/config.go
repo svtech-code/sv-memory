@@ -35,6 +35,10 @@ func LoadGlobalAndLocalConfig(projPath string) {
 	viper.SetDefault("auto_compaction_enabled", true)
 	viper.SetDefault("compaction_interval_minutes", 60)
 	viper.SetDefault("max_response_tokens", 4000)
+	viper.SetDefault("max_field_chars", 1000)
+	viper.SetDefault("search_expand_chars", 300)
+	viper.SetDefault("timeline_why_chars", 200)
+	viper.SetDefault("bundle_why_chars", 300)
 
 	// 1. Load global config: ~/.sv-memory/config.yaml
 	home, err := os.UserHomeDir()

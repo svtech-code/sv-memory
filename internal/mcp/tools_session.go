@@ -47,7 +47,10 @@ func (s *Server) handleSessionStart(ctx context.Context, req mcp.CallToolRequest
 		sb.WriteString("\n*Use `sv_graph_explain` on a hub before refactoring it.*\n")
 	}
 
-	return mcp.NewToolResultText(sb.String()), nil
+	// Route through the shared token-budget truncation (respond) so the
+	// largest pre-tool payload (Auto-Boot Bundle + Graph Hubs) is bounded by
+	// the global max_response_tokens default or a per-call token_budget.
+	return s.respond(req, sb.String()), nil
 }
 
 func (s *Server) handleSessionEnd(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

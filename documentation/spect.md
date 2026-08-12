@@ -122,7 +122,7 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 - **Sub-commands** for reading/writing configuration (YAML, global `~/.sv-memory/config.yaml` or local `.sv-memory/config.yaml`):
   - `sv-memory configure get <key>`: prints a single configuration value.
   - `sv-memory configure set <key> <value> [--local]`: writes a value globally (default) or project-locally.
-  - `sv-memory configure list`: prints all active configuration values (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`, `auto_compaction_enabled`, `compaction_interval_minutes`, `max_response_tokens`).
+  - `sv-memory configure list`: prints all active configuration values (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`, `auto_compaction_enabled`, `compaction_interval_minutes`, `max_response_tokens`, `max_field_chars`, `search_expand_chars`, `timeline_why_chars`, `bundle_why_chars`).
 
 #### 10. `sv-memory permissions`
 
@@ -439,11 +439,12 @@ Generate a stable topic key in kebab-case format before saving.
 
 ### 4. `sv_mem_session_start`
 
-Register a new coding session.
+Register a new coding session. Returns the Auto-Boot Context Bundle (previous session summary, key decisions, standards, recent bugfixes, last journals, top graph hubs) bounded by the token budget.
 
 - **Parameters:**
   - `goal` (string, optional): Session objective.
   - `directory` (string, optional): Working directory.
+  - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default from config `max_response_tokens`, 4000; `'0'` = unlimited).
 
 ### 5. `sv_mem_session_end`
 
@@ -500,6 +501,7 @@ Retrieve a chronological list of observations centered around a specific memory.
   - `observation_id` (string, required): Memory ID.
   - `before` (string, optional): Count of memories preceding (default `5`).
   - `after` (string, optional): Count of memories succeeding (default `5`).
+  - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default from config `max_response_tokens`, 4000; `'0'` = unlimited).
 
 ### 11. `sv_mem_get` (Layer 3 Progressive Disclosure)
 
@@ -893,6 +895,8 @@ Parsing uses **tree-sitter** (`gotreesitter`) for the primary languages, with a 
 | Progressive 3-layer disclosure                         | Search returns compact rows (~30 tokens/result); full content on demand                                                                   | 60-80% of response tokens                                 |
 | Session compaction                                     | Full conversation → structured journal entry (200-500 tokens)                                                                             | 80-90% vs raw history                                     |
 | Field truncation (`sv_mem_get`)                        | `max_chars` cap per text field (default 1000)                                                                                             | Prevents unbounded token consumption                      |
+| Tunable truncation thresholds                           | `max_field_chars`, `search_expand_chars`, `timeline_why_chars`, `bundle_why_chars` config keys override the compiled-in caps via YAML     | Tune response size without recompiling                    |
+| Session-start token guard (`sv_mem_session_start`)      | Auto-Boot Bundle + Graph Hubs bounded by `max_response_tokens` / per-call `token_budget`                                                  | Bounds the largest pre-tool payload of each session       |
 | Topic key upsert                                       | Update in-place instead of accumulating revisions                                                                                         | 50% fewer redundant search results                        |
 | Rolling-window dedup                                   | Suppress identical saves within 24h                                                                                                       | Prevents duplicate bloat                                  |
 | Compact search SQL                                     | SELECT only 7 needed columns instead of all 20                                                                                            | ~60% less I/O per search                                  |

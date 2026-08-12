@@ -317,11 +317,12 @@ func (s *Server) relinkMemoryRationales() {
 // sv_mem_get responses. When a field exceeds this limit it is truncated
 // with a "[truncated N chars]" suffix to keep token consumption bounded.
 // Callers can override with the max_chars tool argument (0 = unlimited).
+// Tunable via the max_field_chars config key; this constant is the fallback.
 const maxFieldChars = 1000
 
 // timelineWhyChars caps the rationale shown for the central observation in
 // sv_mem_timeline, keeping the response lean while avoiding a full
-// sv_mem_get round-trip.
+// sv_mem_get round-trip. Tunable via the timeline_why_chars config key.
 const timelineWhyChars = 200
 
 // similarCheckTimeout bounds how long a save waits for the similar-memories
@@ -329,8 +330,21 @@ const timelineWhyChars = 200
 const similarCheckTimeout = 200 * time.Millisecond
 
 // searchExpandChars caps the why/learned fields shown inline for the top
-// search result, keeping the expanded section token-efficient.
+// search result, keeping the expanded section token-efficient. Tunable via the
+// search_expand_chars config key.
 const searchExpandChars = 300
+
+// configuredChars returns a positive configured character limit for a
+// truncation knob, falling back to the compiled-in default when the config key
+// is unset or non-positive. This makes the truncation thresholds tunable via
+// ~/.sv-memory/config.yaml (global) or .sv-memory/config.yaml (local) without
+// recompiling, while keeping the constants above as the safe defaults.
+func configuredChars(key string, fallback int) int {
+	if v := viper.GetInt(key); v > 0 {
+		return v
+	}
+	return fallback
+}
 
 // truncateField shortens a string to maxChars with a truncation notice. It
 // delegates to memory.TruncateText (rune-safe) so all truncation in the tool
@@ -473,6 +487,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		mcp.WithDescription("Register the start of a new coding session and receive an Auto-Boot Context Bundle: previous session summary, key architectural decisions, standards, recent bugfixes, last journals, and top graph hubs. Call this at the beginning of every work session to enable session grouping and post-compaction context recovery."),
 		mcp.WithString("goal", mcp.Description("Optional goal or objective for this session")),
 		mcp.WithString("directory", mcp.Description("Optional working directory (auto-detected from repo if omitted)")),
+		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
 	)
 	ms.AddTool(sessionStartTool, s.handleSessionStart)
 
@@ -539,6 +554,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		mcp.WithString("observation_id", mcp.Required(), mcp.Description("The observation ID to center the timeline around")),
 		mcp.WithString("before", mcp.Description("Number of memories to show before (default '5')")),
 		mcp.WithString("after", mcp.Description("Number of memories to show after (default '5')")),
+		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
 	)
 	ms.AddTool(timelineTool, s.handleTimeline)
 

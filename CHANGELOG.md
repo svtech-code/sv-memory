@@ -5,6 +5,15 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+### Added
+
+- **`token_budget` on `sv_mem_session_start` and `sv_mem_timeline`:** the two remaining large read paths now accept a per-call token budget (or fall back to the global `max_response_tokens` default), rounding out budget coverage across all bulk-returning tools.
+- **Configurable truncation thresholds:** the per-field caps `max_field_chars` (1000), `search_expand_chars` (300), `timeline_why_chars` (200), and `bundle_why_chars` (300) can now be tuned via `~/.sv-memory/config.yaml` or `.sv-memory/config.yaml` without recompiling; the compiled-in values remain the defaults. `sv-memory configure list` reports the new keys.
+
+### Changed
+
+- **`sv_mem_session_start` now respects the token budget:** the Auto-Boot Context Bundle + Graph Hubs response is routed through the shared `Server.respond` truncation, so the largest pre-tool payload of each session is bounded by `max_response_tokens` (or a per-call `token_budget`), instead of being returned unguarded.
+
 ### Fixed
 
 - **Compaction now preserves the synthesized row's full metadata:** the unified memory created when multiple `topic_key` revisions are consolidated now carries over `last_seen_at`, `normalized_hash` (recomputed from the consolidated content so future dedup detection works), `review_after` (falls back to the category decay deadline when unset, so the row stays on the policy-review radar), and `pinned`. It also keeps the latest source row's `created_at` instead of resetting it to `CURRENT_TIMESTAMP`, so chronological queries (timeline, recent activity) are not disrupted. The insert goes through the shared `memoryInsertArgs` helper instead of a hand-rolled 18-column statement.

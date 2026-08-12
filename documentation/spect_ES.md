@@ -122,7 +122,7 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 - **Subcomandos** para leer/escribir configuración (YAML, global `~/.sv-memory/config.yaml` o local `.sv-memory/config.yaml`):
   - `sv-memory configure get <key>`: imprime un único valor de configuración.
   - `sv-memory configure set <key> <value> [--local]`: escribe un valor de forma global (por defecto) o local al proyecto.
-  - `sv-memory configure list`: imprime todos los valores de configuración activos (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`, `auto_compaction_enabled`, `compaction_interval_minutes`, `max_response_tokens`).
+  - `sv-memory configure list`: imprime todos los valores de configuración activos (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`, `auto_compaction_enabled`, `compaction_interval_minutes`, `max_response_tokens`, `max_field_chars`, `search_expand_chars`, `timeline_why_chars`, `bundle_why_chars`).
 
 #### 10. `sv-memory permissions`
 
@@ -438,11 +438,12 @@ Genera un topic key estable en formato kebab-case antes de guardar.
 
 ### 4. `sv_mem_session_start`
 
-Registra una nueva sesión de codificación.
+Registra una nueva sesión de codificación. Devuelve el Auto-Boot Context Bundle (resumen de la sesión anterior, decisiones clave, estándares, bugfixes recientes, últimos diarios, hubs del grafo) limitado por el presupuesto de tokens.
 
 - **Parámetros:**
   - `goal` (string, opcional): Objetivo de la sesión.
   - `directory` (string, opcional): Directorio de trabajo.
+  - `token_budget` (string, opcional): Máximo de tokens para la respuesta; se trunca con un aviso al superarse (por defecto desde config `max_response_tokens`, 4000; `'0'` = ilimitado).
 
 ### 5. `sv_mem_session_end`
 
@@ -499,6 +500,7 @@ Recupera una lista cronológica de observaciones centradas en una memoria espec�
   - `observation_id` (string, requerido): ID de la memoria.
   - `before` (string, opcional): Cantidad de memorias precedentes (por defecto `5`).
   - `after` (string, opcional): Cantidad de memorias posteriores (por defecto `5`).
+  - `token_budget` (string, opcional): Máximo de tokens para la respuesta; se trunca con un aviso al superarse (por defecto desde config `max_response_tokens`, 4000; `'0'` = ilimitado).
 
 ### 11. `sv_mem_get` (Capa 3 Divulgación Progresiva)
 
@@ -892,6 +894,8 @@ El parseo usa **tree-sitter** (`gotreesitter`) para los lenguajes principales, c
 | Divulgación progresiva de 3 capas                                  | La búsqueda devuelve filas compactas (~30 tokens/resultado); el contenido completo a demanda                                                | 60-80% de los tokens de respuesta                                         |
 | Compactación de sesión                                             | Conversación completa → entrada de diario estructurada (200-500 tokens)                                                                     | 80-90% frente al historial crudo                                          |
 | Truncación de campos (`sv_mem_get`)                                | Límite `max_chars` por campo de texto (por defecto 1000)                                                                                    | Evita el consumo de tokens sin límite                                     |
+| Umbrales de truncación configurables                                | Las claves de config `max_field_chars`, `search_expand_chars`, `timeline_why_chars`, `bundle_why_chars` sobreescriben los límites compilados vía YAML | Ajusta el tamaño de las respuestas sin recompilar                   |
+| Guarda de tokens en arranque de sesión (`sv_mem_session_start`)     | Auto-Boot Bundle + Graph Hubs limitados por `max_response_tokens` / `token_budget` por llamada                                               | Acota el payload pre-herramienta más grande de cada sesión                |
 | Topic key upsert                                                   | Actualización en el lugar en lugar de acumular revisiones                                                                                   | 50% menos resultados de búsqueda redundantes                              |
 | Deduplicación de ventana móvil                                     | Suprime guardados idénticos dentro de 24h                                                                                                   | Evita el crecimiento por duplicados                                       |
 | SQL de búsqueda compacto                                           | SELECT de solo 7 columnas necesarias en lugar de las 20                                                                                     | ~60% menos I/O por búsqueda                                               |

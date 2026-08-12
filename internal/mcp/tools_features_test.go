@@ -148,3 +148,42 @@ func TestSessionStartIncludesGraphHubs(t *testing.T) {
 		t.Fatalf("expected a hub node to be listed, got:\n%s", out)
 	}
 }
+
+func TestSessionStartHonorsTokenBudget(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	// Seed a decision with a long rationale so the Auto-Boot bundle has
+	// enough content to exceed a tiny token budget.
+	if _, err := memory.SaveMemory(pool.Writer, &memory.Memory{
+		ProjectID: cfg.ProjectID,
+		Category:  "decision",
+		What:      "Use Postgres",
+		Why:       strings.Repeat("very long rationale that would make the Auto-Boot bundle huge ", 20),
+		Learned:   "Keep relational data in Postgres",
+	}); err != nil {
+		t.Fatalf("failed to seed memory: %v", err)
+	}
+
+	srv := NewServer(pool, cfg)
+	ctx := context.Background()
+	req := mcpgo.CallToolRequest{}
+	req.Params.Name = "sv_mem_session_start"
+	req.Params.Arguments = map[string]any{"token_budget": "1"}
+	res, err := srv.GetTool("sv_mem_session_start").Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("session_start failed: %v", err)
+	}
+	out := textContent(res.Content[0])
+	if !strings.Contains(out, "[!] Response truncated to ~1 tokens") {
+		t.Fatalf("expected session_start bundle to be truncated by token_budget, got:\n%s", out)
+	}
+}
+
+func TestConfiguredCharsFallback(t *testing.T) {
+	// With no config key set, the compiled-in default is returned so existing
+	// truncation behavior is preserved when viper has no value.
+	if got := configuredChars("no_such_config_key_anywhere", 123); got != 123 {
+		t.Errorf("expected fallback 123, got %d", got)
+	}
+}

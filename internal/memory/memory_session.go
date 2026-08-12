@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/viper"
+
 	"github.com/svtech-code/sv-memory/internal/security"
 )
 
@@ -218,6 +220,16 @@ func GetAutoBootBundle(db *sql.DB, projectID string) (string, error) {
 // response. The agent can drill down with sv_mem_get for full content.
 const bundleWhyChars = 300
 
+// bundleWhyCharsLimit returns the configured Auto-Boot rationale cap, falling
+// back to bundleWhyChars when the bundle_why_chars config key is unset or
+// non-positive. Tunable via ~/.sv-memory/config.yaml without recompiling.
+func bundleWhyCharsLimit() int {
+	if v := viper.GetInt("bundle_why_chars"); v > 0 {
+		return v
+	}
+	return bundleWhyChars
+}
+
 // writeBundleSection appends a titled, compact list of memories to the
 // Auto-Boot bundle. When withWhy is false only the title is shown to keep
 // the bundle token-efficient; the agent can drill down with sv_mem_get.
@@ -238,7 +250,7 @@ func writeBundleSection(sb *strings.Builder, db *sql.DB, projectID, title, query
 			continue
 		}
 		if withWhy {
-			why = TruncateText(security.SanitizeText(why), bundleWhyChars)
+			why = TruncateText(security.SanitizeText(why), bundleWhyCharsLimit())
 			items = append(items, fmt.Sprintf("- **[%s] %s** (ID: %s)\n  *Why:* %s", strings.ToUpper(cat), security.SanitizeText(what), id, why))
 		} else {
 			items = append(items, fmt.Sprintf("- **[%s] %s** (ID: %s)", strings.ToUpper(cat), security.SanitizeText(what), id))
