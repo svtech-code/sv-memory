@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -125,6 +126,12 @@ type Server struct {
 	gitCacheMu sync.Mutex
 	gitCache   gitMetadata
 	gitCacheAt time.Time
+
+	// sessionTokens is a running estimate of the tokens (chars/4) injected into
+	// the agent context by bulk-returning read tools since the last
+	// sv_mem_session_start. Reset on session start and reported by sv_mem_stats
+	// so the agent can decide when to compact.
+	sessionTokens atomic.Int64
 }
 
 // gitMetadata holds the branch, short commit, and author read from git for a
@@ -405,8 +412,24 @@ func truncateToTokenBudget(responseText string, tokenBudget int) string {
 
 // respond wraps a text response with the shared token-budget truncation. The
 // per-call token_budget argument wins; otherwise the global default applies.
+// It also accrues the estimated token count (chars/4) of the final text into
+// the session token ledger so sv_mem_stats can report context injected so far.
 func (s *Server) respond(req mcp.CallToolRequest, text string) *mcp.CallToolResult {
-	return mcp.NewToolResultText(truncateToTokenBudget(text, resolveTokenBudget(req, req.GetString("token_budget", ""))))
+	final := truncateToTokenBudget(text, resolveTokenBudget(req, req.GetString("token_budget", "")))
+	s.sessionTokens.Add(int64(len(final) / 4))
+	return mcp.NewToolResultText(final)
+}
+
+// SessionEstimatedTokens returns the running estimate of tokens injected into
+// the agent context since the last sv_mem_session_start (chars/4 heuristic).
+func (s *Server) SessionEstimatedTokens() int64 {
+	return s.sessionTokens.Load()
+}
+
+// ResetSessionTokens clears the session token ledger, called at session start
+// so the Auto-Boot bundle becomes the first counted injection of the session.
+func (s *Server) ResetSessionTokens() {
+	s.sessionTokens.Store(0)
 }
 
 // StartServer starts the MCP server using stdio transport.

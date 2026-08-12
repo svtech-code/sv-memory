@@ -274,3 +274,68 @@ func TestSearchGraphBoost(t *testing.T) {
 		t.Fatalf("expected [graph] marker on the community-expanded row, got:\n%s", out)
 	}
 }
+
+func TestSessionTokenLedger(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	if _, err := memory.SaveMemory(pool.Writer, &memory.Memory{
+		ProjectID: cfg.ProjectID,
+		Category:  "decision",
+		What:      "Use Postgres",
+		Why:       strings.Repeat("reasoning for choosing Postgres ", 40),
+		Learned:   "Relational data",
+	}); err != nil {
+		t.Fatalf("failed saving memory: %v", err)
+	}
+
+	srv := NewServer(pool, cfg)
+	ctx := context.Background()
+	call := func(name string, args map[string]any) string {
+		t.Helper()
+		req := mcpgo.CallToolRequest{}
+		req.Params.Name = name
+		req.Params.Arguments = args
+		res, err := srv.GetTool(name).Handler(ctx, req)
+		if err != nil {
+			t.Fatalf("%s failed: %v", name, err)
+		}
+		return textContent(res.Content[0])
+	}
+	// parseLedger extracts the reported "Estimated tokens injected this session"
+	// value from a sv_mem_stats response.
+	parseLedger := func(out string) int {
+		t.Helper()
+		marker := "Estimated tokens injected this session:"
+		idx := strings.Index(out, marker)
+		if idx < 0 {
+			t.Fatalf("missing ledger line in stats:\n%s", out)
+		}
+		// The rendered line is markdown-bolded: "**...:** 112". Strip any
+		// leading "*" so only the digits remain.
+		rest := strings.TrimSpace(out[idx+len(marker):])
+		rest = strings.Trim(rest, "* ")
+		n := 0
+		for _, c := range rest {
+			if c < '0' || c > '9' {
+				break
+			}
+			n = n*10 + int(c-'0')
+		}
+		return n
+	}
+
+	// Session start resets the ledger, then the Auto-Boot bundle is counted.
+	call("sv_mem_session_start", map[string]any{"goal": "ledger test"})
+	afterStart := parseLedger(call("sv_mem_stats", map[string]any{}))
+	if afterStart <= 0 {
+		t.Fatalf("expected Auto-Boot bundle to accrue tokens, got %d", afterStart)
+	}
+
+	// A bulk read adds more to the ledger.
+	call("sv_mem_search", map[string]any{"query": "Postgres"})
+	afterSearch := parseLedger(call("sv_mem_stats", map[string]any{}))
+	if afterSearch <= afterStart {
+		t.Fatalf("expected search to accrue tokens (start=%d search=%d)", afterStart, afterSearch)
+	}
+}

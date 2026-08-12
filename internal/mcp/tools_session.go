@@ -3,10 +3,12 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/spf13/viper"
 
 	"github.com/svtech-code/sv-memory/internal/graph"
 	"github.com/svtech-code/sv-memory/internal/memory"
@@ -27,6 +29,10 @@ func (s *Server) handleSessionStart(ctx context.Context, req mcp.CallToolRequest
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to start session: %v", err)), nil
 	}
+
+	// Reset the session token ledger so the Auto-Boot bundle below becomes the
+	// first counted injection of the new session (sv_mem_stats reports it).
+	s.ResetSessionTokens()
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Session started (ID: %s). Use sv_mem_save with session_id=\"%s\" to associate memories, then sv_mem_session_end to close.\n\n", session.ID, session.ID)
@@ -132,6 +138,18 @@ func (s *Server) handleStats(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	fmt.Fprintf(&sb, "**Total sessions:** %d\n", stats.TotalSessions)
 	fmt.Fprintf(&sb, "**Active sessions:** %d\n", stats.ActiveSessions)
 	fmt.Fprintf(&sb, "**Total relations:** %d\n", stats.TotalRelations)
+
+	// Session token ledger (Phase D): report how many estimated tokens the
+	// Auto-Boot bundle + bulk-returning read tools have injected since the last
+	// sv_mem_session_start, so the agent can decide when to compact. Read before
+	// respond() so this call's own output is not counted.
+	budget := viper.GetInt("max_response_tokens")
+	budgetStr := "unlimited"
+	if budget > 0 {
+		budgetStr = strconv.Itoa(budget)
+	}
+	fmt.Fprintf(&sb, "**Estimated tokens injected this session:** %d\n", s.SessionEstimatedTokens())
+	fmt.Fprintf(&sb, "**Token budget (`max_response_tokens`):** %s ('0' = unlimited)\n", budgetStr)
 	if len(stats.ByCategory) > 0 {
 		sb.WriteString("\n**By category:**\n")
 		for cat, count := range stats.ByCategory {

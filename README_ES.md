@@ -235,7 +235,7 @@ sv-memory tui
 - **`sv_mem_judge`**: Crea relaciones entre memorias (`supersedes`, `conflicts_with`, `relates_to`).
 - **`sv_mem_compare`**: Comparación lado a lado de dos memorias.
 - **`sv_mem_review`**: Lista memorias obsoletas, duplicadas o candidatas a consolidación; `action="mark_reviewed"` reinicia el plazo de revisión de política de una memoria.
-- **`sv_mem_stats`**: Estadísticas agregadas de memorias y desglose por categoría, más el proyecto activo actual (ID, nombre y ruta).
+- **`sv_mem_stats`**: Estadísticas agregadas de memorias y desglose por categoría, más el proyecto activo actual (ID, nombre y ruta) y el **ledger de tokens de sesión** (tokens estimados inyectados desde `sv_mem_session_start` frente al presupuesto `max_response_tokens`).
 - **`sv_mem_diagnose`**: Ejecuta chequeos de salud de solo lectura (base de datos, FTS5, proyecto e integridad del grafo).
 - **`sv_mem_delete`**: Soft-delete (o hard-delete) de una memoria.
 - **`sv_mem_pin`**: Fija una memoria local para que aparezca primero en el contexto de sesión; `action="unpin"` la desfija.

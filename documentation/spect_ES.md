@@ -547,7 +547,7 @@ Encuentra memorias que necesitan mantenimiento (p. ej. obsoletas, conteos de dup
 
 ### 15. `sv_mem_stats`
 
-Proporciona métricas agregadas (conteos, desglose por categoría) más el proyecto activo actual (ID, nombre y ruta).
+Proporciona métricas agregadas (conteos, desglose por categoría) más el proyecto activo actual (ID, nombre y ruta), y el **ledger de tokens de sesión**: una estimación de los tokens (chars/4) inyectados en el contexto del agente desde el último `sv_mem_session_start` (Auto-Boot bundle + tools de lectura masiva), junto con el presupuesto `max_response_tokens` — para que el agente decida cuándo compactar.
 
 - **Parámetros:**
   - `token_budget` (string, opcional): Máximo de tokens para la respuesta; se trunca con un aviso al superarse (por defecto desde config `max_response_tokens`, 4000; `'0'` = ilimitado).

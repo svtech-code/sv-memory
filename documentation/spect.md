@@ -548,7 +548,7 @@ Find memories needing maintenance (e.g. stale, excessive duplicate counts, conso
 
 ### 15. `sv_mem_stats`
 
-Provides aggregate metrics (counts, breakdown by category) plus the current active project (ID, name, path).
+Provides aggregate metrics (counts, breakdown by category) plus the current active project (ID, name, path), and the **session token ledger**: an estimate of the tokens (chars/4) injected into the agent context since the last `sv_mem_session_start` (Auto-Boot bundle + bulk-returning read tools), alongside the `max_response_tokens` budget — so the agent can decide when to compact.
 
 - **Parameters:**
   - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default from config `max_response_tokens`, 4000; `'0'` = unlimited).
