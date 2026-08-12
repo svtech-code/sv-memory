@@ -195,6 +195,7 @@ sv-memory tui
 | `sv-memory tui`                    | **Interface**   | Launches interactive terminal user interface for memories and graph diagnostics.         |
 | `sv-memory configure`              | **Setup**       | Interactive terminal wizard to configure Cursor, Claude Code, agy, Zed, etc.             |
 | `sv-memory configure get/set/list` | **Setup**       | Reads/writes YAML config values globally or project-locally (`--local`).                 |
+| `sv-memory setup [agent]`          | **Setup**       | One-shot agent integration (MCP config + hooks/plugins + protocol + permissions) for claude-code, opencode, cursor, windsurf, antigravity, codex. `--all` wires every agent; no args shows per-agent status. See [AGENT-SETUP.md](documentation/AGENT-SETUP.md). |
 | `sv-memory sync`                   | **Git Sync**    | Manual bidirectional sync between SQLite DB and `.sv-memory/chunks/*.json`.              |
 | `sv-memory diagnose`               | **Diagnostics** | Verifies DB connections, schema integrity, write permissions, and paths.                 |
 | `sv-memory stats`                  | **Analytics**   | Displays project memory counts, 24h saves, active sessions, and relations.               |

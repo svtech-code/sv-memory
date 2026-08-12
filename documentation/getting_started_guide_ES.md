@@ -155,6 +155,30 @@ Existen dos modos:
 
 > **Por proyecto:** Repite este comando en cada repositorio donde trabajes con IA. Las plataformas soportadas son `claude-code`, `codex`, `antigravity` y `opencode` (omite `--platform` para instalarlo en todas).
 
+#### Integración de un solo comando: `sv-memory setup <agente>`
+
+Para dejar un agente completamente configurado (config MCP + hooks/skills/plugins +
+inyección de protocolo + permisos de herramientas) en un solo comando, usa
+`sv-memory setup`:
+
+```bash
+cd /ruta/a/tu-proyecto
+sv-memory setup claude-code   # Claude Code (MCP + hooks PreToolUse y de ciclo de vida + allow-list)
+sv-memory setup opencode      # OpenCode (MCP + SKILL.md + plugin nativo TS)
+sv-memory setup cursor        # Cursor (.cursor/mcp.json + .cursorrules)
+sv-memory setup windsurf      # Windsurf (.windsurf/mcp_config.json + .windsurfrules)
+sv-memory setup antigravity   # Antigravity CLI (MCP + hooks + allow-list)
+sv-memory setup codex         # Codex (config MCP config.toml + hooks)
+sv-memory setup --all         # todos los agentes
+sv-memory setup               # estado por agente (solo lectura)
+```
+
+Para Claude Code, `setup claude-code` instala además los hooks de ciclo de vida
+(`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`) para que el agente recuerde
+iniciar/cerrar sesiones, guardar un resumen justo antes de la compactación y persistir
+hallazgos de subagentes. Consulta [AGENT-SETUP_ES.md](AGENT-SETUP_ES.md) para la guía
+completa por agente.
+
 ---
 
 ### Paso 5: Reinicio del Agente y Verificación

@@ -155,6 +155,28 @@ There are two modes:
 
 > **Per project:** Repeat this command in every repository where you work with AI. The supported platforms are `claude-code`, `codex`, `antigravity`, and `opencode` (omit `--platform` to install it on all of them).
 
+#### One-shot integration: `sv-memory setup <agent>`
+
+For a fully wired agent (MCP config + hooks/skills/plugins + protocol injection +
+tool permissions) in one command, use `sv-memory setup`:
+
+```bash
+cd /path/to/your-project
+sv-memory setup claude-code   # Claude Code (MCP + PreToolUse & lifecycle hooks + allow-list)
+sv-memory setup opencode      # OpenCode (MCP + SKILL.md + native TS plugin)
+sv-memory setup cursor        # Cursor (.cursor/mcp.json + .cursorrules)
+sv-memory setup windsurf      # Windsurf (.windsurf/mcp_config.json + .windsurfrules)
+sv-memory setup antigravity   # Antigravity CLI (MCP + hooks + allow-list)
+sv-memory setup codex         # Codex (MCP config.toml + hooks)
+sv-memory setup --all         # every agent
+sv-memory setup               # read-only per-agent status
+```
+
+For Claude Code, `setup claude-code` additionally installs the lifecycle hooks
+(`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`) so the agent is nudged to
+start/end sessions, save a summary right before compaction, and persist subagent findings.
+See [AGENT-SETUP.md](AGENT-SETUP.md) for the full per-agent guide.
+
 ---
 
 ### Step 5: Restarting the Agent and Verifying

@@ -132,83 +132,98 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 - `status [--platform <p>]`: reports granted vs missing tools per platform.
 - OpenCode and Codex use interactive approval and are skipped (no static allow-list).
 
-#### 11. `sv-memory hooks`
+#### 11. `sv-memory setup [agent]`
 
-- `install [--strict] [--context-injection] [--platform <p>]`: installs PreToolUse hooks (`.agents/hooks.json` + `.agents/hooks/sv-memory.sh`) so agents query memory before reading files. `--strict` blocks the first raw file read of each session. Default platform: all (`claude-code`, `codex`, `antigravity`, `opencode`).
+- One-shot agent integration mirroring Engram's `engram setup <agent>`: wires MCP server config, hooks/skills/plugins, protocol injection (`AGENTS.md` / `.cursorrules` / `.windsurfrules`), and MCP tool permissions for one agent.
+- Supported agents: `claude-code`, `opencode`, `cursor`, `windsurf`, `antigravity`, `codex`.
+- `sv-memory setup` (no args): read-only — prints per-agent install status.
+- `sv-memory setup <agent>`: installs the agent end-to-end (idempotent).
+- `--all`: installs every supported agent.
+- `--strict`: installs strict hooks (blocks first raw file read on Antigravity; nudge-only on Claude Code).
+- **Claude Code:** writes a project `.mcp.json` when the `claude` CLI is absent, installs `PreToolUse` + lifecycle hooks (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`) under `.claude/hooks/` and registers them in `.claude/settings.json`, injects the `AGENTS.md` protocol, and grants the 29-tool allow-list in `~/.claude/settings.json`.
+- **OpenCode:** registers the MCP server in `opencode.json`, installs `SKILL.md` plus the native TypeScript plugin `.opencode/plugin/sv-memory.ts` (adds the `sv_memory_context` tool), and injects the `AGENTS.md` protocol.
+- **Cursor:** writes `.cursor/mcp.json` and injects `.cursorrules`.
+- **Windsurf:** writes `.windsurf/mcp_config.json` and injects `.windsurfrules`.
+- **Antigravity CLI:** registers the MCP server, installs `.agents/hooks.json` hooks, injects `AGENTS.md`, and grants the 29-tool allow-list.
+- **Codex:** writes the `[mcp_servers.sv-memory]` block into `~/.codex/config.toml`, installs a no-op hook, and injects `AGENTS.md`.
+
+#### 12. `sv-memory hooks`
+
+- `install [--strict] [--context-injection] [--platform <p>]`: installs PreToolUse hooks (`.agents/hooks.json` + `.agents/hooks/sv-memory.sh`) so agents query memory before reading files. On Claude Code it also installs the lifecycle hooks (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`) under `.claude/hooks/` and registers them in `.claude/settings.json` in the official array format. `--strict` blocks the first raw file read of each session. Default platform: all (`claude-code`, `codex`, `antigravity`, `opencode`).
 - **Silent context injection (`--context-injection`, opt-in, default off):** when enabled, the Claude Code PreToolUse hook calls `sv-memory context <file>` on the first `Read` of each file and injects the compact graph+memory context pack (title + truncated `why`, bounded to 3 memories) as `additionalContext`. Output is cached per file for the session and time-bounded (2s, portable timeout); the hook always exits 0 (fail-open) so a missing binary or `.sv-memory` never breaks the tool call. Enabled by a `.sv-memory/context-injection-enabled` marker created by the flag. Antigravity, Codex, and OpenCode do not support `additionalContext` injection and keep the nudge/skill mechanism.
 - **Strict degradation (fail-open):** the hook scripts never call the sv-memory server. Strict blocking is only implemented on Antigravity CLI; Claude Code strict is nudge-only (always `exit 0`). The block is skipped when sv-memory is unavailable (no `.sv-memory/`, binary missing, or `SV_MEMORY_STRICT_DISABLE=1`), so the agent is never deadlocked by a missing/unconfigured sv-memory.
 - `uninstall [--context-injection] [--platform <p>]`: removes the hooks (and the context-injection marker when `--context-injection` is passed).
 - `status`: reports which platforms have hooks installed and whether silent context injection is enabled.
 
-#### 12. `sv-memory obsidian-export [-o output-dir]`
+#### 13. `sv-memory obsidian-export [-o output-dir]`
 
 - Exports all project memories to Markdown files inside the target folder (default `.obsidian-sv-memory`) structured as an Obsidian vault.
 
-#### 13. `sv-memory export [output-file]`
+#### 14. `sv-memory export [output-file]`
 
 - Exports all non-deleted memories for this project to a portable JSON file.
 
-#### 14. `sv-memory import <input-file>`
+#### 15. `sv-memory import <input-file>`
 
 - Imports memories from a JSON file using upsert by ID.
 
 ### Memory & Session Deletion Commands
 
-#### 15. `sv-memory delete session <session-id>`
+#### 16. `sv-memory delete session <session-id>`
 
 - Deletes an empty session (fails if the session contains associated memories).
 
-#### 16. `sv-memory delete project <project-id> [--hard]`
+#### 17. `sv-memory delete project <project-id> [--hard]`
 
 - Cascade-deletes all project data. Soft-deletes memories by default; `--hard` removes them permanently from SQLite.
 
 ### Project Registry Management
 
-#### 17. `sv-memory projects list`
+#### 18. `sv-memory projects list`
 
 - Lists all registered projects with their ID, name, path, memory counts, and session counts.
 
-#### 18. `sv-memory projects prune`
+#### 19. `sv-memory projects prune`
 
 - Prunes empty projects (those with 0 memories and 0 sessions) from the central SQLite registry.
 
-#### 19. `sv-memory projects consolidate <source-project-id> <target-project-id>`
+#### 20. `sv-memory projects consolidate <source-project-id> <target-project-id>`
 
 - Merges all memories and sessions from the source project into the target project, then prunes the source project.
 
 ### Code Graph Management
 
-#### 20. `sv-memory graph rebuild`
+#### 21. `sv-memory graph rebuild`
 
 - Forces a full code directory scan, rebuilding graph nodes and edges.
 
-#### 21. `sv-memory graph path <source> <target>`
+#### 22. `sv-memory graph path <source> <target>`
 
 - Computes and prints the shortest dependency path between two code nodes in the graph (up to 10 hops).
 
-#### 22. `sv-memory graph explain <node>`
+#### 23. `sv-memory graph explain <node>`
 
 - Outputs detailed information for a specific node: type, label, path, metadata JSON, and fan-in/fan-out metrics.
 
-#### 23. `sv-memory graph communities`
+#### 24. `sv-memory graph communities`
 
 - Runs Leiden community detection on the graph. Lists community clusters, their member nodes, centrality scores, and god nodes.
 
-#### 24. `sv-memory graph wiki [--output dir]`
+#### 25. `sv-memory graph wiki [--output dir]`
 
 - Exports Markdown wiki pages for each detected community, listing member files, centrality scores, and inter-community dependencies. Default output directory: `graph-wiki`.
 
-#### 25. `sv-memory graph viz [--output file] [--open]`
+#### 26. `sv-memory graph viz [--output file] [--open]`
 
 - Generates an interactive HTML visualization using vis.js with community-colored physics simulation, node filtering, and tooltips. Default output: `graph.html`. Opens in the browser by default (`--open=false` to skip).
 
-#### 26. `sv-memory graph merge <project-id-a> <project-id-b> [-o output-file]`
+#### 27. `sv-memory graph merge <project-id-a> <project-id-b> [-o output-file]`
 
 - Loads two project graphs and produces a union-merge by node ID, upserting nodes and edges into a JSON snapshot (default output: `merged-<a>-<b>.json`).
 
 ### Conflict Management
 
-#### 27. `sv-memory conflicts`
+#### 28. `sv-memory conflicts`
 
 - `list [--status pending|judged|ignored] [--project P]`: displays conflicting memories and detected semantic overlaps.
 - `stats`: summarizes conflict relation counts by status.
@@ -216,7 +231,7 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 - `scan --semantic [--agent claude|opencode|CMD] [--max-semantic N] [--concurrency N]`: after surfacing candidate pairs, LLM-judges them with the configured agent CLI. The agent compares full memory content and returns a verdict (`supersedes`, `conflicts_with`, `relates_to`, or `none`); verdicts are persisted with `judged_by='llm'` when `--apply`, and failed judgments stay pending for retry. Default agent: `$SV_MEMORY_SEMANTIC_AGENT` or `claude`.
 - `ignore <relation-id>`: marks a detected conflict as ignored.
 
-#### 28. `sv-memory context <path>`
+#### 29. `sv-memory context <path>`
 
 - Prints a **compact context pack** for a file, package, or symbol: the node's structural role (type, fan-in/fan-out, community, hub flag) plus the memories linked to that path (`where_path` or `rationale_for` edges), each as title + truncated `why`. Flags: `--max-memories N` (default 5), `--why-chars N` (default 300). Fast and bounded — this is the entry point the optional PreToolUse context-injection hook calls on first file read.
 

@@ -19,7 +19,82 @@ type TargetTool struct {
 	ConfigPath string
 }
 
-// resolveConfigPath dynamically locates configuration files based on multiple candidate paths.
+// writeMCPServersFile merges the sv-memory entry into a JSON file whose shape
+// is { "mcpServers": { <name>: {command, args} } }. Existing servers are
+// preserved. Used by configureClaude, configureCursor, and configureWindsurf.
+func writeMCPServersFile(configPath string, execPath string) error {
+	dir := filepath.Dir(configPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	var data map[string]interface{}
+	if _, err := os.Stat(configPath); err == nil {
+		content, err := os.ReadFile(configPath)
+		if err != nil {
+			return err
+		}
+		_ = json.Unmarshal(content, &data)
+	}
+
+	if data == nil {
+		data = make(map[string]interface{})
+	}
+
+	mcpServersRaw, exists := data["mcpServers"]
+	var mcpServers map[string]interface{}
+	if exists {
+		if val, ok := mcpServersRaw.(map[string]interface{}); ok {
+			mcpServers = val
+		}
+	}
+	if mcpServers == nil {
+		mcpServers = make(map[string]interface{})
+	}
+
+	mcpServers["sv-memory"] = map[string]interface{}{
+		"command": execPath,
+		"args":    []string{"mcp"},
+	}
+
+	data["mcpServers"] = mcpServers
+
+	newData, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(configPath, newData, 0644)
+}
+
+// ConfigureCursor writes the project-local Cursor MCP config
+// (.cursor/mcp.json) so the sv-memory server is registered automatically.
+func ConfigureCursor(projPath string, execPath string) (string, error) {
+	configPath := filepath.Join(projPath, ".cursor", "mcp.json")
+	if err := writeMCPServersFile(configPath, execPath); err != nil {
+		return "", err
+	}
+	return configPath, nil
+}
+
+// ConfigureWindsurf writes the project-local Windsurf MCP config
+// (.windsurf/mcp_config.json) so the sv-memory server is registered
+// automatically.
+func ConfigureWindsurf(projPath string, execPath string) (string, error) {
+	configPath := filepath.Join(projPath, ".windsurf", "mcp_config.json")
+	if err := writeMCPServersFile(configPath, execPath); err != nil {
+		return "", err
+	}
+	return configPath, nil
+}
+
+// WriteJSONMCPServers writes the sv-memory entry into any JSON file shaped
+// { "mcpServers": {...} } (project .mcp.json for Claude Code, etc.),
+// preserving existing servers. It is the public counterpart of the unexported
+// writeMCPServersFile helper, used by the unified `sv-memory setup` command.
+func WriteJSONMCPServers(configPath string, execPath string) error {
+	return writeMCPServersFile(configPath, execPath)
+}
 func resolveConfigPath(toolID string) string {
 	home, _ := os.UserHomeDir()
 	var candidates []string
@@ -168,48 +243,7 @@ func ConfigureTargetTool(tool TargetTool) (bool, string, error) {
 }
 
 func configureClaude(configPath string, execPath string) error {
-	dir := filepath.Dir(configPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-
-	var data map[string]interface{}
-	if _, err := os.Stat(configPath); err == nil {
-		content, err := os.ReadFile(configPath)
-		if err != nil {
-			return err
-		}
-		_ = json.Unmarshal(content, &data)
-	}
-
-	if data == nil {
-		data = make(map[string]interface{})
-	}
-
-	mcpServersRaw, exists := data["mcpServers"]
-	var mcpServers map[string]interface{}
-	if exists {
-		if val, ok := mcpServersRaw.(map[string]interface{}); ok {
-			mcpServers = val
-		}
-	}
-	if mcpServers == nil {
-		mcpServers = make(map[string]interface{})
-	}
-
-	mcpServers["sv-memory"] = map[string]interface{}{
-		"command": execPath,
-		"args":    []string{"mcp"},
-	}
-
-	data["mcpServers"] = mcpServers
-
-	newData, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(configPath, newData, 0644)
+	return writeMCPServersFile(configPath, execPath)
 }
 
 func configureZed(configPath string, execPath string) error {

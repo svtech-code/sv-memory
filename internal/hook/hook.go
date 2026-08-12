@@ -165,35 +165,60 @@ func (e *HookEngine) Status(platforms []Platform) map[Platform]bool {
 
 // --- Claude Code ---
 
-func (e *HookEngine) claudeHookDir() string {
-	return filepath.Join(e.projPath, ".claude", "hooks", "pre_tool_use")
+// claudeLifecycleEvents maps Claude Code hook events (settings.json keys) to
+// the subdirectory under .claude/hooks/ where the sv-memory script is stored.
+// The PreToolUse entry additionally carries a matcher so it only fires for file
+// read/search tools.
+var claudeLifecycleEvents = []struct {
+	Event   string
+	Dir     string
+	Matcher string
+}{
+	{Event: "PreToolUse", Dir: "pre_tool_use", Matcher: "Read|Glob|Grep"},
+	{Event: "SessionStart", Dir: "session_start"},
+	{Event: "SessionEnd", Dir: "session_end"},
+	{Event: "PreCompact", Dir: "precompact"},
+	{Event: "SubagentStop", Dir: "subagent_stop"},
+}
+
+func (e *HookEngine) claudeHooksRoot() string {
+	return filepath.Join(e.projPath, ".claude", "hooks")
 }
 
 func (e *HookEngine) claudeSettingsPath() string {
 	return filepath.Join(e.projPath, ".claude", "settings.json")
 }
 
-func (e *HookEngine) claudeHookScriptPath() string {
-	return filepath.Join(e.claudeHookDir(), "sv-memory.sh")
+func (e *HookEngine) claudeHookScriptPath(eventDir string) string {
+	return filepath.Join(e.claudeHooksRoot(), eventDir, "sv-memory.sh")
 }
 
 func (e *HookEngine) installClaudeCode() ([]string, error) {
 	var created []string
 
-	// 1. Write hook script
-	hookDir := e.claudeHookDir()
-	if err := os.MkdirAll(hookDir, 0755); err != nil {
-		return created, fmt.Errorf("failed to create hook dir %s: %w", hookDir, err)
+	// 1. Write hook scripts (PreToolUse + lifecycle events).
+	for _, ev := range claudeLifecycleEvents {
+		scriptPath := e.claudeHookScriptPath(ev.Dir)
+		if err := os.MkdirAll(filepath.Dir(scriptPath), 0755); err != nil {
+			return created, fmt.Errorf("failed to create hook dir %s: %w", filepath.Dir(scriptPath), err)
+		}
+
+		var scriptContent string
+		if ev.Event == "PreToolUse" {
+			scriptContent = hookScript(PlatformClaudeCode, e.mode)
+		} else {
+			scriptContent = claudeLifecycleScript(ev.Dir)
+		}
+		if scriptContent == "" {
+			return created, fmt.Errorf("missing hook script template for %s", ev.Event)
+		}
+		if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
+			return created, fmt.Errorf("failed to write hook script %s: %w", scriptPath, err)
+		}
+		created = append(created, scriptPath)
 	}
 
-	scriptPath := e.claudeHookScriptPath()
-	scriptContent := hookScript(PlatformClaudeCode, e.mode)
-	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
-		return created, fmt.Errorf("failed to write hook script %s: %w", scriptPath, err)
-	}
-	created = append(created, scriptPath)
-
-	// 2. Update .claude/settings.json
+	// 2. Update .claude/settings.json with the official hooks array format.
 	settingsPath := e.claudeSettingsPath()
 	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
 		return created, fmt.Errorf("failed to create settings dir: %w", err)
@@ -210,14 +235,24 @@ func (e *HookEngine) installClaudeCode() ([]string, error) {
 		hooks = make(map[string]interface{})
 	}
 
-	preToolUseRaw := hooks["preToolUse"]
-	preToolUse, _ := preToolUseRaw.(map[string]interface{})
-	if preToolUse == nil {
-		preToolUse = make(map[string]interface{})
+	for _, ev := range claudeLifecycleEvents {
+		scriptPath := e.claudeHookScriptPath(ev.Dir)
+		hookEntry := map[string]interface{}{
+			"type":    "command",
+			"command": scriptPath,
+			"timeout": 10,
+		}
+		matcher := ev.Matcher
+		if matcher == "" {
+			matcher = "*"
+		}
+		hooks[ev.Event] = []interface{}{
+			map[string]interface{}{
+				"matcher": matcher,
+				"hooks":   []interface{}{hookEntry},
+			},
+		}
 	}
-
-	preToolUse["script"] = scriptPath
-	hooks["preToolUse"] = preToolUse
 	settings["hooks"] = hooks
 
 	data, err := json.MarshalIndent(settings, "", "  ")
@@ -235,16 +270,19 @@ func (e *HookEngine) installClaudeCode() ([]string, error) {
 func (e *HookEngine) uninstallClaudeCode() ([]string, error) {
 	var removed []string
 
-	// 1. Remove hook script
-	scriptPath := e.claudeHookScriptPath()
-	if err := os.Remove(scriptPath); err != nil && !os.IsNotExist(err) {
-		return removed, fmt.Errorf("failed to remove hook script %s: %w", scriptPath, err)
-	}
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
-		removed = append(removed, scriptPath)
+	// 1. Remove hook scripts.
+	for _, ev := range claudeLifecycleEvents {
+		scriptPath := e.claudeHookScriptPath(ev.Dir)
+		if err := os.Remove(scriptPath); err != nil && !os.IsNotExist(err) {
+			return removed, fmt.Errorf("failed to remove hook script %s: %w", scriptPath, err)
+		}
+		if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+			removed = append(removed, scriptPath)
+		}
 	}
 
-	// 2. Remove hook reference from settings
+	// 2. Remove sv-memory hook references from settings (both the current array
+	// format keys and the legacy lowercase preToolUse entry).
 	settingsPath := e.claudeSettingsPath()
 	if existing, err := os.ReadFile(settingsPath); err == nil {
 		settings := make(map[string]interface{})
@@ -253,6 +291,9 @@ func (e *HookEngine) uninstallClaudeCode() ([]string, error) {
 		hooksRaw := settings["hooks"]
 		hooks, _ := hooksRaw.(map[string]interface{})
 		if hooks != nil {
+			for _, ev := range claudeLifecycleEvents {
+				delete(hooks, ev.Event)
+			}
 			delete(hooks, "preToolUse")
 			if len(hooks) == 0 {
 				delete(settings, "hooks")
@@ -265,15 +306,18 @@ func (e *HookEngine) uninstallClaudeCode() ([]string, error) {
 
 		data, _ := json.MarshalIndent(settings, "", "  ")
 		_ = os.WriteFile(settingsPath, data, 0644)
-		removed = append(removed, settingsPath+" (preToolUse entry removed)")
+		removed = append(removed, settingsPath+" (sv-memory hook entries removed)")
 	}
 
 	return removed, nil
 }
 
 func (e *HookEngine) claudeCodeInstalled() bool {
-	if _, err := os.Stat(e.claudeHookScriptPath()); os.IsNotExist(err) {
-		return false
+	// All lifecycle scripts must exist for a complete install.
+	for _, ev := range claudeLifecycleEvents {
+		if _, err := os.Stat(e.claudeHookScriptPath(ev.Dir)); os.IsNotExist(err) {
+			return false
+		}
 	}
 
 	settingsPath := e.claudeSettingsPath()
@@ -293,14 +337,32 @@ func (e *HookEngine) claudeCodeInstalled() bool {
 		return false
 	}
 
-	preToolUseRaw := hooks["preToolUse"]
-	preToolUse, _ := preToolUseRaw.(map[string]interface{})
-	if preToolUse == nil {
-		return false
+	// Current array format: PreToolUse[0].matcher entry whose hook command
+	// references sv-memory.sh. Also accept the legacy flat preToolUse.script.
+	if legacy, ok := hooks["preToolUse"].(map[string]interface{}); ok {
+		if script, ok := legacy["script"].(string); ok && filepath.Base(script) == "sv-memory.sh" {
+			return true
+		}
 	}
 
-	script, _ := preToolUse["script"].(string)
-	return script != "" && filepath.Base(script) == "sv-memory.sh"
+	preToolUseArr, ok := hooks["PreToolUse"].([]interface{})
+	if !ok || len(preToolUseArr) == 0 {
+		return false
+	}
+	first, ok := preToolUseArr[0].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	hooksList, ok := first["hooks"].([]interface{})
+	if !ok || len(hooksList) == 0 {
+		return false
+	}
+	hookEntry, ok := hooksList[0].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	command, _ := hookEntry["command"].(string)
+	return command != "" && filepath.Base(command) == "sv-memory.sh"
 }
 
 // --- Codex ---
@@ -530,10 +592,11 @@ func (e *HookEngine) antigravityInstalled() bool {
 	return hasEntry
 }
 
-// --- OpenCode Skill ---
-// OpenCode does not support PreToolUse hooks natively. Instead, it uses
-// a Skills system (SKILL.md) loaded via the `skill` tool. We install a
-// skill that mirrors the nudge instructions from hook scripts.
+// --- OpenCode Skill + Plugin ---
+// OpenCode does not support PreToolUse hooks natively. Instead, it uses a
+// Skills system (SKILL.md) loaded via the `skill` tool plus a native TypeScript
+// plugin (sv-memory.ts) that registers the sv_memory_context tool. We install
+// both so OpenCode gets the nudge AND a first-class context-pack tool.
 
 func (e *HookEngine) openCodeSkillDir() string {
 	return filepath.Join(e.projPath, ".opencode", "skills", "sv-memory")
@@ -541,6 +604,10 @@ func (e *HookEngine) openCodeSkillDir() string {
 
 func (e *HookEngine) openCodeSkillPath() string {
 	return filepath.Join(e.openCodeSkillDir(), "SKILL.md")
+}
+
+func (e *HookEngine) openCodePluginPath() string {
+	return filepath.Join(e.projPath, ".opencode", "plugin", "sv-memory.ts")
 }
 
 func (e *HookEngine) installOpenCodeSkill() ([]string, error) {
@@ -555,6 +622,20 @@ func (e *HookEngine) installOpenCodeSkill() ([]string, error) {
 		return created, fmt.Errorf("failed to write opencode skill: %w", err)
 	}
 	created = append(created, skillPath)
+
+	// Native TypeScript plugin: registers the sv_memory_context tool.
+	pluginPath := e.openCodePluginPath()
+	if err := os.MkdirAll(filepath.Dir(pluginPath), 0755); err != nil {
+		return created, fmt.Errorf("failed to create .opencode/plugin dir: %w", err)
+	}
+	pluginContent := opencodePluginScript()
+	if pluginContent == "" {
+		return created, fmt.Errorf("missing opencode plugin template")
+	}
+	if err := os.WriteFile(pluginPath, []byte(pluginContent), 0644); err != nil {
+		return created, fmt.Errorf("failed to write opencode plugin: %w", err)
+	}
+	created = append(created, pluginPath)
 
 	// Also inject sv-memory protocol rules into AGENTS.md so that OpenCode
 	// always has the instructions in context without requiring @skill.
@@ -577,6 +658,14 @@ func (e *HookEngine) uninstallOpenCodeSkill() ([]string, error) {
 	}
 	if _, err := os.Stat(skillDir); os.IsNotExist(err) {
 		removed = append(removed, skillDir)
+	}
+
+	pluginPath := e.openCodePluginPath()
+	if err := os.Remove(pluginPath); err != nil && !os.IsNotExist(err) {
+		return removed, fmt.Errorf("failed to remove opencode plugin: %w", err)
+	}
+	if _, err := os.Stat(pluginPath); os.IsNotExist(err) {
+		removed = append(removed, pluginPath)
 	}
 	return removed, nil
 }

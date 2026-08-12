@@ -1,6 +1,7 @@
 package hook
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -156,6 +157,75 @@ func TestInstallClaudeCodeStrict(t *testing.T) {
 	}
 	if !strings.Contains(string(content), "FLAG_FILE") {
 		t.Error("strict mode script should contain FLAG_FILE")
+	}
+}
+
+func TestInstallClaudeCodeLifecycleHooks(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-hook-lifecycle-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	eng := New(tempDir, ModeSoft)
+	results := eng.Install([]Platform{PlatformClaudeCode})
+	if results[0].Err != nil {
+		t.Fatalf("install failed: %v", results[0].Err)
+	}
+
+	// All four lifecycle scripts must exist.
+	lifecycleDirs := []string{"session_start", "session_end", "precompact", "subagent_stop"}
+	for _, dir := range lifecycleDirs {
+		scriptPath := filepath.Join(tempDir, ".claude", "hooks", dir, "sv-memory.sh")
+		if _, err = os.Stat(scriptPath); os.IsNotExist(err) {
+			t.Errorf("lifecycle script not created at %s", scriptPath)
+		}
+	}
+
+	// settings.json must register every event in the array format.
+	settingsPath := filepath.Join(tempDir, ".claude", "settings.json")
+	raw, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("failed to read settings: %v", err)
+	}
+	var settings map[string]interface{}
+	if err = json.Unmarshal(raw, &settings); err != nil {
+		t.Fatalf("failed to parse settings: %v", err)
+	}
+	hooks, ok := settings["hooks"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected hooks object in settings")
+	}
+	for _, event := range []string{"PreToolUse", "SessionStart", "SessionEnd", "PreCompact", "SubagentStop"} {
+		entries, ok := hooks[event].([]interface{})
+		if !ok || len(entries) == 0 {
+			t.Errorf("expected %s hook entries in settings.json", event)
+			continue
+		}
+		first, ok := entries[0].(map[string]interface{})
+		if !ok {
+			t.Errorf("expected object entry for %s", event)
+			continue
+		}
+		hooksList, ok := first["hooks"].([]interface{})
+		if !ok || len(hooksList) == 0 {
+			t.Errorf("expected hooks list for %s", event)
+			continue
+		}
+		cmdEntry, ok := hooksList[0].(map[string]interface{})
+		if !ok {
+			t.Errorf("expected command entry for %s", event)
+			continue
+		}
+		if filepath.Base(cmdEntry["command"].(string)) != "sv-memory.sh" {
+			t.Errorf("%s command should point to sv-memory.sh", event)
+		}
+	}
+
+	// Status must report installed with the lifecycle hooks present.
+	status := eng.Status([]Platform{PlatformClaudeCode})
+	if !status[PlatformClaudeCode] {
+		t.Error("expected claude-code status to be installed")
 	}
 }
 

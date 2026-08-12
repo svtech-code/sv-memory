@@ -5,6 +5,13 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+### Added
+
+- **`sv-memory setup <agent>` unified agent integration (multi-agent parity with Engram's `engram setup`):** one-shot wiring of MCP server config + hooks/skills/plugins + protocol injection (`AGENTS.md` / `.cursorrules` / `.windsurfrules`) + MCP tool permissions for six agents — `claude-code`, `opencode`, `cursor`, `windsurf`, `antigravity`, `codex`. `sv-memory setup` (no args) is a read-only per-agent status table; `setup <agent>` is idempotent; `--all` wires every agent; `--strict` installs strict hooks. Cursor and Windsurf are now auto-configured at project level (`.cursor/mcp.json`, `.windsurf/mcp_config.json`) instead of manual instructions, and Claude Code gains a project-local `.mcp.json` fallback when the `claude` CLI is absent.
+- **Claude Code lifecycle hooks:** `sv-memory hooks install` and `sv-memory setup claude-code` now install, alongside `PreToolUse`, four lifecycle hooks under `.claude/hooks/` — `SessionStart` (call `sv_mem_session_start`), `SessionEnd` (close the session), `PreCompact` (save a summary right before context compaction, enabling context recovery), and `SubagentStop` (persist durable subagent findings) — registered in `.claude/settings.json` in the official array+matcher format. Uninstall and status detection cover both the new array format and the legacy flat `preToolUse` entry.
+- **Native OpenCode TypeScript plugin:** `sv-memory setup opencode` / `hooks install` now writes `.opencode/plugin/sv-memory.ts` next to the existing `SKILL.md`. The plugin registers the `sv_memory_context` tool (context pack for a file/package/symbol via the `sv-memory context` CLI) without needing MCP approval. The plugin is typechecked against `@opencode-ai/plugin` 1.18.14.
+- **`documentation/AGENT-SETUP.md` + `AGENT-SETUP_ES.md`:** per-agent setup guide (MCP config, hooks, plugins, compaction survival) for all six supported agents, linked from the READMEs and getting-started guides.
+
 ## [v0.9.0] - 2026-08-11
 
 ### Added

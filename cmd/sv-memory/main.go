@@ -81,6 +81,7 @@ func init() {
 	rootCmd.AddCommand(projectsCmd)
 	rootCmd.AddCommand(graphCmd)
 	rootCmd.AddCommand(contextCmd)
+	rootCmd.AddCommand(setupCmd)
 
 	deleteCmd.AddCommand(deleteSessionCmd)
 	deleteCmd.AddCommand(deleteProjectCmd)

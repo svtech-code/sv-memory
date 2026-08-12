@@ -132,83 +132,98 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 - `status [--platform <p>]`: reporta herramientas otorgadas vs faltantes por plataforma.
 - OpenCode y Codex usan aprobación interactiva y se omiten (sin allow-list estática).
 
-#### 11. `sv-memory hooks`
+#### 11. `sv-memory setup [agente]`
 
-- `install [--strict] [--context-injection] [--platform <p>]`: instala hooks PreToolUse (`.agents/hooks.json` + `.agents/hooks/sv-memory.sh`) para que los agentes consulten la memoria antes de leer archivos. `--strict` bloquea la primera lectura raw de cada sesión. Plataforma por defecto: todas (`claude-code`, `codex`, `antigravity`, `opencode`).
+- Integración de un solo comando que replica `engram setup <agent>`: configura el servidor MCP, hooks/skills/plugins, inyección de protocolo (`AGENTS.md` / `.cursorrules` / `.windsurfrules`) y permisos de herramientas MCP para un agente.
+- Agentes soportados: `claude-code`, `opencode`, `cursor`, `windsurf`, `antigravity`, `codex`.
+- `sv-memory setup` (sin argumentos): solo lectura — imprime el estado de instalación por agente.
+- `sv-memory setup <agente>`: instala el agente de extremo a extremo (idempotente).
+- `--all`: instala todos los agentes soportados.
+- `--strict`: instala hooks estrictos (bloquea la primera lectura cruda en Antigravity; solo nudge en Claude Code).
+- **Claude Code:** escribe un `.mcp.json` local del proyecto cuando el CLI `claude` no está, instala hooks `PreToolUse` + ciclo de vida (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`) en `.claude/hooks/` y los registra en `.claude/settings.json`, inyecta el protocolo en `AGENTS.md` y concede el allow-list de 29 herramientas en `~/.claude/settings.json`.
+- **OpenCode:** registra el servidor MCP en `opencode.json`, instala `SKILL.md` más el plugin nativo TypeScript `.opencode/plugin/sv-memory.ts` (añade el tool `sv_memory_context`) e inyecta el protocolo en `AGENTS.md`.
+- **Cursor:** escribe `.cursor/mcp.json` e inyecta `.cursorrules`.
+- **Windsurf:** escribe `.windsurf/mcp_config.json` e inyecta `.windsurfrules`.
+- **Antigravity CLI:** registra el servidor MCP, instala los hooks de `.agents/hooks.json`, inyecta `AGENTS.md` y concede el allow-list de 29 herramientas.
+- **Codex:** escribe el bloque `[mcp_servers.sv-memory]` en `~/.codex/config.toml`, instala un hook no-op e inyecta `AGENTS.md`.
+
+#### 12. `sv-memory hooks`
+
+- `install [--strict] [--context-injection] [--platform <p>]`: instala hooks PreToolUse (`.agents/hooks.json` + `.agents/hooks/sv-memory.sh`) para que los agentes consulten la memoria antes de leer archivos. En Claude Code también instala los hooks de ciclo de vida (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`) en `.claude/hooks/` y los registra en `.claude/settings.json` en el formato oficial de arrays. `--strict` bloquea la primera lectura raw de cada sesión. Plataforma por defecto: todas (`claude-code`, `codex`, `antigravity`, `opencode`).
 - **Inyección silenciosa de contexto (`--context-injection`, opt-in, default off):** cuando se habilita, el hook PreToolUse de Claude Code llama `sv-memory context <file>` en la primera `Read` de cada archivo e inyecta el context pack compacto grafo+memorias (título + `why` truncado, acotado a 3 memorias) como `additionalContext`. La salida se cachea por archivo para la sesión y está acotada en tiempo (2s, timeout portable); el hook siempre sale con `exit 0` (fail-open) de modo que un binario o `.sv-memory` ausente nunca rompe la llamada. Se activa mediante el marcador `.sv-memory/context-injection-enabled` creado por el flag. Antigravity, Codex y OpenCode no soportan inyección por `additionalContext` y mantienen el mecanismo de nudge/skill.
 - **Degradación del modo strict (fail-open):** los scripts de hook nunca llaman al servidor sv-memory. El bloqueo strict solo está implementado en Antigravity CLI; en Claude Code el modo strict es solo nudge (siempre `exit 0`). El bloqueo se omite cuando sv-memory no está disponible (sin `.sv-memory/`, binario ausente, o `SV_MEMORY_STRICT_DISABLE=1`), de modo que el agente nunca queda atascado por un sv-memory ausente o mal configurado.
 - `uninstall [--context-injection] [--platform <p>]`: elimina los hooks (y el marcador de inyección cuando se pasa `--context-injection`).
 - `status`: reporta qué plataformas tienen hooks instalados y si la inyección silenciosa está habilitada.
 
-#### 12. `sv-memory obsidian-export [-o output-dir]`
+#### 13. `sv-memory obsidian-export [-o output-dir]`
 
 - Exporta todas las memorias del proyecto a archivos Markdown dentro de la carpeta de destino (por defecto `.obsidian-sv-memory`) estructurados como una bóveda de Obsidian.
 
-#### 13. `sv-memory export [output-file]`
+#### 14. `sv-memory export [output-file]`
 
 - Exporta todas las memorias no eliminadas de este proyecto a un archivo JSON portátil.
 
-#### 14. `sv-memory import <input-file>`
+#### 15. `sv-memory import <input-file>`
 
 - Importa memorias desde un archivo JSON usando upsert por ID.
 
 ### Comandos de Eliminación de Memoria y Sesión
 
-#### 15. `sv-memory delete session <session-id>`
+#### 16. `sv-memory delete session <session-id>`
 
 - Elimina una sesión vacía (falla si la sesión contiene memorias asociadas).
 
-#### 16. `sv-memory delete project <project-id> [--hard]`
+#### 17. `sv-memory delete project <project-id> [--hard]`
 
 - Elimina en cascada todos los datos del proyecto. Por defecto hace soft-delete de las memorias; `--hard` las elimina permanentemente de SQLite.
 
 ### Gestión del Registro de Proyectos
 
-#### 17. `sv-memory projects list`
+#### 18. `sv-memory projects list`
 
 - Lista todos los proyectos registrados con su ID, nombre, ruta, conteos de memorias y conteos de sesiones.
 
-#### 18. `sv-memory projects prune`
+#### 19. `sv-memory projects prune`
 
 - Elimina proyectos vacíos (aquellos con 0 memorias y 0 sesiones) del registro central de SQLite.
 
-#### 19. `sv-memory projects consolidate <source-project-id> <target-project-id>`
+#### 20. `sv-memory projects consolidate <source-project-id> <target-project-id>`
 
 - Fusiona todas las memorias y sesiones del proyecto origen en el proyecto destino y luego elimina el proyecto origen.
 
 ### Gestión del Grafo de Código
 
-#### 20. `sv-memory graph rebuild`
+#### 21. `sv-memory graph rebuild`
 
 - Fuerza un escaneo completo del directorio de código, reconstruyendo nodos y aristas del grafo.
 
-#### 21. `sv-memory graph path <source> <target>`
+#### 22. `sv-memory graph path <source> <target>`
 
 - Calcula e imprime la ruta de dependencia más corta entre dos nodos de código del grafo (hasta 10 saltos).
 
-#### 22. `sv-memory graph explain <node>`
+#### 23. `sv-memory graph explain <node>`
 
 - Imprime información detallada de un nodo específico: tipo, etiqueta, ruta, metadatos JSON y métricas fan-in/fan-out.
 
-#### 23. `sv-memory graph communities`
+#### 24. `sv-memory graph communities`
 
 - Ejecuta detección de comunidades Leiden sobre el grafo. Lista los clústeres de comunidades, sus nodos miembros, puntuaciones de centralidad y nodos god.
 
-#### 24. `sv-memory graph wiki [--output dir]`
+#### 25. `sv-memory graph wiki [--output dir]`
 
 - Exporta páginas wiki en Markdown para cada comunidad detectada, listando archivos miembros, puntuaciones de centralidad y dependencias inter-comunidad. Directorio de salida por defecto: `graph-wiki`.
 
-#### 25. `sv-memory graph viz [--output file] [--open]`
+#### 26. `sv-memory graph viz [--output file] [--open]`
 
 - Genera una visualización HTML interactiva usando vis.js con simulación física coloreada por comunidad, filtrado de nodos y tooltips. Salida por defecto: `graph.html`. Se abre en el navegador por defecto (`--open=false` para omitirlo).
 
-#### 26. `sv-memory graph merge <project-id-a> <project-id-b> [-o output-file]`
+#### 27. `sv-memory graph merge <project-id-a> <project-id-b> [-o output-file]`
 
 - Carga dos grafos de proyecto y produce un union-merge por ID de nodo, actualizando nodos y aristas en un snapshot JSON (salida por defecto: `merged-<a>-<b>.json`).
 
 ### Gestión de Conflictos
 
-#### 27. `sv-memory conflicts`
+#### 28. `sv-memory conflicts`
 
 - `list [--status pending|judged|ignored] [--project P]`: muestra memorias conflictivas y superposiciones semánticas detectadas.
 - `stats`: resume los conteos de relaciones de conflicto por estado.
@@ -216,7 +231,7 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 - `scan --semantic [--agent claude|opencode|CMD] [--max-semantic N] [--concurrency N]`: tras exponer los pares candidatos, los juzga con el CLI del agente configurado. El agente compara el contenido completo de las memorias y devuelve un veredicto (`supersedes`, `conflicts_with`, `relates_to` o `none`); los veredictos se persisten con `judged_by='llm'` al usar `--apply`, y los juicios fallidos quedan pendientes para reintentar. Agente por defecto: `$SV_MEMORY_SEMANTIC_AGENT` o `claude`.
 - `ignore <relation-id>`: marca un conflicto detectado como ignorado.
 
-#### 28. `sv-memory context <path>`
+#### 29. `sv-memory context <path>`
 
 - Imprime un **context pack compacto** para un archivo, paquete o símbolo: el rol estructural del nodo (tipo, fan-in/fan-out, comunidad, flag de hub) más las memorias vinculadas a esa ruta (`where_path` o aristas `rationale_for`), cada una como título + `why` truncado. Flags: `--max-memories N` (default 5), `--why-chars N` (default 300). Rápido y acotado — es el punto de entrada que llama el hook opcional de inyección de contexto en la primera lectura de archivo.
 
