@@ -13,6 +13,7 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 ### Changed
 
 - **`sv_mem_session_start` now respects the token budget:** the Auto-Boot Context Bundle + Graph Hubs response is routed through the shared `Server.respond` truncation, so the largest pre-tool payload of each session is bounded by `max_response_tokens` (or a per-call `token_budget`), instead of being returned unguarded.
+- **Auto-Boot Bundle now surfaces postmortems and recent Q&A:** the session-start bundle adds a **Postmortems & Lessons Learned** section (the single most recent `postmortem`, with its rationale) and a **Recent Q&A** section (the single most recent `qa`, title-only to stay compact), both deduplicated against the previous-session section. Protocol/docs (EN/ES), skills, and CHANGELOG updated.
 
 ### Fixed
 

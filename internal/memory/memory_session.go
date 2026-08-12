@@ -212,6 +212,22 @@ func GetAutoBootBundle(db *sql.DB, projectID string) (string, error) {
 		WHERE project_id = ? AND category IN ('bugfix', 'journal') AND deleted_at IS NULL
 		ORDER BY created_at DESC LIMIT 2`, false, shown)
 
+	// Postmortems are the most reusable lesson (what went wrong and how to
+	// avoid it), so the single most recent one is surfaced with its rationale.
+	writeBundleSection(&sb, db, projectID, "Postmortems & Lessons Learned", `
+		SELECT id, category, what, why
+		FROM memories
+		WHERE project_id = ? AND category = 'postmortem' AND deleted_at IS NULL
+		ORDER BY created_at DESC LIMIT 1`, true, shown)
+
+	// Recent Q&A notes surface the latest resolved question without its full
+	// rationale to keep the bundle compact; the agent drills down if needed.
+	writeBundleSection(&sb, db, projectID, "Recent Q&A", `
+		SELECT id, category, what, why
+		FROM memories
+		WHERE project_id = ? AND category = 'qa' AND deleted_at IS NULL
+		ORDER BY created_at DESC LIMIT 1`, false, shown)
+
 	return strings.TrimSpace(sb.String()), nil
 }
 

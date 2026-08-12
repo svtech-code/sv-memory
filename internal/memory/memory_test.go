@@ -1060,6 +1060,69 @@ func TestAutoBootBundleFullSessionFlow(t *testing.T) {
 	}
 }
 
+func TestAutoBootBundleSurfacesPostmortemAndQA(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := db.InitDB(filepath.Join(tempDir, "bundle_pm_qa.db"))
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-bundle-pm-qa"
+	if regErr := db.RegisterProject(database, projectID, "Bundle PM QA", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
+	}
+
+	// Seed a postmortem and a qa memory. No session exists, so only the
+	// per-category bundle sections are produced.
+	if _, err = SaveMemory(database, &Memory{
+		ProjectID: projectID,
+		Category:  "postmortem",
+		What:      "Push failed on CI Lint",
+		Why:       "govet shadow not caught locally",
+		Learned:   "Run golangci-lint before pushing",
+	}); err != nil {
+		t.Fatalf("failed to save postmortem: %v", err)
+	}
+	if _, err = SaveMemory(database, &Memory{
+		ProjectID: projectID,
+		Category:  "qa",
+		What:      "Why does sv_mem_session_start need token_budget",
+		Why:       "It returns the largest pre-tool payload",
+		Learned:   "So the bundle is bounded by max_response_tokens",
+	}); err != nil {
+		t.Fatalf("failed to save qa: %v", err)
+	}
+
+	bundle, err := GetAutoBootBundle(database, projectID)
+	if err != nil {
+		t.Fatalf("failed to get autoboot bundle: %v", err)
+	}
+
+	// The postmortem section surfaces with its rationale (withWhy=true)...
+	if !strings.Contains(bundle, "**Postmortems & Lessons Learned:**") {
+		t.Errorf("expected postmortem section in bundle, got:\n%s", bundle)
+	}
+	if !strings.Contains(bundle, "Push failed on CI Lint") {
+		t.Errorf("expected postmortem memory surfaced, got:\n%s", bundle)
+	}
+	if !strings.Contains(bundle, "*Why:* govet shadow not caught locally") {
+		t.Errorf("expected postmortem rationale shown (withWhy), got:\n%s", bundle)
+	}
+
+	// ...and the qa section surfaces without its rationale (withWhy=false) so
+	// the bundle stays compact.
+	if !strings.Contains(bundle, "**Recent Q&A:**") {
+		t.Errorf("expected qa section in bundle, got:\n%s", bundle)
+	}
+	if !strings.Contains(bundle, "Why does sv_mem_session_start need token_budget") {
+		t.Errorf("expected qa memory surfaced, got:\n%s", bundle)
+	}
+	if strings.Contains(bundle, "*Why:* It returns the largest pre-tool payload") {
+		t.Errorf("expected qa rationale omitted (withWhy=false), got:\n%s", bundle)
+	}
+}
+
 func TestGetSessionContextEdgeCases(t *testing.T) {
 	t.Run("new project without sessions or memories", func(t *testing.T) {
 		database, err := db.InitDB(filepath.Join(t.TempDir(), "edge_new.db"))

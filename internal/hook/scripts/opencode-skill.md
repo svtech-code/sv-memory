@@ -14,7 +14,7 @@ Using these tools **before** reading source files directly saves tokens and prov
 
 Manage a coding session to group memories and enable context recovery:
 
-1. **Start:** Call `sv_mem_session_start` at the beginning of work. It returns an **Auto-Boot Context Bundle** (previous session summary, key decisions, standards, recent bugfixes, journals, top graph hubs) — use it as your starting context.
+1. **Start:** Call `sv_mem_session_start` at the beginning of work. It returns an **Auto-Boot Context Bundle** (previous session summary, key decisions, standards, recent bugfixes, postmortems, recent Q&A, journals, top graph hubs) — use it as your starting context.
 2. **Capture as you go:** Save knowledge with `sv_mem_save` as you work. Pass the `session_id` from the start call to associate memories with this session.
 3. **Summary:** Before finishing, call `sv_mem_session_summary` with goal, discoveries, accomplished work, and next steps.
 4. **End:** Call `sv_mem_session_end` to close the session.
