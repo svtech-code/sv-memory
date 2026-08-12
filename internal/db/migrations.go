@@ -147,6 +147,7 @@ var migrations = []migration{
 	{9, "add_session_index", addSessionIndex},
 	{10, "add_review_after_and_pinned", addReviewAfterAndPinned},
 	{11, "add_last_compaction_at", addLastCompactionAt},
+	{12, "add_session_partial_indexes", addSessionPartialIndexes},
 }
 
 func applyMigrations(db *sql.DB) error {
@@ -490,6 +491,25 @@ func addLastCompactionAt(db *sql.DB) error {
 	if !exists {
 		if _, err := db.Exec("ALTER TABLE projects ADD COLUMN last_compaction_at DATETIME;"); err != nil {
 			return fmt.Errorf("failed to add column last_compaction_at to projects: %w", err)
+		}
+	}
+	return nil
+}
+
+// addSessionPartialIndexes adds partial indexes tailored to the two hot session
+// lookups. GetActiveSession filters status='active' and orders by started_at
+// DESC; GetLastSession filters status='completed' and orders by ended_at DESC.
+// The pre-existing idx_sessions_project index covers (project_id, started_at
+// DESC) but not the status predicate nor the ended_at sort, so these partial
+// indexes serve both the filter and the sort for each lookup directly.
+func addSessionPartialIndexes(db *sql.DB) error {
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_sessions_active_started ON sessions(project_id, started_at DESC) WHERE status = 'active';",
+		"CREATE INDEX IF NOT EXISTS idx_sessions_completed_ended ON sessions(project_id, ended_at DESC) WHERE status = 'completed';",
+	}
+	for _, idx := range indexes {
+		if _, err := db.Exec(idx); err != nil {
+			return fmt.Errorf("failed to create index %s: %w", idx, err)
 		}
 	}
 	return nil

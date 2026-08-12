@@ -370,6 +370,8 @@ CREATE INDEX IF NOT EXISTS idx_memories_project_category ON memories(project_id,
 CREATE INDEX IF NOT EXISTS idx_memories_topic ON memories(project_id, topic_key);
 CREATE INDEX IF NOT EXISTS idx_memories_hash ON memories(project_id, normalized_hash);
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sessions_active_started ON sessions(project_id, started_at DESC) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_sessions_completed_ended ON sessions(project_id, ended_at DESC) WHERE status = 'completed';
 CREATE INDEX IF NOT EXISTS idx_memory_relations_source ON memory_relations(project_id, source_id);
 CREATE INDEX IF NOT EXISTS idx_memory_relations_target ON memory_relations(project_id, target_id);
 ```

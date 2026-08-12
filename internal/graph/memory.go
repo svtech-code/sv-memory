@@ -65,14 +65,17 @@ func TopDegreeNodes(db *sql.DB, projectID string, n int) ([]DegreeNode, error) {
 	rows, err := db.Query(`
 		SELECT n.id, n.label, n.node_type,
 			COALESCE(fi.cnt, 0) + COALESCE(fo.cnt, 0) AS degree
-		FROM graph_nodes n
+		FROM (
+			SELECT id, label, node_type
+			FROM graph_nodes
+			WHERE project_id = ? AND node_type != 'document'
+		) n
 		LEFT JOIN (
 			SELECT source_id, COUNT(*) AS cnt FROM graph_edges WHERE project_id = ? GROUP BY source_id
 		) fi ON fi.source_id = n.id
 		LEFT JOIN (
 			SELECT target_id, COUNT(*) AS cnt FROM graph_edges WHERE project_id = ? GROUP BY target_id
 		) fo ON fo.target_id = n.id
-		WHERE n.project_id = ? AND n.node_type != 'document'
 		ORDER BY degree DESC
 		LIMIT ?`, projectID, projectID, projectID, n)
 	if err != nil {
