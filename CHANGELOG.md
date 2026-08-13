@@ -7,6 +7,11 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ### Added
 
+- **`documentation/CODEBASE-GUIDE.md` + `CODEBASE-GUIDE_ES.md`:** a codebase tour focused on data flows, complementing the reference spec — package map, seven key flows (saving a memory, graph query, graph build/refresh with AST vs heuristic call edges, session lifecycle, conflict detection/judgment, context pack, chunked git sync), plus "where to add a new MCP tool / new language" walkthroughs and repo conventions & guardrails. Linked from the READMEs (TOC + intro).
+- **Go Report Card badge** added to the README (EN/ES) next to the existing CI/Go/License/MCP/SQLite badges.
+
+### Added
+
 - **AST-precision `calls` edges (graph engine):** `calls` edges are now extracted per file by preferring the tree-sitter AST (`call_expression` / `call` / `method_invocation` / `function_call_expression` nodes) with confidence `EXTRACTED` and a precise `L<line>:<col>` source location, resolving each call site against the project's function/class nodes (same file first, then a unique cross-file match within the language group). A new optional `extractor.CallRefExtractor` interface exposes `ExtractCallRefs`, implemented by `TreeSitterExtractor` for Python, JS/TS, Java, PHP, Ruby, Rust, CSS, and HTML. Files without AST call coverage (Go — upstream parser stack-overflow workaround, Lua, Markdown, shell, Vue/Svelte/Astro script blocks) keep the tokenize heuristic (`INFERRED`). The AST path does not capture identifiers inside strings or comments, eliminating a class of false positives the heuristic produced. Tests cover the extractor (call refs with 1-based line/col, no string/comment capture, Go fallback) and graph integration (EXTRACTED cross-file Python edge, and a mixed Go+Python project proving the heuristic still covers Go).
 
 ### Added

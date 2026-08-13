@@ -890,6 +890,7 @@ sv-memory/
 ├── documentation/
 │   ├── requirement.md           # Restricciones del producto
 │   ├── spect.md                 # Esta especificación
+│   ├── CODEBASE-GUIDE.md        # Tour del código: flujos de datos clave, puntos de extensión
 │   └── getting_started_guide.md # Guía paso a paso de instalación y onboarding
 ├── AGENTS.md                    # Bloque de protocolos inyectado (commiteado)
 ├── CHANGELOG.md                 # Notas de release

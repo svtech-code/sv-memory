@@ -891,6 +891,7 @@ sv-memory/
 ├── documentation/
 │   ├── requirement.md           # Product constraints
 │   ├── spect.md                 # This specification
+│   ├── CODEBASE-GUIDE.md        # Codebase tour: key data flows, extension points
 │   └── getting_started_guide.md # Step-by-step installation & onboarding guide
 ├── AGENTS.md                    # Injected protocols block (committed)
 ├── CHANGELOG.md                 # Release notes

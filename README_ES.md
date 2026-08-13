@@ -12,6 +12,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/Licencia-MIT-blue.svg" alt="Licencia"></a>
   <a href="https://golang.org/"><img src="https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go" alt="Versión Go"></a>
   <a href="https://github.com/svtech-code/sv-memory/actions/workflows/ci.yml"><img src="https://github.com/svtech-code/sv-memory/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://goreportcard.com/report/github.com/svtech-code/sv-memory"><img src="https://goreportcard.com/badge/github.com/svtech-code/sv-memory" alt="Go Report Card"></a>
   <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/Protocolo-MCP%20v1.0-purple.svg" alt="Protocolo MCP"></a>
   <a href="https://sqlite.org/"><img src="https://img.shields.io/badge/Almacenamiento-SQLite%20WAL%20%2B%20FTS5-003B57?logo=sqlite" alt="SQLite WAL"></a>
   <a href="README.md"><img src="https://img.shields.io/badge/Lang-English-blue.svg" alt="English Version"></a>
@@ -24,6 +25,7 @@
   <a href="#-referencia-de-comandos-cli">Comandos CLI</a> •
   <a href="#-herramientas-mcp-31-herramientas">Herramientas MCP</a> •
   <a href="documentation/getting_started_guide_ES.md">Guía (ES)</a> •
+  <a href="documentation/CODEBASE-GUIDE_ES.md">Código (ES)</a> •
   <a href="documentation/getting_started_guide.md">Guide (EN)</a>
 </p>
 
@@ -31,7 +33,7 @@
 
 ## 📖 Enlaces Rápidos
 
-> 💡 **¿Nuevo en sv-memory?** Revisa la [Guía Completa de Inicio e Instalación](documentation/getting_started_guide_ES.md) paso a paso ([English](documentation/getting_started_guide.md)) o la versión en [Inglés (README.md)](README.md).
+> 💡 **¿Nuevo en sv-memory?** Revisa la [Guía Completa de Inicio e Instalación](documentation/getting_started_guide_ES.md) paso a paso ([English](documentation/getting_started_guide.md)), la [Guía del Código](documentation/CODEBASE-GUIDE_ES.md) para un recorrido de los flujos de datos clave, o la versión en [Inglés (README.md)](README.md).
 
 ---
 
