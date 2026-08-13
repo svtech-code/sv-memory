@@ -918,6 +918,159 @@ func helperFunc() {
 	}
 }
 
+func TestSyncGraphASTCallEdgesExtracted(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-graph-astcalls-test")
+	if err != nil {
+		t.Fatalf("failed to create temp workspace: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_astcalls.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-astcalls-test"
+	err = db.RegisterProject(database, projectID, "AST Calls Test Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// Python: helper() defined in one file, called from another (cross-file).
+	// The AST path must produce an EXTRACTED edge with a precise L<line>:<col>.
+	pythonHelper := `def helper():
+    return 42
+`
+	pythonCaller := `def caller():
+    return helper()
+`
+	err = os.WriteFile(filepath.Join(tempDir, "helper.py"), []byte(pythonHelper), 0644)
+	if err != nil {
+		t.Fatalf("failed writing helper.py: %v", err)
+	}
+	err = os.WriteFile(filepath.Join(tempDir, "caller.py"), []byte(pythonCaller), 0644)
+	if err != nil {
+		t.Fatalf("failed writing caller.py: %v", err)
+	}
+
+	err = SyncGraph(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("SyncGraph failed: %v", err)
+	}
+
+	var sourceID, targetID, relType, confidence, sourceLoc string
+	err = database.QueryRow(`
+		SELECT source_id, target_id, relation_type, confidence, source_location
+		FROM graph_edges
+		WHERE project_id = ? AND relation_type = 'calls'
+	`, projectID).Scan(&sourceID, &targetID, &relType, &confidence, &sourceLoc)
+	if err != nil {
+		t.Fatalf("failed to query calls edge: %v", err)
+	}
+
+	if sourceID != "caller.py:caller" {
+		t.Errorf("expected source 'caller.py:caller', got %q", sourceID)
+	}
+	if targetID != "helper.py:helper" {
+		t.Errorf("expected target 'helper.py:helper', got %q", targetID)
+	}
+	if confidence != "EXTRACTED" {
+		t.Errorf("expected AST edge confidence EXTRACTED, got %q", confidence)
+	}
+	// The call is on line 2 of caller.py; the column points at the call node
+	// (1-based), which may vary slightly by parser grammar — the line must be
+	// exact and the location must carry a column.
+	var locLine, locCol int
+	if _, err := fmt.Sscanf(sourceLoc, "L%d:%d", &locLine, &locCol); err != nil {
+		t.Fatalf("expected source_location L<line>:<col>, got %q", sourceLoc)
+	}
+	if locLine != 2 {
+		t.Errorf("expected call on line 2, got %d", locLine)
+	}
+	if locCol < 1 {
+		t.Errorf("expected 1-based column, got %d", locCol)
+	}
+}
+
+func TestSyncGraphMixedGoPythonFallsBackToHeuristicForGo(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-graph-mixed-test")
+	if err != nil {
+		t.Fatalf("failed to create temp workspace: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_mixed.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-mixed-test"
+	err = db.RegisterProject(database, projectID, "Mixed Test Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// Python file (AST path) and Go file (heuristic path, upstream parser bug).
+	// Both must produce their calls edges — AST must not shadow the Go file.
+	pythonCode := "def helper():\n    pass\ndef caller():\n    helper()\n"
+	goCode := `package main
+
+func helperFunc() {}
+
+func callerFunc() {
+	helperFunc()
+}
+`
+	err = os.WriteFile(filepath.Join(tempDir, "a.py"), []byte(pythonCode), 0644)
+	if err != nil {
+		t.Fatalf("failed writing a.py: %v", err)
+	}
+	err = os.WriteFile(filepath.Join(tempDir, "main.go"), []byte(goCode), 0644)
+	if err != nil {
+		t.Fatalf("failed writing main.go: %v", err)
+	}
+
+	err = SyncGraph(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("SyncGraph failed: %v", err)
+	}
+
+	// The Go calls edge must exist (heuristic fallback).
+	var goSource, goTarget, goConf string
+	err = database.QueryRow(`
+		SELECT source_id, target_id, confidence FROM graph_edges
+		WHERE project_id = ? AND relation_type = 'calls'
+		  AND source_id = 'main.go:callerFunc' AND target_id = 'main.go:helperFunc'
+	`, projectID).Scan(&goSource, &goTarget, &goConf)
+	if err != nil {
+		t.Fatalf("expected Go heuristic calls edge: %v", err)
+	}
+	if goSource != "main.go:callerFunc" || goTarget != "main.go:helperFunc" {
+		t.Errorf("unexpected Go edge %s -> %s", goSource, goTarget)
+	}
+	if goConf != "INFERRED" {
+		t.Errorf("expected Go heuristic confidence INFERRED, got %q", goConf)
+	}
+
+	// The Python calls edge must exist with AST confidence.
+	var pySource, pyTarget, pyConf string
+	err = database.QueryRow(`
+		SELECT source_id, target_id, confidence FROM graph_edges
+		WHERE project_id = ? AND relation_type = 'calls'
+		  AND source_id = 'a.py:caller' AND target_id = 'a.py:helper'
+	`, projectID).Scan(&pySource, &pyTarget, &pyConf)
+	if err != nil {
+		t.Fatalf("expected Python AST calls edge: %v", err)
+	}
+	if pyConf != "EXTRACTED" {
+		t.Errorf("expected Python AST confidence EXTRACTED, got %q", pyConf)
+	}
+}
+
 func TestSyncGraphWithMarkdown(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-mem-graph-md-test")
 	if err != nil {

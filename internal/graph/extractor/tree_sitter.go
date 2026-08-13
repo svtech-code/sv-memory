@@ -98,6 +98,101 @@ func (t *TreeSitterExtractor) Extract(content []byte, relPath, ext string) ([]Sy
 	return symbols, imports, nil
 }
 
+// ExtractCallRefs returns AST-precision call sites (callee + 1-based
+// line/column) for languages parsed by tree-sitter. Languages handled by the
+// regex fallback (Go due to the upstream stack-overflow bug, Lua, Markdown,
+// shell, Vue/Svelte/Astro script blocks) return ErrNoASTCallRefs so the graph
+// builder falls back to the tokenize heuristic for those files.
+func (t *TreeSitterExtractor) ExtractCallRefs(content []byte, relPath, ext string) ([]CallRef, error) {
+	lang := t.GetLanguage(ext)
+	if lang == nil {
+		return nil, ErrNoASTCallRefs
+	}
+	if ext == ".go" {
+		return nil, ErrNoASTCallRefs
+	}
+
+	parser := gotreesitter.NewParser(lang)
+	tree, err := parser.Parse(content)
+	if err != nil || tree == nil || tree.RootNode() == nil {
+		return nil, ErrNoASTCallRefs
+	}
+
+	var refs []CallRef
+	traverse(tree.RootNode(), func(n *gotreesitter.Node) {
+		callee := callCallee(n, lang, content, ext)
+		if callee == "" {
+			return
+		}
+		pt := n.StartPoint()
+		refs = append(refs, CallRef{
+			Callee: callee,
+			Line:   int(pt.Row) + 1,
+			Col:    int(pt.Column) + 1,
+		})
+	})
+	return refs, nil
+}
+
+// callCallee returns the invoked identifier/name for a call-site AST node, or ""
+// when the node is not a call of interest. Call expression node types vary by
+// grammar: call_expression (Go/JS/TS/Rust), call (Python/Ruby), method_invocation
+// (Java), function_call_expression (PHP). The callee is the function name
+// identifier, or the last property_identifier of a member/scope access
+// (e.g. foo.bar() → bar; Class.method() → method).
+func callCallee(n *gotreesitter.Node, lang *gotreesitter.Language, content []byte, ext string) string {
+	nodeType := n.Type(lang)
+	switch nodeType {
+	case "call_expression", "call", "method_invocation", "function_call_expression":
+	default:
+		return ""
+	}
+
+	// Ruby "call" nodes also cover method calls with parentheses; a bare
+	// identifier call (no parens/args) is not a call node in the Ruby grammar.
+	if ext == ".rb" && nodeType != "call" {
+		return ""
+	}
+
+	// Find the callee: the function/field name at the head of the call.
+	// Walk children for identifier/property_identifier/field_identifier/name
+	// nodes, taking the LAST one (deepest/member access).
+	var callee string
+	for i := 0; i < n.ChildCount(); i++ {
+		child := n.Child(i)
+		ct := child.Type(lang)
+		switch ct {
+		case "identifier", "property_identifier", "field_identifier", "name", "method":
+			callee = child.Text(content)
+		case "scoped_identifier", "member_expression", "attribute":
+			// foo.bar(...) / Class.method(...): drill into the object to get
+			// the trailing field name.
+			callee = memberCallee(child, lang, content)
+		}
+	}
+	return callee
+}
+
+// memberCallee extracts the trailing field/property name from a member
+// expression or scoped identifier (e.g. `a.b.c` → `c`).
+func memberCallee(n *gotreesitter.Node, lang *gotreesitter.Language, content []byte) string {
+	if n == nil {
+		return ""
+	}
+	var last string
+	for i := 0; i < n.ChildCount(); i++ {
+		child := n.Child(i)
+		ct := child.Type(lang)
+		switch ct {
+		case "property_identifier", "field_identifier", "identifier", "name":
+			last = child.Text(content)
+		case "member_expression", "scoped_identifier":
+			last = memberCallee(child, lang, content)
+		}
+	}
+	return last
+}
+
 // GetLanguage resolves the extension to a gotreesitter Language object.
 func (t *TreeSitterExtractor) GetLanguage(ext string) *gotreesitter.Language {
 	switch ext {

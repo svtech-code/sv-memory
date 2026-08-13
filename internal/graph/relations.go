@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/svtech-code/sv-memory/internal/graph/extractor"
 )
 
 func resolveImport(projPath, sourcePath, imp string, nodes map[string]*Node) (string, bool) {
@@ -134,9 +136,157 @@ func isExternalPkg(imp string) bool {
 	return true
 }
 
-// extractCallEdges identifies call relationships (functions calling other functions/classes)
-// within the project by scanning function body source code.
+// extractCallEdges identifies call relationships (functions calling other
+// functions/classes) within the project. Per file it prefers AST-precision
+// call refs when the active extractor supports them (tree-sitter); files whose
+// language has no AST call coverage (regex-only, Go due to the upstream parser
+// bug, parse failures) fall back to the tokenize heuristic. Edges from the AST
+// path carry confidence EXTRACTED with a precise L<line>:<col> location.
 func extractCallEdges(projPath string, nodes map[string]*Node, fileContents map[string][]byte) []*Edge {
+	var refExt extractor.CallRefExtractor
+	if re, ok := currentExtractor.(extractor.CallRefExtractor); ok {
+		refExt = re
+	}
+
+	// Files whose calls were already emitted by the AST path must be excluded
+	// from the heuristic pass so the same edge is not produced twice.
+	astCovered := map[string]bool{}
+	var edges []*Edge
+
+	if refExt != nil {
+		astEdges, covered := extractASTCallEdges(projPath, nodes, fileContents, refExt)
+		edges = append(edges, astEdges...)
+		for f := range covered {
+			astCovered[f] = true
+		}
+	}
+
+	heuristicEdges := extractHeuristicCallEdges(projPath, nodes, fileContents, astCovered)
+	return append(edges, heuristicEdges...)
+}
+
+// extractASTCallEdges builds "calls" edges from tree-sitter AST call
+// references. For each file the extractor supports, every call site is resolved
+// against the project's function/class nodes (same file first, then cross-file
+// by label within the same language group). It returns the edges plus the set
+// of file paths whose calls were emitted (so the heuristic skips them).
+func extractASTCallEdges(projPath string, nodes map[string]*Node, fileContents map[string][]byte, refExt extractor.CallRefExtractor) ([]*Edge, map[string]bool) {
+	// Build per-file and per-language symbol maps (function/class nodes).
+	fileSymbols := make(map[string][]*Node)
+	langSymbols := make(map[string][]*Node)
+	for _, node := range nodes {
+		if node.Type != "function" && node.Type != "class" {
+			continue
+		}
+		fileSymbols[node.Path] = append(fileSymbols[node.Path], node)
+		ext := strings.ToLower(filepath.Ext(node.Path))
+		if lang := getLanguageGroup(ext); lang != "" {
+			langSymbols[lang] = append(langSymbols[lang], node)
+		}
+	}
+
+	var edges []*Edge
+	covered := map[string]bool{}
+	seen := map[string]bool{}
+
+	for filePath, symbols := range fileSymbols {
+		ext := strings.ToLower(filepath.Ext(filePath))
+		if getLanguageGroup(ext) == "" {
+			continue
+		}
+		content, ok := fileContents[filePath]
+		if !ok {
+			absPath := filepath.Join(projPath, filePath)
+			cached, err := os.ReadFile(absPath)
+			if err != nil {
+				continue
+			}
+			content = cached
+		}
+
+		refs, err := refExt.ExtractCallRefs(content, filePath, ext)
+		if err != nil {
+			continue // regex-only or parse failure → heuristic will handle it
+		}
+		covered[filePath] = true
+
+		// Sort symbols by line so the containing caller can be resolved.
+		sortSymbolsByLine(symbols)
+
+		for _, ref := range refs {
+			if ref.Callee == "" {
+				continue
+			}
+			// Resolve caller: the last symbol whose start line <= call line.
+			caller := resolveCallerAtLine(symbols, ref.Line)
+			// Resolve callee: same file first, then cross-file same language.
+			target := resolveCalleeNode(fileSymbols[filePath], ref.Callee, langSymbols[getLanguageGroup(ext)], caller)
+			if caller == nil || target == nil {
+				continue
+			}
+
+			edgeID := fmt.Sprintf("%s-%s-calls", caller.ID, target.ID)
+			if seen[edgeID] {
+				continue
+			}
+			seen[edgeID] = true
+			edges = append(edges, &Edge{
+				ID:             edgeID,
+				SourceID:       caller.ID,
+				TargetID:       target.ID,
+				RelationType:   "calls",
+				Confidence:     "EXTRACTED",
+				SourceLocation: fmt.Sprintf("L%d:%d", ref.Line, ref.Col),
+			})
+		}
+	}
+
+	return edges, covered
+}
+
+// resolveCallerAtLine returns the function/class node whose body contains the
+// given source line (the last symbol declared at or before that line). symbols
+// must be sorted by start line ascending.
+func resolveCallerAtLine(symbols []*Node, line int) *Node {
+	var caller *Node
+	for _, s := range symbols {
+		if getSymbolLine(s) <= line {
+			caller = s
+		}
+	}
+	return caller
+}
+
+// resolveCalleeNode resolves a call callee name to a project symbol node,
+// preferring a same-file match, then a unique cross-file match within the same
+// language group. Ambiguous cross-file names resolve to the same-file match if
+// any; otherwise the caller is not attributed.
+func resolveCalleeNode(fileSymbols []*Node, callee string, langSymbols []*Node, caller *Node) *Node {
+	// Same file first.
+	for _, s := range fileSymbols {
+		if s.Label == callee {
+			return s
+		}
+	}
+	// Cross-file within the language: unique by label.
+	var matches []*Node
+	for _, s := range langSymbols {
+		if s.Label == callee && s.ID != caller.ID {
+			matches = append(matches, s)
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0]
+	}
+	return nil
+}
+
+// extractHeuristicCallEdges is the original tokenize-based call extraction,
+// kept as the fallback for files/languages without AST call coverage. Files in
+// astCovered already had their calls emitted by the AST path and are skipped so
+// each edge is produced exactly once. It scans each function/class body for
+// identifiers matching other project symbols.
+func extractHeuristicCallEdges(projPath string, nodes map[string]*Node, fileContents map[string][]byte, astCovered map[string]bool) []*Edge {
 	var edges []*Edge
 
 	langSymbols := make(map[string][]*Node)
@@ -158,6 +308,11 @@ func extractCallEdges(projPath string, nodes map[string]*Node, fileContents map[
 	}
 
 	for filePath, symbols := range fileSymbols {
+		// Files already covered by the AST call path are skipped so each edge
+		// is produced exactly once (EXTRACTED from AST, not duplicated INFERRED).
+		if astCovered[filePath] {
+			continue
+		}
 		var content []byte
 		var err error
 		if cached, ok := fileContents[filePath]; ok {
