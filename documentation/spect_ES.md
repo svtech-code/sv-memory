@@ -86,7 +86,7 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 #### 2. `sv-memory mcp`
 
 - Inicia el servidor MCP JSON-RPC sobre `stdio` para el consumo por parte de agentes.
-- Registra las 29 herramientas MCP.
+- Registra las 31 herramientas MCP.
 - Mantiene un caché de grafo en memoria para recorridos BFS sin SQL.
 - Aplica debounce a las escrituras de Git sync (coalescencia de 500ms).
 
@@ -118,7 +118,7 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 #### 9. `sv-memory configure`
 
 - Asistente interactivo para configuraciones automáticas/manuales de editores (Cursor, VS Code, Zed, Windsurf, OpenCode) y CLIs (Claude Code, Codex, Antigravity).
-- **Fase 4 (Permisos MCP):** Lista las 29 herramientas MCP de sv-memory con descripciones y otorga las entradas de allow-list seleccionadas a las plataformas con allow-list elegidas previamente (Antigravity CLI, Claude Code).
+- **Fase 4 (Permisos MCP):** Lista las 31 herramientas MCP de sv-memory con descripciones y otorga las entradas de allow-list seleccionadas a las plataformas con allow-list elegidas previamente (Antigravity CLI, Claude Code).
 - **Subcomandos** para leer/escribir configuración (YAML, global `~/.sv-memory/config.yaml` o local `.sv-memory/config.yaml`):
   - `sv-memory configure get <key>`: imprime un único valor de configuración.
   - `sv-memory configure set <key> <value> [--local]`: escribe un valor de forma global (por defecto) o local al proyecto.
@@ -126,7 +126,7 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 
 #### 10. `sv-memory permissions`
 
-- `list`: muestra las 29 herramientas MCP de sv-memory con descripciones legibles.
+- `list`: muestra las 31 herramientas MCP de sv-memory con descripciones legibles.
 - `grant --platform <p> [--all | --tool a,b] [--dry-run]`: escribe entradas de allow-list (`mcp(sv-memory/<tool>)` para Antigravity, `mcp__sv-memory__<tool>` para Claude Code), conservando entradas no relacionadas.
 - `revoke --platform <p> [--dry-run]`: elimina las entradas de sv-memory de la allow-list.
 - `status [--platform <p>]`: reporta herramientas otorgadas vs faltantes por plataforma.
@@ -140,11 +140,11 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 - `sv-memory setup <agente>`: instala el agente de extremo a extremo (idempotente).
 - `--all`: instala todos los agentes soportados.
 - `--strict`: instala hooks estrictos (bloquea la primera lectura cruda en Antigravity; solo nudge en Claude Code).
-- **Claude Code:** escribe un `.mcp.json` local del proyecto cuando el CLI `claude` no está, instala hooks `PreToolUse` + ciclo de vida (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`) en `.claude/hooks/` y los registra en `.claude/settings.json`, inyecta el protocolo en `AGENTS.md` y concede el allow-list de 29 herramientas en `~/.claude/settings.json`.
+- **Claude Code:** escribe un `.mcp.json` local del proyecto cuando el CLI `claude` no está, instala hooks `PreToolUse` + ciclo de vida (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`) en `.claude/hooks/` y los registra en `.claude/settings.json`, inyecta el protocolo en `AGENTS.md` y concede el allow-list de 31 herramientas en `~/.claude/settings.json`.
 - **OpenCode:** registra el servidor MCP en `opencode.json`, instala `SKILL.md` más el plugin nativo TypeScript `.opencode/plugin/sv-memory.ts` (añade el tool `sv_memory_context`) e inyecta el protocolo en `AGENTS.md`.
 - **Cursor:** escribe `.cursor/mcp.json` e inyecta `.cursorrules`.
 - **Windsurf:** escribe `.windsurf/mcp_config.json` e inyecta `.windsurfrules`.
-- **Antigravity CLI:** registra el servidor MCP, instala los hooks de `.agents/hooks.json`, inyecta `AGENTS.md` y concede el allow-list de 29 herramientas.
+- **Antigravity CLI:** registra el servidor MCP, instala los hooks de `.agents/hooks.json`, inyecta `AGENTS.md` y concede el allow-list de 31 herramientas.
 - **Codex:** escribe el bloque `[mcp_servers.sv-memory]` en `~/.codex/config.toml`, instala un hook no-op e inyecta `AGENTS.md`.
 
 #### 12. `sv-memory hooks`
@@ -417,7 +417,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_relations_target ON memory_relations(proje
 
 ## 6. Definición de Herramientas MCP
 
-`sv-memory` registra **29 herramientas MCP** para agentes de IA:
+`sv-memory` registra **31 herramientas MCP** para agentes de IA:
 
 ### 1. `sv_mem_save`
 
@@ -606,6 +606,24 @@ Construye un **context pack compacto y fusionado** para una ruta de código (arc
   - `path` (string, requerido): Ruta de archivo, nombre de paquete o símbolo a resolver.
   - `token_budget` (string, opcional): Máximo de tokens para la respuesta; se trunca con un aviso al superarse (por defecto desde config `max_response_tokens`, 4000; `'0'` = ilimitado).
 - **Config:** `context_pack_max_memories` (default `5`, máx `20`) limita las memorias vinculadas; cada `why` se trunca a `bundle_why_chars`.
+
+### 19c. `sv_mem_capture_prompt`
+
+Captura el **prompt del usuario** como observación local asociada a una sesión (paridad con `mem_save_prompt` de Engram). Registra qué pidió el usuario para que las futuras sesiones tengan contexto de sus objetivos tras la compactación.
+
+- **Parámetros:**
+  - `content` (string, requerido): El texto del prompt del usuario. Los secretos se redactan antes de escribir.
+  - `session_id` (string, opcional): Sesión a la que asociar el prompt; por defecto la sesión activa.
+- **Almacenamiento:** los prompts viven en la tabla local `user_prompts` de SQLite (indexada por FTS5) y **no** forman parte del payload de git sync en esta fase — son solo locales. Recuperables vía `sv_mem_context` (prompts recientes de la última sesión) y contabilizados por `sv_mem_stats` (`Total user prompts`).
+
+### 19d. `sv_mem_merge_projects`
+
+Fusiona variantes de nombre de proyecto en un único proyecto canónico (paridad con `mem_merge_projects` de Engram, admin). Mueve todas las memorias, sesiones, relaciones y datos del grafo de `from` a `to`, y luego borra el proyecto origen.
+
+- **Parámetros:**
+  - `from` (string, requerido): ID del proyecto origen del que mover datos y luego borrar.
+  - `to` (string, requerido): ID del proyecto destino que recibe los datos.
+- **Notas:** refleja el CLI `sv-memory projects consolidate <origen> <destino>`. Ambos proyectos deben existir y ser distintos.
 
 ### 20. `sv_graph_query`
 
@@ -862,7 +880,7 @@ sv-memory/
 │   │   ├── extractor/           # Extractor tree-sitter, respaldo regex, semántica markdown
 │   │   └── schema/              # Estructuras Node/Edge
 │   ├── hook/                    # Generación y plantillas de hooks PreToolUse
-│   ├── mcp/                     # Servidor MCP + 29 handlers de herramientas; lee del caché LRU de internal/graph
+│   ├── mcp/                     # Servidor MCP + 31 handlers de herramientas; lee del caché LRU de internal/graph
 │   ├── memory/                  # CRUD, almacenamiento de sesiones, dedup, conflictos, compactación,
 │   │                            # git sync por chunks, exportación Obsidian/Cypher, stats
 │   ├── perm/                    # Gestión de allow-lists de herramientas MCP (antigravity/claude-code)

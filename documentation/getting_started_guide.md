@@ -16,7 +16,7 @@ When working with AI assistants in medium or large repositories, three recurring
 2. **Token Waste:** The AI needs to read dozens of source files over and over to understand the code structure.
 3. **Lack of Continuity:** Technical decisions stay trapped in individual chats instead of being shared with the team.
 
-**sv-memory** solves this by combining **persistent memories indexed with SQLite FTS5 BM25** and a **structural code dependency graph** exposed through 29 MCP (_Model Context Protocol_) tools.
+**sv-memory** solves this by combining **persistent memories indexed with SQLite FTS5 BM25** and a **structural code dependency graph** exposed through 31 MCP (_Model Context Protocol_) tools.
 
 ---
 
@@ -101,7 +101,7 @@ The wizard guides you through interactive phases in the terminal, navigable with
 1. **Phase 1 (GUI Editors):** Lets you select editors such as **Cursor**, **VS Code**, **Zed**, or **Windsurf**. It automatically registers the MCP server in their user configuration files (e.g. `claude_desktop_config.json` or Cursor settings).
 2. **Phase 2 (Terminal Assistants):** Lets you select CLI clients such as **Claude Code**, **Antigravity CLI (agy)**, or **OpenCode**.
 3. **Phase 3 (Confirmation and application):** Shows the summary of selected tools and applies the automatic or manual configurations.
-4. **Phase 4 (MCP Permissions):** Lists the **29 sv-memory MCP tools** for you to select which ones to authorize (press `a` to select all and `x` to select none). It grants the permissions on the configured platforms that use a static allow-list (Antigravity CLI, Claude Code).
+4. **Phase 4 (MCP Permissions):** Lists the **31 sv-memory MCP tools** for you to select which ones to authorize (press `a` to select all and `x` to select none). It grants the permissions on the configured platforms that use a static allow-list (Antigravity CLI, Claude Code).
 
 > **Why this step?**
 > It prevents you from having to manually edit complex JSON configuration files. With a couple of keystrokes in the terminal, all your editors get linked to the `sv-memory` MCP server and the tool permissions are granted with full transparency.
@@ -185,7 +185,7 @@ Close and reopen your AI assistant so it loads the MCP, permissions, and freshly
 
 ```bash
 cd /path/to/your-project
-sv-memory permissions status --platform antigravity   # Granted: 29 / 29
+sv-memory permissions status --platform antigravity   # Granted: 31 / 31
 sv-memory hooks status                                # antigravity: ✅ installed
 sv-memory diagnose                                    # 17 pass, 0 failures
 ```

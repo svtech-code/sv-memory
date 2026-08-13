@@ -12,6 +12,11 @@ import (
 	"github.com/svtech-code/sv-memory/internal/memory"
 )
 
+// judgeReasonMaxChars caps the rationale stored on a memory_relations row
+// (sv_mem_judge), matching Engram's 200-char reasoning cap on mem_compare so
+// verdict annotations stay token-efficient in search results.
+const judgeReasonMaxChars = 200
+
 func (s *Server) handleJudge(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	sourceID, err := req.RequireString("source_id")
 	if err != nil {
@@ -32,6 +37,11 @@ func (s *Server) handleJudge(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	if !validTypes[relType] {
 		return mcp.NewToolResultError("invalid relation_type: must be 'supersedes', 'conflicts_with', or 'relates_to'"), nil
 	}
+
+	// Token discipline (Engram mem_compare.reasoning parity): the rationale is
+	// capped at judgeReasonMaxChars so long explanations cannot bloat the
+	// memory_relations payload that later search results annotate.
+	reason = memory.TruncateText(reason, judgeReasonMaxChars)
 
 	rel, err := memory.SaveJudgment(s.pool.Writer, s.cfg.ProjectID, sourceID, targetID, relType, reason, judgedBy)
 	if err != nil {

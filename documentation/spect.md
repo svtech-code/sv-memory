@@ -86,7 +86,7 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 #### 2. `sv-memory mcp`
 
 - Starts the JSON-RPC MCP server over `stdio` for agent consumption.
-- Registers all 29 MCP tools.
+- Registers all 31 MCP tools.
 - Maintains an in-memory graph cache for zero-SQL BFS traversals.
 - Debounces Git sync writes (500ms coalescing).
 
@@ -118,7 +118,7 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 #### 9. `sv-memory configure`
 
 - Interactive wizard for automatic/manual configurations of editors (Cursor, VS Code, Zed, Windsurf, OpenCode) and CLIs (Claude Code, Codex, Antigravity).
-- **Phase 4 (MCP Permissions):** Lists the 29 sv-memory MCP tools with descriptions and grants the selected allow-list entries to the allow-listed platforms chosen earlier (Antigravity CLI, Claude Code).
+- **Phase 4 (MCP Permissions):** Lists the 31 sv-memory MCP tools with descriptions and grants the selected allow-list entries to the allow-listed platforms chosen earlier (Antigravity CLI, Claude Code).
 - **Sub-commands** for reading/writing configuration (YAML, global `~/.sv-memory/config.yaml` or local `.sv-memory/config.yaml`):
   - `sv-memory configure get <key>`: prints a single configuration value.
   - `sv-memory configure set <key> <value> [--local]`: writes a value globally (default) or project-locally.
@@ -126,7 +126,7 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 
 #### 10. `sv-memory permissions`
 
-- `list`: shows the 29 sv-memory MCP tools with human-readable descriptions.
+- `list`: shows the 31 sv-memory MCP tools with human-readable descriptions.
 - `grant --platform <p> [--all | --tool a,b] [--dry-run]`: writes allow-list entries (`mcp(sv-memory/<tool>)` for Antigravity, `mcp__sv-memory__<tool>` for Claude Code), preserving unrelated entries.
 - `revoke --platform <p> [--dry-run]`: removes sv-memory allow-list entries.
 - `status [--platform <p>]`: reports granted vs missing tools per platform.
@@ -140,11 +140,11 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 - `sv-memory setup <agent>`: installs the agent end-to-end (idempotent).
 - `--all`: installs every supported agent.
 - `--strict`: installs strict hooks (blocks first raw file read on Antigravity; nudge-only on Claude Code).
-- **Claude Code:** writes a project `.mcp.json` when the `claude` CLI is absent, installs `PreToolUse` + lifecycle hooks (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`) under `.claude/hooks/` and registers them in `.claude/settings.json`, injects the `AGENTS.md` protocol, and grants the 29-tool allow-list in `~/.claude/settings.json`.
+- **Claude Code:** writes a project `.mcp.json` when the `claude` CLI is absent, installs `PreToolUse` + lifecycle hooks (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`) under `.claude/hooks/` and registers them in `.claude/settings.json`, injects the `AGENTS.md` protocol, and grants the 31-tool allow-list in `~/.claude/settings.json`.
 - **OpenCode:** registers the MCP server in `opencode.json`, installs `SKILL.md` plus the native TypeScript plugin `.opencode/plugin/sv-memory.ts` (adds the `sv_memory_context` tool), and injects the `AGENTS.md` protocol.
 - **Cursor:** writes `.cursor/mcp.json` and injects `.cursorrules`.
 - **Windsurf:** writes `.windsurf/mcp_config.json` and injects `.windsurfrules`.
-- **Antigravity CLI:** registers the MCP server, installs `.agents/hooks.json` hooks, injects `AGENTS.md`, and grants the 29-tool allow-list.
+- **Antigravity CLI:** registers the MCP server, installs `.agents/hooks.json` hooks, injects `AGENTS.md`, and grants the 31-tool allow-list.
 - **Codex:** writes the `[mcp_servers.sv-memory]` block into `~/.codex/config.toml`, installs a no-op hook, and injects `AGENTS.md`.
 
 #### 12. `sv-memory hooks`
@@ -418,7 +418,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_relations_target ON memory_relations(proje
 
 ## 6. MCP Tools Definition
 
-`sv-memory` registers **29 MCP tools** for AI agents:
+`sv-memory` registers **31 MCP tools** for AI agents:
 
 ### 1. `sv_mem_save`
 
@@ -607,6 +607,24 @@ Builds a **compact, fused context pack** for a code path (file, package, or symb
   - `path` (string, required): File path, package name, or symbol to resolve.
   - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default from config `max_response_tokens`, 4000; `'0'` = unlimited).
 - **Config:** `context_pack_max_memories` (default `5`, max `20`) caps the linked memories; each `why` is truncated to `bundle_why_chars`.
+
+### 19c. `sv_mem_capture_prompt`
+
+Captures the **user's prompt** as a local observation attached to a session (Engram `mem_save_prompt` parity). Records what the user asked so future sessions have context about user goals after compaction.
+
+- **Parameters:**
+  - `content` (string, required): The user's prompt text. Secrets are redacted before write.
+  - `session_id` (string, optional): Session to associate the prompt with; defaults to the active session.
+- **Storage:** prompts live in the local `user_prompts` SQLite table (FTS5-indexed) and are **not** part of the git sync payload in this phase — they are local-only. Recoverable via `sv_mem_context` (recent prompts of the last session) and counted by `sv_mem_stats` (`Total user prompts`).
+
+### 19d. `sv_mem_merge_projects`
+
+Merges project name variants into a single canonical project (Engram `mem_merge_projects` parity, admin). Moves all memories, sessions, relations, and graph data from `from` into `to`, then deletes the source project.
+
+- **Parameters:**
+  - `from` (string, required): Source project ID to move data from and then delete.
+  - `to` (string, required): Target project ID receiving the data.
+- **Notes:** mirrors the `sv-memory projects consolidate <source> <target>` CLI. Both projects must exist and be distinct.
 
 ### 20. `sv_graph_query`
 
@@ -863,7 +881,7 @@ sv-memory/
 │   │   ├── extractor/           # tree-sitter extractor, regex fallback, markdown semantics
 │   │   └── schema/              # Node/Edge structs
 │   ├── hook/                    # PreToolUse hooks generation & templates
-│   ├── mcp/                     # MCP server + 29 tool handlers; reads from internal/graph LRU cache
+│   ├── mcp/                     # MCP server + 31 tool handlers; reads from internal/graph LRU cache
 │   ├── memory/                  # CRUD, sessions storage, dedup, conflicts, compaction,
 │   │                            # chunked git sync, Obsidian/Cypher export, stats
 │   ├── perm/                    # MCP tool allow-list management (antigravity/claude-code)

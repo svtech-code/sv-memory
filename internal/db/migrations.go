@@ -148,6 +148,7 @@ var migrations = []migration{
 	{10, "add_review_after_and_pinned", addReviewAfterAndPinned},
 	{11, "add_last_compaction_at", addLastCompactionAt},
 	{12, "add_session_partial_indexes", addSessionPartialIndexes},
+	{13, "add_user_prompts", addUserPrompts},
 }
 
 func applyMigrations(db *sql.DB) error {
@@ -510,6 +511,46 @@ func addSessionPartialIndexes(db *sql.DB) error {
 	for _, idx := range indexes {
 		if _, err := db.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create index %s: %w", idx, err)
+		}
+	}
+	return nil
+}
+
+// addUserPrompts adds the user_prompts table (captured user prompts, e.g. via
+// sv_mem_capture_prompt) plus its FTS5 index, mirroring Engram's user_prompts /
+// prompts_fts pair. Prompts are local observations attached to a session and
+// are NOT part of the git sync payload in this phase; they live only in the
+// local SQLite store so future sessions can recover the user's intent.
+func addUserPrompts(db *sql.DB) error {
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS user_prompts (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			session_id TEXT,
+			content TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+		);`,
+		`CREATE VIRTUAL TABLE IF NOT EXISTS user_prompts_fts USING fts5(
+			content,
+			content=user_prompts,
+			content_rowid=rowid
+		);`,
+		`CREATE TRIGGER IF NOT EXISTS user_prompts_ai AFTER INSERT ON user_prompts BEGIN
+			INSERT INTO user_prompts_fts(rowid, content) VALUES (new.rowid, new.content);
+		END;`,
+		`CREATE TRIGGER IF NOT EXISTS user_prompts_ad AFTER DELETE ON user_prompts BEGIN
+			INSERT INTO user_prompts_fts(user_prompts_fts, rowid, content) VALUES('delete', old.rowid, old.content);
+		END;`,
+		`CREATE TRIGGER IF NOT EXISTS user_prompts_au AFTER UPDATE ON user_prompts BEGIN
+			INSERT INTO user_prompts_fts(user_prompts_fts, rowid, content) VALUES('delete', old.rowid, old.content);
+			INSERT INTO user_prompts_fts(rowid, content) VALUES (new.rowid, new.content);
+		END;`,
+		"CREATE INDEX IF NOT EXISTS idx_user_prompts_session ON user_prompts(project_id, session_id, created_at DESC);",
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("failed to create user_prompts schema: %w", err)
 		}
 	}
 	return nil

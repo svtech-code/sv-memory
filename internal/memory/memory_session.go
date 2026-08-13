@@ -161,6 +161,20 @@ func GetSessionContext(db *sql.DB, projectID string) (string, error) {
 		}
 	}
 
+	// Recent user prompts surface the user's intent for the session, so after
+	// compaction the agent can recover what was being asked (sv_mem_capture_prompt).
+	prompts, perr := RecentPrompts(db, projectID, session.ID, 5)
+	if perr == nil && len(prompts) > 0 {
+		fmt.Fprintf(&sb, "\n**User prompts (%d):**\n", len(prompts))
+		for _, p := range prompts {
+			preview := strings.ReplaceAll(p.Content, "\n", " ")
+			if len(preview) > 140 {
+				preview = preview[:140] + "…"
+			}
+			fmt.Fprintf(&sb, "- %s\n", security.SanitizeText(preview))
+		}
+	}
+
 	// Pinned memories surface first so key decisions stay visible regardless
 	// of session recency (sv_mem_pin with action='pin' / 'unpin').
 	pinned, perr := SearchPinnedMemories(db, projectID, 5)

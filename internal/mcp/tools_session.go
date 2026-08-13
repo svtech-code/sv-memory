@@ -138,6 +138,7 @@ func (s *Server) handleStats(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	fmt.Fprintf(&sb, "**Total sessions:** %d\n", stats.TotalSessions)
 	fmt.Fprintf(&sb, "**Active sessions:** %d\n", stats.ActiveSessions)
 	fmt.Fprintf(&sb, "**Total relations:** %d\n", stats.TotalRelations)
+	fmt.Fprintf(&sb, "**Total user prompts:** %d\n", stats.TotalPrompts)
 
 	// Session token ledger (Phase D): report how many estimated tokens the
 	// Auto-Boot bundle + bulk-returning read tools have injected since the last

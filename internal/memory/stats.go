@@ -17,6 +17,7 @@ type Stats struct {
 	TotalSessions   int            `json:"total_sessions"`
 	ActiveSessions  int            `json:"active_sessions"`
 	TotalRelations  int            `json:"total_relations"`
+	TotalPrompts    int            `json:"total_prompts"`
 	Recent24h       int            `json:"recent_24h"`
 }
 
@@ -77,6 +78,10 @@ func GetStats(db *sql.DB, projectID string) (*Stats, error) {
 
 	if err := db.QueryRow("SELECT COUNT(*) FROM memory_relations WHERE project_id = ?", projectID).Scan(&stats.TotalRelations); err != nil {
 		return nil, fmt.Errorf("failed to count relations: %w", err)
+	}
+
+	if err := db.QueryRow("SELECT COUNT(*) FROM user_prompts WHERE project_id = ?", projectID).Scan(&stats.TotalPrompts); err != nil {
+		return nil, fmt.Errorf("failed to count user prompts: %w", err)
 	}
 
 	cutoff := time.Now().Add(-24 * time.Hour)

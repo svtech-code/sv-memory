@@ -81,6 +81,8 @@ var AllTools = []Tool{
 	{Name: "sv_mem_delete", Description: "Soft-delete (default) or hard-delete a memory."},
 	{Name: "sv_mem_pin", Description: "Pin (default) or unpin (action='unpin') a local memory so key decisions stay visible in session context."},
 	{Name: "sv_mem_capture_passive", Description: "Log lightweight observations (files modified, tests failing) without a save decision."},
+	{Name: "sv_mem_capture_prompt", Description: "Capture the user's prompt as a local observation attached to a session, so future sessions can recover the user's intent after compaction (recoverable via sv_mem_context)."},
+	{Name: "sv_mem_merge_projects", Description: "Merge all memories, sessions, relations, and graph data from one project into another, then delete the source project (admin)."},
 	{Name: "sv_mem_context_pack", Description: "Build a compact context pack for a code path: graph role (fan-in/fan-out, community) plus linked memories (decisions/standards/bugfixes). One bounded call."},
 	{Name: "sv_mem_conflicts", Description: "List, scan, or ignore potential memory conflicts."},
 	{Name: "sv_graph_query", Description: "Query the dependency graph for a module, file, or package (returns Mermaid)."},
@@ -661,6 +663,22 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		mcp.WithString("why", mcp.Required(), mcp.Description("Context or reason for the observation")),
 	)
 	ms.AddTool(captureTool, s.handleCapturePassive)
+
+	// 18b. Tool: sv_mem_capture_prompt (Engram mem_save_prompt parity)
+	capturePromptTool := mcp.NewTool("sv_mem_capture_prompt",
+		mcp.WithDescription("Capture the user's prompt as a local observation attached to a session. Records what the user asked so future sessions have context about user goals; recoverable via sv_mem_context and counted by sv_mem_stats. Prompts are local-only (not git-synced) in this phase."),
+		mcp.WithString("content", mcp.Required(), mcp.Description("The user's prompt text")),
+		mcp.WithString("session_id", mcp.Description("Session ID to associate the prompt with (defaults to the active session)")),
+	)
+	ms.AddTool(capturePromptTool, s.handleCapturePrompt)
+
+	// 18c. Tool: sv_mem_merge_projects (Engram mem_merge_projects parity, admin)
+	mergeProjectsTool := mcp.NewTool("sv_mem_merge_projects",
+		mcp.WithDescription("Merge multiple project name variants into a single canonical project (admin). Moves all memories, sessions, relations, and graph data from 'from' into 'to', then deletes the source project. Mirrors `sv-memory projects consolidate <from> <to>`."),
+		mcp.WithString("from", mcp.Required(), mcp.Description("Source project ID to move data from and then delete")),
+		mcp.WithString("to", mcp.Required(), mcp.Description("Target project ID receiving the data")),
+	)
+	ms.AddTool(mergeProjectsTool, s.handleMergeProjects)
 
 	// 18b. Tool: sv_mem_context_pack
 	contextPackTool := mcp.NewTool("sv_mem_context_pack",
