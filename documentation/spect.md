@@ -632,10 +632,11 @@ Logs a lightweight journal entry automatically (e.g., test outcomes, file change
 
 ### 19b. `sv_mem_context_pack`
 
-Builds a **compact, fused context pack** for a code path (file, package, or symbol): the node's structural role in the dependency graph (type, fan-in/fan-out, community, hub flag) plus the memories linked to that path via `where_path` or `rationale_for` edges (decisions, standards, bugfixes), each rendered as title + truncated `why`. One bounded call replaces the `sv_graph_explain` + `sv_mem_search path=` + several `sv_mem_get` round-trips, saving tokens. This is the proprietary graph→memory bridge that feeds the optional silent context-injection hook.
+Builds a **compact, fused context pack** for a code path (file, package, or symbol): the node's structural role in the dependency graph (type, fan-in/fan-out, community, hub flag) plus the memories linked to that path via `where_path` or `rationale_for` edges (decisions, standards, bugfixes), each rendered as title + truncated `why`. With `include_changes='true'` it also lists active spec changes (proposals) whose `where_path` matches the path. One bounded call replaces the `sv_graph_explain` + `sv_mem_search path=` + several `sv_mem_get` round-trips, saving tokens. This is the proprietary graph→memory bridge that feeds the optional silent context-injection hook.
 
 - **Parameters:**
   - `path` (string, required): File path, package name, or symbol to resolve.
+  - `include_changes` (string, optional): When `'true'`, also list active spec changes affecting the path (default `'false'`).
   - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default from config `max_response_tokens`, 4000; `'0'` = unlimited).
 - **Config:** `context_pack_max_memories` (default `5`, max `20`) caps the linked memories; each `why` is truncated to `bundle_why_chars`.
 
@@ -656,6 +657,41 @@ Merges project name variants into a single canonical project (Engram `mem_merge_
   - `from` (string, required): Source project ID to move data from and then delete.
   - `to` (string, required): Target project ID receiving the data.
 - **Notes:** mirrors the `sv-memory projects consolidate <source> <target>` CLI. Both projects must exist and be distinct.
+
+### 19e. `sv_propose_spec`
+
+Registers a **spec change** (proposal) for the spec-driven decision engine: creates the change in the `draft` lifecycle state and runs a **pre-flight check** against the project's rules and invariants (memories in categories `standard`, `decision`, `architecture`). A pinned rule whose tokens overlap the proposal returns a **BLOCK** verdict; an ordinary overlap returns **WARN**; otherwise **PASS**. Use before writing code.
+
+- **Parameters:**
+  - `slug` (string, required): Kebab-case, project-unique identifier (e.g. `implement-session-auth`).
+  - `title` (string, required): Concise title of the proposal.
+  - `what` (string, optional): Why and what changes — the proposal body.
+  - `goal` (string, optional): Intent of the proposal.
+  - `where_path` (string, optional): Affected code path (file/folder/package) used for AFFECTS wiring and context-pack recall.
+  - `design` / `tasks` (string, optional): Technical approach / implementation checklist.
+  - `token_budget` (string, optional): Max tokens for the response.
+- **Lifecycle:** `draft` → `proposed` → `validated` → `applied` (→ `archived`) | `rejected`. The committed decision memory gets `topic_key` `decision/<slug>`.
+- **Config:** `conflict_threshold` (default `0.45`) is the Jaccard similarity at or above which an existing rule is considered in conflict.
+
+### 19f. `sv_validate_decision`
+
+Re-checks an existing change's proposal against the project's rules and invariants, returning a **PASS/WARN/BLOCK** verdict. Deterministic by default (SQLite FTS5 + Jaccard, zero LLM cost); `semantic='true'` opts into a single batched agent re-ranking by meaning (fails open to the deterministic verdict when the agent is unavailable).
+
+- **Parameters:**
+  - `change_id` (string, required): The change ID returned by `sv_propose_spec`.
+  - `semantic` (string, optional): `'true'` to enable agent re-ranking (default `'false'`).
+  - `semantic_agent` (string, optional): Agent CLI override (default `$SV_MEMORY_SEMANTIC_AGENT`, then `claude`).
+  - `token_budget` (string, optional): Max tokens for the response.
+
+### 19g. `sv_commit_spec`
+
+Promotes a validated change into a **durable decision/standard memory**: saves the decision via the memory engine (`topic_key` `decision/<slug>`), links it to the change via `change_id`, wires the `rationale_for` edge to the affected code path, records `conflicts_with` relations for any pre-flight WARN/BLOCK rules, and stamps the change `applied`. A **BLOCK** verdict (pinned invariant) rejects the commit unless `force='true'` explicitly overrides it.
+
+- **Parameters:**
+  - `change_id` (string, required): The change ID to commit.
+  - `category` (string, optional): Memory category (default `'decision'`; use `'standard'` for a reusable rule).
+  - `force` (string, optional): `'true'` overrides a pre-flight BLOCK and commits anyway (default `'false'`).
+  - `token_budget` (string, optional): Max tokens for the response.
 
 ### 20. `sv_graph_query`
 
@@ -1039,6 +1075,45 @@ Code entities and memory observations are mapped onto a unified directed graph s
 - After a full graph rebuild (`sv-memory graph rebuild`, `sv_graph_sync`), the links are re-created automatically from all active memories with a `where_path`.
 
 **Call edge extraction (AST-precision):** `calls` edges are produced per file by preferring the tree-sitter AST (`call_expression` / `call` / `method_invocation` / `function_call_expression` nodes) with confidence `EXTRACTED` and a precise `L<line>:<col>` source location, resolving each call site against the project's function/class nodes (same file first, then unique cross-file match within the language group). Files whose language has no AST call coverage (Go — upstream parser stack-overflow workaround, Lua, Markdown, shell, Vue/Svelte/Astro script blocks) fall back to the tokenize heuristic with confidence `INFERRED`. The AST path does not capture identifiers inside strings or comments, eliminating a class of false positives the heuristic produces. This improves the precision of `sv_graph_query`, `sv_graph_explain`, god nodes, and community detection on languages with AST coverage (Python, JS/TS, Java, PHP, Ruby, Rust, CSS, HTML).
+
+---
+
+## 15. Spec-Driven Decision Engine
+
+Integrates OpenSpec's spec-driven philosophy natively: proposals are first-class graph citizens that travel through a **propose → validate → commit** lifecycle before code is written, and the graph/memory layer becomes an active governance engine instead of a passive store.
+
+### Change Lifecycle
+
+A **change** is a proposal (slug-unique per project) stored in the `changes` table, traveling through the states:
+
+```
+draft → proposed → validated → applied (→ archived) | rejected
+```
+
+- `draft` — created by `sv_propose_spec` (pre-flight check runs here).
+- `proposed` / `validated` — explicit review states.
+- `applied` — `sv_commit_spec` promoted the proposal into a durable `decision`/`standard` memory and stamped it applied (`archived_at` set).
+- `archived` / `rejected` — terminal history states (excluded from context-pack recall and the Auto-Boot "Active changes" hint).
+
+Committed decisions get `topic_key` `decision/<slug>` and are linked back to the change via `memories.change_id`.
+
+### Pre-Flight Validation
+
+`sv_propose_spec` and `sv_validate_decision` run a pre-flight check against the project's rules and invariants (memories in categories `standard`, `decision`, `architecture`):
+
+- **Deterministic (default):** FTS5 token match + Jaccard similarity against `conflict_threshold` (default `0.45`). A **pinned** rule at or above the threshold → **BLOCK** (invariant the agent must not silently violate); a non-pinned overlap → **WARN**; none → **PASS**.
+- **Semantic (opt-in):** `semantic='true'` re-ranks the deterministic candidates by meaning with the configured agent CLI (single batched call), elevating confirmed overlaps to BLOCK. Fails open to the deterministic verdict when the agent is unavailable.
+
+`sv_commit_spec` enforces the gate: a BLOCK rejects the commit unless `force='true'` explicitly overrides the invariant (and the agent should then update/archive the conflicting rule). On commit, `conflicts_with` relations are recorded for every flagged rule so the pending-conflict surfacing (Auto-Boot hint, `sv_mem_conflicts`) sees them.
+
+### Graph Integration
+
+The decision engine extends the graph vocabulary (values are free-form TEXT, no destructive migration):
+
+- **Node types:** `spec`, `decision`, `rule` (in addition to the scanner's `file`/`function`/`class`/... and the memory `document` nodes).
+- **Edge types:** `affects` (a change touches code entities via `where_path`), `constrains` (a rule bounds a decision), `implements` (a decision/entity fulfills a spec requirement).
+
+The Auto-Boot bundle surfaces a `📋 Active changes: N` hint when non-terminal changes exist (zero token cost when healthy), and `sv_mem_context_pack(include_changes='true')` lists the proposals affecting a path so the agent reviews them before modifying the code.
 
 ---
 

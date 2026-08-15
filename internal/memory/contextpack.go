@@ -44,6 +44,16 @@ type ContextNeighbor struct {
 	Confidence   string
 }
 
+// ContextChange is a compact summary of an active spec change affecting the
+// target path, surfaced by the context pack when include_changes is set. Only
+// the fields needed for the agent to decide whether to review it are carried.
+type ContextChange struct {
+	ID     string
+	Slug   string
+	Status string
+	Title  string
+}
+
 // ContextPack is the fused, token-efficient context for a code path: the
 // node's structural role plus the memories that explain why the code is the
 // way it is (decisions/standards/bugfixes linked to that path).
@@ -52,6 +62,7 @@ type ContextPack struct {
 	Memories     []ContextMemory
 	Dependents   []ContextNeighbor
 	Dependencies []ContextNeighbor
+	Changes      []ContextChange
 }
 
 // ResolveContextNode finds the graph node matching query, trying exact id,
@@ -110,10 +121,12 @@ func ResolveContextNode(db *sql.DB, projectID, query string) (*ContextNode, erro
 }
 
 // GetContextPack builds the compact context pack for a code path. maxMemories
-// caps how many linked memories are returned (0 = default 5). The graph may be
-// empty (never synced); in that case a pack with no node but path-scoped
+// caps how many linked memories are returned (0 = default 5). When includeChanges
+// is true, active spec changes whose where_path matches the query are appended
+// so the agent sees in-flight proposals before touching the path. The graph may
+// be empty (never synced); in that case a pack with no node but path-scoped
 // memories is still returned so the call never hard-fails.
-func GetContextPack(db *sql.DB, projectID, query string, maxMemories int) (*ContextPack, error) {
+func GetContextPack(db *sql.DB, projectID, query string, maxMemories int, includeChanges bool) (*ContextPack, error) {
 	if maxMemories <= 0 {
 		maxMemories = 5
 	}
@@ -200,7 +213,41 @@ func GetContextPack(db *sql.DB, projectID, query string, maxMemories int) (*Cont
 		mems = mems[:maxMemories]
 	}
 	pack.Memories = mems
+
+	if includeChanges {
+		changes, err := changesForPath(db, projectID, query)
+		if err == nil {
+			pack.Changes = changes
+		}
+	}
 	return pack, nil
+}
+
+// changesForPath lists active (not archived/rejected) spec changes whose
+// where_path matches the query path, most recently created first. Best-effort:
+// a where_path mismatch simply yields no changes, never an error for the pack.
+func changesForPath(db *sql.DB, projectID, query string) ([]ContextChange, error) {
+	pattern := "%" + sanitizePathFilter(query) + "%"
+	rows, err := db.Query(`
+		SELECT id, slug, status, title
+		FROM changes
+		WHERE project_id = ? AND status NOT IN ('archived', 'rejected')
+		  AND (where_path LIKE ? ESCAPE '\' OR where_path = ?)
+		ORDER BY created_at DESC
+		LIMIT 10`, projectID, pattern, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed querying changes for path: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ContextChange
+	for rows.Next() {
+		var c ContextChange
+		if scanErr := rows.Scan(&c.ID, &c.Slug, &c.Status, &c.Title); scanErr == nil {
+			out = append(out, c)
+		}
+	}
+	return out, rows.Err()
 }
 
 // contextNeighbors lists up to limit direct neighbors of nodeID. When col is
@@ -354,7 +401,15 @@ func RenderContextPack(p *ContextPack, whyChars int) string {
 		}
 	}
 
-	if p.Node == nil && len(p.Memories) == 0 {
+	if len(p.Changes) > 0 {
+		sb.WriteString("\n### Active changes affecting this path:\n")
+		for _, c := range p.Changes {
+			fmt.Fprintf(&sb, "- **[%s] %s** (`%s`, slug `%s`)\n", strings.ToUpper(c.Status), c.Title, c.ID, c.Slug)
+		}
+		sb.WriteString("\n*Review with `sv_validate_decision(change_id=\"<id>\")` before modifying this code.*\n")
+	}
+
+	if p.Node == nil && len(p.Memories) == 0 && len(p.Changes) == 0 {
 		return "No context found: no matching graph node and no path-scoped memories for the given path."
 	}
 	return strings.TrimSpace(sb.String())

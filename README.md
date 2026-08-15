@@ -42,6 +42,7 @@
 | Category             | Feature                    | Description                                                                                                                           |
 | :------------------- | :------------------------- | :------------------------------------------------------------------------------------------------------------------------------------ |
 | 🧠 **Memory**        | **FTS5 BM25 & Scoping**    | SQLite Full-Text Search with BM25 relevance ranking and path-scoped directory filtering.                                              |
+| ⚖️ **Governance**    | **Spec-Driven Decisions**  | Native propose → validate → commit cycle: `sv_propose_spec`/`sv_validate_decision`/`sv_commit_spec` pre-flight proposals against rules and invariants before code is written.                                    |
 | ⚡ **Autonomy**      | **Auto-Boot Context**      | `sv_mem_session_start` delivers previous session summaries, key decisions, and top graph hubs in 1 tool call.                         |
 | 🧹 **Maintenance**   | **Auto-Compaction Worker** | `sv_mem_compact` consolidates historical topic key revisions to keep storage ultra-lean.                                              |
 | 🕸️ **Graph**         | **Sub-ms LRU Cache**       | Parses 17 languages, Leiden communities, god nodes & bridge nodes with `<1ms` mtime-validated RAM cache.                              |
@@ -245,9 +246,15 @@ sv-memory tui
 - **`sv_mem_capture_passive`**: Logs lightweight journal entries automatically.
 - **`sv_mem_capture_prompt`**: Records what the user asked (Engram `mem_save_prompt` parity) so future sessions have context about user goals; recoverable via `sv_mem_context` and counted by `sv_mem_stats`. Local-only (not git-synced).
 - **`sv_mem_merge_projects`**: Merges project variants into a canonical project (admin) — moves all memories, sessions, relations, and graph data from `from` into `to`, then deletes the source. Mirrors `sv-memory projects consolidate`.
-- **`sv_mem_context_pack`**: Fuses graph role + linked memories for a code path in one bounded call (the graph→memory bridge for token-efficient context).
+- **`sv_mem_context_pack`**: Fuses graph role + linked memories for a code path in one bounded call; pass `include_changes='true'` to also list active spec changes affecting the path (the graph→memory bridge for token-efficient context).
 - **`sv_mem_conflicts`**: Surfaces memory conflicts with semantic overlap analysis; `action=scan semantic=true` LLM-judges candidate pairs via the agent CLI (claude/opencode).
 - **`sv_mem_compact`**: Consolidates historical topic key revisions into unified summary records.
+
+### ⚖️ Decision Engine Tools (Spec-Driven)
+
+- **`sv_propose_spec`**: Registers a spec change (proposal) and runs a pre-flight check against rules/invariants — a pinned overlapping rule returns **BLOCK**, an ordinary overlap **WARN**, otherwise **PASS**. Zero LLM cost by default.
+- **`sv_validate_decision`**: Re-checks a proposal after edits (PASS/WARN/BLOCK); `semantic='true'` opts into a batched agent re-ranking (fails open to the deterministic verdict).
+- **`sv_commit_spec`**: Promotes a validated change into a durable `decision`/`standard` memory (topic_key `decision/<slug>`), wires the rationale edge, records `conflicts_with` relations, and stamps it applied. A BLOCK rejects the commit unless `force='true'` overrides it.
 
 ### ⏱️ Session Tools
 

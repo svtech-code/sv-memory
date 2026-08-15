@@ -354,6 +354,16 @@ func GetAutoBootBundle(ctx context.Context, db *sql.DB, projectID string, opts A
 		}
 	}
 
+	// Surface in-flight spec changes: proposals the agent is (or should be)
+	// working on. Only emitted when a non-terminal change exists, keeping the
+	// token cost zero when the store has no active work.
+	if stats, err := ChangeStats(db, projectID); err == nil {
+		total := stats[ChangeStatusDraft] + stats[ChangeStatusProposed] + stats[ChangeStatusValidated] + stats[ChangeStatusApplied]
+		if total > 0 {
+			fmt.Fprintf(&sb, "\n**📋 Active changes:** %d — run `sv_mem_context_pack include_changes=\"true\"` to inspect, or `sv_validate_decision` to check a proposal.\n", total)
+		}
+	}
+
 	return strings.TrimSpace(sb.String()), nil
 }
 

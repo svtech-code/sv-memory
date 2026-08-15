@@ -13,6 +13,7 @@ import (
 var (
 	contextMaxMemories int
 	contextWhyChars    int
+	contextIncludeChg  bool
 )
 
 var contextCmd = &cobra.Command{
@@ -21,7 +22,7 @@ var contextCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withProject(func(cfg *config.Config, database *sql.DB) error {
-			pack, err := memory.GetContextPack(database, cfg.ProjectID, args[0], contextMaxMemories)
+			pack, err := memory.GetContextPack(database, cfg.ProjectID, args[0], contextMaxMemories, contextIncludeChg)
 			if err != nil {
 				return err
 			}
@@ -34,4 +35,5 @@ var contextCmd = &cobra.Command{
 func init() {
 	contextCmd.Flags().IntVar(&contextMaxMemories, "max-memories", 5, "Maximum number of linked memories to include")
 	contextCmd.Flags().IntVar(&contextWhyChars, "why-chars", 300, "Maximum characters of each memory's why to render")
+	contextCmd.Flags().BoolVar(&contextIncludeChg, "include-changes", false, "Include active spec changes affecting the path")
 }

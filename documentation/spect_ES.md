@@ -631,10 +631,11 @@ Registra automáticamente una entrada de diario ligera (p. ej., resultados de te
 
 ### 19b. `sv_mem_context_pack`
 
-Construye un **context pack compacto y fusionado** para una ruta de código (archivo, paquete o símbolo): el rol estructural del nodo en el grafo de dependencias (tipo, fan-in/fan-out, comunidad, flag de hub) más las memorias vinculadas a esa ruta vía `where_path` o aristas `rationale_for` (decisiones, estándares, bugfixes), cada una renderizada como título + `why` truncado. Una sola llamada acotada reemplaza los round-trips de `sv_graph_explain` + `sv_mem_search path=` + varios `sv_mem_get`, ahorrando tokens. Es el puente propietario grafo→memoria que alimenta el hook opcional de inyección silenciosa de contexto.
+Construye un **context pack compacto y fusionado** para una ruta de código (archivo, paquete o símbolo): el rol estructural del nodo en el grafo de dependencias (tipo, fan-in/fan-out, comunidad, flag de hub) más las memorias vinculadas a esa ruta vía `where_path` o aristas `rationale_for` (decisiones, estándares, bugfixes), cada una renderizada como título + `why` truncado. Con `include_changes='true'` también lista los spec changes activos (propuestas) cuyo `where_path` coincide con la ruta. Una sola llamada acotada reemplaza los round-trips de `sv_graph_explain` + `sv_mem_search path=` + varios `sv_mem_get`, ahorrando tokens. Es el puente propietario grafo→memoria que alimenta el hook opcional de inyección silenciosa de contexto.
 
 - **Parámetros:**
   - `path` (string, requerido): Ruta de archivo, nombre de paquete o símbolo a resolver.
+  - `include_changes` (string, opcional): Cuando es `'true'`, también lista los spec changes activos que afectan la ruta (por defecto `'false'`).
   - `token_budget` (string, opcional): Máximo de tokens para la respuesta; se trunca con un aviso al superarse (por defecto desde config `max_response_tokens`, 4000; `'0'` = ilimitado).
 - **Config:** `context_pack_max_memories` (default `5`, máx `20`) limita las memorias vinculadas; cada `why` se trunca a `bundle_why_chars`.
 
@@ -655,6 +656,41 @@ Fusiona variantes de nombre de proyecto en un único proyecto canónico (paridad
   - `from` (string, requerido): ID del proyecto origen del que mover datos y luego borrar.
   - `to` (string, requerido): ID del proyecto destino que recibe los datos.
 - **Notas:** refleja el CLI `sv-memory projects consolidate <origen> <destino>`. Ambos proyectos deben existir y ser distintos.
+
+### 19e. `sv_propose_spec`
+
+Registra un **spec change** (propuesta) en el motor de decisiones spec-driven: crea el change en el estado `draft` del ciclo de vida y ejecuta un **pre-flight check** contra las reglas e invariantes del proyecto (memorias en categorías `standard`, `decision`, `architecture`). Una regla pinned cuyos tokens solapan la propuesta devuelve un veredicto **BLOCK**; un solapamiento ordinario devuelve **WARN**; si no hay solapamiento, **PASS**. Úsalo antes de escribir código.
+
+- **Parámetros:**
+  - `slug` (string, requerido): Identificador kebab-case, único por proyecto (p. ej. `implement-session-auth`).
+  - `title` (string, requerido): Título conciso de la propuesta.
+  - `what` (string, opcional): Por qué y qué cambia — el cuerpo de la propuesta.
+  - `goal` (string, opcional): Intención de la propuesta.
+  - `where_path` (string, opcional): Ruta de código afectada (archivo/carpeta/paquete) usada para el cableado AFFECTS y el recall del context pack.
+  - `design` / `tasks` (string, opcional): Enfoque técnico / checklist de implementación.
+  - `token_budget` (string, opcional): Máximo de tokens para la respuesta.
+- **Ciclo de vida:** `draft` → `proposed` → `validated` → `applied` (→ `archived`) | `rejected`. La memoria de decisión confirmada recibe `topic_key` `decision/<slug>`.
+- **Config:** `conflict_threshold` (default `0.45`) es la similitud Jaccard a partir de la cual una regla existente se considera en conflicto.
+
+### 19f. `sv_validate_decision`
+
+Re-verifica la propuesta de un change existente contra las reglas e invariantes del proyecto, devolviendo un veredicto **PASS/WARN/BLOCK**. Determinístico por defecto (SQLite FTS5 + Jaccard, costo LLM cero); `semantic='true'` opta por un re-ranking por significado con una sola llamada batch al agente (falla abierto al veredicto determinístico cuando el agente no está disponible).
+
+- **Parámetros:**
+  - `change_id` (string, requerido): El ID del change devuelto por `sv_propose_spec`.
+  - `semantic` (string, opcional): `'true'` para habilitar el re-ranking con agente (por defecto `'false'`).
+  - `semantic_agent` (string, opcional): Override del CLI del agente (por defecto `$SV_MEMORY_SEMANTIC_AGENT`, luego `claude`).
+  - `token_budget` (string, opcional): Máximo de tokens para la respuesta.
+
+### 19g. `sv_commit_spec`
+
+Promueve un change validado a una **memoria de decisión/estándar duradera**: guarda la decisión vía el motor de memoria (`topic_key` `decision/<slug>`), la vincula al change con `change_id`, cablea la arista `rationale_for` a la ruta de código afectada, registra relaciones `conflicts_with` para cualquier regla con BLOCK/WARN del pre-flight, y marca el change como `applied`. Un veredicto **BLOCK** (invariante pinned) rechaza el commit salvo que `force='true'` lo sobreescriba explícitamente.
+
+- **Parámetros:**
+  - `change_id` (string, requerido): El ID del change a confirmar.
+  - `category` (string, opcional): Categoría de memoria (por defecto `'decision'`; usa `'standard'` para una regla reutilizable).
+  - `force` (string, opcional): `'true'` sobreescribe un BLOCK del pre-flight y confirma igualmente (por defecto `'false'`).
+  - `token_budget` (string, opcional): Máximo de tokens para la respuesta.
 
 ### 20. `sv_graph_query`
 
@@ -1038,6 +1074,45 @@ Las entidades de código y las observaciones de memoria se mapean sobre un grafo
 - Tras un rebuild completo del grafo (`sv-memory graph rebuild`, `sv_graph_sync`), los enlaces se recrean automáticamente desde todas las memorias activas con `where_path`.
 
 **Extracción de aristas `calls` (precisión AST):** las aristas `calls` se producen por archivo prefiriendo el AST de tree-sitter (nodos `call_expression` / `call` / `method_invocation` / `function_call_expression`) con confianza `EXTRACTED` y una ubicación precisa `L<línea>:<columna>`, resolviendo cada sitio de llamada contra los nodos de función/clase del proyecto (mismo archivo primero, luego coincidencia única cross-file dentro del grupo de lenguaje). Los archivos cuyo lenguaje no tiene cobertura AST de llamadas (Go — workaround del bug de stack overflow del parser upstream, Lua, Markdown, shell, bloques script de Vue/Svelte/Astro) caen al heurístico de tokenize con confianza `INFERRED`. La ruta AST no captura identificadores dentro de strings o comentarios, eliminando una clase de falsos positivos que el heurístico produce. Esto mejora la precisión de `sv_graph_query`, `sv_graph_explain`, god nodes y la detección de comunidades en lenguajes con cobertura AST (Python, JS/TS, Java, PHP, Ruby, Rust, CSS, HTML).
+
+---
+
+## 15. Motor de Decisiones Spec-Driven
+
+Integra la filosofía spec-driven de OpenSpec de forma nativa: las propuestas son ciudadanos de primera clase en el grafo que recorren un ciclo de vida **propose → validate → commit** antes de escribir código, y la capa de grafo/memoria se convierte en un motor de gobernanza activo en lugar de un almacén pasivo.
+
+### Ciclo de Vida del Change
+
+Un **change** es una propuesta (slug único por proyecto) almacenada en la tabla `changes`, que recorre los estados:
+
+```
+draft → proposed → validated → applied (→ archived) | rejected
+```
+
+- `draft` — creado por `sv_propose_spec` (el pre-flight check se ejecuta aquí).
+- `proposed` / `validated` — estados explícitos de revisión.
+- `applied` — `sv_commit_spec` promovió la propuesta a una memoria `decision`/`standard` duradera y la marcó como aplicada (`archived_at` asignado).
+- `archived` / `rejected` — estados terminales de historial (excluidos del recall del context pack y del hint "Active changes" del Auto-Boot).
+
+Las decisiones confirmadas reciben `topic_key` `decision/<slug>` y se vinculan al change vía `memories.change_id`.
+
+### Validación Pre-Flight
+
+`sv_propose_spec` y `sv_validate_decision` ejecutan un pre-flight check contra las reglas e invariantes del proyecto (memorias en categorías `standard`, `decision`, `architecture`):
+
+- **Determinístico (por defecto):** coincidencia de tokens FTS5 + similitud Jaccard contra `conflict_threshold` (default `0.45`). Una regla **pinned** en o por encima del umbral → **BLOCK** (invariante que el agente no debe violar silenciosamente); un solapamiento no-pinned → **WARN**; ninguno → **PASS**.
+- **Semántico (opt-in):** `semantic='true'` re-ordena los candidatos determinísticos por significado con el CLI de agente configurado (una sola llamada batch), elevando los solapamientos confirmados a BLOCK. Falla abierto al veredicto determinístico cuando el agente no está disponible.
+
+`sv_commit_spec` aplica el gate: un BLOCK rechaza el commit salvo que `force='true'` sobreescriba explícitamente el invariante (y el agente debería entonces actualizar/archivar la regla en conflicto). Al confirmar, se registran relaciones `conflicts_with` para cada regla marcada, de modo que el surfacing de conflictos pendientes (hint del Auto-Boot, `sv_mem_conflicts`) los vea.
+
+### Integración con el Grafo
+
+El motor de decisiones extiende el vocabulario del grafo (los valores son TEXT libre, sin migración destructiva):
+
+- **Tipos de nodo:** `spec`, `decision`, `rule` (además de los del scanner `file`/`function`/`class`/... y los nodos `document` de memoria).
+- **Tipos de arista:** `affects` (un change toca entidades de código vía `where_path`), `constrains` (una regla acota una decisión), `implements` (una decisión/entidad cumple un requisito de spec).
+
+El bundle del Auto-Boot expone un hint `📋 Active changes: N` cuando existen changes no terminales (costo de tokens cero cuando está sano), y `sv_mem_context_pack(include_changes='true')` lista las propuestas que afectan una ruta para que el agente las revise antes de modificar el código.
 
 ---
 

@@ -42,6 +42,7 @@
 | Categoría            | Característica             | Descripción                                                                                                                                                                  |
 | :------------------- | :------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 🧠 **Memoria**       | **FTS5 BM25 & Scoping**    | Búsqueda de texto completo SQLite con clasificación BM25 y filtrado restringido por subdirectorio.                                                                           |
+| ⚖️ **Gobernanza**    | **Decisiones Spec-Driven** | Ciclo nativo propose → validate → commit: `sv_propose_spec`/`sv_validate_decision`/`sv_commit_spec` pre-validan propuestas contra reglas e invariantes antes de escribir código.                             |
 | ⚡ **Autonomía**     | **Auto-Boot Context**      | `sv_mem_session_start` entrega el resumen de la sesión anterior, decisiones clave y hubs del grafo en 1 sola llamada.                                                        |
 | 🧹 **Mantenimiento** | **Auto-Compaction Worker** | `sv_mem_compact` consolida revisiones históricas de topic keys para mantener la BD liviana.                                                                                  |
 | 🕸️ **Grafo**         | **Caché LRU Sub-ms**       | Parsea 17 lenguajes, comunidades Leiden, nodos god y nodos puente con caché RAM `<1ms` validado por mtime.                                                                   |
@@ -245,9 +246,15 @@ sv-memory tui
 - **`sv_mem_capture_passive`**: Registra entradas de diario ligeras automáticamente.
 - **`sv_mem_capture_prompt`**: Registra lo que pidió el usuario (paridad con `mem_save_prompt` de Engram) para que las futuras sesiones tengan contexto de los objetivos del usuario; recuperable vía `sv_mem_context` y contabilizado por `sv_mem_stats`. Solo local (sin git sync).
 - **`sv_mem_merge_projects`**: Fusiona variantes de proyecto en un proyecto canónico (admin) — mueve todas las memorias, sesiones, relaciones y datos del grafo de `from` a `to`, y luego borra el origen. Refleja `sv-memory projects consolidate`.
-- **`sv_mem_context_pack`**: Fusiona el rol del grafo + memorias vinculadas para una ruta de código en una sola llamada acotada (el puente grafo→memoria para contexto eficiente en tokens).
+- **`sv_mem_context_pack`**: Fusiona el rol del grafo + memorias vinculadas para una ruta de código en una sola llamada acotada; pasa `include_changes='true'` para listar también los spec changes activos que afectan la ruta (el puente grafo→memoria para contexto eficiente en tokens).
 - **`sv_mem_conflicts`**: Muestra conflictos de memoria con análisis de superposición semántica; `action=scan semantic=true` juzga los pares candidatos con LLM vía el CLI del agente (claude/opencode).
 - **`sv_mem_compact`**: Consolida revisiones históricas de topic keys en registros de síntesis unificados.
+
+### ⚖️ Herramientas del Motor de Decisiones (Spec-Driven)
+
+- **`sv_propose_spec`**: Registra un spec change (propuesta) y ejecuta un pre-flight check contra reglas e invariantes — una regla pinned que solapa devuelve **BLOCK**, un solapamiento ordinario **WARN**, y si no hay solapamiento **PASS**. Costo LLM cero por defecto.
+- **`sv_validate_decision`**: Re-verifica una propuesta tras ediciones (PASS/WARN/BLOCK); `semantic='true'` opta por un re-ranking batch con agente (falla abierto al veredicto determinístico).
+- **`sv_commit_spec`**: Promueve un change validado a una memoria `decision`/`standard` duradera (topic_key `decision/<slug>`), cablea la arista rationale, registra relaciones `conflicts_with` y lo marca como aplicado. Un BLOCK rechaza el commit salvo que `force='true'` lo sobreescriba.
 
 ### ⏱️ Herramientas de Sesión
 

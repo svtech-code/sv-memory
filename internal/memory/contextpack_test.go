@@ -49,7 +49,7 @@ func TestContextPackResolvesNodeAndMemories(t *testing.T) {
 		t.Fatalf("failed saving memory: %v", err)
 	}
 
-	pack, err := GetContextPack(database, projectID, "main.go", 5)
+	pack, err := GetContextPack(database, projectID, "main.go", 5, false)
 	if err != nil {
 		t.Fatalf("failed GetContextPack: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestContextPackNoGraphStillReturnsMemories(t *testing.T) {
 		t.Fatalf("failed saving memory: %v", err)
 	}
 
-	pack, err := GetContextPack(database, projectID, "go.mod", 5)
+	pack, err := GetContextPack(database, projectID, "go.mod", 5, false)
 	if err != nil {
 		t.Fatalf("failed GetContextPack: %v", err)
 	}

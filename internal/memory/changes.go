@@ -265,3 +265,35 @@ func SetMemoryChangeID(db *sql.DB, projectID, memoryID, changeID string) error {
 	}
 	return nil
 }
+
+// ChangeStats returns the count of active (not archived/rejected) changes per
+// lifecycle state, used by the Auto-Boot bundle to hint at in-flight proposals
+// without loading their content. The result is only populated for states that
+// have at least one change, so the caller renders a hint with zero cost when
+// the store is healthy.
+func ChangeStats(db *sql.DB, projectID string) (map[string]int, error) {
+	rows, err := db.Query(`
+		SELECT status, COUNT(*)
+		FROM changes
+		WHERE project_id = ? AND status NOT IN ('archived', 'rejected')
+		GROUP BY status`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch change stats: %w", err)
+	}
+	defer rows.Close()
+
+	stats := map[string]int{
+		ChangeStatusDraft:     0,
+		ChangeStatusProposed:  0,
+		ChangeStatusValidated: 0,
+		ChangeStatusApplied:   0,
+	}
+	for rows.Next() {
+		var status string
+		var n int
+		if scanErr := rows.Scan(&status, &n); scanErr == nil {
+			stats[status] = n
+		}
+	}
+	return stats, rows.Err()
+}

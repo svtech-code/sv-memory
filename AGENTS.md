@@ -64,6 +64,15 @@ Always persist design knowledge as structured memories with a topic_key, not jus
 - **Inspect dependencies:** Call 'sv_graph_query(path_or_node=...)' to see a module's dependency sub-graph (imports/calls/depends_on) with depth, direction, and relation-type filters.
 - **Trace a connection:** Call 'sv_graph_path(source=..., target=...)' to find the shortest dependency path between two nodes.
 
+## Spec-Driven Decision Cycle (before proposing or changing behavior):
+
+Proposals go through a lifecycle before code is written. Use it for any behavior/architecture change, not just large features:
+- **Consult context:** 'sv_mem_context_pack(path="<file|pkg>", include_changes="true")' surfaces the node role, linked decisions/standards, and active changes affecting that path in one call.
+- **Propose:** 'sv_propose_spec(slug="<kebab-case>", title=..., what=..., where_path=...)' registers the change and runs a pre-flight check against rules/invariants (standards, decisions, architecture memories). A pinned rule that overlaps the proposal returns a BLOCK verdict.
+- **Validate:** 'sv_validate_decision(change_id=...)' re-checks a proposal after edits (PASS/WARN/BLOCK). Deterministic by default; pass semantic="true" to opt into agent re-ranking.
+- **Commit:** 'sv_commit_spec(change_id=...)' promotes the change into a durable decision/standard memory, links it to the change_id, wires the rationale_for edge, and stamps it applied. A pre-flight BLOCK rejects the commit unless force="true" explicitly overrides the invariant. Call after implementation, before 'sv_mem_session_end'.
+- Lifecycle states: 'draft' → 'proposed' → 'validated' → 'applied' (→ 'archived') | 'rejected'. Committed decisions get topic_key 'decision/<slug>'.
+
 ## Graph Refresh:
 
 Execute 'sv_graph_sync' after adding major new files, creating new packages, or modifying package structures/imports. The graph is rebuilt incrementally and communities/centrality are computed lazily when queried.
@@ -83,7 +92,8 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **Knowledge quality:** sv_mem_suggest_topic_key, sv_mem_judge, sv_mem_compare, sv_mem_compact, sv_mem_review, sv_mem_capture_passive, sv_mem_conflicts, sv_mem_stats, sv_mem_diagnose
 - **User intent:** sv_mem_capture_prompt (record what the user asked, recoverable via sv_mem_context)
 - **Project admin:** sv_mem_merge_projects (merge project variants into a canonical project)
-- **Context Pack:** sv_mem_context_pack (one bounded call: graph role + linked memories for a file/package/symbol)
+- **Context Pack:** sv_mem_context_pack (one bounded call: graph role + linked memories + active changes for a file/package/symbol)
+- **Decision Engine:** sv_propose_spec, sv_validate_decision, sv_commit_spec (propose → validate → commit cycle with pre-flight checks)
 - **Graph:** sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_viz, sv_graph_merge
 
 ## Repository Restrictions & Commit Standards:
