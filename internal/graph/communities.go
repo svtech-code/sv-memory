@@ -269,16 +269,17 @@ func cleanLabel(node *Node, maxLen int) string {
 	if label == "" {
 		return ""
 	}
-	if len(label) > maxLen {
-		label = label[:maxLen]
+	// Truncate by runes so multibyte characters are never split.
+	if runes := []rune(label); len(runes) > maxLen {
+		label = string(runes[:maxLen])
 	}
 	if node.Type == "file" {
 		return label
 	}
 	firstLine := strings.SplitN(label, "\n", 2)
 	label = strings.TrimSpace(firstLine[0])
-	if len(label) > maxLen {
-		label = label[:maxLen]
+	if runes := []rune(label); len(runes) > maxLen {
+		label = string(runes[:maxLen])
 	}
 	return label
 }

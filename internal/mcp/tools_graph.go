@@ -189,6 +189,12 @@ func (s *Server) handleGraphPath(ctx context.Context, req mcp.CallToolRequest) (
 	if d, convErr := strconv.Atoi(maxHopsStr); convErr == nil {
 		maxHops = d
 	}
+	if maxHops < 1 {
+		maxHops = 1
+	}
+	if maxHops > 20 {
+		maxHops = 20
+	}
 
 	g, err := s.getOrLoadGraph()
 	if err != nil {

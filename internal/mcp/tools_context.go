@@ -21,7 +21,7 @@ func (s *Server) handleContextPack(ctx context.Context, req mcp.CallToolRequest)
 		return mcp.NewToolResultError("missing required field: path"), nil
 	}
 
-	pack, err := memory.GetContextPack(s.pool.Reader, s.cfg.ProjectID, path, configuredChars("context_pack_max_memories", 5))
+	pack, err := memory.GetContextPack(s.pool.Reader, s.cfg.ProjectID, path, configuredInt("context_pack_max_memories", 5))
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to build context pack: %v", err)), nil
 	}

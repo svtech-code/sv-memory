@@ -344,12 +344,12 @@ const similarCheckTimeout = 200 * time.Millisecond
 // search_expand_chars config key.
 const searchExpandChars = 300
 
-// configuredChars returns a positive configured character limit for a
-// truncation knob, falling back to the compiled-in default when the config key
-// is unset or non-positive. This makes the truncation thresholds tunable via
-// ~/.sv-memory/config.yaml (global) or .sv-memory/config.yaml (local) without
-// recompiling, while keeping the constants above as the safe defaults.
-func configuredChars(key string, fallback int) int {
+// configuredInt returns a configured positive integer (a truncation limit or a
+// memory count, depending on the key), falling back to the compiled-in default
+// when the config key is unset or non-positive. This makes the limits tunable
+// via ~/.sv-memory/config.yaml (global) or .sv-memory/config.yaml (local)
+// without recompiling, while keeping the constants above as the safe defaults.
+func configuredInt(key string, fallback int) int {
 	if v := viper.GetInt(key); v > 0 {
 		return v
 	}

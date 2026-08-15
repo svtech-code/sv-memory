@@ -89,7 +89,7 @@ func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string
 		query = `
 		SELECT m.id, m.category, m.what,
 			m.topic_key, m.revision_count, m.duplicate_count, m.created_at,
-			bm25(memories_fts, 10.0, 5.0, 2.0) AS score
+			bm25(memories_fts, ` + bm25Weights + `) AS score
 		FROM memories m
 		JOIN memories_fts f ON m.rowid = f.rowid
 		WHERE m.project_id = ? AND memories_fts MATCH ? AND m.deleted_at IS NULL
@@ -103,7 +103,7 @@ func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string
 			query += " AND (m.where_path LIKE ? ESCAPE '\\' OR m.where_path = ?)"
 			args = append(args, "%"+pathFilter+"%", pathFilter)
 		}
-		query += " ORDER BY bm25(memories_fts, 10.0, 5.0, 2.0)"
+		query += " ORDER BY bm25(memories_fts, " + bm25Weights + ")"
 	}
 
 	if limit > 0 {
@@ -179,7 +179,7 @@ func SearchMemoriesByPaths(db *sql.DB, projectID string, searchTerm string, cate
 		query = `
 		SELECT m.id, m.category, m.what,
 			m.topic_key, m.revision_count, m.duplicate_count, m.created_at,
-			bm25(memories_fts, 10.0, 5.0, 2.0) AS score
+			bm25(memories_fts, ` + bm25Weights + `) AS score
 		FROM memories m
 		JOIN memories_fts f ON m.rowid = f.rowid
 		WHERE m.project_id = ? AND memories_fts MATCH ? AND m.deleted_at IS NULL` + pathClause
@@ -189,7 +189,7 @@ func SearchMemoriesByPaths(db *sql.DB, projectID string, searchTerm string, cate
 			query += " AND m.category = ?"
 			args = append(args, category)
 		}
-		query += " ORDER BY bm25(memories_fts, 10.0, 5.0, 2.0)"
+		query += " ORDER BY bm25(memories_fts, " + bm25Weights + ")"
 	}
 
 	if limit > 0 {
@@ -416,7 +416,7 @@ func SearchMemories(db *sql.DB, projectID string, searchTerm string, category st
 			query += " AND m.category = ?"
 			args = append(args, category)
 		}
-		query += " ORDER BY bm25(memories_fts, 10.0, 5.0, 2.0)"
+		query += " ORDER BY bm25(memories_fts, " + bm25Weights + ")"
 	}
 
 	if limit > 0 {

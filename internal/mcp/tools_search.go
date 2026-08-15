@@ -18,8 +18,8 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 	if err != nil {
 		return mcp.NewToolResultError("missing required field: query"), nil
 	}
-	if len(query) > 256 {
-		query = query[:256]
+	if runes := []rune(query); len(runes) > 256 {
+		query = string(runes[:256])
 	}
 	category := req.GetString("category", "")
 	pathFilter := req.GetString("path", "")
@@ -125,10 +125,10 @@ func (s *Server) renderSearchResults(results []*memory.MemorySearchResult, where
 			sb.WriteString("\n### Top result (expanded):\n")
 			fmt.Fprintf(&sb, "- [%s] **%s** (ID: %s)\n", strings.ToUpper(top.Category), top.What, top.ID)
 			if top.Why != "" {
-				fmt.Fprintf(&sb, "  *Why:* %s\n", truncateField(top.Why, configuredChars("search_expand_chars", searchExpandChars)))
+				fmt.Fprintf(&sb, "  *Why:* %s\n", truncateField(top.Why, configuredInt("search_expand_chars", searchExpandChars)))
 			}
 			if top.Learned != "" {
-				fmt.Fprintf(&sb, "  *Learned:* %s\n", truncateField(top.Learned, configuredChars("search_expand_chars", searchExpandChars)))
+				fmt.Fprintf(&sb, "  *Learned:* %s\n", truncateField(top.Learned, configuredInt("search_expand_chars", searchExpandChars)))
 			}
 			if top.WherePath != "" {
 				fmt.Fprintf(&sb, "  *Path:* `%s`\n", top.WherePath)
@@ -201,7 +201,7 @@ func (s *Server) handleGet(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 	if err != nil {
 		return mcp.NewToolResultError("missing required field: id"), nil
 	}
-	maxChars := configuredChars("max_field_chars", maxFieldChars)
+	maxChars := configuredInt("max_field_chars", maxFieldChars)
 	maxCharsStr := req.GetString("max_chars", "")
 	if maxCharsStr != "" {
 		if m, convErr := strconv.Atoi(maxCharsStr); convErr == nil && m >= 0 {
@@ -270,8 +270,14 @@ func (s *Server) handleTimeline(ctx context.Context, req mcp.CallToolRequest) (*
 	if before <= 0 {
 		before = 5
 	}
+	if before > 50 {
+		before = 50
+	}
 	if after <= 0 {
 		after = 5
+	}
+	if after > 50 {
+		after = 50
 	}
 
 	prev, next, err := memory.GetTimelineCompact(s.pool.Reader, s.cfg.ProjectID, obsID, before, after)
@@ -289,7 +295,7 @@ func (s *Server) handleTimeline(ctx context.Context, req mcp.CallToolRequest) (*
 		fmt.Fprintf(&sb, "- [%s] **%s** (ID: %s, %s)\n",
 			strings.ToUpper(central.Category), central.What, central.ID, central.CreatedAt.Format("2006-01-02 15:04"))
 		if central.Why != "" {
-			fmt.Fprintf(&sb, "  *Why:* %s\n", truncateField(central.Why, configuredChars("timeline_why_chars", timelineWhyChars)))
+			fmt.Fprintf(&sb, "  *Why:* %s\n", truncateField(central.Why, configuredInt("timeline_why_chars", timelineWhyChars)))
 		}
 		sb.WriteString("\n")
 	}

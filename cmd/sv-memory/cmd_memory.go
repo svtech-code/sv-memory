@@ -53,12 +53,14 @@ var statsCmd = &cobra.Command{
 				return fmt.Errorf("failed to get stats: %w", err)
 			}
 			fmt.Printf("=== Memory Statistics for %s ===\n\n", cfg.ProjName)
+			fmt.Printf("Current project:   %s (ID: %s)\n", cfg.ProjName, cfg.ProjectID)
 			fmt.Printf("Total memories:    %d\n", s.TotalMemories)
 			fmt.Printf("Deleted memories:  %d\n", s.DeletedMemories)
 			fmt.Printf("Recent (24h):      %d\n", s.Recent24h)
 			fmt.Printf("Total sessions:    %d\n", s.TotalSessions)
 			fmt.Printf("Active sessions:   %d\n", s.ActiveSessions)
 			fmt.Printf("Total relations:   %d\n", s.TotalRelations)
+			fmt.Printf("Total user prompts:%d\n", s.TotalPrompts)
 			if len(s.ByCategory) > 0 {
 				fmt.Println("\nBy category:")
 				for cat, count := range s.ByCategory {

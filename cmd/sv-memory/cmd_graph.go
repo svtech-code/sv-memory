@@ -35,7 +35,16 @@ var graphPathCmd = &cobra.Command{
 				return err
 			}
 
-			path := g.ShortestPath(args[0], args[1], 10)
+			// Find start and end nodes based on input (fuzzy match), mirroring
+			// the MCP sv_graph_path behavior.
+			startNode := g.FindNode(args[0])
+			endNode := g.FindNode(args[1])
+			if startNode == "" || endNode == "" {
+				fmt.Println("Could not find start or end node in the graph.")
+				return nil
+			}
+
+			path := g.ShortestPath(startNode, endNode, 10)
 			if len(path) == 0 {
 				fmt.Printf("No path found between %s and %s.\n", args[0], args[1])
 				return nil

@@ -113,6 +113,10 @@ const memoryColumns = `id, project_id, category, what, why, where_path, learned,
 const compactColumns = `id, category, what,
 		topic_key, revision_count, duplicate_count, created_at`
 
+// bm25Weights is the FTS5 BM25 column weight tuple shared by the scoring and
+// ordering expressions so the SELECT and ORDER BY cannot drift apart.
+const bm25Weights = "10.0, 5.0, 2.0"
+
 // memoryInsertArgs returns the ordered argument list matching
 // memoryInsertConflictQuery() column order. It must stay in sync with that
 // query and the memories table columns.

@@ -78,9 +78,9 @@ func configureKeyMap() *huh.KeyMap {
 // toolLabel builds a display label for a TargetTool, e.g.
 // "Cursor (Autoconfiguración)" or "VS Code (Instrucciones manuales)".
 func toolLabel(t config.TargetTool) string {
-	mode := "Instrucciones manuales"
+	mode := "Manual instructions"
 	if t.Auto {
-		mode = "Autoconfiguración"
+		mode = "Automatic configuration"
 	}
 	return fmt.Sprintf("%s (%s)", t.Name, mode)
 }
@@ -193,8 +193,8 @@ var configureCmd = &cobra.Command{
 		}
 
 		if len(manuals) > 0 {
-			fmt.Println("\n=== GUÍA DE CONFIGURACIÓN MANUAL ===")
-			fmt.Println("Las siguientes herramientas requieren que realices pasos manuales en tu interfaz:")
+			fmt.Println("\n=== MANUAL CONFIGURATION GUIDE ===")
+			fmt.Println("The following tools require manual steps in your editor:")
 			fmt.Println()
 			for _, m := range manuals {
 				fmt.Printf("👉 %s:\n      %s\n\n", m.Name, m.ConfigPath)
@@ -257,20 +257,20 @@ var configureCmd = &cobra.Command{
 						fmt.Printf("✅ %s: ya tenía %d permiso(s).\n", tool.Name, len(res.Present))
 						continue
 					}
-					fmt.Printf("✅ %s: %d permiso(s) otorgado(s) en %s\n", tool.Name, len(res.Added), res.ConfigPath)
+					fmt.Printf("✅ %s: %d permission(s) granted at %s\n", tool.Name, len(res.Added), res.ConfigPath)
 				}
 			}
 		}
 
 		if successAutoCount > 0 {
-			fmt.Println("Recuerda reiniciar las herramientas configuradas automáticamente para aplicar los cambios.")
+			fmt.Println("Remember to restart the automatically configured tools to apply the changes.")
 		}
 
 		// Always print the generic copy-paste command
 		execPath, err := os.Executable()
 		if err == nil {
 			execPath = filepath.Clean(execPath)
-			fmt.Printf("\n💡 Comando MCP global de sv-memory para configuración manual en cualquier otro editor:\n   %s mcp\n\n", execPath)
+			fmt.Printf("\n💡 Global sv-memory MCP command for manual configuration in any other editor:\n   %s mcp\n\n", execPath)
 		}
 
 		return nil

@@ -21,8 +21,8 @@ func TestToolLabel(t *testing.T) {
 		tool config.TargetTool
 		want string
 	}{
-		{name: "auto", tool: config.TargetTool{Name: "Cursor", Auto: true}, want: "Cursor (Autoconfiguración)"},
-		{name: "manual", tool: config.TargetTool{Name: "VS Code", Auto: false}, want: "VS Code (Instrucciones manuales)"},
+		{name: "auto", tool: config.TargetTool{Name: "Cursor", Auto: true}, want: "Cursor (Automatic configuration)"},
+		{name: "manual", tool: config.TargetTool{Name: "VS Code", Auto: false}, want: "VS Code (Manual instructions)"},
 	}
 	for _, test := range tests {
 		if got := toolLabel(test.tool); got != test.want {

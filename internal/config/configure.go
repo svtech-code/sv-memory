@@ -178,16 +178,16 @@ func ConfigureTargetTool(tool TargetTool) (bool, string, error) {
 		// Return manual instructions
 		switch tool.ID {
 		case "cursor":
-			msg := fmt.Sprintf("Abre Cursor -> Features -> MCP -> click en 'Add New MCPServer'.\n      * Name: sv-memory\n      * Type: command\n      * Command: %s mcp", execPath)
+			msg := fmt.Sprintf("Open Cursor -> Features -> MCP -> click 'Add New MCP Server'.\n      * Name: sv-memory\n      * Type: command\n      * Command: %s mcp", execPath)
 			return false, msg, nil
 		case "vscode":
-			msg := fmt.Sprintf("Abre la configuración del plugin de MCP que utilices (ej. Cline o Roo Code):\n      * Agrega un nuevo servidor con el Comando: %s\n      * Con los Argumentos: [\"mcp\"]", execPath)
+			msg := fmt.Sprintf("Open the MCP plugin configuration you use (e.g. Cline or Roo Code):\n      * Add a new server with the Command: %s\n      * With the Arguments: [\"mcp\"]", execPath)
 			return false, msg, nil
 		case "windsurf":
-			msg := fmt.Sprintf("Abre los ajustes de Windsurf -> MCP -> click en 'Add New Server'.\n      * Name: sv-memory\n      * Type: command\n      * Command: %s mcp", execPath)
+			msg := fmt.Sprintf("Open Windsurf settings -> MCP -> click 'Add New Server'.\n      * Name: sv-memory\n      * Type: command\n      * Command: %s mcp", execPath)
 			return false, msg, nil
 		default:
-			return false, "Configuración manual requerida en tu editor.", nil
+			return false, "Manual configuration required in your editor.", nil
 		}
 	}
 
@@ -198,35 +198,35 @@ func ConfigureTargetTool(tool TargetTool) (bool, string, error) {
 		if err != nil {
 			return false, "", err
 		}
-		return true, "Configurado automáticamente en " + tool.ConfigPath, nil
+		return true, "Configured automatically at " + tool.ConfigPath, nil
 
 	case "antigravity":
 		err := configureClaude(tool.ConfigPath, execPath)
 		if err != nil {
 			return false, "", err
 		}
-		return true, "Configurado automáticamente en " + tool.ConfigPath, nil
+		return true, "Configured automatically at " + tool.ConfigPath, nil
 
 	case "opencode":
 		err := configureOpenCode(tool.ConfigPath, execPath)
 		if err != nil {
 			return false, "", err
 		}
-		return true, "Configurado automáticamente en " + tool.ConfigPath, nil
+		return true, "Configured automatically at " + tool.ConfigPath, nil
 
 	case "codex":
 		err := configureCodex(tool.ConfigPath, execPath)
 		if err != nil {
 			return false, "", err
 		}
-		return true, "Configurado automáticamente en " + tool.ConfigPath, nil
+		return true, "Configured automatically at " + tool.ConfigPath, nil
 
 	case "claude-code":
 		// Check if 'claude' command is available in PATH
 		_, lookErr := exec.LookPath("claude")
 		if lookErr != nil {
 			// Not installed globally or not in PATH, output manual fallback instructions
-			msg := fmt.Sprintf("Claude Code no se detectó en tu PATH. Agrégalo manualmente ejecutando:\n      claude mcp add sv-memory --scope user --transport stdio -- %s mcp", execPath)
+			msg := fmt.Sprintf("Claude Code was not detected in your PATH. Add it manually by running:\n      claude mcp add sv-memory --scope user --transport stdio -- %s mcp", execPath)
 			return false, msg, nil
 		}
 
@@ -236,7 +236,7 @@ func ConfigureTargetTool(tool TargetTool) (bool, string, error) {
 		if err != nil {
 			return false, "", fmt.Errorf("failed executing claude command (%s): %w", string(output), err)
 		}
-		return true, "Configurado automáticamente mediante comando 'claude mcp add'", nil
+		return true, "Configured automatically via the 'claude mcp add' command", nil
 	}
 
 	return false, "", fmt.Errorf("unknown auto-configuration ID: %s", tool.ID)

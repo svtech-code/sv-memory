@@ -183,7 +183,7 @@ func TestSessionStartHonorsTokenBudget(t *testing.T) {
 func TestConfiguredCharsFallback(t *testing.T) {
 	// With no config key set, the compiled-in default is returned so existing
 	// truncation behavior is preserved when viper has no value.
-	if got := configuredChars("no_such_config_key_anywhere", 123); got != 123 {
+	if got := configuredInt("no_such_config_key_anywhere", 123); got != 123 {
 		t.Errorf("expected fallback 123, got %d", got)
 	}
 }

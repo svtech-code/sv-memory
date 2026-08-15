@@ -164,8 +164,10 @@ func mainMenu(projectID string) (string, error) {
 // (Ctrl+C) the error is ignored and control returns to the main menu. Long
 // content is truncated so it never overflows the terminal.
 func showNote(title, content string) {
-	if len(content) > 4000 {
-		content = content[:4000] + "\n\n… (contenido truncado para la vista)"
+	// Truncate by runes so multibyte characters are never split.
+	const maxChars = 4000
+	if runes := []rune(content); len(runes) > maxChars {
+		content = string(runes[:maxChars]) + "\n\n… (content truncated for this view)"
 	}
 	_ = huh.NewForm(
 		huh.NewGroup(
@@ -174,7 +176,7 @@ func showNote(title, content string) {
 				Description(content).
 				Height(18).
 				Next(true).
-				NextLabel("Volver al menú principal"),
+				NextLabel("Back to main menu"),
 		).Title("SV-MEMORY"),
 	).WithTheme(tuiTheme()).Run()
 }
