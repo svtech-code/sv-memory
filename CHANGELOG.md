@@ -3,6 +3,25 @@
 All notable changes follow [Conventional Commits](https://www.conventionalcommits.org/).
 Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automatically.
 
+## [v0.13.1] - 2026-08-15
+
+### Fixed
+
+- **Manual judgments are persisted as `judged`, not `pending`:** `SaveJudgment` now writes `status='judged'` (the schema default was `pending`), so an explicit `sv_mem_judge` relation no longer inflates the Auto-Boot "pending conflicts" hint and, crucially, is no longer silently deleted by a later semantic conflict re-scan (`ApplySemanticVerdict` only clears `status='pending'` rows). This preserves the human/agent judgment against an LLM verdict overwriting it.
+- **Spec commit is safer under partial failure:** `handleCommitSpec` now persists the decision memory and links it to the change *before* merging the delta requirements into the capability state. If the merge fails (ADDED of an existing requirement, RENAMED of a missing one), the capability state is left untouched and the commit can be retried once the delta is fixed — previously the merge ran first and a later save failure left the capability mutated with no way to re-commit cleanly.
+- **The spec lifecycle now transitions as documented:** `sv_propose_spec` advances the change `draft → proposed` after wiring it, and `sv_validate_decision` advances it `proposed → validated` when the pre-flight verdict is PASS/WARN (a BLOCK keeps it proposed; terminal states are never re-stamped). `sv-memory specs list` now reports `proposed`/`validated` instead of always `draft`, matching the `draft → proposed → validated → applied (→ archived) | rejected` cycle described in AGENTS.md.
+
+### Changed
+
+- **`sv_graph_query` and `sv_graph_path` accrue the session token ledger:** both tools now route through the shared `s.respond`, so their output counts toward `sv_mem_stats` "Estimated tokens injected this session" and the shared `truncateToTokenBudget` is used instead of a bespoke truncation block (duplicate implementation removed).
+- **Field-length validation centralized:** the memory (`SaveMemory`/`UpdateMemory`) and change (`CreateChange`/`UpdateChange`) length caps now live in shared `validateMemoryFields`/`validateChangeFields` helpers in `memory_util.go`, removing four copies of the same validation blocks (single source of truth, no drift).
+
+### Testing
+
+- `TestGetTimelineCompact` (ordering, central-observation exclusion, soft-deleted exclusion, unknown observation error) and `TestDeleteMemoryHard` (row removal + relation cascade + not-found) were added for previously uncovered paths.
+- `TestSaveJudgmentReplacesDuplicate` now asserts the persisted `status='judged'`, and `TestAutoBootBundleSurfacesPendingConflicts` generates its pending conflict through `ScanConflicts` (the natural flow) instead of `SaveJudgment`.
+- `TestGraphQueryPathAccrueTokenLedger` asserts graph query/path calls add to the session token ledger.
+
 ## [v0.13.0] - 2026-08-15
 
 ### Added
@@ -394,4 +413,5 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 [v0.11.0]: https://github.com/svtech-code/sv-memory/compare/v0.10.0...v0.11.0
 [v0.12.0]: https://github.com/svtech-code/sv-memory/compare/v0.11.0...v0.12.0
 [v0.13.0]: https://github.com/svtech-code/sv-memory/compare/v0.12.0...v0.13.0
-[Unreleased]: https://github.com/svtech-code/sv-memory/compare/v0.13.0...main
+[v0.13.1]: https://github.com/svtech-code/sv-memory/compare/v0.13.0...v0.13.1
+[Unreleased]: https://github.com/svtech-code/sv-memory/compare/v0.13.1...main

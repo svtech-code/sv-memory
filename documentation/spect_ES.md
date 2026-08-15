@@ -774,7 +774,7 @@ Fusiona variantes de nombre de proyecto en un único proyecto canónico (paridad
 
 ### 19e. `sv_propose_spec`
 
-Registra un **spec change** (propuesta) en el motor de decisiones spec-driven: crea el change en el estado `draft` del ciclo de vida y ejecuta un **pre-flight check** contra las reglas e invariantes del proyecto (memorias en categorías `standard`, `decision`, `architecture`). Una regla pinned cuyos tokens solapan la propuesta devuelve un veredicto **BLOCK**; un solapamiento ordinario devuelve **WARN**; si no hay solapamiento, **PASS**. Úsalo antes de escribir código.
+Registra un **spec change** (propuesta) en el motor de decisiones spec-driven: crea el change y lo avanza al estado `proposed` del ciclo de vida, luego ejecuta un **pre-flight check** contra las reglas e invariantes del proyecto (memorias en categorías `standard`, `decision`, `architecture`). Una regla pinned cuyos tokens solapan la propuesta devuelve un veredicto **BLOCK**; un solapamiento ordinario devuelve **WARN**; si no hay solapamiento, **PASS**. Úsalo antes de escribir código.
 
 - **Parámetros:**
   - `slug` (string, requerido): Identificador kebab-case, único por proyecto (p. ej. `implement-session-auth`).
@@ -1204,8 +1204,9 @@ Un **change** es una propuesta (slug único por proyecto) almacenada en la tabla
 draft → proposed → validated → applied (→ archived) | rejected
 ```
 
-- `draft` — creado por `sv_propose_spec` (el pre-flight check se ejecuta aquí).
-- `proposed` / `validated` — estados explícitos de revisión.
+- `draft` — estado transitorio mientras `sv_propose_spec` cablea el change (capability path, delta requirements) antes de avanzarlo a `proposed`.
+- `proposed` — creado por `sv_propose_spec` (el pre-flight check se ejecuta aquí).
+- `validated` — `sv_validate_decision` devolvió PASS/WARN para la propuesta (un BLOCK lo mantiene en `proposed`).
 - `applied` — `sv_commit_spec` promovió la propuesta a una memoria `decision`/`standard` duradera y la marcó como aplicada (`archived_at` asignado).
 - `archived` / `rejected` — estados terminales de historial (excluidos del recall del context pack y del hint "Active changes" del Auto-Boot).
 

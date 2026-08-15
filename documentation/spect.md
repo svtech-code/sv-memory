@@ -775,7 +775,7 @@ Merges project name variants into a single canonical project (Engram `mem_merge_
 
 ### 19e. `sv_propose_spec`
 
-Registers a **spec change** (proposal) for the spec-driven decision engine: creates the change in the `draft` lifecycle state and runs a **pre-flight check** against the project's rules and invariants (memories in categories `standard`, `decision`, `architecture`). A pinned rule whose tokens overlap the proposal returns a **BLOCK** verdict; an ordinary overlap returns **WARN**; otherwise **PASS**. Use before writing code.
+Registers a **spec change** (proposal) for the spec-driven decision engine: creates the change and advances it to the `proposed` lifecycle state, then runs a **pre-flight check** against the project's rules and invariants (memories in categories `standard`, `decision`, `architecture`). A pinned rule whose tokens overlap the proposal returns a **BLOCK** verdict; an ordinary overlap returns **WARN**; otherwise **PASS**. Use before writing code.
 
 - **Parameters:**
   - `slug` (string, required): Kebab-case, project-unique identifier (e.g. `implement-session-auth`).
@@ -1205,8 +1205,9 @@ A **change** is a proposal (slug-unique per project) stored in the `changes` tab
 draft → proposed → validated → applied (→ archived) | rejected
 ```
 
-- `draft` — created by `sv_propose_spec` (pre-flight check runs here).
-- `proposed` / `validated` — explicit review states.
+- `draft` — transient state while `sv_propose_spec` wires the change (capability path, delta requirements) before advancing it to `proposed`.
+- `proposed` — created by `sv_propose_spec` (pre-flight check runs here).
+- `validated` — `sv_validate_decision` returned PASS/WARN for the proposal (a BLOCK keeps it `proposed`).
 - `applied` — `sv_commit_spec` promoted the proposal into a durable `decision`/`standard` memory and stamped it applied (`archived_at` set).
 - `archived` / `rejected` — terminal history states (excluded from context-pack recall and the Auto-Boot "Active changes" hint).
 
