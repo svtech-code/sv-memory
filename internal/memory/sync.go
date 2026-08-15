@@ -42,14 +42,17 @@ func searchAllMemories(db *sql.DB, projectID string) ([]*Memory, error) {
 	return scanMemories(rows)
 }
 
-// searchChangedMemories returns only the memories inserted or updated after
-// lastSync, so the chunked Git sync can rewrite just the changed chunk files
-// instead of the whole set. New inserts are found via created_at; topic-key
-// updates and duplicate touches advance last_seen_at, which is also checked.
+// searchChangedMemories returns only the memories inserted or updated at or
+// after lastSync, so the chunked Git sync can rewrite just the changed chunk
+// files instead of the whole set. New inserts are found via created_at;
+// topic-key updates and duplicate touches advance last_seen_at, which is also
+// checked. The comparison is inclusive (>=) so a write that lands on the exact
+// watermark instant (possible with coarse clocks or the -cover timing in CI) is
+// still picked up instead of silently skipped.
 func searchChangedMemories(db *sql.DB, projectID string, lastSync time.Time) ([]*Memory, error) {
 	rows, err := db.Query("SELECT "+memoryColumns+
 		" FROM memories WHERE project_id = ? AND deleted_at IS NULL AND ("+
-		"created_at > ? OR (last_seen_at IS NOT NULL AND last_seen_at > ?)"+
+		"created_at >= ? OR (last_seen_at IS NOT NULL AND last_seen_at >= ?)"+
 		") ORDER BY created_at ASC",
 		projectID, lastSync, lastSync)
 	if err != nil {
@@ -249,6 +252,12 @@ func syncToGit(db *sql.DB, projectID string, projPath string, forceJSON bool) er
 	info := lastWriteInfo[projectID]
 	syncCacheMu.Unlock()
 
+	// Capture the watermark at the START of the sync (before reading the DB)
+	// rather than at the end: the next incremental sync then detects every
+	// memory touched from this point on, with no window that depends on
+	// sub-millisecond clock precision.
+	syncStartedAt := time.Now()
+
 	if mkErr := os.MkdirAll(syncDir, 0755); mkErr != nil {
 		return fmt.Errorf("failed to create sync directory: %w", mkErr)
 	}
@@ -322,7 +331,7 @@ func syncToGit(db *sql.DB, projectID string, projPath string, forceJSON bool) er
 
 	syncCacheMu.Lock()
 	lastWriteInfo[projectID] = syncCacheEntry{
-		lastSyncTime:  time.Now(),
+		lastSyncTime:  syncStartedAt,
 		jsonSyncCount: nextJSON,
 	}
 	syncCacheMu.Unlock()
