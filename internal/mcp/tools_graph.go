@@ -535,6 +535,12 @@ func (s *Server) handleGodNodes(ctx context.Context, req mcp.CallToolRequest) (*
 	}
 	var ranked []rankedNode
 	for id, n := range g.Nodes {
+		// External package nodes (pkg:*) are imports with high fan-in, not
+		// architectural hubs — exclude them so the ranking surfaces real
+		// project code (files/functions/classes).
+		if n.Type == "package" {
+			continue
+		}
 		deg := g.FanIn[id] + g.FanOut[id]
 		ranked = append(ranked, rankedNode{
 			id:     id,

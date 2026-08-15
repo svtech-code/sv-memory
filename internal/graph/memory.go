@@ -55,9 +55,11 @@ type DegreeNode struct {
 
 // TopDegreeNodes returns the top n code nodes by total degree (fan-in +
 // fan-out) using a single aggregate query, without loading the full graph or
-// computing centrality. Document nodes (.md) are excluded so the result is a
-// list of actionable code hubs. Used by the Auto-Boot session bundle to show
-// architectural hotspots cheaply at session start.
+// computing centrality. Document nodes (.md) and external package nodes
+// (pkg:*) are excluded so the result is a list of actionable project code hubs
+// rather than stdlib/third-party imports with a high fan-in. Used by the
+// Auto-Boot session bundle to show architectural hotspots cheaply at session
+// start.
 func TopDegreeNodes(db *sql.DB, projectID string, n int) ([]DegreeNode, error) {
 	if n <= 0 {
 		n = 3
@@ -68,7 +70,7 @@ func TopDegreeNodes(db *sql.DB, projectID string, n int) ([]DegreeNode, error) {
 		FROM (
 			SELECT id, label, node_type
 			FROM graph_nodes
-			WHERE project_id = ? AND node_type != 'document'
+			WHERE project_id = ? AND node_type NOT IN ('document', 'package')
 		) n
 		LEFT JOIN (
 			SELECT source_id, COUNT(*) AS cnt FROM graph_edges WHERE project_id = ? GROUP BY source_id

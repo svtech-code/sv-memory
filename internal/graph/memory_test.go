@@ -44,6 +44,72 @@ func TestFindNodeDeterministic(t *testing.T) {
 	}
 }
 
+func TestTopDegreeNodesExcludesPackages(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_hubs.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-hubs"
+	if err = db.RegisterProject(database, projectID, "Hubs", tempDir); err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// pkg:requests has the highest fan-in (three importers); the file and
+	// function nodes are real project code and must surface above it.
+	nodes := []struct{ id, typ string }{
+		{"src/core.py", "file"},
+		{"src/main.py", "file"},
+		{"src/utils.py", "file"},
+		{"src/core.py:run", "function"},
+		{"pkg:requests", "package"},
+	}
+	for _, n := range nodes {
+		if _, err = database.Exec(
+			"INSERT INTO graph_nodes (id, project_id, node_type, label, path, metadata) VALUES (?, ?, ?, ?, ?, '{}')",
+			n.id, projectID, n.typ, n.id, n.id); err != nil {
+			t.Fatalf("insert node %s: %v", n.id, err)
+		}
+	}
+
+	edges := [][2]string{
+		{"src/core.py", "pkg:requests"},
+		{"src/main.py", "pkg:requests"},
+		{"src/utils.py", "pkg:requests"},
+		{"src/core.py", "src/core.py:run"},
+	}
+	for _, e := range edges {
+		if _, err = database.Exec(
+			"INSERT INTO graph_edges (id, project_id, source_id, target_id, relation_type, confidence) VALUES (?, ?, ?, ?, 'imports', 'EXTRACTED')",
+			e[0]+"->"+e[1], projectID, e[0], e[1]); err != nil {
+			t.Fatalf("insert edge %v: %v", e, err)
+		}
+	}
+
+	hubs, err := TopDegreeNodes(database, projectID, 3)
+	if err != nil {
+		t.Fatalf("TopDegreeNodes: %v", err)
+	}
+
+	for _, h := range hubs {
+		if h.ID == "pkg:requests" {
+			t.Errorf("external package pkg:requests must not be listed as a hub, got %+v", hubs)
+		}
+	}
+	found := false
+	for _, h := range hubs {
+		if h.ID == "src/core.py" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected src/core.py in hubs, got %+v", hubs)
+	}
+}
+
 func TestNodeBetweennessCentrality(t *testing.T) {
 	t.Run("nil_node", func(t *testing.T) {
 		if got := NodeBetweennessCentrality(nil); got != 0.0 {
