@@ -208,7 +208,33 @@ When you open your editor (Cursor, Windsurf, Claude Code, etc.) and send any mes
 - **Automatic Saving:** When solving a problem or defining a standard, the AI runs `sv_mem_save`, recording the learning in SQLite and syncing it to `.sv-memory/chunks/` for your Git version control.
 - **Token Ledger:** `sv_mem_stats` reports the estimated tokens injected into the session since `sv_mem_session_start` alongside the `max_response_tokens` budget, so the agent knows when to compact.
 
-#### 👤 2. Human Exploration and Inspection in the Terminal (`sv-memory tui`)
+#### 📋 2. Spec-Driven Decisions (Governance)
+
+For anything beyond a trivial fix, the agent runs the native **propose → validate → commit** cycle before writing code, optionally carrying OpenSpec-style delta requirements:
+
+- **Consult:** `sv_mem_context_pack(path="<file|pkg>", include_changes="true")` returns the node's role, linked decisions/standards, active changes, and the **capabilities implemented at that path** (bounded requirement summary) in one call.
+- **Propose:** `sv_propose_spec(slug="...", title=..., what=..., where_path=..., requirements=..., capability_path=...)` registers the change, runs a pre-flight check (a pinned overlapping rule → **BLOCK**, an ordinary overlap → **WARN**, otherwise **PASS**), and stores the delta requirements targeting a single capability (defaults to the slug).
+- **Validate:** `sv_validate_decision(change_id=...)` re-checks the proposal (PASS/WARN/BLOCK) and validates the deltas — RFC 2119 keyword presence and MODIFIED scenario drops vs the current capability state.
+- **Commit:** `sv_commit_spec(change_id=...)` saves the durable `decision`/`standard` memory, merges the deltas into the capability state (`.sv-memory/specs/capabilities/` + graph `spec` nodes), and stamps the change `applied`. A BLOCK or a merge conflict rejects the commit.
+- **Mirror:** every change and capability is projected to `.sv-memory/specs/` (git-synced). Humans can edit the Markdown; `sv-memory specs import <slug>` reconciles the edits back into the authoritative store. `sv-memory specs capabilities` lists the current requirement state.
+
+**Delta requirements format (OpenSpec):**
+
+```markdown
+## ADDED Requirements
+
+### Requirement: Theme selection
+The app SHALL let users switch between light and dark themes,
+defaulting to the system preference.
+
+#### Scenario: User toggles dark mode
+- **WHEN** the user clicks the theme toggle
+- **THEN** the app switches to dark mode and persists the choice
+```
+
+Use `## MODIFIED Requirements` to replace a whole requirement block (unlisted scenarios are dropped), `## REMOVED Requirements` to deprecate one, and `## RENAMED Requirements` (`- **FROM:**` / `- **TO:**`) to rename a header.
+
+#### 👤 3. Human Exploration and Inspection in the Terminal (`sv-memory tui`)
 
 As a developer, you can interactively inspect the state of knowledge and the health of your project by running:
 
@@ -239,6 +265,7 @@ From the TUI interface you can:
 | `sv-memory permissions revoke` | Removes sv-memory MCP permissions while keeping the rest         | If you want to remove an agent's access                      |
 | `sv-memory tui`                | Graphical terminal interface for querying memories               | When you want to explore past decisions interactively        |
 | `sv-memory sync`               | Syncs SQLite with Git files `.sv-memory/chunks/`                 | Before running `git commit` or after `git pull`              |
+| `sv-memory specs export/list/import/archive/capabilities` | Manages the spec mirror and capability state under `.sv-memory/specs/` | To review proposals, reconcile human edits, or list capabilities |
 | `sv-memory diagnose`           | Health check of the system, permissions, and DB                  | If you experience any connection issue with the AI           |
 | `sv-memory graph viz`          | Generates an HTML visualization of the code graph                | To visually audit your software architecture                 |
 | `sv-memory obsidian-export`    | Exports memories as linked notes for Obsidian                    | To integrate technical knowledge into your personal Obsidian |

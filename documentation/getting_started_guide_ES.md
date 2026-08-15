@@ -210,7 +210,33 @@ Al abrir tu editor (Cursor, Windsurf, Claude Code, etc.) y enviar cualquier mens
 - **Guardado Automático:** Al resolver un problema o definir un estándar, la IA ejecuta `sv_mem_save` registrando el aprendizaje en SQLite y sincronizándolo en `.sv-memory/chunks/` para tu control de versiones en Git.
 - **Ledger de Tokens:** `sv_mem_stats` reporta los tokens estimados inyectados en la sesión desde `sv_mem_session_start` junto con el presupuesto `max_response_tokens`, para que el agente sepa cuándo compactar.
 
-#### 👤 2. Exploración e Inspección Humana en Terminal (`sv-memory tui`)
+#### 📋 2. Decisiones Spec-Driven (Gobernanza)
+
+Para cualquier cosa que vaya más allá de un arreglo trivial, el agente ejecuta el ciclo nativo **propose → validate → commit** antes de escribir código, llevando opcionalmente delta requirements estilo OpenSpec:
+
+- **Consultar:** `sv_mem_context_pack(path="<file|pkg>", include_changes="true")` devuelve el rol del nodo, decisiones/estándares vinculados, cambios activos y las **capabilities implementadas en esa ruta** (resumen acotado de requirements) en una sola llamada.
+- **Proponer:** `sv_propose_spec(slug="...", title=..., what=..., where_path=..., requirements=..., capability_path=...)` registra el cambio, ejecuta el pre-flight (una regla pinned que solapa → **BLOCK**, un solapamiento ordinario → **WARN**, si no → **PASS**) y guarda los delta requirements apuntando a una sola capability (por defecto el slug).
+- **Validar:** `sv_validate_decision(change_id=...)` re-verifica la propuesta (PASS/WARN/BLOCK) y valida los deltas — presencia de keywords RFC 2119 y escenarios eliminados en MODIFIED contra el estado actual de la capability.
+- **Commit:** `sv_commit_spec(change_id=...)` guarda la memoria `decision`/`standard` duradera, fusiona los deltas en el estado de la capability (`.sv-memory/specs/capabilities/` + nodos `spec` del grafo) y marca el cambio `applied`. Un BLOCK o un conflicto de merge rechazan el commit.
+- **Mirror:** cada cambio y capability se proyecta a `.sv-memory/specs/` (sincronizado con Git). Los humanos pueden editar el Markdown; `sv-memory specs import <slug>` reconcilia las ediciones de vuelta al store autoritativo. `sv-memory specs capabilities` lista el estado actual de requirements.
+
+**Formato de delta requirements (OpenSpec):**
+
+```markdown
+## ADDED Requirements
+
+### Requirement: Selección de tema
+La aplicación SHALL permitir al usuario alternar entre temas claro y oscuro,
+usando la preferencia del sistema por defecto.
+
+#### Scenario: El usuario alterna al modo oscuro
+- **WHEN** el usuario hace clic en el alternador de tema
+- **THEN** la aplicación cambia a modo oscuro y persiste la elección
+```
+
+Usa `## MODIFIED Requirements` para reemplazar un bloque completo de requirement (los escenarios no listados se descartan), `## REMOVED Requirements` para deprecar uno, y `## RENAMED Requirements` (`- **FROM:**` / `- **TO:**`) para renombrar un encabezado.
+
+#### 👤 3. Exploración e Inspección Humana en Terminal (`sv-memory tui`)
 
 Como desarrollador, puedes inspeccionar interactivamente el estado del conocimiento y la salud de tu proyecto ejecutando:
 
@@ -241,6 +267,7 @@ Desde la interfaz TUI puedes:
 | `sv-memory permissions revoke` | Elimina los permisos MCP de sv-memory conservando el resto               | Si quieres quitar accesos de un agente                        |
 | `sv-memory tui`                | Interfaz gráfica en terminal para consultar memorias                     | Cuando quieras explorar decisiones pasadas interactivamente   |
 | `sv-memory sync`               | Sincroniza SQLite con archivos Git `.sv-memory/chunks/`                  | Antes de hacer `git commit` o tras hacer `git pull`           |
+| `sv-memory specs export/list/import/archive/capabilities` | Gestiona el mirror de specs y el estado de capabilities bajo `.sv-memory/specs/` | Para revisar propuestas, reconciliar ediciones humanas o listar capabilities |
 | `sv-memory diagnose`           | Chequeo de salud del sistema, permisos y BD                              | Si experimentas algún problema de conexión con la IA          |
 | `sv-memory graph viz`          | Genera una visualización HTML del grafo de código                        | Para auditar visualmente la arquitectura de tu software       |
 | `sv-memory obsidian-export`    | Exporta memorias como notas vinculadas para Obsidian                     | Para integrar el conocimiento técnico en tu Obsidian personal |

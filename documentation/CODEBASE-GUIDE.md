@@ -157,7 +157,7 @@ internal/memory/conflicts.go  ScanConflicts
 
 ## Flow 6 — Context pack (`sv_mem_context_pack`)
 
-The graph→memory bridge in one bounded call. Passing `include_changes="true"` additionally surfaces active spec changes whose `where_path` matches the path.
+The graph→memory bridge in one bounded call. Passing `include_changes="true"` additionally surfaces active spec changes whose `where_path` matches the path; capability nodes linked via `implements` edges add the "Capabilities implemented here" section (bounded: max 10 caps, 5 requirement names each).
 
 ```text
 sv_mem_context_pack(path, [include_changes])
@@ -169,6 +169,7 @@ internal/memory/contextpack.go  GetContextPack
    │  linked memories via where_path ∪ rationale_for edges
    │  each rendered as title + why truncated to bundle_why_chars
    │  (include_changes) active changes for the path (changesForPath)
+   │  capabilities reachable via 'implements' edges (capabilitiesForNode)
    ▼
 compact pack returned (max memories bounded by context_pack_max_memories)
 ```
@@ -190,6 +191,36 @@ internal/memory/sync.go  SyncToGit / SyncFromGit
    ▼
 git commit the .sv-memory/ directory (user runs git add/commit)
 ```
+
+## Flow 8 — Spec-driven decisions with delta requirements
+
+The propose → validate → commit cycle carries OpenSpec-style delta
+requirements that are merged into a durable per-capability state and wired
+into the graph.
+
+```text
+sv_propose_spec(slug, title, what, where_path, requirements, capability_path)
+   │  internal/mcp/tools_spec.go  handleProposeSpec
+   │  CreateChange (changes) + optional SetChangeCapabilityPath (default=slug)
+   │  ParseSpecDeltas → ReplaceChangeRequirements (spec_requirements)
+   │  PreflightCheck (FTS5+Jaccard vs standard/decision/architecture)
+   │  graph.EnsureSpecCapabilityEdges (spec:<cap> node + implements edge)
+   ▼
+sv_validate_decision(change_id)   ValidateChangeRequirements
+   │  RFC 2119 presence warn · MODIFIED scenario-drop warn vs spec_capabilities
+   ▼
+sv_commit_spec(change_id)
+   │  MergeChangeDeltas → MergeDeltas (spec_capabilities)
+   │    RENAMED first, ADDED strict, MODIFIED replaces block, REMOVED lenient
+   │  SaveMemory (decision/<slug>) → LinkDecisionToCapability (implements)
+   │  WriteSpecMirror: changes/<slug>.md (with deltas) + capabilities/<cap>/spec.md
+   ▼
+change applied; capability state + graph + mirror all consistent
+```
+
+Parser: `internal/memory/requirements.go` (`ParseSpecDeltas` / `DeltasToMarkdown`
+/ `ExtractRFC2119`); persistence/merge: `internal/memory/spec_requirements.go`;
+graph wiring: `internal/graph/spec_link.go`.
 
 ## Where to add a new MCP tool
 

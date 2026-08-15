@@ -42,7 +42,7 @@
 | Categoría            | Característica             | Descripción                                                                                                                                                                  |
 | :------------------- | :------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 🧠 **Memoria**       | **FTS5 BM25 & Scoping**    | Búsqueda de texto completo SQLite con clasificación BM25 y filtrado restringido por subdirectorio.                                                                           |
-| ⚖️ **Gobernanza**    | **Decisiones Spec-Driven** | Ciclo nativo propose → validate → commit: `sv_propose_spec`/`sv_validate_decision`/`sv_commit_spec` pre-validan propuestas contra reglas e invariantes antes de escribir código.                             |
+| ⚖️ **Gobernanza**    | **Decisiones Spec-Driven** | Ciclo nativo propose → validate → commit: `sv_propose_spec`/`sv_validate_decision`/`sv_commit_spec` pre-validan propuestas contra reglas e invariantes antes de escribir código, con delta requirements estilo OpenSpec (ADDED/MODIFIED/REMOVED/RENAMED + RFC 2119 + escenarios) que se fusionan en un estado por capability. |
 | ⚡ **Autonomía**     | **Auto-Boot Context**      | `sv_mem_session_start` entrega el resumen de la sesión anterior, decisiones clave y hubs del grafo en 1 sola llamada.                                                        |
 | 🧹 **Mantenimiento** | **Auto-Compaction Worker** | `sv_mem_compact` consolida revisiones históricas de topic keys para mantener la BD liviana.                                                                                  |
 | 🕸️ **Grafo**         | **Caché LRU Sub-ms**       | Parsea 17 lenguajes, comunidades Leiden, nodos god y nodos puente con caché RAM `<1ms` validado por mtime.                                                                   |
@@ -200,7 +200,7 @@ sv-memory tui
 | `sv-memory configure get/set/list` | **Instalación**   | Lee/escribe valores de configuración YAML global o por proyecto (`--local`).                          |
 | `sv-memory setup [agente]`         | **Instalación**   | Integración de agente en un solo comando (config MCP + hooks/plugins + protocolo + permisos) para claude-code, opencode, cursor, windsurf, antigravity, codex. `--all` configura todos; sin argumentos muestra el estado por agente. Ver [AGENT-SETUP_ES.md](documentation/AGENT-SETUP_ES.md). |
 | `sv-memory sync`                   | **Git Sync**      | Sincronización bidireccional entre la BD SQLite y `.sv-memory/chunks/*.json`.                         |
-| `sv-memory specs export/import/list/archive` | **Mirror Spec** | Gestiona la proyección Markdown legible por humanos de los spec changes bajo `.sv-memory/specs/` (escrita automáticamente por el sync; `import` reconcilia ediciones humanas de vuelta al store autoritativo). |
+| `sv-memory specs export/import/list/archive/capabilities` | **Mirror Spec** | Gestiona la proyección Markdown legible por humanos de los spec changes y el estado de capabilities bajo `.sv-memory/specs/` (escrita automáticamente por el sync; `import` reconcilia ediciones humanas de vuelta al store autoritativo; `capabilities` lista el estado actual de requirements). |
 | `sv-memory diagnose`               | **Diagnóstico**   | Verifica conexiones SQLite, integridad de esquema, permisos de escritura y rutas.                     |
 | `sv-memory stats`                  | **Analítica**     | Muestra conteos de memorias, guardados en 24h, sesiones activas y relaciones.                         |
 | `sv-memory export [archivo]`       | **Exportación**   | Exporta las memorias no eliminadas del proyecto a un archivo JSON portátil.                           |
@@ -247,15 +247,15 @@ sv-memory tui
 - **`sv_mem_capture_passive`**: Registra entradas de diario ligeras automáticamente.
 - **`sv_mem_capture_prompt`**: Registra lo que pidió el usuario (paridad con `mem_save_prompt` de Engram) para que las futuras sesiones tengan contexto de los objetivos del usuario; recuperable vía `sv_mem_context` y contabilizado por `sv_mem_stats`. Solo local (sin git sync).
 - **`sv_mem_merge_projects`**: Fusiona variantes de proyecto en un proyecto canónico (admin) — mueve todas las memorias, sesiones, relaciones y datos del grafo de `from` a `to`, y luego borra el origen. Refleja `sv-memory projects consolidate`.
-- **`sv_mem_context_pack`**: Fusiona el rol del grafo + memorias vinculadas para una ruta de código en una sola llamada acotada; pasa `include_changes='true'` para listar también los spec changes activos que afectan la ruta (el puente grafo→memoria para contexto eficiente en tokens).
+- **`sv_mem_context_pack`**: Fusiona el rol del grafo + memorias vinculadas + las capabilities implementadas en una ruta en una sola llamada acotada; pasa `include_changes='true'` para listar también los spec changes activos que afectan la ruta (el puente grafo→memoria para contexto eficiente en tokens).
 - **`sv_mem_conflicts`**: Muestra conflictos de memoria con análisis de superposición semántica; `action=scan semantic=true` juzga los pares candidatos con LLM vía el CLI del agente (claude/opencode).
 - **`sv_mem_compact`**: Consolida revisiones históricas de topic keys en registros de síntesis unificados.
 
 ### ⚖️ Herramientas del Motor de Decisiones (Spec-Driven)
 
-- **`sv_propose_spec`**: Registra un spec change (propuesta) y ejecuta un pre-flight check contra reglas e invariantes — una regla pinned que solapa devuelve **BLOCK**, un solapamiento ordinario **WARN**, y si no hay solapamiento **PASS**. Costo LLM cero por defecto.
-- **`sv_validate_decision`**: Re-verifica una propuesta tras ediciones (PASS/WARN/BLOCK); `semantic='true'` opta por un re-ranking batch con agente (falla abierto al veredicto determinístico).
-- **`sv_commit_spec`**: Promueve un change validado a una memoria `decision`/`standard` duradera (topic_key `decision/<slug>`), cablea la arista rationale, registra relaciones `conflicts_with` y lo marca como aplicado. Un BLOCK rechaza el commit salvo que `force='true'` lo sobreescriba.
+- **`sv_propose_spec`**: Registra un spec change (propuesta) y ejecuta un pre-flight check contra reglas e invariantes — una regla pinned que solapa devuelve **BLOCK**, un solapamiento ordinario **WARN**, y si no hay solapamiento **PASS**. Costo LLM cero por defecto. Acepta delta `requirements` estilo OpenSpec (ADDED/MODIFIED/REMOVED/RENAMED, RFC 2119, escenarios GIVEN/WHEN/THEN) apuntando a un único `capability_path`.
+- **`sv_validate_decision`**: Re-verifica una propuesta tras ediciones (PASS/WARN/BLOCK) y valida sus delta requirements contra el estado actual de la capability (presencia RFC 2119, escenarios eliminados en MODIFIED); `semantic='true'` opta por un re-ranking batch con agente (falla abierto al veredicto determinístico).
+- **`sv_commit_spec`**: Promueve un change validado a una memoria `decision`/`standard` duradera (topic_key `decision/<slug>`), cablea la arista rationale, registra relaciones `conflicts_with`, fusiona los delta requirements en el estado de la capability (`.sv-memory/specs/capabilities/` + nodos spec del grafo), y lo marca como aplicado. Un BLOCK o un conflicto de merge rechaza el commit salvo que `force='true'` lo sobreescriba.
 
 ### ⏱️ Herramientas de Sesión
 

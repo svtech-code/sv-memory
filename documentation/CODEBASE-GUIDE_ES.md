@@ -159,7 +159,7 @@ internal/memory/conflicts.go  ScanConflicts
 
 ## Flujo 6 — Context pack (`sv_mem_context_pack`)
 
-El puente grafo→memoria en una sola llamada acotada. Pasando `include_changes="true"` además se exponen los spec changes activos cuyo `where_path` coincide con la ruta.
+El puente grafo→memoria en una sola llamada acotada. Pasando `include_changes="true"` además se exponen los spec changes activos cuyo `where_path` coincide con la ruta; los nodos de capability enlazados vía aristas `implements` añaden la sección "Capabilities implemented here" (acotada: máx 10 caps, 5 nombres de requirement cada una).
 
 ```text
 sv_mem_context_pack(path, [include_changes])
@@ -171,6 +171,7 @@ internal/memory/contextpack.go  GetContextPack
    │  memorias vinculadas vía where_path ∪ aristas rationale_for
    │  cada una renderizada como título + why truncado a bundle_why_chars
    │  (include_changes) changes activos de la ruta (changesForPath)
+   │  capabilities alcanzables vía aristas 'implements' (capabilitiesForNode)
    ▼
 pack compacto devuelto (memorias limitadas por context_pack_max_memories)
 ```
@@ -192,6 +193,35 @@ internal/memory/sync.go  SyncToGit / SyncFromGit
    ▼
 git commit del directorio .sv-memory/ (el usuario corre git add/commit)
 ```
+
+## Flujo 8 — Decisiones spec-driven con delta requirements
+
+El ciclo propose → validate → commit lleva delta requirements estilo OpenSpec
+que se fusionan en un estado durable por capability y se conectan al grafo.
+
+```text
+sv_propose_spec(slug, title, what, where_path, requirements, capability_path)
+   │  internal/mcp/tools_spec.go  handleProposeSpec
+   │  CreateChange (changes) + opcional SetChangeCapabilityPath (default=slug)
+   │  ParseSpecDeltas → ReplaceChangeRequirements (spec_requirements)
+   │  PreflightCheck (FTS5+Jaccard vs standard/decision/architecture)
+   │  graph.EnsureSpecCapabilityEdges (nodo spec:<cap> + arista implements)
+   ▼
+sv_validate_decision(change_id)   ValidateChangeRequirements
+   │  warn de presencia RFC 2119 · warn de escenario eliminado en MODIFIED vs spec_capabilities
+   ▼
+sv_commit_spec(change_id)
+   │  MergeChangeDeltas → MergeDeltas (spec_capabilities)
+   │    RENAMED primero, ADDED estricto, MODIFIED reemplaza bloque, REMOVED leniente
+   │  SaveMemory (decision/<slug>) → LinkDecisionToCapability (implements)
+   │  WriteSpecMirror: changes/<slug>.md (con deltas) + capabilities/<cap>/spec.md
+   ▼
+cambio aplicado; estado de capability + grafo + mirror consistentes
+```
+
+Parser: `internal/memory/requirements.go` (`ParseSpecDeltas` / `DeltasToMarkdown`
+/ `ExtractRFC2119`); persistencia/merge: `internal/memory/spec_requirements.go`;
+wiring al grafo: `internal/graph/spec_link.go`.
 
 ## Dónde añadir una nueva herramienta MCP
 
