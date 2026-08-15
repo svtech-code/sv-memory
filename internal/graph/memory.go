@@ -313,22 +313,37 @@ func NodeCommunityID(n *Node) int {
 	return 0
 }
 
-// FindNode performs a fuzzy match to find a node ID, prioritizing exact matches.
+// FindNode performs a deterministic fuzzy match to find a node ID, prioritizing
+// exact matches (ID, then path, then label) and, within a tie, the shortest ID
+// (most specific) with an alphabetical fallback. Go's map iteration order is
+// randomized, so without this ordering a query that matches several nodes would
+// resolve to a different node on every call, producing inconsistent context for
+// sv_graph_query / sv_graph_path / sv_graph_explain.
 func (g *InMemoryGraph) FindNode(start string) string {
 	if _, ok := g.Nodes[start]; ok {
 		return start
 	}
-	// Try finding by path first
+
+	bestID := ""
+	bestRank := 0
 	for id, n := range g.Nodes {
-		if n.Path == start {
-			return id
+		var rank int
+		switch {
+		case n.Path == start:
+			rank = 4
+		case n.Label == start:
+			rank = 3
+		case strings.Contains(id, start) || strings.Contains(n.Label, start):
+			rank = 2
+		}
+		if rank == 0 {
+			continue
+		}
+		if rank > bestRank ||
+			(rank == bestRank && (len(id) < len(bestID) || (len(id) == len(bestID) && id < bestID))) {
+			bestID = id
+			bestRank = rank
 		}
 	}
-	// Fuzzy match
-	for id, n := range g.Nodes {
-		if strings.Contains(id, start) || strings.Contains(n.Label, start) {
-			return id
-		}
-	}
-	return ""
+	return bestID
 }

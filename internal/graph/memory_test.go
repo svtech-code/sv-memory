@@ -7,6 +7,43 @@ import (
 	"github.com/svtech-code/sv-memory/internal/db"
 )
 
+func TestFindNodeDeterministic(t *testing.T) {
+	g := &InMemoryGraph{
+		Nodes: map[string]*Node{
+			"auth.go":                {ID: "auth.go", Label: "auth.go", Path: "auth.go"},
+			"src/auth/middleware.py": {ID: "src/auth/middleware.py", Label: "auth_middleware", Path: "src/auth/middleware.py"},
+			"src/auth/handler.py":    {ID: "src/auth/handler.py", Label: "auth_handler", Path: "src/auth/handler.py"},
+			"oauth.go":               {ID: "oauth.go", Label: "oauth", Path: "oauth.go"},
+			"AuthorizeUser":          {ID: "AuthorizeUser", Label: "AuthorizeUser", Path: "src/auth/service.go"},
+		},
+	}
+
+	// "auth" is a substring of several IDs; the shortest matching ID must win
+	// deterministically (auth.go, not oauth.go or the src/auth files).
+	got := g.FindNode("auth")
+	if got != "auth.go" {
+		t.Errorf("FindNode(\"auth\") = %q, want %q (shortest match)", got, "auth.go")
+	}
+	for i := 0; i < 20; i++ {
+		if again := g.FindNode("auth"); again != got {
+			t.Errorf("FindNode(\"auth\") unstable: got %q then %q", got, again)
+		}
+	}
+
+	// Exact ID wins over substring matches.
+	if got := g.FindNode("oauth.go"); got != "oauth.go" {
+		t.Errorf("FindNode(\"oauth.go\") = %q, want %q", got, "oauth.go")
+	}
+	// Exact label wins over substring matches.
+	if got := g.FindNode("auth_handler"); got != "src/auth/handler.py" {
+		t.Errorf("FindNode(\"auth_handler\") = %q, want %q", got, "src/auth/handler.py")
+	}
+	// No match.
+	if got := g.FindNode("nonexistent_xyz"); got != "" {
+		t.Errorf("FindNode(\"nonexistent_xyz\") = %q, want \"\"", got)
+	}
+}
+
 func TestNodeBetweennessCentrality(t *testing.T) {
 	t.Run("nil_node", func(t *testing.T) {
 		if got := NodeBetweennessCentrality(nil); got != 0.0 {

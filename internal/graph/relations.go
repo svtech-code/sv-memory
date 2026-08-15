@@ -13,13 +13,30 @@ func resolveImport(projPath, sourcePath, imp string, nodes map[string]*Node) (st
 	// If it's a relative path (starts with . or ..)
 	if strings.HasPrefix(imp, ".") {
 		sourceDir := filepath.Dir(sourcePath)
-		resolvedRel := filepath.Clean(filepath.Join(sourceDir, imp))
+		// Leading dots are levels up from the source's package directory.
+		// This matches Python's relative imports ("from .models import X" →
+		// ".models" resolves against the source directory) and is equivalent
+		// to filepath.Join for JS/TS relative paths ("../utils", "./foo").
+		rel := imp
+		up := 0
+		for len(rel) > 0 && rel[0] == '.' {
+			up++
+			rel = rel[1:]
+		}
+		baseDir := sourceDir
+		for i := 1; i < up; i++ {
+			baseDir = filepath.Dir(baseDir)
+		}
+		resolvedRel := filepath.Clean(filepath.Join(baseDir, rel))
 		// Node ids/paths are canonicalized to forward slashes (see scanner), so
 		// normalize the resolved import on Windows where filepath uses "\".
 		resolvedRel = filepath.ToSlash(resolvedRel)
 
-		// Check options with extensions
-		exts := []string{"", ".ts", ".js", ".tsx", ".jsx", ".astro", ".sh", ".lua", "/index.ts", "/index.js", "/index.tsx", "/index.jsx"}
+		// Check options with extensions. The list is shared across languages:
+		// tree-sitter Python emits relative imports (from .models import X →
+		// ".models") that must resolve to "models.py", and "from . import sub"
+		// can resolve to a package's __init__.py.
+		exts := []string{"", ".ts", ".js", ".tsx", ".jsx", ".astro", ".sh", ".lua", ".py", ".pyi", "/index.ts", "/index.js", "/index.tsx", "/index.jsx", "/index.py", "/__init__.py", "/__init__.pyi"}
 		for _, ext := range exts {
 			testPath := resolvedRel + ext
 			if _, exists := nodes[testPath]; exists {
