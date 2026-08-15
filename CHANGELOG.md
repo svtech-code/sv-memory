@@ -3,7 +3,7 @@
 All notable changes follow [Conventional Commits](https://www.conventionalcommits.org/).
 Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automatically.
 
-## [Unreleased]
+## [v0.11.0] - 2026-08-15
 
 ### Added
 
@@ -15,6 +15,13 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 ### Changed
 
 - **`sv_graph_query` is now token-efficient by default:** it emits a compact, LLM-friendly textual edge list (`source →[rel]→ target` with confidence) instead of the token-heavy Mermaid diagram. The Mermaid rendering is still available opt-in via a new `mermaid=true` parameter, and the node list plus the edge-confidence breakdown are kept. This roughly halves the output size of the common "what does X import/depend on" query, directly reducing context tokens for the agent. The `tokenBenchmark` block was dropped from this tool's output.
+
+### Fixed
+
+- **Critical data-integrity and security bugs (Phase A):** the legacy graph migration no longer drops `graph_nodes`/`graph_edges` without recreating them (it now rebuilds the composite-PK schema and surfaces errors); `ValidateWritePath` detects symlink escapes for non-existent write targets; the Obsidian export uses the validated vault path; `projects consolidate` rejects self-merges; topic-key upserts preserve the original `created_at`; new memories store `last_seen_at` instead of a zero-time sentinel that read back as ~738000 days stale; Claude Code hook install/uninstall preserve user hooks instead of clobbering them; the protocol marker injector rewrites only the block region instead of the whole file; hook scripts use a portable hash instead of the broken `md5 -qs`; and lazy incremental graph sync no longer drops cross-file `calls` edges.
+- **Medium correctness bugs (Phase B):** FTS5 tokens are quoted in `FindSimilarMemories` (no more `-`/`_` operator injection); timestamps are compared by value instead of fragile string formats; the 24-hour dedup window compares against a Go-computed cutoff instead of UTC `datetime('now')`; `SaveJudgment` replaces duplicate relations; `SaveMemory`/`DeleteProject`/`DeleteMemory` are transactional and clean derived data; `composer.json` dependencies parse from `require`/`require-dev`; manifest files are probed for staleness; stdlib subpackages (`net/http`) are recognized; `sv_graph_god_nodes` no longer serves stale centrality; the `sv_mem_context` limit is honored; and `NewDBPool` propagates reader-open errors instead of degrading to the writer as a reader.
+- **Graph resolution (G2/G3):** `FindNode` is deterministic (the same query resolves to the same node across runs) and Python relative imports (`from .models import X`) resolve to project files; external package nodes (`pkg:*`) no longer crowd out real code hubs in `TopDegreeNodes`/`sv_graph_god_nodes`.
+- **CI timing fix:** the incremental git-sync watermark is captured at the start of the sync and compared inclusively (`>=`), so the `-cover`-induced timing race that flaked `TestSyncToGitIncremental` in CI no longer drops changed-memory chunk rewrites.
 
 ## [v0.10.0] - 2026-08-12
 
@@ -345,4 +352,7 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 [v0.6.0]: https://github.com/svtech-code/sv-memory/releases/tag/v0.6.0
 [v0.7.0]: https://github.com/svtech-code/sv-memory/releases/tag/v0.7.0
 [v0.8.0]: https://github.com/svtech-code/sv-memory/compare/v0.7.0...v0.8.0
-[Unreleased]: https://github.com/svtech-code/sv-memory/compare/v0.8.0...main
+[v0.9.0]: https://github.com/svtech-code/sv-memory/compare/v0.8.0...v0.9.0
+[v0.10.0]: https://github.com/svtech-code/sv-memory/compare/v0.9.0...v0.10.0
+[v0.11.0]: https://github.com/svtech-code/sv-memory/compare/v0.10.0...v0.11.0
+[Unreleased]: https://github.com/svtech-code/sv-memory/compare/v0.11.0...main
