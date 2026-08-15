@@ -3,6 +3,12 @@
 All notable changes follow [Conventional Commits](https://www.conventionalcommits.org/).
 Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automatically.
 
+## [Unreleased]
+
+### Changed
+
+- **`sv_graph_query` is now token-efficient by default:** it emits a compact, LLM-friendly textual edge list (`source →[rel]→ target` with confidence) instead of the token-heavy Mermaid diagram. The Mermaid rendering is still available opt-in via a new `mermaid=true` parameter, and the node list plus the edge-confidence breakdown are kept. This roughly halves the output size of the common "what does X import/depend on" query, directly reducing context tokens for the agent. The `tokenBenchmark` block was dropped from this tool's output.
+
 ## [v0.10.0] - 2026-08-12
 
 ### Added

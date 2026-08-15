@@ -695,6 +695,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		mcp.WithString("depth", mcp.Description("Hop distance depth in the dependency graph (default is '1')")),
 		mcp.WithString("relation_type", mcp.Description("Filter by relation type ('imports', 'calls', 'depends_on')")),
 		mcp.WithString("direction", mcp.Description("Filter by direction ('in', 'out', 'all')")),
+		mcp.WithString("mermaid", mcp.Description("Render the edges as a Mermaid diagram instead of the compact textual edge list (default 'false')")),
 		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response. Response is truncated with a notice when exceeded. Default '0' (unlimited).")),
 	)
 	ms.AddTool(graphQueryTool, s.handleGraphQuery)

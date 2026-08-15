@@ -37,6 +37,7 @@ func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) 
 
 	relationType := req.GetString("relation_type", "")
 	direction := req.GetString("direction", "out")
+	mermaidFlag := req.GetString("mermaid", "") == "true"
 	tokenBudget := resolveTokenBudget(req.GetString("token_budget", ""))
 
 	// Load or retrieve the in-memory graph cache.
@@ -52,19 +53,6 @@ func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) 
 
 	if len(subGraph.Nodes) == 0 {
 		return mcp.NewToolResultText(fmt.Sprintf("No nodes found matching '%s' in the project graph.", pathOrNode)), nil
-	}
-
-	commColors := []string{
-		"#ECECFF", // light purple
-		"#FFF0F5", // lavender blush
-		"#F0FFF0", // honeydew
-		"#F5F5DC", // beige
-		"#FFF8DC", // cornsilk
-		"#F0F8FF", // alice blue
-		"#FDF5E6", // old lace
-		"#FFF5EE", // seashell
-		"#F5FFFA", // mint cream
-		"#F0FFFF", // azure
 	}
 
 	commLabels := computeCommLabels(g)
@@ -100,29 +88,44 @@ func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) 
 	}
 
 	if len(subGraph.Edges) > 0 {
-		sb.WriteString("### Mermaid Dependency Diagram:\n")
-		sb.WriteString("```mermaid\ngraph TD\n")
-		for _, edge := range subGraph.Edges {
-			srcEscaped := escapeMermaid(edge.SourceID)
-			tgtEscaped := escapeMermaid(edge.TargetID)
-
-			if edge.RelationType == "imports" {
-				fmt.Fprintf(&sb, "    %s -->|imports| %s\n", srcEscaped, tgtEscaped)
-			} else {
-				fmt.Fprintf(&sb, "    %s -->|%s| %s\n", srcEscaped, edge.RelationType, tgtEscaped)
+		if mermaidFlag {
+			commColors := []string{
+				"#ECECFF", "#FFF0F5", "#F0FFF0", "#F5F5DC", "#FFF8DC",
+				"#F0F8FF", "#FDF5E6", "#FFF5EE", "#F5FFFA", "#F0FFFF",
 			}
-		}
+			sb.WriteString("### Mermaid Dependency Diagram:\n")
+			sb.WriteString("```mermaid\ngraph TD\n")
+			for _, edge := range subGraph.Edges {
+				srcEscaped := escapeMermaid(edge.SourceID)
+				tgtEscaped := escapeMermaid(edge.TargetID)
 
-		for _, node := range subGraph.Nodes {
-			cID := graph.NodeCommunityID(node)
-			if cID > 0 {
-				nodeEscaped := escapeMermaid(node.ID)
-				color := commColors[(cID-1)%len(commColors)]
-				fmt.Fprintf(&sb, "    style %s fill:%s,stroke:#333,stroke-width:1px\n", nodeEscaped, color)
+				if edge.RelationType == "imports" {
+					fmt.Fprintf(&sb, "    %s -->|imports| %s\n", srcEscaped, tgtEscaped)
+				} else {
+					fmt.Fprintf(&sb, "    %s -->|%s| %s\n", srcEscaped, edge.RelationType, tgtEscaped)
+				}
 			}
-		}
 
-		sb.WriteString("```\n")
+			for _, node := range subGraph.Nodes {
+				cID := graph.NodeCommunityID(node)
+				if cID > 0 {
+					nodeEscaped := escapeMermaid(node.ID)
+					color := commColors[(cID-1)%len(commColors)]
+					fmt.Fprintf(&sb, "    style %s fill:%s,stroke:#333,stroke-width:1px\n", nodeEscaped, color)
+				}
+			}
+
+			sb.WriteString("```\n")
+		} else {
+			// Default: a compact, LLM-friendly edge list instead of the Mermaid
+			// block, which is token-heavy and rarely rendered by an agent.
+			sb.WriteString("### Edges:\n")
+			for _, edge := range subGraph.Edges {
+				fmt.Fprintf(&sb, "- `%s` →[%s]→ `%s` (%s)\n",
+					edge.SourceID, edge.RelationType, edge.TargetID, edge.Confidence)
+			}
+			sb.WriteString("\n")
+		}
 
 		// Confidence breakdown
 		var extracted, inferred, ambiguous int
@@ -149,11 +152,6 @@ func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) 
 		}
 	} else {
 		sb.WriteString("*No connections/edges found in this range.*\n")
-	}
-
-	benchmark := tokenBenchmark(subGraph.Nodes, sb.Len()/4)
-	if benchmark != "" {
-		sb.WriteString("\n" + benchmark + "\n")
 	}
 
 	responseText := sb.String()

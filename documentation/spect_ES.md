@@ -627,13 +627,14 @@ Fusiona variantes de nombre de proyecto en un único proyecto canónico (paridad
 
 ### 20. `sv_graph_query`
 
-Consulta relaciones estructurales mediante Búsqueda en Anchura (BFS). Devuelve un diagrama Mermaid.
+Consulta relaciones estructurales mediante Búsqueda en Anchura (BFS). Por defecto devuelve una lista de edges textual compacta y eficiente en tokens (`source →[rel]→ target`); pasa `mermaid=true` para renderizar un diagrama Mermaid en su lugar.
 
 - **Parámetros:**
   - `path_or_node` (string, requerido): Ruta de archivo o módulo central.
   - `depth` (string, opcional): Distancia de salto (por defecto `1`).
   - `relation_type` (string, opcional): Filtro (p. ej., `'imports'`, `'calls'`, `'depends_on'`).
   - `direction` (string, opcional): Dirección del recorrido: `'in'` | `'out'` | `'all'` (por defecto `'out'`).
+  - `mermaid` (string, opcional): Renderiza los edges como diagrama Mermaid en lugar de la lista textual compacta (por defecto `'false'`).
   - `token_budget` (string, opcional): Máximo de tokens para la respuesta; la respuesta se trunca con un aviso al superarse (por defecto desde config `max_response_tokens`, 4000; `'0'` = ilimitado).
 
 ### 21. `sv_graph_path`

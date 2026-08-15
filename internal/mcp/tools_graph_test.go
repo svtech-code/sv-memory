@@ -113,6 +113,53 @@ func TestGraphGodNodesHandler(t *testing.T) {
 	}
 }
 
+func TestGraphQueryCompactDefaultAndMermaidOptIn(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	writeMockCodeFiles(t, tempDir)
+
+	server := NewServer(pool, cfg)
+	queryTool := server.GetTool("sv_graph_query")
+	if queryTool == nil {
+		t.Fatal("sv_graph_query tool not registered")
+	}
+	ctx := context.Background()
+
+	run := func(args map[string]any) string {
+		t.Helper()
+		req := mcpgo.CallToolRequest{}
+		req.Params.Name = "sv_graph_query"
+		req.Params.Arguments = args
+		res, err := queryTool.Handler(ctx, req)
+		if err != nil {
+			t.Fatalf("sv_graph_query failed: %v", err)
+		}
+		return textContent(res.Content[0])
+	}
+
+	// Default: compact textual edge list, no Mermaid block, breakdown kept.
+	out := run(map[string]any{"path_or_node": "index.js", "depth": "1"})
+	if !strings.Contains(out, "→[imports]→") {
+		t.Errorf("default output should contain the textual edge list, got:\n%s", out)
+	}
+	if strings.Contains(out, "```mermaid") {
+		t.Errorf("default output should NOT contain a Mermaid diagram, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Edge Confidence Breakdown") {
+		t.Errorf("default output should keep the confidence breakdown, got:\n%s", out)
+	}
+
+	// Opt-in: Mermaid diagram replaces the textual edge list.
+	outMermaid := run(map[string]any{"path_or_node": "index.js", "depth": "1", "mermaid": "true"})
+	if !strings.Contains(outMermaid, "```mermaid") {
+		t.Errorf("mermaid=true should render the Mermaid diagram, got:\n%s", outMermaid)
+	}
+	if strings.Contains(outMermaid, "→[imports]→") {
+		t.Errorf("mermaid=true should not emit the textual edge list, got:\n%s", outMermaid)
+	}
+}
+
 func TestEscapeMermaid(t *testing.T) {
 	tests := []struct {
 		name string

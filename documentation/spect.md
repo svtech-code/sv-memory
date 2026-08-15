@@ -628,13 +628,14 @@ Merges project name variants into a single canonical project (Engram `mem_merge_
 
 ### 20. `sv_graph_query`
 
-Queries structural relations using a Breadth-First Search (BFS). Returns a Mermaid diagram.
+Queries structural relations using a Breadth-First Search (BFS). By default it returns a compact, token-efficient textual edge list (`source →[rel]→ target`); pass `mermaid=true` to render a Mermaid diagram instead.
 
 - **Parameters:**
   - `path_or_node` (string, required): File path or module to center on.
   - `depth` (string, optional): Hop distance (default `1`).
   - `relation_type` (string, optional): Filter (e.g., `'imports'`, `'calls'`, `'depends_on'`).
   - `direction` (string, optional): Traversal direction: `'in'` | `'out'` | `'all'` (default `'out'`).
+  - `mermaid` (string, optional): Render the edges as a Mermaid diagram instead of the compact textual edge list (default `'false'`).
   - `token_budget` (string, optional): Max tokens for the response; the response is truncated with a notice when exceeded (default from config `max_response_tokens`, 4000; `'0'` = unlimited).
 
 ### 21. `sv_graph_path`
