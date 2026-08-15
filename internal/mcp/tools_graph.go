@@ -262,6 +262,7 @@ func (s *Server) handleGraphSync(ctx context.Context, req mcp.CallToolRequest) (
 		return mcp.NewToolResultText("Dependency graph is already up to date (no file changes detected)."), nil
 	}
 	s.relinkMemoryRationales()
+	s.relinkSpecCapabilities()
 	return mcp.NewToolResultText("Dependency graph refreshed and synchronized successfully in SQLite."), nil
 }
 

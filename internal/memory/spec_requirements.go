@@ -430,6 +430,85 @@ func CapabilityToMarkdown(capabilityPath string, reqs []CapabilityRequirement) s
 	return strings.TrimSpace(sb.String())
 }
 
+// RequirementIssue is a validation finding on a change's delta requirements.
+type RequirementIssue struct {
+	Level   string `json:"level"` // "warn" | "error"
+	Message string `json:"message"`
+}
+
+// ValidateChangeRequirements validates a change's delta requirements against
+// the current capability state. It warns when an ADDED/MODIFIED requirement
+// body lacks RFC 2119 keywords (SHALL/MUST), and when a MODIFIED block drops a
+// scenario the current state still has. The MODIFIED-drop check is silent when
+// the requirement header is absent from the current state (the base has not
+// landed yet, or it is renamed by this same change), matching OpenSpec.
+func ValidateChangeRequirements(db *sql.DB, projectID, changeID string) ([]RequirementIssue, error) {
+	c, err := GetChange(db, projectID, changeID)
+	if err != nil {
+		return nil, err
+	}
+	if c == nil {
+		return nil, fmt.Errorf("change %s not found in project", changeID)
+	}
+	deltas, err := LoadChangeDeltas(db, projectID, changeID)
+	if err != nil {
+		return nil, err
+	}
+	var issues []RequirementIssue
+	if len(deltas) == 0 {
+		return issues, nil
+	}
+
+	current, err := CapabilityRequirements(db, projectID, c.CapabilityPath)
+	if err != nil {
+		return nil, err
+	}
+	currentScenarios := map[string][]string{}
+	for _, r := range current {
+		var names []string
+		for _, sc := range r.Scenarios {
+			names = append(names, sc.Name)
+		}
+		currentScenarios[r.Requirement] = names
+	}
+
+	for _, d := range deltas {
+		switch d.Op {
+		case DeltaAdded, DeltaModified:
+			for _, r := range d.Requirements {
+				body := strings.TrimSpace(r.Body)
+				if body != "" && len(ExtractRFC2119(body)) == 0 {
+					issues = append(issues, RequirementIssue{
+						Level:   "warn",
+						Message: fmt.Sprintf("Requirement %q has a body without RFC 2119 keywords (SHALL/MUST).", r.Name),
+					})
+				}
+				if d.Op == DeltaModified {
+					for _, name := range currentScenarios[r.Name] {
+						if !scenarioNamed(r.Scenarios, name) {
+							issues = append(issues, RequirementIssue{
+								Level:   "warn",
+								Message: fmt.Sprintf("MODIFIED %q drops scenario %q from the current capability state.", r.Name, name),
+							})
+						}
+					}
+				}
+			}
+		}
+	}
+	return issues, nil
+}
+
+// scenarioNamed reports whether any scenario in the list carries the given name.
+func scenarioNamed(scenarios []Scenario, name string) bool {
+	for _, sc := range scenarios {
+		if sc.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 func marshalScenarios(scenarios []Scenario) string {
 	if len(scenarios) == 0 {
 		return "[]"

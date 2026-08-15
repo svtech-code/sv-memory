@@ -54,6 +54,15 @@ type ContextChange struct {
 	Title  string
 }
 
+// ContextCapability is a capability (a 'spec' graph node) that the target path
+// implements, surfaced by the context pack with a bounded requirement summary
+// so the agent sees the applicable contract without reading the full spec.
+type ContextCapability struct {
+	CapabilityPath   string
+	RequirementCount int
+	Requirements     []string
+}
+
 // ContextPack is the fused, token-efficient context for a code path: the
 // node's structural role plus the memories that explain why the code is the
 // way it is (decisions/standards/bugfixes linked to that path).
@@ -63,6 +72,7 @@ type ContextPack struct {
 	Dependents   []ContextNeighbor
 	Dependencies []ContextNeighbor
 	Changes      []ContextChange
+	Capabilities []ContextCapability
 }
 
 // ResolveContextNode finds the graph node matching query, trying exact id,
@@ -207,6 +217,13 @@ func GetContextPack(db *sql.DB, projectID, query string, maxMemories int, includ
 		if err != nil {
 			return nil, err
 		}
+
+		// 4. Capabilities this node implements (spec nodes reached via
+		// 'implements' edges), each with a bounded requirement summary.
+		pack.Capabilities, err = capabilitiesForNode(db, projectID, node.ID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if len(mems) > maxMemories {
@@ -222,6 +239,64 @@ func GetContextPack(db *sql.DB, projectID, query string, maxMemories int, includ
 	}
 	return pack, nil
 }
+
+// capabilitiesForNode lists the capabilities (spec nodes) that node implements,
+// i.e. capabilities reachable from node via an 'implements' edge. Each entry is
+// bounded: at most maxContextCaps capabilities, each with at most
+// maxContextReqNames requirement names and a total requirement count. The
+// capability paths are collected first (closing the edge rows) so the per-cap
+// count query never nests inside an open result set.
+func capabilitiesForNode(db *sql.DB, projectID, nodeID string) ([]ContextCapability, error) {
+	rows, err := db.Query(`
+		SELECT n.path
+		FROM graph_edges e
+		JOIN graph_nodes n ON n.id = e.target_id AND n.project_id = e.project_id
+		WHERE e.project_id = ? AND e.relation_type = 'implements' AND e.source_id = ?
+		  AND n.node_type = 'spec'
+		ORDER BY n.path
+		LIMIT ?`, projectID, nodeID, maxContextCaps)
+	if err != nil {
+		return nil, fmt.Errorf("failed querying capabilities: %w", err)
+	}
+	var caps []ContextCapability
+	for rows.Next() {
+		var capPath string
+		if scanErr := rows.Scan(&capPath); scanErr != nil {
+			rows.Close()
+			return nil, scanErr
+		}
+		caps = append(caps, ContextCapability{CapabilityPath: capPath})
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	for i := range caps {
+		var names string
+		if err := db.QueryRow(`
+			SELECT COUNT(*), COALESCE(GROUP_CONCAT(requirement, ' · '), '')
+			FROM spec_capabilities
+			WHERE project_id = ? AND capability_path = ?`, projectID, caps[i].CapabilityPath).Scan(&caps[i].RequirementCount, &names); err != nil {
+			return nil, err
+		}
+		parts := strings.Split(names, " · ")
+		if len(parts) > maxContextReqNames {
+			parts = parts[:maxContextReqNames]
+		}
+		caps[i].Requirements = parts
+	}
+	return caps, nil
+}
+
+// Bounds for the context-pack capability surfacing, keeping the pack
+// token-efficient: the agent reads the full spec mirror only on demand.
+const (
+	maxContextCaps     = 10
+	maxContextReqNames = 5
+)
 
 // changesForPath lists active (not archived/rejected) spec changes whose
 // where_path matches the query path, most recently created first. Best-effort:
@@ -409,8 +484,27 @@ func RenderContextPack(p *ContextPack, whyChars int) string {
 		sb.WriteString("\n*Review with `sv_validate_decision(change_id=\"<id>\")` before modifying this code.*\n")
 	}
 
-	if p.Node == nil && len(p.Memories) == 0 && len(p.Changes) == 0 {
+	if len(p.Capabilities) > 0 {
+		sb.WriteString("\n### Capabilities implemented here:\n")
+		for _, cap := range p.Capabilities {
+			fmt.Fprintf(&sb, "- **%s** (%d requirement%s)", cap.CapabilityPath, cap.RequirementCount, plural(cap.RequirementCount))
+			if len(cap.Requirements) > 0 {
+				sb.WriteString(": " + strings.Join(cap.Requirements, ", "))
+			}
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n*Full spec: `.sv-memory/specs/capabilities/<cap>/spec.md` — drill down with `sv_mem_context_pack` or `sv_graph_query`.*\n")
+	}
+
+	if p.Node == nil && len(p.Memories) == 0 && len(p.Changes) == 0 && len(p.Capabilities) == 0 {
 		return "No context found: no matching graph node and no path-scoped memories for the given path."
 	}
 	return strings.TrimSpace(sb.String())
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }

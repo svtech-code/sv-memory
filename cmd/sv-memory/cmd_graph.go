@@ -271,6 +271,12 @@ var rebuildCmd = &cobra.Command{
 					return rErr
 				}
 			}
+			// Re-link spec capability nodes and implements edges.
+			if sRefs, sErr := memory.ActiveSpecCapabilityRefs(database, cfg.ProjectID); sErr == nil && len(sRefs) > 0 {
+				if sErr := graph.RelinkSpecCapabilityEdges(database, cfg.ProjectID, sRefs); sErr != nil {
+					return sErr
+				}
+			}
 			fmt.Println("Dependency graph rebuild complete.")
 			return nil
 		})

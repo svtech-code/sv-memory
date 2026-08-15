@@ -92,6 +92,52 @@ func ActiveMemoryRationaleRefs(db *sql.DB, projectID string) ([]graph.MemoryRati
 	return refs, rows.Err()
 }
 
+// ActiveSpecCapabilityRefs returns the spec capabilities that should be linked
+// into the graph after a rebuild: every capability in the materialized current
+// state (capability node without a code edge) plus every non-terminal change
+// that carries requirements (capability node + implements edge to where_path).
+func ActiveSpecCapabilityRefs(db *sql.DB, projectID string) ([]graph.SpecCapabilityRef, error) {
+	var refs []graph.SpecCapabilityRef
+
+	rows, err := db.Query(`
+		SELECT c.id, c.capability_path, COALESCE(c.where_path, '')
+		FROM changes c
+		WHERE c.project_id = ? AND c.status NOT IN ('archived', 'rejected')
+		  AND c.capability_path IS NOT NULL AND c.capability_path != ''
+		  AND EXISTS (SELECT 1 FROM spec_requirements r
+		              WHERE r.project_id = c.project_id AND r.change_id = c.id)`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list changes for spec re-linking: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ref graph.SpecCapabilityRef
+		if err = rows.Scan(&ref.ChangeID, &ref.CapabilityPath, &ref.WherePath); err != nil {
+			return nil, err
+		}
+		refs = append(refs, ref)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	capRows, err := db.Query(`
+		SELECT DISTINCT capability_path FROM spec_capabilities
+		WHERE project_id = ?`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list capabilities for graph re-linking: %w", err)
+	}
+	defer capRows.Close()
+	for capRows.Next() {
+		var p string
+		if err = capRows.Scan(&p); err != nil {
+			return nil, err
+		}
+		refs = append(refs, graph.SpecCapabilityRef{CapabilityPath: p})
+	}
+	return refs, capRows.Err()
+}
+
 // PinMemory marks a memory as pinned (local context priority). Pinned memories
 // surface first in session context so key decisions stay visible.
 func PinMemory(db *sql.DB, projectID, id string) error {

@@ -389,6 +389,209 @@ func TestCommitSpecMissingChange(t *testing.T) {
 	}
 }
 
+func TestProposeSpecWithRequirements(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	server := NewServer(pool, cfg)
+	tool := server.GetTool("sv_propose_spec")
+	if tool == nil {
+		t.Fatal("sv_propose_spec tool not registered")
+	}
+
+	ctx := context.Background()
+	req := mcpgo.CallToolRequest{}
+	req.Params.Name = "sv_propose_spec"
+	req.Params.Arguments = map[string]any{
+		"slug":            "add-2fa",
+		"title":           "Add 2FA",
+		"what":            "Require a second factor during login",
+		"where_path":      "internal/auth/",
+		"capability_path": "auth",
+		"requirements": `## ADDED Requirements
+
+### Requirement: Two-Factor Authentication
+The system MUST require a TOTP second factor during login.
+
+#### Scenario: OTP required
+- **GIVEN** a user with 2FA enabled
+- **WHEN** the user submits valid credentials
+- **THEN** an OTP challenge is presented`,
+	}
+
+	res, err := tool.Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("sv_propose_spec failed: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("sv_propose_spec errored: %v", res.Content)
+	}
+	text := textContent(res.Content[0])
+	if !strings.Contains(text, "- **Capability:** `auth`") || !strings.Contains(text, "1 added") {
+		t.Errorf("expected capability and requirement summary in response, got: %s", text)
+	}
+
+	changes, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusDraft)
+	if err != nil || len(changes) != 1 {
+		t.Fatalf("expected 1 draft change, got %d (err=%v)", len(changes), err)
+	}
+	if changes[0].CapabilityPath != "auth" {
+		t.Errorf("expected capability path auth, got %q", changes[0].CapabilityPath)
+	}
+	deltas, err := memory.LoadChangeDeltas(pool.Reader, cfg.ProjectID, changes[0].ID)
+	if err != nil {
+		t.Fatalf("failed to load deltas: %v", err)
+	}
+	if len(deltas) != 1 || len(deltas[0].Requirements) != 1 {
+		t.Fatalf("expected 1 ADDED requirement, got %+v", deltas)
+	}
+	if deltas[0].Requirements[0].Name != "Two-Factor Authentication" {
+		t.Errorf("expected requirement name, got %q", deltas[0].Requirements[0].Name)
+	}
+}
+
+func TestCommitSpecMergesRequirements(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	// Seed a canonical code node so the capability's implements edge resolves.
+	if _, err := pool.Writer.Exec(
+		"INSERT INTO graph_nodes (id, project_id, node_type, label, path, metadata) VALUES (?, ?, 'file', ?, ?, '{}')",
+		"internal/auth/auth.go", cfg.ProjectID, "auth.go", "internal/auth/auth.go",
+	); err != nil {
+		t.Fatalf("seed code node: %v", err)
+	}
+
+	server := NewServer(pool, cfg)
+	propose := server.GetTool("sv_propose_spec")
+	commit := server.GetTool("sv_commit_spec")
+
+	ctx := context.Background()
+	propReq := mcpgo.CallToolRequest{}
+	propReq.Params.Name = "sv_propose_spec"
+	propReq.Params.Arguments = map[string]any{
+		"slug":            "add-2fa",
+		"title":           "Add 2FA",
+		"what":            "Require a second factor during login",
+		"where_path":      "internal/auth/auth.go",
+		"capability_path": "auth",
+		"requirements":    "## ADDED Requirements\n\n### Requirement: Two-Factor Authentication\nThe system MUST require a TOTP second factor.\n\n#### Scenario: OTP\n- **WHEN** valid credentials\n- **THEN** an OTP challenge is presented",
+	}
+	if res, err := propose.Handler(ctx, propReq); err != nil || res.IsError {
+		t.Fatalf("propose failed: err=%v res=%v", err, res.Content)
+	}
+
+	changes, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusDraft)
+	if err != nil || len(changes) != 1 {
+		t.Fatalf("expected 1 change, got %d (err=%v)", len(changes), err)
+	}
+
+	comReq := mcpgo.CallToolRequest{}
+	comReq.Params.Name = "sv_commit_spec"
+	comReq.Params.Arguments = map[string]any{"change_id": changes[0].ID}
+	comRes, err := commit.Handler(ctx, comReq)
+	if err != nil {
+		t.Fatalf("commit failed: %v", err)
+	}
+	if comRes.IsError {
+		t.Fatalf("commit errored: %v", comRes.Content)
+	}
+	text := textContent(comRes.Content[0])
+	if !strings.Contains(text, "Committed") || !strings.Contains(text, "merged") {
+		t.Errorf("expected commit with merge confirmation, got: %s", text)
+	}
+
+	// The requirement must be merged into the capability's current state.
+	reqs, err := memory.CapabilityRequirements(pool.Reader, cfg.ProjectID, "auth")
+	if err != nil || len(reqs) != 1 {
+		t.Fatalf("expected 1 requirement in capability state, got %d (err=%v)", len(reqs), err)
+	}
+	if reqs[0].Requirement != "Two-Factor Authentication" {
+		t.Errorf("expected merged requirement, got %q", reqs[0].Requirement)
+	}
+
+	// The change must be applied.
+	applied, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusApplied)
+	if err != nil || len(applied) != 1 {
+		t.Fatalf("expected 1 applied change, got %d (err=%v)", len(applied), err)
+	}
+
+	// The capability node and the code implements edge must exist in the graph.
+	var nodeType string
+	if err = pool.Reader.QueryRow("SELECT node_type FROM graph_nodes WHERE project_id = ? AND id = 'spec:auth'", cfg.ProjectID).Scan(&nodeType); err != nil {
+		t.Fatalf("expected capability node in graph: %v", err)
+	}
+	if nodeType != "spec" {
+		t.Errorf("expected spec node type, got %q", nodeType)
+	}
+	var edgeCount int
+	if err = pool.Reader.QueryRow(
+		"SELECT COUNT(*) FROM graph_edges WHERE project_id = ? AND relation_type = 'implements' AND source_id = 'internal/auth/auth.go' AND target_id = 'spec:auth'",
+		cfg.ProjectID).Scan(&edgeCount); err != nil {
+		t.Fatalf("count implements edge: %v", err)
+	}
+	if edgeCount != 1 {
+		t.Errorf("expected 1 implements edge from code to capability, got %d", edgeCount)
+	}
+
+	// The committed decision memory is linked to the capability via implements.
+	linked, err := memory.SearchMemories(pool.Reader, cfg.ProjectID, "2fa", "decision", 5)
+	if err != nil || len(linked) != 1 {
+		t.Fatalf("expected committed decision, got %d (err=%v)", len(linked), err)
+	}
+	var decEdge int
+	if err = pool.Reader.QueryRow(
+		"SELECT COUNT(*) FROM graph_edges WHERE project_id = ? AND relation_type = 'implements' AND source_id = ? AND target_id = 'spec:auth'",
+		cfg.ProjectID, linked[0].ID).Scan(&decEdge); err != nil {
+		t.Fatalf("count decision edge: %v", err)
+	}
+	if decEdge != 1 {
+		t.Errorf("expected decision -> capability implements edge, got %d", decEdge)
+	}
+}
+
+func TestValidateDecisionReportsRequirements(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	server := NewServer(pool, cfg)
+	propose := server.GetTool("sv_propose_spec")
+	validate := server.GetTool("sv_validate_decision")
+
+	ctx := context.Background()
+	propReq := mcpgo.CallToolRequest{}
+	propReq.Params.Name = "sv_propose_spec"
+	propReq.Params.Arguments = map[string]any{
+		"slug":            "loose-login",
+		"title":           "Loose login",
+		"what":            "Relax login rules",
+		"capability_path": "auth",
+		"requirements":    "## ADDED Requirements\n\n### Requirement: Relaxed Login\nNo normative keywords here.",
+	}
+	if res, err := propose.Handler(ctx, propReq); err != nil || res.IsError {
+		t.Fatalf("propose failed: err=%v res=%v", err, res.Content)
+	}
+
+	changes, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusDraft)
+	if err != nil || len(changes) != 1 {
+		t.Fatalf("expected 1 change, got %d (err=%v)", len(changes), err)
+	}
+
+	valReq := mcpgo.CallToolRequest{}
+	valReq.Params.Name = "sv_validate_decision"
+	valReq.Params.Arguments = map[string]any{"change_id": changes[0].ID}
+	valRes, err := validate.Handler(ctx, valReq)
+	if err != nil {
+		t.Fatalf("validate failed: %v", err)
+	}
+	if valRes.IsError {
+		t.Fatalf("validate errored: %v", valRes.Content)
+	}
+	if !strings.Contains(textContent(valRes.Content[0]), "RFC 2119") {
+		t.Errorf("expected RFC 2119 requirements warning, got: %s", textContent(valRes.Content[0]))
+	}
+}
+
 func TestContextPackIncludeChanges(t *testing.T) {
 	tempDir, pool, cfg := setupTestEnv(t)
 	defer cleanupTestEnv(tempDir, pool)

@@ -89,6 +89,33 @@ func truncateTitle(s string, max int) string {
 	return strings.TrimSpace(string([]rune(s)[:max-1])) + "…"
 }
 
+var specsCapabilitiesCmd = &cobra.Command{
+	Use:   "capabilities",
+	Short: "List capabilities in the current spec state and their requirement counts",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return withProject(func(cfg *config.Config, database *sql.DB) error {
+			caps, err := memory.ListCapabilities(database, cfg.ProjectID)
+			if err != nil {
+				return err
+			}
+			if len(caps) == 0 {
+				fmt.Println("No capabilities with merged requirements yet. Propose a change with `requirements` and commit it.")
+				return nil
+			}
+			fmt.Printf("%-30s %s\n", "CAPABILITY", "REQUIREMENTS")
+			for _, cap := range caps {
+				reqs, err := memory.CapabilityRequirements(database, cfg.ProjectID, cap)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("%-30s %d\n", cap, len(reqs))
+			}
+			fmt.Println("\nMirror: .sv-memory/specs/capabilities/<cap>/spec.md")
+			return nil
+		})
+	},
+}
+
 var specsArchiveCmd = &cobra.Command{
 	Use:   "archive <slug>",
 	Short: "Move an applied change to the archived state (mirror moves to specs/archive/)",
@@ -121,6 +148,7 @@ func init() {
 	specsCmd.AddCommand(specsExportCmd)
 	specsCmd.AddCommand(specsImportCmd)
 	specsCmd.AddCommand(specsListCmd)
+	specsCmd.AddCommand(specsCapabilitiesCmd)
 	specsCmd.AddCommand(specsArchiveCmd)
 	rootCmd.AddCommand(specsCmd)
 }

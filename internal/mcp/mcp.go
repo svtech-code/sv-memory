@@ -326,6 +326,18 @@ func (s *Server) relinkMemoryRationales() {
 	}
 }
 
+// relinkSpecCapabilities re-creates the spec capability nodes and their
+// implements edges after a full graph rebuild. Best-effort.
+func (s *Server) relinkSpecCapabilities() {
+	refs, err := memory.ActiveSpecCapabilityRefs(s.pool.Writer, s.cfg.ProjectID)
+	if err != nil || len(refs) == 0 {
+		return
+	}
+	if err := graph.RelinkSpecCapabilityEdges(s.pool.Writer, s.cfg.ProjectID, refs); err != nil {
+		fmt.Fprintf(os.Stderr, "[sv-memory] relink spec capability edges failed: %v\n", err)
+	}
+}
+
 // maxFieldChars is the default maximum character count per text field in
 // sv_mem_get responses. When a field exceeds this limit it is truncated
 // with a "[truncated N chars]" suffix to keep token consumption bounded.
@@ -701,12 +713,14 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 18c. Tool: sv_propose_spec
 	proposeSpecTool := mcp.NewTool("sv_propose_spec",
-		mcp.WithDescription("Create a spec change (proposal) for the spec-driven decision engine: registers the change in the draft lifecycle state and runs a pre-flight check against the project's rules and invariants (standards, decisions, architecture memories). A pinned rule overlapping the proposal returns a BLOCK verdict; an ordinary overlap returns WARN. Use before writing code, then sv_validate_decision to re-check after edits, and sv_commit_spec to promote the change into a durable decision memory."),
+		mcp.WithDescription("Create a spec change (proposal) for the spec-driven decision engine: registers the change in the draft lifecycle state and runs a pre-flight check against the project's rules and invariants (standards, decisions, architecture memories). A pinned rule overlapping the proposal returns a BLOCK verdict; an ordinary overlap returns WARN. Optionally carries OpenSpec-style delta requirements (requirements param) targeting a single capability (capability_path, defaulting to the slug) that are merged into the capability state on commit. Use before writing code, then sv_validate_decision to re-check after edits, and sv_commit_spec to promote the change into a durable decision memory."),
 		mcp.WithString("slug", mcp.Required(), mcp.Description("Kebab-case unique identifier for the change (e.g. 'implement-session-auth'). Project-unique.")),
 		mcp.WithString("title", mcp.Required(), mcp.Description("Concise title of the proposal")),
 		mcp.WithString("what", mcp.Description("Why and what changes: the proposal body")),
 		mcp.WithString("goal", mcp.Description("Optional intent/goal of the proposal")),
 		mcp.WithString("where_path", mcp.Description("Optional affected code path (file, folder, or package) — used for AFFECTS wiring and context-pack recall")),
+		mcp.WithString("requirements", mcp.Description("Optional OpenSpec-style delta requirements (Markdown with ## ADDED/MODIFIED/REMOVED/RENAMED Requirements, ### Requirement:, #### Scenario: and GIVEN/WHEN/THEN/AND steps). Stored for validation and merged into the capability state on commit.")),
+		mcp.WithString("capability_path", mcp.Description("Optional capability this change targets (defaults to the slug). Single capability per change.")),
 		mcp.WithString("design", mcp.Description("Optional technical approach")),
 		mcp.WithString("tasks", mcp.Description("Optional implementation checklist")),
 		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
@@ -715,7 +729,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 18d. Tool: sv_validate_decision
 	validateDecisionTool := mcp.NewTool("sv_validate_decision",
-		mcp.WithDescription("Re-check an existing change's proposal against the project's rules and invariants, returning a PASS/WARN/BLOCK verdict. Deterministic by default (SQLite FTS5 + Jaccard, zero LLM cost); set semantic='true' to opt into a single batched agent re-ranking by meaning (fails open to the deterministic verdict when the agent is unavailable). Use after editing a proposal and before committing."),
+		mcp.WithDescription("Re-check an existing change's proposal against the project's rules and invariants, returning a PASS/WARN/BLOCK verdict, and validate its delta requirements (RFC 2119 keyword presence and MODIFIED scenario drops against the current capability state). Deterministic by default (SQLite FTS5 + Jaccard, zero LLM cost); set semantic='true' to opt into a single batched agent re-ranking by meaning (fails open to the deterministic verdict when the agent is unavailable). Use after editing a proposal and before committing."),
 		mcp.WithString("change_id", mcp.Required(), mcp.Description("The change ID returned by sv_propose_spec")),
 		mcp.WithString("semantic", mcp.Description("When 'true', re-rank candidates semantically via the configured agent CLI (opt-in). Default 'false'.")),
 		mcp.WithString("semantic_agent", mcp.Description("Optional agent CLI for semantic validation. Defaults to $SV_MEMORY_SEMANTIC_AGENT, then 'claude'.")),
@@ -725,7 +739,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 18e. Tool: sv_commit_spec
 	commitSpecTool := mcp.NewTool("sv_commit_spec",
-		mcp.WithDescription("Promote a validated spec change into a durable decision/standard memory: saves the decision via the memory engine (topic_key 'decision/<slug>'), links it to the change_id, wires the rationale_for edge to the affected code path, records conflicts_with relations for any pre-flight WARN/BLOCK rules, and stamps the change as applied. A pre-flight BLOCK (pinned invariant) rejects the commit unless force='true' explicitly overrides it. Call after implementation, before sv_mem_session_end."),
+		mcp.WithDescription("Promote a validated spec change into a durable decision/standard memory: saves the decision via the memory engine (topic_key 'decision/<slug>'), links it to the change_id, wires the rationale_for edge to the affected code path, records conflicts_with relations for any pre-flight WARN/BLOCK rules, merges the change's delta requirements into the capability state (spec_capabilities + .sv-memory/specs/capabilities/ mirror + graph spec nodes), and stamps the change as applied. A pre-flight BLOCK (pinned invariant) or a requirements merge conflict rejects the commit unless force='true' explicitly overrides the invariant. Call after implementation, before sv_mem_session_end."),
 		mcp.WithString("change_id", mcp.Required(), mcp.Description("The change ID returned by sv_propose_spec")),
 		mcp.WithString("category", mcp.Description("Memory category for the committed decision (default 'decision'; use 'standard' for a reusable rule)")),
 		mcp.WithString("force", mcp.Description("Set 'true' to override a pre-flight BLOCK (pinned invariant) and commit anyway. Default 'false'.")),

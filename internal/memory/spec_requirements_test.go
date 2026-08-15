@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/svtech-code/sv-memory/internal/db"
+	"github.com/svtech-code/sv-memory/internal/graph"
 )
 
 // setupSpecReqDB registers a project on a fresh in-memory store and returns the
@@ -30,6 +31,142 @@ func setupSpecReqDB(t *testing.T) (*sql.DB, string, string) {
 		t.Fatalf("failed to register project: %v", err)
 	}
 	return database, projectID, projPath
+}
+
+func TestActiveSpecCapabilityRefs(t *testing.T) {
+	database, projectID, _ := setupSpecReqDB(t)
+
+	c, err := CreateChange(database, projectID, "auth-work", "Auth work", "", "", "internal/auth/", "", "")
+	if err != nil {
+		t.Fatalf("failed to create change: %v", err)
+	}
+	if _, err = SetChangeCapabilityPath(database, projectID, c.ID, "auth"); err != nil {
+		t.Fatalf("failed to set capability: %v", err)
+	}
+	if err = ReplaceChangeRequirements(database, projectID, c.ID, "auth", []Delta{{Op: DeltaAdded, Requirements: []Requirement{
+		{Name: "Login", Body: "The system SHALL log users in."},
+	}}}); err != nil {
+		t.Fatalf("failed to store requirements: %v", err)
+	}
+	// Merge so the current state (spec_capabilities) also carries the capability.
+	if err = MergeChangeDeltas(database, projectID, c.ID); err != nil {
+		t.Fatalf("failed to merge: %v", err)
+	}
+
+	refs, err := ActiveSpecCapabilityRefs(database, projectID)
+	if err != nil {
+		t.Fatalf("failed to list refs: %v", err)
+	}
+	foundChange := false
+	foundCap := false
+	for _, ref := range refs {
+		if ref.ChangeID == c.ID && ref.CapabilityPath == "auth" && ref.WherePath == "internal/auth/" {
+			foundChange = true
+		}
+		if ref.ChangeID == "" && ref.CapabilityPath == "auth" {
+			foundCap = true
+		}
+	}
+	if !foundChange || !foundCap {
+		t.Errorf("expected change ref and current-state ref for auth, got %+v", refs)
+	}
+}
+
+func TestValidateChangeRequirements(t *testing.T) {
+	database, projectID, _ := setupSpecReqDB(t)
+
+	// Current capability state with an existing scenario.
+	if err := MergeDeltas(database, projectID, "auth", []Delta{{Op: DeltaAdded, Requirements: []Requirement{
+		{Name: "Login", Body: "The system SHALL issue a token.", Scenarios: []Scenario{
+			{Name: "Valid", Steps: []ScenarioStep{{Keyword: "WHEN", Text: "creds valid"}}},
+			{Name: "Invalid", Steps: []ScenarioStep{{Keyword: "WHEN", Text: "creds bad"}}},
+		}},
+	}}}); err != nil {
+		t.Fatalf("failed to seed state: %v", err)
+	}
+
+	c, err := CreateChange(database, projectID, "tighten-login", "Tighten login", "", "", "", "", "")
+	if err != nil {
+		t.Fatalf("failed to create change: %v", err)
+	}
+	if _, err = SetChangeCapabilityPath(database, projectID, c.ID, "auth"); err != nil {
+		t.Fatalf("failed to set capability: %v", err)
+	}
+	// MODIFIED drops "Invalid" scenario; body has no RFC 2119 keyword.
+	if err = ReplaceChangeRequirements(database, projectID, c.ID, "auth", []Delta{{Op: DeltaModified, Requirements: []Requirement{
+		{Name: "Login", Body: "Sessions last a while.", Scenarios: []Scenario{
+			{Name: "Valid", Steps: []ScenarioStep{{Keyword: "WHEN", Text: "creds valid"}}},
+		}},
+	}}}); err != nil {
+		t.Fatalf("failed to store requirements: %v", err)
+	}
+
+	issues, err := ValidateChangeRequirements(database, projectID, c.ID)
+	if err != nil {
+		t.Fatalf("failed to validate: %v", err)
+	}
+	if len(issues) != 2 {
+		t.Fatalf("expected 2 issues (RFC2119 + dropped scenario), got %d: %+v", len(issues), issues)
+	}
+	foundDrop := false
+	foundRFC := false
+	for _, it := range issues {
+		if strings.Contains(it.Message, "drops scenario") && strings.Contains(it.Message, "Invalid") {
+			foundDrop = true
+		}
+		if strings.Contains(it.Message, "RFC 2119") {
+			foundRFC = true
+		}
+	}
+	if !foundDrop || !foundRFC {
+		t.Errorf("expected both validation warnings, got %+v", issues)
+	}
+}
+
+func TestContextPackSurfacesCapabilities(t *testing.T) {
+	database, projectID, _ := setupSpecReqDB(t)
+
+	// A canonical code node for the path.
+	if _, err := database.Exec(
+		"INSERT INTO graph_nodes (id, project_id, node_type, label, path, metadata) VALUES (?, ?, 'file', ?, ?, '{}')",
+		"internal/auth/auth.go", projectID, "auth.go", "internal/auth/auth.go",
+	); err != nil {
+		t.Fatalf("seed code node: %v", err)
+	}
+
+	// Capability state + graph edge (code implements capability).
+	if err := MergeDeltas(database, projectID, "auth", []Delta{{Op: DeltaAdded, Requirements: []Requirement{
+		{Name: "Login", Body: "The system SHALL log users in."},
+		{Name: "Logout", Body: "The system SHALL end sessions."},
+	}}}); err != nil {
+		t.Fatalf("failed to seed capability: %v", err)
+	}
+	if err := graph.EnsureSpecCapabilityEdges(database, projectID, graph.SpecCapabilityRef{CapabilityPath: "auth", WherePath: "internal/auth/auth.go"}); err != nil {
+		t.Fatalf("failed to wire capability: %v", err)
+	}
+
+	pack, err := GetContextPack(database, projectID, "internal/auth/auth.go", 5, false)
+	if err != nil {
+		t.Fatalf("failed to get context pack: %v", err)
+	}
+	if len(pack.Capabilities) != 1 {
+		t.Fatalf("expected 1 capability surfaced, got %d: %+v", len(pack.Capabilities), pack.Capabilities)
+	}
+	cap := pack.Capabilities[0]
+	if cap.CapabilityPath != "auth" {
+		t.Errorf("expected capability auth, got %q", cap.CapabilityPath)
+	}
+	if cap.RequirementCount != 2 {
+		t.Errorf("expected 2 requirements, got %d", cap.RequirementCount)
+	}
+	if len(cap.Requirements) != 2 {
+		t.Errorf("expected 2 requirement names, got %v", cap.Requirements)
+	}
+
+	rendered := RenderContextPack(pack, 200)
+	if !strings.Contains(rendered, "Capabilities implemented here") || !strings.Contains(rendered, "auth") {
+		t.Errorf("expected capabilities section in render, got:\n%s", rendered)
+	}
 }
 
 func TestReplaceAndLoadChangeRequirements(t *testing.T) {
