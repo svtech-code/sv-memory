@@ -460,7 +460,7 @@ Genera un topic key estable en formato kebab-case antes de guardar.
 
 ### 4. `sv_mem_session_start`
 
-Registra una nueva sesión de codificación. Devuelve el Auto-Boot Context Bundle (resumen de la sesión anterior, decisiones clave, estándares, bugfixes recientes, postmortems, Q&A reciente, últimos diarios, hubs del grafo) limitado por el presupuesto de tokens. Cuando se proporciona un `goal`, las decisiones/estándares/bugfixes mostrados se ordenan por relevancia a él en lugar de por mera recencia.
+Registra una nueva sesión de codificación. Devuelve el Auto-Boot Context Bundle (resumen de la sesión anterior, decisiones clave, estándares, bugfixes recientes, postmortems, Q&A reciente, últimos diarios, hubs del grafo) limitado por el presupuesto de tokens. Cuando se proporciona un `goal`, las decisiones/estándares/bugfixes mostrados se ordenan por relevancia a él en lugar de por mera recencia. Cuando hay conflictos de decisión sin resolver, se añade una línea `⚠ Pending memory conflicts` para que el agente los revise antes de confiar en cualquiera de las partes.
 
 - **Parámetros:**
   - `goal` (string, opcional): Objetivo de la sesión. Al definirlo, el Auto-Boot bundle ordena los candidatos de cada sección por relevancia a él (pinned primero, luego solapamiento de keywords, luego recencia).

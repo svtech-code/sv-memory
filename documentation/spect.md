@@ -461,7 +461,7 @@ Generate a stable topic key in kebab-case format before saving.
 
 ### 4. `sv_mem_session_start`
 
-Register a new coding session. Returns the Auto-Boot Context Bundle (previous session summary, key decisions, standards, recent bugfixes, postmortems, recent Q&A, last journals, top graph hubs) bounded by the token budget. When a `goal` is provided, the surfaced decisions/standards/bugfixes are ranked by relevance to it instead of pure recency.
+Register a new coding session. Returns the Auto-Boot Context Bundle (previous session summary, key decisions, standards, recent bugfixes, postmortems, recent Q&A, last journals, top graph hubs) bounded by the token budget. When a `goal` is provided, the surfaced decisions/standards/bugfixes are ranked by relevance to it instead of pure recency. When there are unresolved decision conflicts, a one-line `⚠ Pending memory conflicts` hint is appended so the agent can review them before relying on either side.
 
 - **Parameters:**
   - `goal` (string, optional): Session objective. When set, the Auto-Boot bundle ranks the per-section candidates by relevance to it (pinned first, then keyword overlap, then recency).

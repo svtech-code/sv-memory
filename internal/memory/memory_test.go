@@ -1461,6 +1461,50 @@ func TestPruneStaleMemories(t *testing.T) {
 	}
 }
 
+func TestAutoBootBundleSurfacesPendingConflicts(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := db.InitDB(filepath.Join(tempDir, "bundle_conflict.db"))
+	if err != nil {
+		t.Fatalf("InitDB error: %v", err)
+	}
+	defer database.Close()
+
+	const projectID = "proj-bundle-conflict"
+	if err = db.RegisterProject(database, projectID, "Bundle Conflict", tempDir); err != nil {
+		t.Fatalf("RegisterProject error: %v", err)
+	}
+
+	// With no conflicts the bundle carries no conflict line.
+	clean, err := GetAutoBootBundle(context.Background(), database, projectID, AutoBootOptions{})
+	if err != nil {
+		t.Fatalf("GetAutoBootBundle clean: %v", err)
+	}
+	if strings.Contains(clean, "Pending memory conflicts") {
+		t.Errorf("expected no conflict line when none exist, got:\n%s", clean)
+	}
+
+	// Two memories plus a pending conflicts_with relation.
+	a, err := SaveMemory(database, &Memory{ProjectID: projectID, Category: "decision", What: "Use Postgres", Why: "w", Learned: "l"})
+	if err != nil {
+		t.Fatalf("save a: %v", err)
+	}
+	b, err := SaveMemory(database, &Memory{ProjectID: projectID, Category: "decision", What: "Use Mongo", Why: "w", Learned: "l"})
+	if err != nil {
+		t.Fatalf("save b: %v", err)
+	}
+	if _, err = SaveJudgment(database, projectID, a.ID, b.ID, "conflicts_with", "contradicting stores", "tester"); err != nil {
+		t.Fatalf("SaveJudgment: %v", err)
+	}
+
+	bundle, err := GetAutoBootBundle(context.Background(), database, projectID, AutoBootOptions{})
+	if err != nil {
+		t.Fatalf("GetAutoBootBundle conflict: %v", err)
+	}
+	if !strings.Contains(bundle, "Pending memory conflicts") {
+		t.Errorf("expected pending conflict line in bundle, got:\n%s", bundle)
+	}
+}
+
 func TestAutoBootBundleSurfacesPostmortemAndQA(t *testing.T) {
 	tempDir := t.TempDir()
 	database, err := db.InitDB(filepath.Join(tempDir, "bundle_pm_qa.db"))

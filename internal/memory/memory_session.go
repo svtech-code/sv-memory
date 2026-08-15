@@ -345,6 +345,15 @@ func GetAutoBootBundle(ctx context.Context, db *sql.DB, projectID string, opts A
 		}
 	}
 
+	// Surface unresolved decision conflicts as context: the agent should know
+	// when two memories contradict each other before relying on either. Only
+	// emitted when conflicts exist, so the token cost is zero when healthy.
+	if stats, err := ConflictStats(db, projectID); err == nil {
+		if pending := stats["pending"]; pending > 0 {
+			fmt.Fprintf(&sb, "\n**⚠ Pending memory conflicts:** %d — run `sv_mem_conflicts action=scan` to review.\n", pending)
+		}
+	}
+
 	return strings.TrimSpace(sb.String()), nil
 }
 
