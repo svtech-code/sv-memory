@@ -123,6 +123,12 @@ This checks GitHub Releases, downloads the binary for your platform, verifies it
 SHA-256 checksum, and replaces the running executable. Your memories and configuration
 are stored separately and are never affected by an update.
 
+> **After updating, re-wire your agents.** The update only replaces the binary — it does
+> not refresh your MCP allow-lists or injected protocol. Run `sv-memory setup --all` (or
+> `setup <agent>` per agent) so newly added MCP tools are granted and the protocol/skill
+> text matches the new binary, then restart your assistant. See
+> [AGENT-SETUP.md](documentation/AGENT-SETUP.md#updating-sv-memory-post-update).
+
 **From source** (pure Go, no CGO required):
 
 ```bash

@@ -38,6 +38,32 @@ MCP y los hooks.
   `sv_graph_query`. En Claude Code el modo estricto es solo de aviso (nunca bloquea).
 - `--all`: instala para todos los agentes soportados.
 
+## Actualizar sv-memory (post-update)
+
+`sv-memory update` solo reemplaza el binario (descarga el asset de la release, verifica el
+checksum SHA-256 y lo intercambia atómicamente) — **no toca tu configuración de agente**.
+Así que tras cada actualización, refresca la integración antes de reiniciar el asistente:
+
+```bash
+sv-memory update                # 1. reemplaza el binario (la primera ejecución también aplica migraciones nuevas de BD)
+sv-memory setup --all           # 2. CRÍTICO: re-cablea todos los agentes (o `setup <agente>` por agente)
+```
+
+Por qué el paso 2 es crítico:
+- `sv-memory setup <agente>` re-escanea el conjunto actual de tools y **otorga a la
+  allow-list estática cualquier tool MCP nueva** (`~/.claude/settings.json`, `opencode.json`,
+  `.cursor/mcp.json`, `.windsurf/mcp_config.json`, …). Si lo omites, las tools añadidas por
+  la release quedan bloqueadas y el agente pide permiso en cada llamada.
+- **Re-inyecta el protocolo** (`AGENTS.md` / `.cursorrules` / `.windsurfrules`) y refresca el
+  `SKILL.md` de OpenCode, para que las instrucciones del agente coincidan con el binario nuevo.
+- Es **idempotente** — re-ejecutarlo es seguro, solo añade lo que falta.
+
+Después reinicia tu asistente para que recargue la configuración MCP y re-liste las tools
+(`tools/list`). `sv-memory init` y `sv-memory hooks install` **no** son necesarios de nuevo
+en un proyecto ya configurado: `setup <agente>` ya instala hooks e inyecta el protocolo, y
+`init` es solo para proyectos nuevos. Verifica con `sv-memory version` y `sv-memory setup`
+(tabla de estado de solo lectura).
+
 ## Detalles por agente
 
 ### Claude Code

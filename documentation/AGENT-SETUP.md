@@ -38,6 +38,33 @@ MCP config and hooks.
   Claude Code strict mode is nudge-only and never blocks.
 - `--all`: install for every supported agent.
 
+## Updating sv-memory (post-update)
+
+`sv-memory update` only replaces the binary (it downloads the release asset, verifies
+the SHA-256 checksum, and atomically swaps the executable) — **it does not touch your
+agent wiring**. So after every update, refresh the integration before restarting the
+assistant:
+
+```bash
+sv-memory update                # 1. replace the binary (first run also applies new DB migrations)
+sv-memory setup --all           # 2. CRITICAL: re-wire every agent (or `setup <agent>` per agent)
+```
+
+Why step 2 is critical:
+- `sv-memory setup <agent>` re-scans the current tool set and **grants any newly added
+  MCP tools** to the static allow-lists (`~/.claude/settings.json`, `opencode.json`,
+  `.cursor/mcp.json`, `.windsurf/mcp_config.json`, …). If you skip it, tools added by the
+  release stay blocked and the agent asks for permission on every call.
+- It **re-injects the protocol** (`AGENTS.md` / `.cursorrules` / `.windsurfrules`) and
+  refreshes the OpenCode `SKILL.md`, so the agent instructions match the new binary.
+- It is **idempotent** — re-running is safe, it only adds what is missing.
+
+Then restart your assistant so it reloads the MCP config and re-lists the tools
+(`tools/list`). `sv-memory init` and `sv-memory hooks install` are **not** needed again
+for an already-configured project: `setup <agent>` already installs hooks and injects the
+protocol, and `init` is only for brand-new projects. Verify with `sv-memory version`
+and `sv-memory setup` (read-only status table).
+
 ## Per-agent details
 
 ### Claude Code
