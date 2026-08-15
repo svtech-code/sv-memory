@@ -27,6 +27,8 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 	if matchMode != "any" {
 		matchMode = "all"
 	}
+	semantic := req.GetString("semantic", "") == "true"
+	semanticAgent := req.GetString("semantic_agent", "")
 	limitStr := req.GetString("limit", "10")
 	offsetStr := req.GetString("offset", "0")
 
@@ -54,6 +56,17 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 		offset = 1000
 	}
 
+	// In semantic mode the keyword pass only feeds a candidate pool to the LLM
+	// ranker, so fetch up to 3x the limit (capped) and let SemanticRecall trim
+	// back down to `limit`. Pagination is driven by the final semantic ranking.
+	searchLimit := limit
+	if semantic {
+		searchLimit = limit * 3
+		if searchLimit > memory.SemanticRecallMaxCandidates {
+			searchLimit = memory.SemanticRecallMaxCandidates
+		}
+	}
+
 	startSync := time.Now()
 	s.maybeSyncFromGit()
 	debugLog("mem_search maybeSyncFromGit took %s", time.Since(startSync))
@@ -71,16 +84,28 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 		for p := range communityPaths {
 			paths = append(paths, p)
 		}
-		results, err = memory.SearchMemoriesByPaths(s.pool.Reader, s.cfg.ProjectID, query, category, matchMode, pathFilter, paths, limit, offset)
+		results, err = memory.SearchMemoriesByPaths(s.pool.Reader, s.cfg.ProjectID, query, category, matchMode, pathFilter, paths, searchLimit, offset)
 	} else {
-		results, err = memory.SearchMemoriesCompactScoped(s.pool.Reader, s.cfg.ProjectID, query, category, pathFilter, matchMode, limit, offset)
+		results, err = memory.SearchMemoriesCompactScoped(s.pool.Reader, s.cfg.ProjectID, query, category, pathFilter, matchMode, searchLimit, offset)
 	}
 	debugLog("mem_search query=%q category=%q offset=%d graphBoost=%t returned %d rows in %s", query, category, offset, len(communityPaths) > 0, len(results), time.Since(startSearch))
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed searching memories: %v", err)), nil
 	}
 
+	// Optional semantic re-ranking: one batched agent call filters/re-orders the
+	// keyword pool by meaning. Fail-open: the keyword results are kept when the
+	// agent is unavailable or its response cannot be parsed.
+	semanticUsed := false
+	var reasons map[string]string
+	if semantic && len(results) > 0 {
+		results, reasons, semanticUsed = memory.SemanticRecall(ctx, s.pool.Reader, s.cfg.ProjectID, query, results, memory.ResolveSemanticAgent(semanticAgent), limit)
+	}
+
 	if len(results) == 0 {
+		if semanticUsed {
+			return mcp.NewToolResultText("No relevant project memories found matching the query (semantic recall)."), nil
+		}
 		return mcp.NewToolResultText("No relevant project memories found matching the query."), nil
 	}
 
@@ -88,16 +113,21 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 	// annotated without a per-row query.
 	whereByID := s.resultWherePaths(results)
 
-	return s.respond(req, s.renderSearchResults(results, whereByID, communityPaths, pathFilter, offset)), nil
+	return s.respond(req, s.renderSearchResults(results, whereByID, communityPaths, pathFilter, offset, semantic, semanticUsed, reasons)), nil
 }
 
 // renderSearchResults builds the compact table output (progressive disclosure:
 // one row per result with the essentials) plus the inline expansion of the top-1
 // hit, annotating graph-community rows with a [graph] marker when graph_boost
 // expanded the search beyond the exact path.
-func (s *Server) renderSearchResults(results []*memory.MemorySearchResult, whereByID map[string]string, communityPaths map[string]bool, pathFilter string, offset int) string {
+func (s *Server) renderSearchResults(results []*memory.MemorySearchResult, whereByID map[string]string, communityPaths map[string]bool, pathFilter string, offset int, semanticRequested, semanticUsed bool, reasons map[string]string) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Found %d relevant project memories (use `sv_mem_get` for full content, `sv_mem_timeline` for context):\n\n", len(results))
+	if semanticUsed {
+		sb.WriteString("*Semantic recall: ranked by meaning with the agent CLI.*\n")
+	} else if semanticRequested {
+		sb.WriteString("*Semantic recall unavailable — showing keyword results.*\n")
+	}
 	sb.WriteString("| # | ID | Category | Title | Topic | Date |\n")
 	sb.WriteString("|---|----|----------|-------|-------|------|\n")
 	graphRows := 0
@@ -107,6 +137,11 @@ func (s *Server) renderSearchResults(results []*memory.MemorySearchResult, where
 			topic = r.TopicKey
 		}
 		title := escapeTableCell(r.What)
+		if semanticUsed && reasons != nil {
+			if reason := reasons[r.ID]; reason != "" {
+				title += " — " + escapeTableCell(reason)
+			}
+		}
 		if pathFilter != "" && whereByID[r.ID] != "" && communityPaths[whereByID[r.ID]] && !strings.Contains(whereByID[r.ID], pathFilter) {
 			title += " `[graph]`"
 			graphRows++

@@ -572,6 +572,8 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		mcp.WithString("category", mcp.Description("Optional category to filter results: 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem' | 'discussion' | 'idea' | 'qa'")),
 		mcp.WithString("path", mcp.Description("Optional path/directory scope filter to narrow memories relevant to a specific file or directory")),
 		mcp.WithString("match_mode", mcp.Description("FTS5 match mode: 'all' (every token must match, default) or 'any' (broader recall — a memory matching one or more tokens is returned)")),
+		mcp.WithString("semantic", mcp.Description("When 'true', re-rank the keyword candidates with the configured agent CLI by semantic relevance (opt-in, one batched call; fails open to keyword results when the agent is unavailable). Default 'false'.")),
+		mcp.WithString("semantic_agent", mcp.Description("Optional agent CLI for semantic recall. Defaults to $SV_MEMORY_SEMANTIC_AGENT, then 'claude'.")),
 		mcp.WithString("limit", mcp.Description("Optional limit of results to return (default is '10')")),
 		mcp.WithString("offset", mcp.Description("Optional offset for pagination (default is '0')")),
 		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),

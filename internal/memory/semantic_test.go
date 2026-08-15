@@ -244,3 +244,204 @@ func TestApplySemanticVerdict(t *testing.T) {
 		t.Fatalf("expected 2 relations after no-op skip, got %d", count)
 	}
 }
+
+func TestSemanticRecallPromptBounded(t *testing.T) {
+	items := []recallItem{
+		{ID: "a", Category: "decision", What: "w", Why: "y", Learned: "l", Where: "x"},
+	}
+	p := semanticRecallPrompt("how do we handle auth timeouts", items)
+	for _, want := range []string{"how do we handle auth timeouts", "a", "decision", "relevant", "QUERY:"} {
+		if !strings.Contains(p, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, p)
+		}
+	}
+}
+
+func TestParseSemanticRecall(t *testing.T) {
+	cases := []struct {
+		name    string
+		output  string
+		wantLen int
+		wantErr bool
+	}{
+		{"plain array", `[{"id":"a","relevant":true,"reason":"matches"}]`, 1, false},
+		{"array in fences", "```json\n[{\"id\":\"a\",\"relevant\":true},{\"id\":\"b\",\"relevant\":false}]\n```", 2, false},
+		{"prose wrapper", "Here you go: [{\"id\":\"a\",\"relevant\":false}] Done.", 1, false},
+		{"no array", "no json here", 0, true},
+		{"malformed", `[{"id":"a","relevant":true}`, 0, true},
+		{"empty id dropped", `[{"id":"","relevant":true},{"id":"b","relevant":true}]`, 1, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out, err := parseSemanticRecall(c.output)
+			if c.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got %+v", out)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(out) != c.wantLen {
+				t.Fatalf("expected %d results, got %d", c.wantLen, len(out))
+			}
+		})
+	}
+}
+
+func TestSemanticRecallRanksAndCaps(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := db.InitDB(filepath.Join(tempDir, "recall.db"))
+	if err != nil {
+		t.Fatalf("InitDB error: %v", err)
+	}
+	defer database.Close()
+
+	const projectID = "recall-proj"
+	if err = db.RegisterProject(database, projectID, "Recall", tempDir); err != nil {
+		t.Fatalf("RegisterProject error: %v", err)
+	}
+
+	// Four memories; the agent will rank C and B as relevant (C first).
+	var ids []string
+	for _, w := range []string{"Use Postgres", "Use Mongo", "Auth timeout fix", "Logging config"} {
+		var m *Memory
+		m, err = SaveMemory(database, &Memory{ProjectID: projectID, Category: "decision", What: w, Why: "why " + w, Learned: "learned " + w})
+		if err != nil {
+			t.Fatalf("save %q: %v", w, err)
+		}
+		ids = append(ids, m.ID)
+	}
+
+	candidates := make([]*MemorySearchResult, 0, len(ids))
+	for _, id := range ids {
+		candidates = append(candidates, &MemorySearchResult{ID: id})
+	}
+
+	original := SemanticRunAgent
+	SemanticRunAgent = func(ctx context.Context, agent, prompt string) (string, error) {
+		return `[{"id":"` + ids[2] + `","relevant":true,"reason":"auth relates"},` +
+			`{"id":"` + ids[1] + `","relevant":true,"reason":"db choice"},` +
+			`{"id":"` + ids[0] + `","relevant":false,"reason":"no"},` +
+			`{"id":"` + ids[3] + `","relevant":false,"reason":"no"}]`, nil
+	}
+	defer func() { SemanticRunAgent = original }()
+
+	// limit=1 must keep only the top relevant candidate (C, ordered first).
+	results, reasons, used := SemanticRecall(context.Background(), database, projectID, "auth", candidates, "fake", 1)
+	if !used {
+		t.Fatal("expected semantic ranking to be used")
+	}
+	if len(results) != 1 || results[0].ID != ids[2] {
+		t.Fatalf("expected top candidate %s only, got %+v", ids[2], results)
+	}
+	if reasons[ids[2]] != "auth relates" {
+		t.Fatalf("expected reason for top candidate, got %q", reasons[ids[2]])
+	}
+
+	// No cap truncation: both relevant candidates come back in agent order.
+	results, reasons, used = SemanticRecall(context.Background(), database, projectID, "auth", candidates, "fake", 10)
+	if !used {
+		t.Fatal("expected semantic ranking to be used")
+	}
+	if len(results) != 2 || results[0].ID != ids[2] || results[1].ID != ids[1] {
+		t.Fatalf("expected [C, B] order, got %+v", results)
+	}
+	if _, ok := reasons[ids[0]]; ok {
+		t.Fatalf("irrelevant candidate must not have a reason")
+	}
+}
+
+func TestSemanticRecallFailOpen(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := db.InitDB(filepath.Join(tempDir, "recall_fail.db"))
+	if err != nil {
+		t.Fatalf("InitDB error: %v", err)
+	}
+	defer database.Close()
+
+	const projectID = "recall-fail-proj"
+	if err = db.RegisterProject(database, projectID, "Recall Fail", tempDir); err != nil {
+		t.Fatalf("RegisterProject error: %v", err)
+	}
+
+	var m *Memory
+	m, err = SaveMemory(database, &Memory{ProjectID: projectID, Category: "decision", What: "Use Postgres", Why: "w", Learned: "l"})
+	if err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	candidates := []*MemorySearchResult{{ID: m.ID}}
+
+	// Agent error → keyword candidates unchanged, no reasons, used=false.
+	original := SemanticRunAgent
+	SemanticRunAgent = func(ctx context.Context, agent, prompt string) (string, error) {
+		return "", context.DeadlineExceeded
+	}
+	results, reasons, used := SemanticRecall(context.Background(), database, projectID, "auth", candidates, "fake", 5)
+	if used {
+		t.Fatal("expected fail-open when agent errors")
+	}
+	if len(results) != 1 || results[0].ID != m.ID {
+		t.Fatalf("expected original candidate on fail-open, got %+v", results)
+	}
+	if reasons != nil {
+		t.Fatalf("expected nil reasons on fail-open, got %v", reasons)
+	}
+
+	// Invalid JSON → same fail-open behavior.
+	SemanticRunAgent = func(ctx context.Context, agent, prompt string) (string, error) {
+		return "no json here", nil
+	}
+	results, reasons, used = SemanticRecall(context.Background(), database, projectID, "auth", candidates, "fake", 5)
+	if used {
+		t.Fatal("expected fail-open on invalid JSON")
+	}
+	if len(results) != 1 || results[0].ID != m.ID {
+		t.Fatalf("expected original candidate on invalid JSON, got %+v", results)
+	}
+	if reasons != nil {
+		t.Fatalf("expected nil reasons on invalid JSON, got %v", reasons)
+	}
+	SemanticRunAgent = original
+}
+
+func TestSemanticRecallTruncatesFields(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := db.InitDB(filepath.Join(tempDir, "recall_trunc.db"))
+	if err != nil {
+		t.Fatalf("InitDB error: %v", err)
+	}
+	defer database.Close()
+
+	const projectID = "recall-trunc-proj"
+	if err = db.RegisterProject(database, projectID, "Recall Trunc", tempDir); err != nil {
+		t.Fatalf("RegisterProject error: %v", err)
+	}
+
+	longWhy := strings.Repeat("y", 2000)
+	var m *Memory
+	m, err = SaveMemory(database, &Memory{ProjectID: projectID, Category: "decision", What: "Use Postgres", Why: longWhy, Learned: "l"})
+	if err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	candidates := []*MemorySearchResult{{ID: m.ID}}
+
+	var gotPrompt string
+	original := SemanticRunAgent
+	SemanticRunAgent = func(ctx context.Context, agent, prompt string) (string, error) {
+		gotPrompt = prompt
+		return `[{"id":"` + m.ID + `","relevant":true,"reason":"matches"}]`, nil
+	}
+	defer func() { SemanticRunAgent = original }()
+
+	if _, _, used := SemanticRecall(context.Background(), database, projectID, "postgres", candidates, "fake", 5); !used {
+		t.Fatal("expected semantic ranking to be used")
+	}
+	if strings.Contains(gotPrompt, longWhy) {
+		t.Fatalf("prompt must truncate long fields to stay token-bounded")
+	}
+	if !strings.Contains(gotPrompt, m.What) {
+		t.Fatalf("prompt should contain the candidate's what")
+	}
+}

@@ -512,6 +512,8 @@ Búsqueda de memoria basada en FTS5. Devuelve solo IDs, categorías, fechas, tí
   - `limit` (string, opcional): Máximo de resultados (por defecto `10`).
   - `offset` (string, opcional): Desplazamiento de paginación.
   - `match_mode` (string, opcional): `'all'` (por defecto) exige que cada token coincida; `'any'` devuelve memorias que coinciden con uno o más tokens para una recuperación más amplia.
+  - `semantic` (string, opcional): Cuando es `'true'`, reordena los candidatos por palabras clave con el CLI del agente configurado según relevancia semántica (opt-in, una sola llamada en lote; falla de forma segura a resultados por palabras clave si el agente no está disponible). Por defecto `'false'`.
+  - `semantic_agent` (string, opcional): CLI del agente para recall semántico. Por defecto `$SV_MEMORY_SEMANTIC_AGENT`, luego `claude`.
   - `token_budget` (string, opcional): Máximo de tokens para la respuesta; se trunca con un aviso al superarse (por defecto desde config `max_response_tokens`, 4000; `'0'` = ilimitado).
 
 ### 10. `sv_mem_timeline` (Capa 2 Divulgación Progresiva)

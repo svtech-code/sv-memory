@@ -5,6 +5,10 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+### Added
+
+- **Opt-in semantic recall in `sv_mem_search`:** a new `semantic=true` parameter re-ranks the keyword (FTS5) candidates with the configured agent CLI by meaning, so a query like "how did we fix the auth timeout" surfaces a memory titled "session expiration TTL" that keyword search would miss. It is token-disciplined: the FTS5 pass pre-filters to a bounded candidate pool (up to 30), fields are truncated, a single batched agent call returns a JSON relevance list, and the output is capped back to `limit` with a one-clause relevance reason per hit. Uses the same agent-CLI infrastructure as `sv_mem_conflicts semantic=true` (`$SV_MEMORY_SEMANTIC_AGENT`, default `claude`) and is fully fail-open — when the agent is unavailable the keyword results are returned unchanged with a note, so the default deterministic/local search is never degraded.
+
 ### Changed
 
 - **`sv_graph_query` is now token-efficient by default:** it emits a compact, LLM-friendly textual edge list (`source →[rel]→ target` with confidence) instead of the token-heavy Mermaid diagram. The Mermaid rendering is still available opt-in via a new `mermaid=true` parameter, and the node list plus the edge-confidence breakdown are kept. This roughly halves the output size of the common "what does X import/depend on" query, directly reducing context tokens for the agent. The `tokenBenchmark` block was dropped from this tool's output.

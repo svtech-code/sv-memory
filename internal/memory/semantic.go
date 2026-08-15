@@ -295,3 +295,156 @@ func ApplySemanticVerdict(db *sql.DB, projectID string, v *SemanticVerdict) erro
 	}
 	return nil
 }
+
+// SemanticRecallResult is the agent's relevance judgment for one candidate.
+type SemanticRecallResult struct {
+	ID       string `json:"id"`
+	Relevant bool   `json:"relevant"`
+	Reason   string `json:"reason"`
+}
+
+// recallItem is the truncated view of a candidate memory fed to the agent, so
+// the prompt stays token-bounded.
+type recallItem struct {
+	ID       string
+	Category string
+	What     string
+	Why      string
+	Learned  string
+	Where    string
+}
+
+// SemanticRecallMaxCandidates caps how many keyword candidates are sent to the
+// agent in a single call. FTS5 already pre-filters the corpus; sending the
+// whole result set would blow the prompt budget.
+const SemanticRecallMaxCandidates = 30
+
+// semanticRecallFieldChars caps each free-text field per candidate in the prompt.
+const semanticRecallFieldChars = 300
+
+// semanticRecallReasonChars caps the stored relevance reason shown to the agent.
+const semanticRecallReasonChars = 120
+
+// semanticRecallPrompt builds the strict-JSON ranking prompt. The agent must
+// return an entry for every candidate id, flagged relevant or not and ordered
+// most-to-least relevant.
+func semanticRecallPrompt(query string, items []recallItem) string {
+	var sb strings.Builder
+	sb.WriteString("You are a memory-recall assistant for a coding-agent memory system.\n\n")
+	sb.WriteString("Given the user's query, decide which of the candidate project memories are RELEVANT to it. Compare MEANING, not just keywords: a memory that answers the query in different words still counts as relevant.\n\n")
+	fmt.Fprintf(&sb, "QUERY: %s\n\nCANDIDATES:\n", query)
+	for i, it := range items {
+		fmt.Fprintf(&sb, "- [%d] id=%s category=%s what=%s why=%s learned=%s where=%s\n",
+			i, it.ID, it.Category, it.What, it.Why, it.Learned, it.Where)
+	}
+	sb.WriteString("\nRespond with ONLY a JSON array, no prose, each element in this exact form:\n")
+	sb.WriteString(`[{"id": "<candidate id>", "relevant": true|false, "reason": "one short clause"}]`)
+	sb.WriteString("\n\nRules:\n")
+	sb.WriteString("- Include an entry for EVERY candidate id above (use the exact id string).\n")
+	sb.WriteString("- \"relevant\": true only when the memory meaningfully relates to the query.\n")
+	sb.WriteString("- Order the array from most to least relevant (most relevant first).\n")
+	sb.WriteString("- Keep \"reason\" to one short clause (<= 20 words).\n")
+	return sb.String()
+}
+
+// parseSemanticRecall extracts the strict JSON array from the agent output
+// (tolerating prose or markdown fences around it) and drops entries with empty
+// ids.
+func parseSemanticRecall(output string) ([]SemanticRecallResult, error) {
+	start := strings.Index(output, "[")
+	end := strings.LastIndex(output, "]")
+	if start < 0 || end <= start {
+		return nil, fmt.Errorf("no JSON array found in agent response")
+	}
+	var out []SemanticRecallResult
+	if err := json.Unmarshal([]byte(output[start:end+1]), &out); err != nil {
+		return nil, fmt.Errorf("failed to parse agent JSON array: %w", err)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("empty JSON array in agent response")
+	}
+	valid := make([]SemanticRecallResult, 0, len(out))
+	for _, r := range out {
+		if strings.TrimSpace(r.ID) != "" {
+			valid = append(valid, r)
+		}
+	}
+	return valid, nil
+}
+
+// SemanticRecall ranks keyword search candidates by semantic relevance using
+// the configured agent CLI in a single batched call. It returns the relevant
+// subset (in the agent's ordering, capped at limit), a map of id -> relevance
+// reason, and whether the LLM ranking was applied. It is fail-open: when the
+// agent is unavailable or its response cannot be parsed, the original
+// candidates are returned unchanged with an empty reason map and used=false, so
+// a keyword search never degrades because of the optional LLM step.
+func SemanticRecall(ctx context.Context, db *sql.DB, projectID, query string, candidates []*MemorySearchResult, agent string, limit int) ([]*MemorySearchResult, map[string]string, bool) {
+	if len(candidates) == 0 {
+		return candidates, nil, false
+	}
+	if limit <= 0 {
+		limit = 5
+	}
+
+	items := make([]recallItem, 0, len(candidates))
+	byID := make(map[string]*MemorySearchResult, len(candidates))
+	for _, c := range candidates {
+		mem, err := GetMemory(db, projectID, c.ID)
+		if err != nil || mem == nil {
+			continue
+		}
+		byID[c.ID] = c
+		items = append(items, recallItem{
+			ID:       mem.ID,
+			Category: mem.Category,
+			What:     security.SanitizeText(mem.What),
+			Why:      TruncateText(security.SanitizeText(mem.Why), semanticRecallFieldChars),
+			Learned:  TruncateText(security.SanitizeText(mem.Learned), semanticRecallFieldChars),
+			Where:    security.SanitizeText(mem.WherePath),
+		})
+		if len(items) >= SemanticRecallMaxCandidates {
+			break
+		}
+	}
+	if len(items) == 0 {
+		return candidates, nil, false
+	}
+
+	out, err := SemanticRunAgent(ctx, agent, semanticRecallPrompt(query, items))
+	if err != nil {
+		return candidates, nil, false // fail-open
+	}
+	ranks, err := parseSemanticRecall(out)
+	if err != nil {
+		return candidates, nil, false // fail-open
+	}
+
+	reasons := make(map[string]string, len(ranks))
+	seen := make(map[string]bool, len(ranks))
+	var relevantIDs []string
+	for _, r := range ranks {
+		if !r.Relevant {
+			continue
+		}
+		if _, ok := byID[r.ID]; !ok || seen[r.ID] {
+			continue
+		}
+		seen[r.ID] = true
+		relevantIDs = append(relevantIDs, r.ID)
+		reasons[r.ID] = TruncateText(strings.TrimSpace(r.Reason), semanticRecallReasonChars)
+	}
+
+	if len(relevantIDs) == 0 {
+		return nil, reasons, true
+	}
+
+	results := make([]*MemorySearchResult, 0, len(relevantIDs))
+	for _, id := range relevantIDs {
+		results = append(results, byID[id])
+		if len(results) >= limit {
+			break
+		}
+	}
+	return results, reasons, true
+}

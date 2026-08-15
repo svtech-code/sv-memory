@@ -334,6 +334,76 @@ func TestSearchMemoryHandler(t *testing.T) {
 	}
 }
 
+func TestSearchMemorySemanticHandler(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	server := NewServer(pool, cfg)
+	searchTool := server.GetTool("sv_mem_search")
+	ctx := context.Background()
+
+	a, err := memory.SaveMemory(pool.Writer, &memory.Memory{
+		ProjectID: cfg.ProjectID, Category: "decision",
+		What: "Auth timeout retry strategy", Why: "w", Learned: "l",
+	})
+	if err != nil {
+		t.Fatalf("seed a: %v", err)
+	}
+	b, err := memory.SaveMemory(pool.Writer, &memory.Memory{
+		ProjectID: cfg.ProjectID, Category: "standard",
+		What: "Session expiration TTL", Why: "w", Learned: "l",
+	})
+	if err != nil {
+		t.Fatalf("seed b: %v", err)
+	}
+
+	run := func(args map[string]any) string {
+		t.Helper()
+		req := mcpgo.CallToolRequest{}
+		req.Params.Name = "sv_mem_search"
+		req.Params.Arguments = args
+		res, err := searchTool.Handler(ctx, req)
+		if err != nil {
+			t.Fatalf("sv_mem_search failed: %v", err)
+		}
+		return textContent(res.Content[0])
+	}
+
+	original := memory.SemanticRunAgent
+	defer func() { memory.SemanticRunAgent = original }()
+
+	// Semantic pass keeps only the memory the agent marks relevant.
+	memory.SemanticRunAgent = func(ctx context.Context, agent, prompt string) (string, error) {
+		return `[{"id":"` + a.ID + `","relevant":true,"reason":"auth relates"},` +
+			`{"id":"` + b.ID + `","relevant":false,"reason":"unrelated"}]`, nil
+	}
+	out := run(map[string]any{"query": "auth", "semantic": "true"})
+	if !strings.Contains(out, "Semantic recall: ranked by meaning") {
+		t.Errorf("expected semantic recall note, got: %s", out)
+	}
+	if !strings.Contains(out, "Auth timeout retry strategy") {
+		t.Errorf("expected relevant memory in results, got: %s", out)
+	}
+	if !strings.Contains(out, "auth relates") {
+		t.Errorf("expected relevance reason inline, got: %s", out)
+	}
+	if strings.Contains(out, "Session expiration TTL") {
+		t.Errorf("irrelevant memory should be filtered out by semantic recall, got: %s", out)
+	}
+
+	// Fail-open: agent error keeps the keyword results with a note.
+	memory.SemanticRunAgent = func(ctx context.Context, agent, prompt string) (string, error) {
+		return "", context.DeadlineExceeded
+	}
+	out = run(map[string]any{"query": "auth", "semantic": "true"})
+	if !strings.Contains(out, "Semantic recall unavailable") {
+		t.Errorf("expected fail-open note, got: %s", out)
+	}
+	if !strings.Contains(out, "Auth timeout retry strategy") {
+		t.Errorf("expected keyword results on fail-open, got: %s", out)
+	}
+}
+
 func TestGraphQueryHandler(t *testing.T) {
 	tempDir, pool, cfg := setupTestEnv(t)
 	defer cleanupTestEnv(tempDir, pool)
