@@ -153,6 +153,7 @@ var migrations = []migration{
 	{12, "add_session_partial_indexes", addSessionPartialIndexes},
 	{13, "add_user_prompts", addUserPrompts},
 	{14, "add_change_lifecycle", addChangeLifecycle},
+	{15, "add_spec_requirements", addSpecRequirements},
 }
 
 func applyMigrations(db *sql.DB) error {
@@ -640,5 +641,70 @@ func addChangeLifecycle(db *sql.DB) error {
 		return fmt.Errorf("failed to create idx_memories_change: %w", err)
 	}
 
+	return nil
+}
+
+// addSpecRequirements adds the delta-spec tables for the OpenSpec-style
+// requirements layer: spec_requirements holds the per-change delta rows
+// (ADDED/MODIFIED/REMOVED/RENAMED requirements with scenarios), and
+// spec_capabilities holds the materialized current state of each capability
+// (the merge target applied on commit). A FTS5 index over requirement/body
+// makes the deltas searchable without a second migration. All additions are
+// additive and idempotent.
+func addSpecRequirements(db *sql.DB) error {
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS spec_requirements (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			change_id TEXT NOT NULL,
+			capability_path TEXT NOT NULL,
+			delta_op TEXT NOT NULL,
+			requirement TEXT NOT NULL,
+			rename_to TEXT,
+			body TEXT,
+			rfc2119 TEXT,
+			scenarios TEXT,
+			sort_order INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+			FOREIGN KEY(change_id) REFERENCES changes(id) ON DELETE CASCADE
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_spec_requirements_change ON spec_requirements(project_id, change_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_spec_requirements_capability ON spec_requirements(project_id, capability_path);`,
+		`CREATE VIRTUAL TABLE IF NOT EXISTS spec_requirements_fts USING fts5(
+			requirement,
+			body,
+			content=spec_requirements,
+			content_rowid=rowid
+		);`,
+		`CREATE TRIGGER IF NOT EXISTS spec_requirements_ai AFTER INSERT ON spec_requirements BEGIN
+			INSERT INTO spec_requirements_fts(rowid, requirement, body) VALUES (new.rowid, new.requirement, COALESCE(new.body, ''));
+		END;`,
+		`CREATE TRIGGER IF NOT EXISTS spec_requirements_ad AFTER DELETE ON spec_requirements BEGIN
+			INSERT INTO spec_requirements_fts(spec_requirements_fts, rowid, requirement, body) VALUES('delete', old.rowid, old.requirement, COALESCE(old.body, ''));
+		END;`,
+		`CREATE TRIGGER IF NOT EXISTS spec_requirements_au AFTER UPDATE ON spec_requirements BEGIN
+			INSERT INTO spec_requirements_fts(spec_requirements_fts, rowid, requirement, body) VALUES('delete', old.rowid, old.requirement, COALESCE(old.body, ''));
+			INSERT INTO spec_requirements_fts(rowid, requirement, body) VALUES (new.rowid, new.requirement, COALESCE(new.body, ''));
+		END;`,
+		`CREATE TABLE IF NOT EXISTS spec_capabilities (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			capability_path TEXT NOT NULL,
+			requirement TEXT NOT NULL,
+			body TEXT,
+			rfc2119 TEXT,
+			scenarios TEXT,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+			UNIQUE(project_id, capability_path, requirement)
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_spec_capabilities_path ON spec_capabilities(project_id, capability_path);`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("failed to create spec requirements schema: %w", err)
+		}
+	}
 	return nil
 }
