@@ -524,8 +524,10 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	// 3. Tool: sv_mem_session_start
 	sessionStartTool := mcp.NewTool("sv_mem_session_start",
 		mcp.WithDescription("Register the start of a new coding session and receive an Auto-Boot Context Bundle: previous session summary, key architectural decisions, standards, recent bugfixes, postmortems, recent Q&A, last journals, and top graph hubs. Call this at the beginning of every work session to enable session grouping and post-compaction context recovery."),
-		mcp.WithString("goal", mcp.Description("Optional goal or objective for this session")),
+		mcp.WithString("goal", mcp.Description("Optional goal or objective for this session. When provided, the Auto-Boot bundle ranks the surfaced decisions/standards/bugfixes by relevance to it instead of pure recency.")),
 		mcp.WithString("directory", mcp.Description("Optional working directory (auto-detected from repo if omitted)")),
+		mcp.WithString("semantic", mcp.Description("When 'true' and a goal is given, re-rank the Auto-Boot bundle candidates with the configured agent CLI by semantic relevance (opt-in; fails open to the deterministic keyword ranking when the agent is unavailable). Default 'false'.")),
+		mcp.WithString("semantic_agent", mcp.Description("Optional agent CLI for semantic recall. Defaults to $SV_MEMORY_SEMANTIC_AGENT, then 'claude'.")),
 		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
 	)
 	ms.AddTool(sessionStartTool, s.handleSessionStart)

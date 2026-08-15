@@ -1,8 +1,10 @@
 package memory
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -196,12 +198,64 @@ func GetSessionContext(db *sql.DB, projectID string, limit int) (string, error) 
 	return sb.String(), nil
 }
 
-func GetAutoBootBundle(db *sql.DB, projectID string) (string, error) {
+// AutoBootOptions controls how the Auto-Boot context bundle is assembled. When
+// Goal is set the per-section candidates are ranked by relevance to it instead
+// of pure recency; Semantic opts into an LLM re-rank via the configured agent
+// CLI (one batched call, failing open to the deterministic keyword ranking).
+type AutoBootOptions struct {
+	Goal     string
+	Semantic bool
+	Agent    string
+}
+
+// bundleCandidate is one memory in the Auto-Boot selection pool, tagged with
+// its section and ranking inputs.
+type bundleCandidate struct {
+	id        string
+	cat       string
+	what      string
+	why       string
+	pinned    bool
+	createdAt time.Time
+	section   int
+}
+
+// bundleSection describes one Auto-Boot section: its title, the SQL predicate
+// on memories, how many candidates to show, and whether the rationale is
+// rendered.
+type bundleSection struct {
+	title   string
+	where   string
+	withWhy bool
+	cap     int
+}
+
+var autoBootSections = []bundleSection{
+	{title: "Key Architectural Decisions", where: "category IN ('architecture', 'decision')", withWhy: true, cap: 3},
+	{title: "Standards & Conventions", where: "category = 'standard'", withWhy: false, cap: 2},
+	{title: "Recent Work & Known Issues", where: "category IN ('bugfix', 'journal')", withWhy: false, cap: 2},
+	// Postmortems are the most reusable lesson (what went wrong and how to avoid
+	// it), so the single most relevant one is surfaced with its rationale.
+	{title: "Postmortems & Lessons Learned", where: "category = 'postmortem'", withWhy: true, cap: 1},
+	// Recent Q&A notes surface the latest resolved question without its full
+	// rationale to keep the bundle compact; the agent drills down if needed.
+	{title: "Recent Q&A", where: "category = 'qa'", withWhy: false, cap: 1},
+}
+
+// GetAutoBootBundle assembles the session-start context bundle. Without a goal
+// the sections keep their recency-based selection (unchanged behavior). With a
+// goal the per-section candidates are ranked by relevance to it: pinned first,
+// then keyword overlap with the goal, then recency (deterministic, the default).
+// When opts.Semantic is set a single batched agent call re-ranks the combined
+// pool by meaning and fails open to the deterministic ranking if the agent is
+// unavailable.
+func GetAutoBootBundle(ctx context.Context, db *sql.DB, projectID string, opts AutoBootOptions) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("### 🚀 Auto-Boot Context Bundle\n\n")
 
-	// Collect IDs already shown in the previous-session section so the
-	// per-category sections below don't repeat them (dedup).
+	// Collect IDs already shown in the previous-session section (and the pinned
+	// memories surfaced there) so the per-category sections below don't repeat
+	// them (dedup).
 	shown := map[string]bool{}
 	sessCtx, err := GetSessionContext(db, projectID, 0)
 	if err == nil && sessCtx != "" && !strings.HasPrefix(sessCtx, "No previous session") {
@@ -214,41 +268,82 @@ func GetAutoBootBundle(db *sql.DB, projectID string) (string, error) {
 				}
 			}
 		}
+		if pinned, pErr := SearchPinnedMemories(db, projectID, 20); pErr == nil {
+			for _, m := range pinned {
+				shown[m.ID] = true
+			}
+		}
 	}
 
-	writeBundleSection(&sb, db, projectID, "Key Architectural Decisions", `
-		SELECT id, category, what, why
-		FROM memories
-		WHERE project_id = ? AND category IN ('architecture', 'decision') AND deleted_at IS NULL
-		ORDER BY created_at DESC LIMIT 3`, true, shown)
+	// Fetch the candidate pool per section. With a goal the pool is widened so
+	// the relevance ranking has material; without a goal it stays at the section
+	// cap (pure recency, unchanged behavior).
+	bySection := make([][]bundleCandidate, len(autoBootSections))
+	var combined []bundleCandidate
+	for si, sec := range autoBootSections {
+		limit := sec.cap
+		if opts.Goal != "" {
+			if opts.Semantic {
+				// 6 per section × 5 = 30, within SemanticRecallMaxCandidates.
+				limit = 6
+			} else {
+				limit = 15
+			}
+		}
+		rows, err := db.Query(`
+			SELECT id, category, what, why, pinned, created_at
+			FROM memories
+			WHERE project_id = ? AND `+sec.where+` AND deleted_at IS NULL
+			ORDER BY created_at DESC LIMIT ?`, projectID, limit)
+		if err != nil {
+			continue
+		}
+		for rows.Next() {
+			var c bundleCandidate
+			var pinned sql.NullInt64
+			var createdStr string
+			if sErr := rows.Scan(&c.id, &c.cat, &c.what, &c.why, &pinned, &createdStr); sErr != nil {
+				continue
+			}
+			if shown[c.id] {
+				continue
+			}
+			c.pinned = pinned.Valid && pinned.Int64 == 1
+			if t, pErr := parseTime(createdStr); pErr == nil {
+				c.createdAt = t
+			}
+			c.section = si
+			bySection[si] = append(bySection[si], c)
+			if opts.Semantic {
+				combined = append(combined, c)
+			}
+		}
+		rows.Close()
+	}
 
-	writeBundleSection(&sb, db, projectID, "Standards & Conventions", `
-		SELECT id, category, what, why
-		FROM memories
-		WHERE project_id = ? AND category = 'standard' AND deleted_at IS NULL
-		ORDER BY created_at DESC LIMIT 2`, false, shown)
+	// Select which candidates to show per section.
+	var selected [][]bundleCandidate
+	var reasons map[string]string
+	switch {
+	case opts.Goal == "":
+		selected = perSectionCaps(bySection, autoBootSections, false, "")
+	case opts.Semantic:
+		selected, reasons = semanticSelect(ctx, db, projectID, opts.Goal, combined, ResolveSemanticAgent(opts.Agent), autoBootSections)
+		if selected == nil {
+			selected = perSectionCaps(bySection, autoBootSections, true, opts.Goal) // fail-open → deterministic
+		}
+	default:
+		selected = perSectionCaps(bySection, autoBootSections, true, opts.Goal)
+	}
 
-	writeBundleSection(&sb, db, projectID, "Recent Work & Known Issues", `
-		SELECT id, category, what, why
-		FROM memories
-		WHERE project_id = ? AND category IN ('bugfix', 'journal') AND deleted_at IS NULL
-		ORDER BY created_at DESC LIMIT 2`, false, shown)
-
-	// Postmortems are the most reusable lesson (what went wrong and how to
-	// avoid it), so the single most recent one is surfaced with its rationale.
-	writeBundleSection(&sb, db, projectID, "Postmortems & Lessons Learned", `
-		SELECT id, category, what, why
-		FROM memories
-		WHERE project_id = ? AND category = 'postmortem' AND deleted_at IS NULL
-		ORDER BY created_at DESC LIMIT 1`, true, shown)
-
-	// Recent Q&A notes surface the latest resolved question without its full
-	// rationale to keep the bundle compact; the agent drills down if needed.
-	writeBundleSection(&sb, db, projectID, "Recent Q&A", `
-		SELECT id, category, what, why
-		FROM memories
-		WHERE project_id = ? AND category = 'qa' AND deleted_at IS NULL
-		ORDER BY created_at DESC LIMIT 1`, false, shown)
+	for si, sec := range autoBootSections {
+		items := renderBundleCandidates(selected[si], sec.withWhy, reasons)
+		if len(items) > 0 {
+			sb.WriteString("**" + sec.title + ":**\n")
+			sb.WriteString(strings.Join(items, "\n"))
+			sb.WriteString("\n\n")
+		}
+	}
 
 	return strings.TrimSpace(sb.String()), nil
 }
@@ -275,35 +370,104 @@ func BundleWhyCharsLimit() int {
 	return bundleWhyCharsLimit()
 }
 
-// writeBundleSection appends a titled, compact list of memories to the
-// Auto-Boot bundle. When withWhy is false only the title is shown to keep
-// the bundle token-efficient; the agent can drill down with sv_mem_get.
-// IDs in exclude are skipped to avoid repeating session-listed memories.
-func writeBundleSection(sb *strings.Builder, db *sql.DB, projectID, title, query string, withWhy bool, exclude map[string]bool) {
-	rows, err := db.Query(query, projectID)
-	if err != nil {
-		return
+// perSectionCaps selects up to each section's cap from its pool. When goalAware
+// the pool is ranked by relevance to goal (pinned first, then keyword overlap,
+// then recency); otherwise the pool keeps its recency ordering.
+func perSectionCaps(bySection [][]bundleCandidate, sections []bundleSection, goalAware bool, goal string) [][]bundleCandidate {
+	selected := make([][]bundleCandidate, len(sections))
+	for si, sec := range sections {
+		pool := bySection[si]
+		if goalAware {
+			sort.SliceStable(pool, func(i, j int) bool {
+				pi, pj := pool[i].pinned, pool[j].pinned
+				if pi != pj {
+					return pi
+				}
+				siScore, sjScore := keywordScore(goal, pool[i]), keywordScore(goal, pool[j])
+				if siScore != sjScore {
+					return siScore > sjScore
+				}
+				return pool[i].createdAt.After(pool[j].createdAt)
+			})
+		}
+		n := sec.cap
+		if len(pool) < n {
+			n = len(pool)
+		}
+		selected[si] = pool[:n]
 	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var id, cat, what, why string
-		if err := rows.Scan(&id, &cat, &what, &why); err != nil {
+	return selected
+}
+
+// keywordScore counts how many goal tokens appear in a candidate's title or
+// rationale — the deterministic relevance heuristic used when no goal-triggered
+// semantic ranking is requested.
+func keywordScore(goal string, c bundleCandidate) int {
+	tokens := tokenizeTitle(goal)
+	if len(tokens) == 0 {
+		return 0
+	}
+	hay := strings.ToLower(c.what + " " + c.why)
+	score := 0
+	for _, t := range tokens {
+		if strings.Contains(hay, t) {
+			score++
+		}
+	}
+	return score
+}
+
+// semanticSelect runs one batched SemanticRecall over the combined pool and
+// distributes the relevant candidates to their sections, respecting each cap.
+// It returns (nil, nil) when the LLM ranking could not be applied so the caller
+// falls back to the deterministic keyword ranking (fail-open).
+func semanticSelect(ctx context.Context, db *sql.DB, projectID, goal string, combined []bundleCandidate, agent string, sections []bundleSection) ([][]bundleCandidate, map[string]string) {
+	if len(combined) == 0 {
+		return make([][]bundleCandidate, len(sections)), nil
+	}
+	cands := make([]*MemorySearchResult, 0, len(combined))
+	for _, c := range combined {
+		cands = append(cands, &MemorySearchResult{ID: c.id})
+	}
+	results, reasons, used := SemanticRecall(ctx, db, projectID, goal, cands, agent, len(combined))
+	if !used {
+		return nil, nil
+	}
+	byID := make(map[string]bundleCandidate, len(combined))
+	for _, c := range combined {
+		byID[c.id] = c
+	}
+	selected := make([][]bundleCandidate, len(sections))
+	counts := make([]int, len(sections))
+	for _, r := range results {
+		c, ok := byID[r.ID]
+		if !ok {
 			continue
 		}
-		if exclude[id] {
+		if counts[c.section] >= sections[c.section].cap {
 			continue
 		}
+		selected[c.section] = append(selected[c.section], c)
+		counts[c.section]++
+	}
+	return selected, reasons
+}
+
+// renderBundleCandidates renders a section's candidates, appending the semantic
+// relevance reason to the rationale when available and withWhy is set.
+func renderBundleCandidates(items []bundleCandidate, withWhy bool, reasons map[string]string) []string {
+	out := make([]string, 0, len(items))
+	for _, c := range items {
 		if withWhy {
+			why := c.why
+			if r, ok := reasons[c.id]; ok && r != "" {
+				why += " — " + r
+			}
 			why = TruncateText(security.SanitizeText(why), bundleWhyCharsLimit())
-			items = append(items, fmt.Sprintf("- **[%s] %s** (ID: %s)\n  *Why:* %s", strings.ToUpper(cat), security.SanitizeText(what), id, why))
+			out = append(out, fmt.Sprintf("- **[%s] %s** (ID: %s)\n  *Why:* %s", strings.ToUpper(c.cat), security.SanitizeText(c.what), c.id, why))
 		} else {
-			items = append(items, fmt.Sprintf("- **[%s] %s** (ID: %s)", strings.ToUpper(cat), security.SanitizeText(what), id))
+			out = append(out, fmt.Sprintf("- **[%s] %s** (ID: %s)", strings.ToUpper(c.cat), security.SanitizeText(c.what), c.id))
 		}
 	}
-	if len(items) > 0 {
-		sb.WriteString("**" + title + ":**\n")
-		sb.WriteString(strings.Join(items, "\n"))
-		sb.WriteString("\n\n")
-	}
+	return out
 }

@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"context"
 	"database/sql"
 	"path/filepath"
 	"strings"
@@ -129,7 +130,7 @@ func TestCompactMemoriesPreservesSessionID(t *testing.T) {
 
 	// The Auto-Boot bundle must also surface the synthesized decision so a
 	// new session bootstraps from it, not just sv_mem_context lookups.
-	bundle, err := GetAutoBootBundle(database, projectID)
+	bundle, err := GetAutoBootBundle(context.Background(), database, projectID, AutoBootOptions{})
 	if err != nil {
 		t.Fatalf("failed GetAutoBootBundle after compaction: %v", err)
 	}

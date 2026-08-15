@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -1071,7 +1072,7 @@ func TestAutoBootBundleAndScopedSearch(t *testing.T) {
 	}
 
 	// 2. Test GetAutoBootBundle
-	bundle, err := GetAutoBootBundle(database, projectID)
+	bundle, err := GetAutoBootBundle(context.Background(), database, projectID, AutoBootOptions{})
 	if err != nil {
 		t.Fatalf("failed to get autoboot bundle: %v", err)
 	}
@@ -1155,7 +1156,7 @@ func TestAutoBootBundleFullSessionFlow(t *testing.T) {
 		t.Fatalf("failed to start session 2: %v", err)
 	}
 
-	bundle, err := GetAutoBootBundle(database, projectID)
+	bundle, err := GetAutoBootBundle(context.Background(), database, projectID, AutoBootOptions{})
 	if err != nil {
 		t.Fatalf("failed to get autoboot bundle: %v", err)
 	}
@@ -1186,6 +1187,190 @@ func TestAutoBootBundleFullSessionFlow(t *testing.T) {
 	// its rationale under Key Architectural Decisions.
 	if strings.Contains(bundle, "*Why:* Improve concurrency") {
 		t.Errorf("expected session memory deduped from decisions section, got:\n%s", bundle)
+	}
+}
+
+func TestAutoBootBundleGoalAware(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := db.InitDB(filepath.Join(tempDir, "bundle_goal.db"))
+	if err != nil {
+		t.Fatalf("InitDB error: %v", err)
+	}
+	defer database.Close()
+
+	const projectID = "proj-bundle-goal"
+	if err = db.RegisterProject(database, projectID, "Bundle Goal", tempDir); err != nil {
+		t.Fatalf("RegisterProject error: %v", err)
+	}
+
+	// A completed session so the previous-session section is produced; its
+	// memory is unrelated and deduped, leaving the decisions section free.
+	sess, err := StartSession(database, projectID, "Session one", tempDir)
+	if err != nil {
+		t.Fatalf("StartSession error: %v", err)
+	}
+	if _, err = SaveMemory(database, &Memory{
+		ProjectID: projectID, Category: "architecture", What: "Session only memory",
+		Why: "unrelated", SessionID: sess.ID, CreatedAt: time.Now().Add(-3 * time.Hour),
+	}); err != nil {
+		t.Fatalf("save session memory: %v", err)
+	}
+	if err = SaveSessionSummary(database, sess.ID, "Session one", "d", "a", "n", "f"); err != nil {
+		t.Fatalf("SaveSessionSummary: %v", err)
+	}
+	if err = EndSession(database, sess.ID, "done"); err != nil {
+		t.Fatalf("EndSession: %v", err)
+	}
+	if _, err = StartSession(database, projectID, "Current task", tempDir); err != nil {
+		t.Fatalf("StartSession 2: %v", err)
+	}
+
+	// Two decisions outside the session: A is older but matches the goal;
+	// B is newer but unrelated.
+	a, err := SaveMemory(database, &Memory{
+		ProjectID: projectID, Category: "decision", What: "Graph query token efficiency",
+		Why: "Reduce context tokens", CreatedAt: time.Now().Add(-90 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("save A: %v", err)
+	}
+	b, err := SaveMemory(database, &Memory{
+		ProjectID: projectID, Category: "decision", What: "Agent hooks setup",
+		Why: "Lifecycle wiring", CreatedAt: time.Now().Add(-80 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("save B: %v", err)
+	}
+
+	// Without a goal, recency wins (newer B before older A).
+	rec, err := GetAutoBootBundle(context.Background(), database, projectID, AutoBootOptions{})
+	if err != nil {
+		t.Fatalf("GetAutoBootBundle: %v", err)
+	}
+	if !strings.Contains(rec, b.What) || !strings.Contains(rec, a.What) {
+		t.Fatalf("expected both decisions in bundle, got:\n%s", rec)
+	}
+	if strings.Index(rec, b.What) >= strings.Index(rec, a.What) {
+		t.Errorf("expected newer memory B before older A without a goal:\n%s", rec)
+	}
+
+	// With a goal matching A, keyword ranking puts A before B.
+	g, err := GetAutoBootBundle(context.Background(), database, projectID, AutoBootOptions{Goal: "graph"})
+	if err != nil {
+		t.Fatalf("GetAutoBootBundle goal: %v", err)
+	}
+	if strings.Index(g, a.What) >= strings.Index(g, b.What) {
+		t.Errorf("expected goal-relevant A before B with goal 'graph':\n%s", g)
+	}
+}
+
+func TestAutoBootBundleSemanticGoal(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := db.InitDB(filepath.Join(tempDir, "bundle_goal_sem.db"))
+	if err != nil {
+		t.Fatalf("InitDB error: %v", err)
+	}
+	defer database.Close()
+
+	const projectID = "proj-bundle-goal-sem"
+	if err = db.RegisterProject(database, projectID, "Bundle Goal Sem", tempDir); err != nil {
+		t.Fatalf("RegisterProject error: %v", err)
+	}
+
+	sess, err := StartSession(database, projectID, "Session one", tempDir)
+	if err != nil {
+		t.Fatalf("StartSession error: %v", err)
+	}
+	if _, err = SaveMemory(database, &Memory{
+		ProjectID: projectID, Category: "architecture", What: "Session only memory",
+		Why: "unrelated", SessionID: sess.ID, CreatedAt: time.Now().Add(-3 * time.Hour),
+	}); err != nil {
+		t.Fatalf("save session memory: %v", err)
+	}
+	if err = SaveSessionSummary(database, sess.ID, "Session one", "d", "a", "n", "f"); err != nil {
+		t.Fatalf("SaveSessionSummary: %v", err)
+	}
+	if err = EndSession(database, sess.ID, "done"); err != nil {
+		t.Fatalf("EndSession: %v", err)
+	}
+	if _, err = StartSession(database, projectID, "Current task", tempDir); err != nil {
+		t.Fatalf("StartSession 2: %v", err)
+	}
+
+	a, err := SaveMemory(database, &Memory{
+		ProjectID: projectID, Category: "decision", What: "Graph query token efficiency",
+		Why: "Reduce context tokens", CreatedAt: time.Now().Add(-90 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("save A: %v", err)
+	}
+	b, err := SaveMemory(database, &Memory{
+		ProjectID: projectID, Category: "decision", What: "Agent hooks setup",
+		Why: "Lifecycle wiring", CreatedAt: time.Now().Add(-80 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("save B: %v", err)
+	}
+
+	original := SemanticRunAgent
+	defer func() { SemanticRunAgent = original }()
+
+	// Semantic ranking keeps only A and appends the relevance reason.
+	SemanticRunAgent = func(ctx context.Context, agent, prompt string) (string, error) {
+		return `[{"id":"` + a.ID + `","relevant":true,"reason":"graph focused"}]`, nil
+	}
+	gs, err := GetAutoBootBundle(context.Background(), database, projectID, AutoBootOptions{Goal: "graph", Semantic: true})
+	if err != nil {
+		t.Fatalf("GetAutoBootBundle semantic: %v", err)
+	}
+	if !strings.Contains(gs, a.What) {
+		t.Errorf("expected semantically relevant A in bundle, got:\n%s", gs)
+	}
+	if !strings.Contains(gs, "graph focused") {
+		t.Errorf("expected relevance reason appended, got:\n%s", gs)
+	}
+	if strings.Contains(gs, b.What) {
+		t.Errorf("expected unrelated B filtered out by semantic ranking, got:\n%s", gs)
+	}
+
+	// Fail-open: agent error falls back to the deterministic keyword ranking.
+	SemanticRunAgent = func(ctx context.Context, agent, prompt string) (string, error) {
+		return "", context.DeadlineExceeded
+	}
+	gf, err := GetAutoBootBundle(context.Background(), database, projectID, AutoBootOptions{Goal: "graph", Semantic: true})
+	if err != nil {
+		t.Fatalf("GetAutoBootBundle semantic fail-open: %v", err)
+	}
+	if !strings.Contains(gf, a.What) || !strings.Contains(gf, b.What) {
+		t.Errorf("expected both decisions on fail-open, got:\n%s", gf)
+	}
+	if strings.Index(gf, a.What) >= strings.Index(gf, b.What) {
+		t.Errorf("expected keyword ranking A before B on fail-open:\n%s", gf)
+	}
+}
+
+func TestPerSectionCapsPinnedFirst(t *testing.T) {
+	sections := []bundleSection{{title: "dec", where: "x", withWhy: false, cap: 2}}
+	bySection := [][]bundleCandidate{
+		{
+			{id: "a", what: "Graph query", why: "tokens", createdAt: time.Now().Add(-10 * time.Minute)},
+			{id: "b", what: "hooks", why: "wiring", pinned: true, createdAt: time.Now().Add(-5 * time.Minute)},
+			{id: "c", what: "memory", why: "sync", createdAt: time.Now()},
+		},
+	}
+	sel := perSectionCaps(bySection, sections, true, "graph")
+	var got []string
+	for _, c := range sel[0] {
+		got = append(got, c.id)
+	}
+	want := []string{"b", "a"}
+	if len(got) != len(want) {
+		t.Fatalf("perSectionCaps = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("perSectionCaps order = %v, want %v", got, want)
+		}
 	}
 }
 
@@ -1223,7 +1408,7 @@ func TestAutoBootBundleSurfacesPostmortemAndQA(t *testing.T) {
 		t.Fatalf("failed to save qa: %v", err)
 	}
 
-	bundle, err := GetAutoBootBundle(database, projectID)
+	bundle, err := GetAutoBootBundle(context.Background(), database, projectID, AutoBootOptions{})
 	if err != nil {
 		t.Fatalf("failed to get autoboot bundle: %v", err)
 	}
@@ -1344,7 +1529,7 @@ func TestGetSessionContextEdgeCases(t *testing.T) {
 			t.Fatalf("failed to end session: %v", err)
 		}
 
-		bundle, err := GetAutoBootBundle(database, projectID)
+		bundle, err := GetAutoBootBundle(context.Background(), database, projectID, AutoBootOptions{})
 		if err != nil {
 			t.Fatalf("failed GetAutoBootBundle: %v", err)
 		}

@@ -461,11 +461,13 @@ Generate a stable topic key in kebab-case format before saving.
 
 ### 4. `sv_mem_session_start`
 
-Register a new coding session. Returns the Auto-Boot Context Bundle (previous session summary, key decisions, standards, recent bugfixes, postmortems, recent Q&A, last journals, top graph hubs) bounded by the token budget.
+Register a new coding session. Returns the Auto-Boot Context Bundle (previous session summary, key decisions, standards, recent bugfixes, postmortems, recent Q&A, last journals, top graph hubs) bounded by the token budget. When a `goal` is provided, the surfaced decisions/standards/bugfixes are ranked by relevance to it instead of pure recency.
 
 - **Parameters:**
-  - `goal` (string, optional): Session objective.
+  - `goal` (string, optional): Session objective. When set, the Auto-Boot bundle ranks the per-section candidates by relevance to it (pinned first, then keyword overlap, then recency).
   - `directory` (string, optional): Working directory.
+  - `semantic` (string, optional): When `'true'` and a `goal` is given, re-ranks the bundle candidates with the configured agent CLI by semantic relevance (one batched call; fails open to the deterministic keyword ranking when the agent is unavailable). Default `'false'`.
+  - `semantic_agent` (string, optional): Agent CLI for semantic recall. Defaults to `$SV_MEMORY_SEMANTIC_AGENT`, then `claude`.
   - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded (default from config `max_response_tokens`, 4000; `'0'` = unlimited).
 
 ### 5. `sv_mem_session_end`

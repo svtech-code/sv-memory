@@ -460,11 +460,13 @@ Genera un topic key estable en formato kebab-case antes de guardar.
 
 ### 4. `sv_mem_session_start`
 
-Registra una nueva sesión de codificación. Devuelve el Auto-Boot Context Bundle (resumen de la sesión anterior, decisiones clave, estándares, bugfixes recientes, postmortems, Q&A reciente, últimos diarios, hubs del grafo) limitado por el presupuesto de tokens.
+Registra una nueva sesión de codificación. Devuelve el Auto-Boot Context Bundle (resumen de la sesión anterior, decisiones clave, estándares, bugfixes recientes, postmortems, Q&A reciente, últimos diarios, hubs del grafo) limitado por el presupuesto de tokens. Cuando se proporciona un `goal`, las decisiones/estándares/bugfixes mostrados se ordenan por relevancia a él en lugar de por mera recencia.
 
 - **Parámetros:**
-  - `goal` (string, opcional): Objetivo de la sesión.
+  - `goal` (string, opcional): Objetivo de la sesión. Al definirlo, el Auto-Boot bundle ordena los candidatos de cada sección por relevancia a él (pinned primero, luego solapamiento de keywords, luego recencia).
   - `directory` (string, opcional): Directorio de trabajo.
+  - `semantic` (string, opcional): Cuando es `'true'` y hay un `goal`, reordena los candidatos del bundle con el CLI del agente configurado según relevancia semántica (una llamada en lote; falla de forma segura al ranking de keywords determinista si el agente no está disponible). Por defecto `'false'`.
+  - `semantic_agent` (string, opcional): CLI del agente para recall semántico. Por defecto `$SV_MEMORY_SEMANTIC_AGENT`, luego `claude`.
   - `token_budget` (string, opcional): Máximo de tokens para la respuesta; se trunca con un aviso al superarse (por defecto desde config `max_response_tokens`, 4000; `'0'` = ilimitado).
 
 ### 5. `sv_mem_session_end`

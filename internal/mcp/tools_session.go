@@ -21,6 +21,8 @@ func (s *Server) handleSessionStart(ctx context.Context, req mcp.CallToolRequest
 	s.maybeSyncFromGit()
 
 	goal := req.GetString("goal", "")
+	semantic := req.GetString("semantic", "") == "true"
+	semanticAgent := req.GetString("semantic_agent", "")
 	dir := req.GetString("directory", "")
 	if dir == "" {
 		dir = s.cfg.ProjPath
@@ -37,7 +39,11 @@ func (s *Server) handleSessionStart(ctx context.Context, req mcp.CallToolRequest
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Session started (ID: %s). Use sv_mem_save with session_id=\"%s\" to associate memories, then sv_mem_session_end to close.\n\n", session.ID, session.ID)
 
-	autoBundle, bundleErr := memory.GetAutoBootBundle(s.pool.Reader, s.cfg.ProjectID)
+	autoBundle, bundleErr := memory.GetAutoBootBundle(ctx, s.pool.Reader, s.cfg.ProjectID, memory.AutoBootOptions{
+		Goal:     goal,
+		Semantic: semantic,
+		Agent:    semanticAgent,
+	})
 	if bundleErr == nil && autoBundle != "" {
 		sb.WriteString(autoBundle)
 	}
