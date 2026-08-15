@@ -122,7 +122,7 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 - **Subcomandos** para leer/escribir configuración (YAML, global `~/.sv-memory/config.yaml` o local `.sv-memory/config.yaml`):
   - `sv-memory configure get <key>`: imprime un único valor de configuración.
   - `sv-memory configure set <key> <value> [--local]`: escribe un valor de forma global (por defecto) o local al proyecto.
-  - `sv-memory configure list`: imprime todos los valores de configuración activos (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`, `auto_compaction_enabled`, `compaction_interval_minutes`, `max_response_tokens`, `max_field_chars`, `search_expand_chars`, `timeline_why_chars`, `bundle_why_chars`, `context_pack_max_memories`, `graph_boost`).
+  - `sv-memory configure list`: imprime todos los valores de configuración activos (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`, `auto_compaction_enabled`, `compaction_interval_minutes`, `max_response_tokens`, `max_field_chars`, `search_expand_chars`, `timeline_why_chars`, `bundle_why_chars`, `context_pack_max_memories`, `graph_boost`, `prune_stale_days`).
 
 #### 10. `sv-memory permissions`
 
@@ -558,11 +558,14 @@ Compara dos memorias lado a lado en formato Markdown.
 
 ### 14. `sv_mem_review`
 
-Encuentra memorias que necesitan mantenimiento (p. ej. obsoletas, conteos de duplicados excesivos, candidatas a consolidación) o reinicia el plazo de revisión de política de una memoria.
+Encuentra memorias que necesitan mantenimiento (p. ej. obsoletas, conteos de duplicados excesivos, candidatas a consolidación), reinicia el plazo de revisión de política de una memoria, o poda memorias transitorias obsoletas.
 
 - **Parámetros:**
-  - `action` (string, opcional): `'list'` (por defecto) o `'mark_reviewed'`.
+  - `action` (string, opcional): `'list'` (por defecto), `'mark_reviewed'` o `'prune_stale'`.
   - `id` (string, opcional): Requerido para `action='mark_reviewed'`: el ID de la memoria a marcar como revisada. Reinicia `review_after` a `now + decay(category)`.
+  - `older_than_days` (string, opcional): Para `action='prune_stale'`: poda memorias no vistas/creadas dentro de esta cantidad de días (por defecto desde config `prune_stale_days`, 90).
+  - `category` (string, opcional): Para `action='prune_stale'`: categorías separadas por comas a podar en lugar del conjunto transitorio por defecto (`journal,qa,discussion,idea`). Las categorías durables (decision, standard, architecture, postmortem, bugfix) nunca se podan salvo que se listen explícitamente aquí.
+  - `apply` (string, opcional): Para `action='prune_stale'`: `'true'` para borrar realmente (soft-delete); por defecto `'false'` (dry run — solo lista lo que se podaría). Las memorias pineadas nunca se podan.
 
 ### 15. `sv_mem_stats`
 

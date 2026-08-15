@@ -293,3 +293,100 @@ func ReviewMemories(db *sql.DB, projectID string, limit int) ([]*MemoryReviewIte
 	}
 	return items, nil
 }
+
+// transientCategories are safe to prune when stale: journals, Q&A, discussions,
+// and ideas are ephemeral notes. Durable knowledge (decisions, standards,
+// architecture, postmortems, bugfixes) is never pruned by default, only when
+// explicitly requested through the category parameter.
+var transientCategories = map[string]bool{
+	"journal": true, "qa": true, "discussion": true, "idea": true,
+}
+
+// pruneStaleDefaultDays is the default age (in days) past which an unviewed
+// transient memory is considered stale.
+const pruneStaleDefaultDays = 90
+
+// PruneStaleMemories lists (dry-run) or soft-deletes (apply) transient memories
+// whose last-seen/created time is older than olderThanDays days. Pinned memories
+// and, by default, durable categories are never touched. When category is
+// non-empty it replaces the default transient set. Returns the memories that
+// were pruned (or would be, on a dry run).
+func PruneStaleMemories(db *sql.DB, projectID string, olderThanDays int, category string, apply bool) ([]*MemorySearchResult, error) {
+	if olderThanDays <= 0 {
+		olderThanDays = pruneStaleDefaultDays
+	}
+	cutoff := time.Now().Add(-time.Duration(olderThanDays) * 24 * time.Hour)
+
+	cats := transientCategories
+	if trimmed := strings.TrimSpace(category); trimmed != "" {
+		cats = map[string]bool{}
+		for _, c := range strings.Split(trimmed, ",") {
+			if c = strings.TrimSpace(c); c != "" {
+				cats[c] = true
+			}
+		}
+	}
+	catList := make([]string, 0, len(cats))
+	for c := range cats {
+		catList = append(catList, c)
+	}
+	sort.Strings(catList)
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(catList)), ",")
+	args := []interface{}{projectID}
+	for _, c := range catList {
+		args = append(args, c)
+	}
+	args = append(args, cutoff)
+
+	rows, err := db.Query(`
+		SELECT id, category, what, topic_key, revision_count, duplicate_count, created_at
+		FROM memories
+		WHERE project_id = ? AND deleted_at IS NULL AND pinned = 0
+		  AND category IN (`+placeholders+`)
+		  AND COALESCE(last_seen_at, created_at) < ?
+		ORDER BY created_at ASC`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query stale memories: %w", err)
+	}
+	defer rows.Close()
+
+	var items []*MemorySearchResult
+	for rows.Next() {
+		var r MemorySearchResult
+		var createdAtStr string
+		var topicKey sql.NullString
+		var revCount, dupCount sql.NullInt64
+		if sErr := rows.Scan(&r.ID, &r.Category, &r.What, &topicKey, &revCount, &dupCount, &createdAtStr); sErr != nil {
+			continue
+		}
+		r.TopicKey = topicKey.String
+		if revCount.Valid {
+			r.RevisionCount = int(revCount.Int64)
+		}
+		if dupCount.Valid {
+			r.DuplicateCount = int(dupCount.Int64)
+		}
+		r.CreatedAt = parseTimeOrNow(createdAtStr)
+		items = append(items, &r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if apply && len(items) > 0 {
+		ids := make([]interface{}, 0, len(items))
+		idPlaceholders := make([]string, 0, len(items))
+		for _, m := range items {
+			idPlaceholders = append(idPlaceholders, "?")
+			ids = append(ids, m.ID)
+		}
+		query := "UPDATE memories SET deleted_at = ? WHERE project_id = ? AND id IN (" +
+			strings.Join(idPlaceholders, ",") + ")"
+		execArgs := append([]interface{}{time.Now(), projectID}, ids...)
+		if _, err := db.Exec(query, execArgs...); err != nil {
+			return nil, fmt.Errorf("failed to soft-delete stale memories: %w", err)
+		}
+	}
+	return items, nil
+}

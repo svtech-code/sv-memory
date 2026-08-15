@@ -622,10 +622,13 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 13. Tool: sv_mem_review
 	reviewTool := mcp.NewTool("sv_mem_review",
-		mcp.WithDescription("List memories that may need attention: old, stale, high duplicates, or candidates for consolidation. Use action='mark_reviewed' (with id) to reset a memory's policy-review deadline after it has been validated."),
+		mcp.WithDescription("List memories that may need attention: old, stale, high duplicates, or candidates for consolidation. action='mark_reviewed' (with id) resets a memory's policy-review deadline. action='prune_stale' soft-deletes stale transient memories (journal/qa/discussion/idea) older than the cutoff — dry-run by default, pass apply='true' to actually delete."),
 		mcp.WithDeferLoading(true),
-		mcp.WithString("action", mcp.Description("Action to perform: 'list' (default) or 'mark_reviewed'")),
+		mcp.WithString("action", mcp.Description("Action to perform: 'list' (default), 'mark_reviewed', or 'prune_stale'")),
 		mcp.WithString("id", mcp.Description("Required for action='mark_reviewed': the memory ID to mark as reviewed")),
+		mcp.WithString("older_than_days", mcp.Description("For action='prune_stale': prune memories not seen/created within this many days (default from config 'prune_stale_days', 90)")),
+		mcp.WithString("category", mcp.Description("For action='prune_stale': optional comma-separated categories to prune instead of the default transient set (journal,qa,discussion,idea)")),
+		mcp.WithString("apply", mcp.Description("For action='prune_stale': 'true' to actually soft-delete; default 'false' (dry run — only lists what would be pruned)")),
 	)
 	ms.AddTool(reviewTool, s.handleReview)
 

@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -1371,6 +1372,92 @@ func TestPerSectionCapsPinnedFirst(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("perSectionCaps order = %v, want %v", got, want)
 		}
+	}
+}
+
+// insertOldMemory inserts a memory with an artificially old created_at and
+// last_seen_at so the prune cutoff treats it as stale.
+func insertOldMemory(t *testing.T, database *sql.DB, projectID, id, cat, what string, daysOld int) {
+	t.Helper()
+	old := time.Now().Add(-time.Duration(daysOld) * 24 * time.Hour)
+	if _, err := database.Exec(`INSERT INTO memories (id, project_id, category, what, why, learned, created_at, last_seen_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, id, projectID, cat, what, "why", "learned", old, old); err != nil {
+		t.Fatalf("insert old memory %s: %v", id, err)
+	}
+}
+
+func TestPruneStaleMemories(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := db.InitDB(filepath.Join(tempDir, "prune.db"))
+	if err != nil {
+		t.Fatalf("InitDB error: %v", err)
+	}
+	defer database.Close()
+
+	const projectID = "proj-prune"
+	if err = db.RegisterProject(database, projectID, "Prune", tempDir); err != nil {
+		t.Fatalf("RegisterProject error: %v", err)
+	}
+
+	insertOldMemory(t, database, projectID, "j-stale", "journal", "Old journal", 200)
+	insertOldMemory(t, database, projectID, "j-fresh", "journal", "Fresh journal", 1)
+	insertOldMemory(t, database, projectID, "d-stale", "decision", "Old decision", 200)
+	insertOldMemory(t, database, projectID, "j-pinned", "journal", "Pinned journal", 200)
+	if _, err = database.Exec("UPDATE memories SET pinned = 1 WHERE id = 'j-pinned'"); err != nil {
+		t.Fatalf("pin memory: %v", err)
+	}
+
+	// Dry run: only the stale, unpinned, transient journal is listed; nothing
+	// is deleted.
+	pruned, err := PruneStaleMemories(database, projectID, 90, "", false)
+	if err != nil {
+		t.Fatalf("PruneStaleMemories dry run: %v", err)
+	}
+	if len(pruned) != 1 || pruned[0].ID != "j-stale" {
+		t.Fatalf("dry run should list only j-stale, got %+v", pruned)
+	}
+	var active int
+	if err = database.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ? AND deleted_at IS NULL", projectID).Scan(&active); err != nil {
+		t.Fatalf("count active: %v", err)
+	}
+	if active != 4 {
+		t.Fatalf("dry run must not delete: expected 4 active, got %d", active)
+	}
+
+	// Apply: only the stale transient journal is soft-deleted; the fresh
+	// journal, the durable decision, and the pinned journal stay.
+	pruned, err = PruneStaleMemories(database, projectID, 90, "", true)
+	if err != nil {
+		t.Fatalf("PruneStaleMemories apply: %v", err)
+	}
+	if len(pruned) != 1 || pruned[0].ID != "j-stale" {
+		t.Fatalf("apply should prune only j-stale, got %+v", pruned)
+	}
+	var deleted int
+	if err = database.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ? AND deleted_at IS NOT NULL", projectID).Scan(&deleted); err != nil {
+		t.Fatalf("count deleted: %v", err)
+	}
+	if deleted != 1 {
+		t.Fatalf("expected 1 soft-deleted memory, got %d", deleted)
+	}
+	for _, id := range []string{"j-fresh", "d-stale", "j-pinned"} {
+		var del bool
+		if err = database.QueryRow("SELECT deleted_at IS NOT NULL FROM memories WHERE id = ?", id).Scan(&del); err != nil {
+			t.Fatalf("check %s: %v", id, err)
+		}
+		if del {
+			t.Errorf("memory %s must not be pruned", id)
+		}
+	}
+
+	// Category override: an explicitly requested category is pruned too.
+	insertOldMemory(t, database, projectID, "b-stale", "bugfix", "Old bugfix", 200)
+	pruned, err = PruneStaleMemories(database, projectID, 90, "bugfix", false)
+	if err != nil {
+		t.Fatalf("PruneStaleMemories override: %v", err)
+	}
+	if len(pruned) != 1 || pruned[0].ID != "b-stale" {
+		t.Fatalf("category override should list b-stale, got %+v", pruned)
 	}
 }
 

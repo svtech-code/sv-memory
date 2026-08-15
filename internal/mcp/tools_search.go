@@ -389,6 +389,43 @@ func (s *Server) handleReview(ctx context.Context, req mcp.CallToolRequest) (*mc
 		return mcp.NewToolResultText(fmt.Sprintf("Memory %s marked as reviewed. Its policy-review deadline was reset and the change will be synced to Git.", id)), nil
 	}
 
+	if action == "prune_stale" {
+		olderThanDays := viper.GetInt("prune_stale_days")
+		if dStr := req.GetString("older_than_days", ""); dStr != "" {
+			if d, convErr := strconv.Atoi(dStr); convErr == nil && d > 0 {
+				olderThanDays = d
+			}
+		}
+		category := req.GetString("category", "")
+		apply := req.GetString("apply", "") == "true"
+
+		pruned, err := memory.PruneStaleMemories(s.pool.Writer, s.cfg.ProjectID, olderThanDays, category, apply)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to prune stale memories: %v", err)), nil
+		}
+		if apply {
+			s.scheduleSync()
+		}
+
+		if len(pruned) == 0 {
+			return mcp.NewToolResultText("No stale transient memories found to prune."), nil
+		}
+
+		var sb strings.Builder
+		if apply {
+			fmt.Fprintf(&sb, "Pruned %d stale transient memories (soft-deleted, change synced to Git):\n\n", len(pruned))
+		} else {
+			fmt.Fprintf(&sb, "Dry run: %d stale transient memories would be pruned (pass apply='true' to delete):\n\n", len(pruned))
+		}
+		sb.WriteString("| ID | Category | Title | Date |\n")
+		sb.WriteString("|---|----------|-------|------|\n")
+		for _, m := range pruned {
+			fmt.Fprintf(&sb, "| %s | %s | %s | %s |\n", m.ID, strings.ToUpper(m.Category), escapeTableCell(m.What), m.CreatedAt.Format("2006-01-02"))
+		}
+		sb.WriteString("\n*Prune only touches transient categories (journal, qa, discussion, idea) unless `category` overrides; pinned and durable memories are never removed.*\n")
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+
 	reviewLimit := viper.GetInt("default_review_limit")
 	items, err := memory.ReviewMemories(s.pool.Reader, s.cfg.ProjectID, reviewLimit)
 	if err != nil {

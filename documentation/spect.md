@@ -122,7 +122,7 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 - **Sub-commands** for reading/writing configuration (YAML, global `~/.sv-memory/config.yaml` or local `.sv-memory/config.yaml`):
   - `sv-memory configure get <key>`: prints a single configuration value.
   - `sv-memory configure set <key> <value> [--local]`: writes a value globally (default) or project-locally.
-  - `sv-memory configure list`: prints all active configuration values (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`, `auto_compaction_enabled`, `compaction_interval_minutes`, `max_response_tokens`, `max_field_chars`, `search_expand_chars`, `timeline_why_chars`, `bundle_why_chars`, `context_pack_max_memories`, `graph_boost`).
+  - `sv-memory configure list`: prints all active configuration values (`default_db_path`, `git_sync_enabled`, `conflict_threshold`, `default_review_limit`, `auto_compaction_enabled`, `compaction_interval_minutes`, `max_response_tokens`, `max_field_chars`, `search_expand_chars`, `timeline_why_chars`, `bundle_why_chars`, `context_pack_max_memories`, `graph_boost`, `prune_stale_days`).
 
 #### 10. `sv-memory permissions`
 
@@ -559,11 +559,14 @@ Compare two memories side-by-side in Markdown format.
 
 ### 14. `sv_mem_review`
 
-Find memories needing maintenance (e.g. stale, excessive duplicate counts, consolidation candidates) or reset a memory's policy-review deadline.
+Find memories needing maintenance (e.g. stale, excessive duplicate counts, consolidation candidates), reset a memory's policy-review deadline, or prune stale transient memories.
 
 - **Parameters:**
-  - `action` (string, optional): `'list'` (default) or `'mark_reviewed'`.
+  - `action` (string, optional): `'list'` (default), `'mark_reviewed'`, or `'prune_stale'`.
   - `id` (string, optional): Required for `action='mark_reviewed'`: the memory ID to mark as reviewed. Resets `review_after` to `now + decay(category)`.
+  - `older_than_days` (string, optional): For `action='prune_stale'`: prune memories not seen/created within this many days (default from config `prune_stale_days`, 90).
+  - `category` (string, optional): For `action='prune_stale'`: comma-separated categories to prune instead of the default transient set (`journal,qa,discussion,idea`). Durable categories (decision, standard, architecture, postmortem, bugfix) are never pruned unless explicitly listed here.
+  - `apply` (string, optional): For `action='prune_stale'`: `'true'` to actually soft-delete; default `'false'` (dry run — only lists what would be pruned). Pinned memories are never pruned.
 
 ### 15. `sv_mem_stats`
 
