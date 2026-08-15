@@ -125,21 +125,38 @@ func TestSaveJudgmentReplacesDuplicate(t *testing.T) {
 	}
 
 	// Re-judging the same pair must replace the previous relation, not
-	// accumulate duplicates.
+	// accumulate duplicates. Manual judgments are recorded as 'judged' so they
+	// neither inflate the pending-conflict count nor get replaced by a later
+	// semantic re-scan (which only touches status='pending' rows).
+	var lastRel *MemoryRelation
 	for i := 0; i < 2; i++ {
-		if _, err := SaveJudgment(database, "proj-judge", a.ID, b.ID, "conflicts_with", "changed opinion", "tester"); err != nil {
+		lastRel, err = SaveJudgment(database, "proj-judge", a.ID, b.ID, "conflicts_with", "changed opinion", "tester")
+		if err != nil {
 			t.Fatalf("SaveJudgment %d: %v", i, err)
 		}
 	}
 
 	var count int
-	if err := database.QueryRow(
+	if err = database.QueryRow(
 		"SELECT COUNT(*) FROM memory_relations WHERE project_id = ? AND source_id = ? AND target_id = ? AND relation_type = 'conflicts_with'",
 		"proj-judge", a.ID, b.ID).Scan(&count); err != nil {
 		t.Fatalf("count relations: %v", err)
 	}
 	if count != 1 {
 		t.Errorf("expected exactly 1 relation after re-judging, got %d", count)
+	}
+	if lastRel.Status != "judged" {
+		t.Errorf("expected returned judgment status 'judged', got %q", lastRel.Status)
+	}
+
+	var status string
+	if err = database.QueryRow(
+		"SELECT status FROM memory_relations WHERE project_id = ? AND source_id = ? AND target_id = ? AND relation_type = 'conflicts_with'",
+		"proj-judge", a.ID, b.ID).Scan(&status); err != nil {
+		t.Fatalf("query persisted status: %v", err)
+	}
+	if status != "judged" {
+		t.Errorf("expected persisted status 'judged', got %q", status)
 	}
 }
 
@@ -1483,17 +1500,17 @@ func TestAutoBootBundleSurfacesPendingConflicts(t *testing.T) {
 		t.Errorf("expected no conflict line when none exist, got:\n%s", clean)
 	}
 
-	// Two memories plus a pending conflicts_with relation.
-	a, err := SaveMemory(database, &Memory{ProjectID: projectID, Category: "decision", What: "Use Postgres", Why: "w", Learned: "l"})
-	if err != nil {
+	// Two memories plus a pending conflicts_with relation created by a real
+	// conflict scan (ScanConflicts marks candidates status='pending', unlike
+	// SaveJudgment which records an explicit judgment as 'judged').
+	if _, err = SaveMemory(database, &Memory{ProjectID: projectID, Category: "decision", What: "Use PostgreSQL for users data storage", Why: "w", Learned: "l"}); err != nil {
 		t.Fatalf("save a: %v", err)
 	}
-	b, err := SaveMemory(database, &Memory{ProjectID: projectID, Category: "decision", What: "Use Mongo", Why: "w", Learned: "l"})
-	if err != nil {
+	if _, err = SaveMemory(database, &Memory{ProjectID: projectID, Category: "decision", What: "Replace PostgreSQL users storage with MongoDB", Why: "w", Learned: "l"}); err != nil {
 		t.Fatalf("save b: %v", err)
 	}
-	if _, err = SaveJudgment(database, projectID, a.ID, b.ID, "conflicts_with", "contradicting stores", "tester"); err != nil {
-		t.Fatalf("SaveJudgment: %v", err)
+	if _, err = ScanConflicts(database, projectID, true, 5, 0.45); err != nil {
+		t.Fatalf("ScanConflicts: %v", err)
 	}
 
 	bundle, err := GetAutoBootBundle(context.Background(), database, projectID, AutoBootOptions{})
@@ -2260,5 +2277,163 @@ func TestSyncFromGitRedactsSecretsInChunks(t *testing.T) {
 	}
 	if !strings.Contains(what, "deploy uses") {
 		t.Errorf("expected redacted text preserved in what, got %q", what)
+	}
+}
+
+func TestGetTimelineCompact(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-timeline-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_storage.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-timeline"
+	err = db.RegisterProject(database, projectID, "Timeline Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// Fixed, strictly increasing creation times so the ordering assertions are
+	// deterministic (SaveMemory honors an explicit CreatedAt on a new row).
+	base := time.Date(2026, 8, 15, 10, 0, 0, 0, time.Local)
+	ids := make(map[string]string, 4)
+	for i, what := range []string{"first", "second", "third", "fourth"} {
+		m, saveErr := SaveMemory(database, &Memory{
+			ID:        "tl-" + what,
+			ProjectID: projectID,
+			Category:  "journal",
+			What:      what,
+			CreatedAt: base.Add(time.Duration(i) * time.Minute),
+		})
+		if saveErr != nil {
+			t.Fatalf("save %s: %v", what, saveErr)
+		}
+		ids[what] = m.ID
+	}
+
+	// Central observation: 'second' sits between first and third/fourth.
+	obs := ids["second"]
+
+	// before=1 after=1: exactly first before, third after.
+	prev, next, err := GetTimelineCompact(database, projectID, obs, 1, 1)
+	if err != nil {
+		t.Fatalf("GetTimelineCompact: %v", err)
+	}
+	if len(prev) != 1 || prev[0].ID != ids["first"] {
+		t.Errorf("expected exactly first before, got %d items (%+v)", len(prev), prev)
+	}
+	if len(next) != 1 || next[0].ID != ids["third"] {
+		t.Errorf("expected exactly third after, got %d items (%+v)", len(next), next)
+	}
+
+	// before=2 after=2: only 'first' precedes second; both third and fourth
+	// follow. The central observation is never included.
+	prev, next, err = GetTimelineCompact(database, projectID, obs, 2, 2)
+	if err != nil {
+		t.Fatalf("GetTimelineCompact wide: %v", err)
+	}
+	if len(prev) != 1 || prev[0].ID != ids["first"] {
+		t.Errorf("expected 1 item before, got %d (%+v)", len(prev), prev)
+	}
+	if len(next) != 2 || next[0].ID != ids["third"] || next[1].ID != ids["fourth"] {
+		t.Errorf("expected third, fourth after, got %d (%+v)", len(next), next)
+	}
+	for _, item := range append(prev, next...) {
+		if item.ID == obs {
+			t.Errorf("central observation leaked into the timeline")
+		}
+	}
+
+	// Soft-deleted memories must not appear in the timeline.
+	if err = DeleteMemory(database, projectID, ids["first"], false); err != nil {
+		t.Fatalf("soft-delete first: %v", err)
+	}
+	prev, _, err = GetTimelineCompact(database, projectID, obs, 5, 0)
+	if err != nil {
+		t.Fatalf("GetTimelineCompact after delete: %v", err)
+	}
+	if len(prev) != 0 {
+		t.Errorf("expected no items before after soft-delete, got %d", len(prev))
+	}
+
+	// Unknown observation is an error.
+	if _, _, err = GetTimelineCompact(database, projectID, "does-not-exist", 2, 2); err == nil {
+		t.Error("expected error for unknown observation id, got nil")
+	}
+}
+
+func TestDeleteMemoryHard(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-harddelete-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_storage.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-harddel"
+	err = db.RegisterProject(database, projectID, "HardDel Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	a, err := SaveMemory(database, &Memory{
+		ID: "hd-a", ProjectID: projectID, Category: "decision",
+		What: "hard a", Why: "why", Learned: "l", CreatedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("save a: %v", err)
+	}
+	b, err := SaveMemory(database, &Memory{
+		ID: "hd-b", ProjectID: projectID, Category: "decision",
+		What: "hard b", Why: "why", Learned: "l", CreatedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("save b: %v", err)
+	}
+
+	// A relation points at the memory being deleted; it must cascade away.
+	if _, err = SaveJudgment(database, projectID, a.ID, b.ID, "relates_to", "pair", "tester"); err != nil {
+		t.Fatalf("SaveJudgment: %v", err)
+	}
+
+	// Hard delete removes the row entirely (not a soft delete marker).
+	if err = DeleteMemory(database, projectID, a.ID, true); err != nil {
+		t.Fatalf("hard delete: %v", err)
+	}
+
+	var count int
+	err = database.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ? AND id = ?", projectID, a.ID).Scan(&count)
+	if err != nil {
+		t.Fatalf("query deleted row: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected hard-deleted memory row gone, got %d", count)
+	}
+	err = database.QueryRow(
+		"SELECT COUNT(*) FROM memory_relations WHERE project_id = ? AND (source_id = ? OR target_id = ?)",
+		projectID, a.ID, a.ID).Scan(&count)
+	if err != nil {
+		t.Fatalf("query relations: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected relations to cascade on hard delete, got %d", count)
+	}
+
+	// Deleting a nonexistent id reports an error.
+	if err = DeleteMemory(database, projectID, "no-such", true); err == nil {
+		t.Error("expected error deleting unknown id, got nil")
 	}
 }

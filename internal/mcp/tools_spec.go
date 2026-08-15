@@ -206,16 +206,6 @@ func (s *Server) handleCommitSpec(ctx context.Context, req mcp.CallToolRequest) 
 		return mcp.NewToolResultText(sb.String()), nil
 	}
 
-	// Merge the change's delta requirements into the capability's current state.
-	// A merge conflict (ADDED of an existing requirement, RENAMED of a missing
-	// one) aborts the commit so the delta can be fixed first.
-	var mergedReqs int
-	if reqCount, mErr := mergeChangeDeltas(s, c); mErr != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to merge requirements: %v — fix the delta and re-run sv_validate_decision", mErr)), nil
-	} else if reqCount > 0 {
-		mergedReqs = reqCount
-	}
-
 	gitMeta := s.cachedGitMetadata()
 	what := c.Title
 	if c.What != "" {
@@ -246,6 +236,17 @@ func (s *Server) handleCommitSpec(ctx context.Context, req mcp.CallToolRequest) 
 	}
 	if err = memory.SetMemoryChangeID(s.pool.Writer, s.cfg.ProjectID, saved.ID, c.ID); err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to link memory to change: %v", err)), nil
+	}
+
+	// Merge the change's delta requirements into the capability's current state.
+	// Runs AFTER the decision memory is persisted: if the merge fails (ADDED of
+	// an existing requirement, RENAMED of a missing one), the capability state
+	// is left untouched and the commit can be retried once the delta is fixed.
+	var mergedReqs int
+	if reqCount, mErr := mergeChangeDeltas(s, c); mErr != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to merge requirements: %v — fix the delta and re-run sv_validate_decision", mErr)), nil
+	} else if reqCount > 0 {
+		mergedReqs = reqCount
 	}
 
 	// Wire the committed decision to the capability (implements edge) so the

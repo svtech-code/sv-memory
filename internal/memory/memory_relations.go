@@ -47,8 +47,8 @@ func SaveJudgment(db *sql.DB, projectID, sourceID, targetID, relationType, reaso
 	}
 
 	if _, err := tx.Exec(`
-		INSERT INTO memory_relations (id, project_id, source_id, target_id, relation_type, reason, judged_by, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO memory_relations (id, project_id, source_id, target_id, relation_type, status, reason, judged_by, created_at)
+		VALUES (?, ?, ?, ?, ?, 'judged', ?, ?, ?)
 	`, id, projectID, sourceID, targetID, relationType, reason, judgedBy, now); err != nil {
 		return nil, fmt.Errorf("failed to save judgment: %w", err)
 	}
@@ -62,6 +62,7 @@ func SaveJudgment(db *sql.DB, projectID, sourceID, targetID, relationType, reaso
 		SourceID:     sourceID,
 		TargetID:     targetID,
 		RelationType: relationType,
+		Status:       "judged",
 		Reason:       reason,
 		JudgedBy:     judgedBy,
 		CreatedAt:    now,
