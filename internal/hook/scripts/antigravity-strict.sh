@@ -13,6 +13,11 @@
 PAYLOAD=$(cat)
 TOOL_NAME=$(echo "$PAYLOAD" | python3 -c "import sys,json; print(json.load(sys.stdin).get('toolCall',{}).get('name',''))" 2>/dev/null)
 
+# Portable hash of stdin: md5sum (GNU/Linux), md5 -q (BSD/macOS), shasum.
+sv_mem_hash() {
+  { md5sum 2>/dev/null || md5 -q 2>/dev/null || shasum -a 256 2>/dev/null; } | cut -d' ' -f1
+}
+
 # Explicit opt-out: never block.
 if [ -n "${SV_MEMORY_STRICT_DISABLE:-}" ]; then
   echo '{"decision":"allow"}'
@@ -31,10 +36,9 @@ if ! command -v sv-memory >/dev/null 2>&1; then
   exit 0
 fi
 
-if command -v md5 >/dev/null 2>&1; then
-  SESSION_KEY=$(echo "$PWD" | md5 -qs 2>/dev/null || echo "$PWD" | md5sum 2>/dev/null | cut -d' ' -f1)
-else
-  SESSION_KEY=$(echo "$PWD" | shasum -a 256 2>/dev/null | cut -d' ' -f1 || echo "$PWD")
+SESSION_KEY=$(echo "$PWD" | sv_mem_hash)
+if [ -z "$SESSION_KEY" ]; then
+  SESSION_KEY="$PWD"
 fi
 FLAG_FILE="/tmp/.sv-memory-agy-strict-${SESSION_KEY}"
 

@@ -229,6 +229,104 @@ func TestInstallClaudeCodeLifecycleHooks(t *testing.T) {
 	}
 }
 
+func TestClaudeCodeHooksPreserveUserHooks(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-hook-merge-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Seed settings.json with a hook belonging to another tool.
+	settingsPath := filepath.Join(tempDir, ".claude", "settings.json")
+	if err = os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
+		t.Fatalf("failed to create settings dir: %v", err)
+	}
+	initial := map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"PreToolUse": []interface{}{
+				map[string]interface{}{
+					"matcher": "Read|Write",
+					"hooks": []interface{}{
+						map[string]interface{}{"type": "command", "command": "/usr/local/bin/other-tool", "timeout": 3},
+					},
+				},
+			},
+		},
+	}
+	data, _ := json.Marshal(initial)
+	if err = os.WriteFile(settingsPath, data, 0644); err != nil {
+		t.Fatalf("failed to write settings: %v", err)
+	}
+
+	eng := New(tempDir, ModeSoft)
+	if results := eng.Install([]Platform{PlatformClaudeCode}); results[0].Err != nil {
+		t.Fatalf("install failed: %v", results[0].Err)
+	}
+
+	findCmds := func() (foundUser, foundSVM bool) {
+		raw, rErr := os.ReadFile(settingsPath)
+		if rErr != nil {
+			t.Fatalf("failed to read settings: %v", rErr)
+		}
+		var settings map[string]interface{}
+		if jErr := json.Unmarshal(raw, &settings); jErr != nil {
+			t.Fatalf("failed to parse settings: %v", jErr)
+		}
+		hooks, ok := settings["hooks"].(map[string]interface{})
+		if !ok {
+			t.Fatal("expected hooks object in settings")
+		}
+		pre, ok := hooks["PreToolUse"].([]interface{})
+		if !ok || len(pre) == 0 {
+			t.Fatal("expected PreToolUse entries")
+		}
+		for _, g := range pre {
+			group, ok := g.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			entries, _ := group["hooks"].([]interface{})
+			for _, e := range entries {
+				entry, ok := e.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				cmd, _ := entry["command"].(string)
+				if strings.Contains(cmd, "other-tool") {
+					foundUser = true
+				}
+				if strings.Contains(cmd, "sv-memory.sh") {
+					foundSVM = true
+				}
+			}
+		}
+		return foundUser, foundSVM
+	}
+
+	foundUser, foundSVM := findCmds()
+	if !foundUser {
+		t.Error("user hook was lost after install")
+	}
+	if !foundSVM {
+		t.Error("sv-memory hook not registered after install")
+	}
+	if st := eng.Status([]Platform{PlatformClaudeCode}); !st[PlatformClaudeCode] {
+		t.Error("expected claude-code status to be installed")
+	}
+
+	// Uninstall must remove only the sv-memory entries, keeping the user hook.
+	if results := eng.Uninstall([]Platform{PlatformClaudeCode}); results[0].Err != nil {
+		t.Fatalf("uninstall failed: %v", results[0].Err)
+	}
+	foundUser, foundSVM = findCmds()
+	if foundSVM {
+		t.Error("sv-memory hook still present after uninstall")
+	}
+	if !foundUser {
+		t.Error("user hook was removed by uninstall")
+	}
+}
+
 func TestInstallCodex(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-hook-codex-test")
 	if err != nil {

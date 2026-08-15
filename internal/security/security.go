@@ -76,17 +76,39 @@ func ValidateWritePath(projPath, userPath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve project path: %w", err)
 	}
-	realPath, err := filepath.EvalSymlinks(absPath)
-	if err != nil && !os.IsNotExist(err) {
-		return "", fmt.Errorf("failed to resolve symlinks: %w", err)
-	}
-	if err == nil {
-		symRel, symErr := filepath.Rel(projReal, realPath)
-		if symErr != nil || strings.HasPrefix(symRel, "..") {
-			return "", fmt.Errorf("path %q escapes project directory via symlink", userPath)
+
+	// Validate that the resolved real path stays inside the project. If the
+	// target does not exist yet (the common case for a file about to be
+	// written), resolve the deepest existing ancestor instead: a symlinked
+	// parent directory can otherwise redirect the write outside the project.
+	checkContained := func(p string) error {
+		real, rErr := filepath.EvalSymlinks(p)
+		if rErr != nil {
+			return fmt.Errorf("failed to resolve symlinks: %w", rErr)
 		}
+		symRel, relErr := filepath.Rel(projReal, real)
+		if relErr != nil || strings.HasPrefix(symRel, "..") {
+			return fmt.Errorf("path %q escapes project directory via symlink", userPath)
+		}
+		return nil
 	}
-	return absPath, nil
+
+	probe := absPath
+	for {
+		if _, sErr := os.Lstat(probe); sErr == nil {
+			if cErr := checkContained(probe); cErr != nil {
+				return "", cErr
+			}
+			return absPath, nil
+		} else if !os.IsNotExist(sErr) {
+			return "", fmt.Errorf("failed to stat path: %w", sErr)
+		}
+		parent := filepath.Dir(probe)
+		if parent == probe {
+			return "", fmt.Errorf("failed to resolve symlinks for %q", userPath)
+		}
+		probe = parent
+	}
 }
 
 // SanitizeSQLitePathFilter escapes SQL LIKE wildcards (% and _) in path filter input.

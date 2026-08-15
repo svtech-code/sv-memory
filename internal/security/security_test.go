@@ -177,6 +177,26 @@ func TestValidateWritePath(t *testing.T) {
 			t.Fatal("expected error for symlink escape")
 		}
 	})
+
+	t.Run("rejects symlink escape for non-existent target", func(t *testing.T) {
+		// A dangling final component (the target file does not exist yet, the
+		// common write case) must still be caught when a parent directory is a
+		// symlink pointing outside the project.
+		outside := filepath.Join(os.TempDir(), "sv-memory-escape-new")
+		if err := os.MkdirAll(outside, 0755); err != nil {
+			t.Fatalf("mkdir outside: %v", err)
+		}
+		defer os.RemoveAll(outside)
+
+		link := filepath.Join(tmpDir, "link2")
+		if err := os.Symlink(outside, link); err != nil {
+			t.Skip("symlink not supported:", err)
+		}
+		_, err := ValidateWritePath(tmpDir, "link2/newfile.txt")
+		if err == nil {
+			t.Fatal("expected error for symlink escape with non-existent target")
+		}
+	})
 }
 
 func TestSanitizeSQLitePathFilter(t *testing.T) {

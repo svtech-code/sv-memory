@@ -1690,3 +1690,62 @@ func containsStr(slice []string, s string) bool {
 	}
 	return false
 }
+
+// TestSyncGraphIfStalePreservesCallEdges verifies that a lazy incremental sync
+// (only a subset of files changed) does not wipe 'calls' edges between
+// unchanged files: it used to delete every calls edge and re-extract from a
+// partial symbol map, silently dropping cross-file calls that touched
+// untouched files.
+func TestSyncGraphIfStalePreservesCallEdges(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-stale-calls-test")
+	if err != nil {
+		t.Fatalf("failed to create temp workspace: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_stale_calls.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "prog-stale-calls-test"
+	if regErr := db.RegisterProject(database, projectID, "Stale Calls Test", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
+	}
+
+	// a.py calls func_b which is defined in b.py.
+	os.WriteFile(filepath.Join(tempDir, "a.py"), []byte("def func_a():\n    return func_b()\n"), 0644)
+	os.WriteFile(filepath.Join(tempDir, "b.py"), []byte("def func_b():\n    return 1\n"), 0644)
+	if syncErr := SyncGraph(database, projectID, tempDir); syncErr != nil {
+		t.Fatalf("initial SyncGraph failed: %v", syncErr)
+	}
+
+	var count int
+	if err = database.QueryRow("SELECT COUNT(*) FROM graph_edges WHERE project_id = ? AND source_id = 'a.py:func_a' AND target_id = 'b.py:func_b' AND relation_type = 'calls'", projectID).Scan(&count); err != nil {
+		t.Fatalf("count initial calls edge: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected a.py:func_a -> b.py:func_b calls edge after full sync, got %d", count)
+	}
+
+	// Add an unrelated file and run the lazy refresh path.
+	time.Sleep(5 * time.Millisecond)
+	os.WriteFile(filepath.Join(tempDir, "c.py"), []byte("def func_c():\n    return 2\n"), 0644)
+	synced, err := SyncGraphIfStale(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("SyncGraphIfStale: %v", err)
+	}
+	if !synced {
+		t.Error("expected SyncGraphIfStale to refresh after adding c.py")
+	}
+
+	// The cross-file call edge between the two unchanged files must survive.
+	if err = database.QueryRow("SELECT COUNT(*) FROM graph_edges WHERE project_id = ? AND source_id = 'a.py:func_a' AND target_id = 'b.py:func_b' AND relation_type = 'calls'", projectID).Scan(&count); err != nil {
+		t.Fatalf("count calls edge after lazy refresh: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected a.py:func_a -> b.py:func_b calls edge to survive lazy sync, got %d", count)
+	}
+}

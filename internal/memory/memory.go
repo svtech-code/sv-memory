@@ -343,15 +343,23 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 	if mem.TopicKey != "" {
 		var existingID string
 		var revCount int
+		var existingCreatedAtStr string
 		err := db.QueryRow(
-			"SELECT id, revision_count FROM memories WHERE project_id = ? AND topic_key = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1",
+			"SELECT id, revision_count, created_at FROM memories WHERE project_id = ? AND topic_key = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1",
 			mem.ProjectID, mem.TopicKey,
-		).Scan(&existingID, &revCount)
+		).Scan(&existingID, &revCount, &existingCreatedAtStr)
 		if err == nil {
 			mem.ID = existingID
 			mem.RevisionCount = revCount + 1
+			// Preserve the original creation timestamp: a topic-key revision
+			// must not drift the memory's creation date forward (UpdateMemory
+			// and compaction both rely on created_at staying stable).
 			if mem.CreatedAt.IsZero() {
-				mem.CreatedAt = now
+				if t, parseErr := parseTime(existingCreatedAtStr); parseErr == nil {
+					mem.CreatedAt = t
+				} else {
+					mem.CreatedAt = now
+				}
 			}
 			query := `
 			UPDATE memories SET
@@ -404,12 +412,11 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 		mem.RevisionCount = 1
 	}
 	mem.DuplicateCount = 0
+	if mem.LastSeenAt.IsZero() {
+		mem.LastSeenAt = now
+	}
 
-	_, err := db.Exec(memoryInsertConflictQuery(),
-		mem.ID, mem.ProjectID, mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned,
-		mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact, mem.ErrorsFaced, mem.NextSteps,
-		mem.SessionID, mem.TopicKey, mem.RevisionCount, mem.DuplicateCount, mem.LastSeenAt,
-		mem.NormalizedHash, mem.ReviewAfter, mem.Pinned, mem.CreatedAt)
+	_, err := db.Exec(memoryInsertConflictQuery(), memoryInsertArgs(mem, mem.CreatedAt)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save memory: %w", err)
 	}

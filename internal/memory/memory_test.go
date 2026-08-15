@@ -12,6 +12,82 @@ import (
 	"github.com/svtech-code/sv-memory/internal/db"
 )
 
+func TestSaveMemoryTopicUpsertPreservesCreatedAt(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-topic-upsert")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_storage.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	if err = db.RegisterProject(database, "proj-topic", "Topic", tempDir); err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// First save under the topic key.
+	first, err := SaveMemory(database, &Memory{
+		ProjectID: "proj-topic", Category: "decision",
+		What: "Decision A", Why: "why", Learned: "learned", TopicKey: "decision/topic-a",
+	})
+	if err != nil {
+		t.Fatalf("first save failed: %v", err)
+	}
+	origCreatedAt := first.CreatedAt
+
+	// A topic-key revision must not move created_at forward.
+	time.Sleep(5 * time.Millisecond)
+	second, err := SaveMemory(database, &Memory{
+		ProjectID: "proj-topic", Category: "decision",
+		What: "Decision A revised", Why: "why2", Learned: "learned2", TopicKey: "decision/topic-a",
+	})
+	if err != nil {
+		t.Fatalf("second save failed: %v", err)
+	}
+	if second.ID != first.ID {
+		t.Errorf("expected topic-key upsert to reuse id %s, got %s", first.ID, second.ID)
+	}
+	if !second.CreatedAt.Equal(origCreatedAt) {
+		t.Errorf("topic-key revision moved created_at: got %v, want %v", second.CreatedAt, origCreatedAt)
+	}
+	if second.RevisionCount != 2 {
+		t.Errorf("expected revision_count 2, got %d", second.RevisionCount)
+	}
+
+	// A brand-new memory must not appear stale: last_seen_at is set on insert,
+	// so ReviewMemories sees a recent timestamp instead of the zero-time
+	// sentinel that used to read back as ~738000 days.
+	third, err := SaveMemory(database, &Memory{
+		ProjectID: "proj-topic", Category: "bugfix",
+		What: "Brand new", Why: "why", Learned: "learned",
+	})
+	if err != nil {
+		t.Fatalf("third save failed: %v", err)
+	}
+	if third.LastSeenAt.IsZero() {
+		t.Error("expected last_seen_at to be set on new insert")
+	}
+	items, err := ReviewMemories(database, "proj-topic", 50)
+	if err != nil {
+		t.Fatalf("ReviewMemories failed: %v", err)
+	}
+	for _, it := range items {
+		if it.Memory.ID == third.ID {
+			if it.LastSeenDays > 1 {
+				t.Errorf("new memory should not appear stale (LastSeenDays=%d)", it.LastSeenDays)
+			}
+			if strings.Contains(it.Reason, "stale") {
+				t.Errorf("new memory flagged stale: %s", it.Reason)
+			}
+		}
+	}
+}
+
 func TestListPruneConsolidateProjects(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-mem-projects-test")
 	if err != nil {
@@ -853,7 +929,7 @@ func TestExportObsidian(t *testing.T) {
 
 	// 4. Run ExportObsidian
 	outputDir := "my-vault"
-	err = ExportObsidian(database, projectID, tempDir, outputDir)
+	err = ExportObsidian(database, projectID, filepath.Join(tempDir, outputDir))
 	if err != nil {
 		t.Fatalf("ExportObsidian failed: %v", err)
 	}

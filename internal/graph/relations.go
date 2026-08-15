@@ -2,7 +2,6 @@ package graph
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -142,7 +141,7 @@ func isExternalPkg(imp string) bool {
 // language has no AST call coverage (regex-only, Go due to the upstream parser
 // bug, parse failures) fall back to the tokenize heuristic. Edges from the AST
 // path carry confidence EXTRACTED with a precise L<line>:<col> location.
-func extractCallEdges(projPath string, nodes map[string]*Node, fileContents map[string][]byte) []*Edge {
+func extractCallEdges(nodes map[string]*Node, fileContents map[string][]byte) []*Edge {
 	var refExt extractor.CallRefExtractor
 	if re, ok := currentExtractor.(extractor.CallRefExtractor); ok {
 		refExt = re
@@ -154,14 +153,14 @@ func extractCallEdges(projPath string, nodes map[string]*Node, fileContents map[
 	var edges []*Edge
 
 	if refExt != nil {
-		astEdges, covered := extractASTCallEdges(projPath, nodes, fileContents, refExt)
+		astEdges, covered := extractASTCallEdges(nodes, fileContents, refExt)
 		edges = append(edges, astEdges...)
 		for f := range covered {
 			astCovered[f] = true
 		}
 	}
 
-	heuristicEdges := extractHeuristicCallEdges(projPath, nodes, fileContents, astCovered)
+	heuristicEdges := extractHeuristicCallEdges(nodes, fileContents, astCovered)
 	return append(edges, heuristicEdges...)
 }
 
@@ -170,7 +169,7 @@ func extractCallEdges(projPath string, nodes map[string]*Node, fileContents map[
 // against the project's function/class nodes (same file first, then cross-file
 // by label within the same language group). It returns the edges plus the set
 // of file paths whose calls were emitted (so the heuristic skips them).
-func extractASTCallEdges(projPath string, nodes map[string]*Node, fileContents map[string][]byte, refExt extractor.CallRefExtractor) ([]*Edge, map[string]bool) {
+func extractASTCallEdges(nodes map[string]*Node, fileContents map[string][]byte, refExt extractor.CallRefExtractor) ([]*Edge, map[string]bool) {
 	// Build per-file and per-language symbol maps (function/class nodes).
 	fileSymbols := make(map[string][]*Node)
 	langSymbols := make(map[string][]*Node)
@@ -196,12 +195,9 @@ func extractASTCallEdges(projPath string, nodes map[string]*Node, fileContents m
 		}
 		content, ok := fileContents[filePath]
 		if !ok {
-			absPath := filepath.Join(projPath, filePath)
-			cached, err := os.ReadFile(absPath)
-			if err != nil {
-				continue
-			}
-			content = cached
+			// Lazy incremental syncs only re-parse the changed files; call
+			// edges of unchanged files are preserved, not re-extracted.
+			continue
 		}
 
 		refs, err := refExt.ExtractCallRefs(content, filePath, ext)
@@ -286,7 +282,7 @@ func resolveCalleeNode(fileSymbols []*Node, callee string, langSymbols []*Node, 
 // astCovered already had their calls emitted by the AST path and are skipped so
 // each edge is produced exactly once. It scans each function/class body for
 // identifiers matching other project symbols.
-func extractHeuristicCallEdges(projPath string, nodes map[string]*Node, fileContents map[string][]byte, astCovered map[string]bool) []*Edge {
+func extractHeuristicCallEdges(nodes map[string]*Node, fileContents map[string][]byte, astCovered map[string]bool) []*Edge {
 	var edges []*Edge
 
 	langSymbols := make(map[string][]*Node)
@@ -314,14 +310,11 @@ func extractHeuristicCallEdges(projPath string, nodes map[string]*Node, fileCont
 			continue
 		}
 		var content []byte
-		var err error
 		if cached, ok := fileContents[filePath]; ok {
 			content = cached
 		} else {
-			absPath := filepath.Join(projPath, filePath)
-			content, err = os.ReadFile(absPath)
-		}
-		if err != nil {
+			// Lazy incremental syncs only re-parse the changed files; call
+			// edges of unchanged files are preserved, not re-extracted.
 			continue
 		}
 		lines := strings.Split(string(content), "\n")

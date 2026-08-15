@@ -109,14 +109,15 @@ type obsidianRelPair struct {
 }
 
 // ExportObsidian exports all project memories as Markdown files in Obsidian vault
-// format, along with codebase structural graph nodes and edges.
-func ExportObsidian(db *sql.DB, projectID, projPath, outputDir string) error {
+// format, along with codebase structural graph nodes and edges. vaultDir is the
+// target directory, already validated to stay inside the project, and is
+// created if it does not exist.
+func ExportObsidian(db *sql.DB, projectID, vaultDir string) error {
 	memories, err := SearchMemories(db, projectID, "", "", 0)
 	if err != nil {
 		return err
 	}
 
-	vaultDir := filepath.Join(projPath, outputDir)
 	if mkErr := os.MkdirAll(vaultDir, 0755); mkErr != nil {
 		return fmt.Errorf("failed to create vault directory: %w", mkErr)
 	}

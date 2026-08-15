@@ -127,6 +127,10 @@ var projectsConsolidateCmd = &cobra.Command{
 	Short: "Move all memories and sessions from source project to target, then delete source",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if args[0] == args[1] {
+			return fmt.Errorf("source and target project must be different (got %q for both)", args[0])
+		}
+
 		dbPath, err := config.GetDBPath()
 		if err != nil {
 			return err

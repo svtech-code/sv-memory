@@ -76,6 +76,72 @@ func TestInitDBAndRegisterProject(t *testing.T) {
 	}
 }
 
+func TestMigrateLegacyGraphSchema(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-legacy-graph-schema")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_storage.db")
+	database, err := InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	// Simulate a legacy DB whose graph tables use a single-column PK.
+	if _, err = database.Exec("DROP TABLE IF EXISTS graph_edges"); err != nil {
+		t.Fatalf("drop edges: %v", err)
+	}
+	if _, err = database.Exec("DROP TABLE IF EXISTS graph_nodes"); err != nil {
+		t.Fatalf("drop nodes: %v", err)
+	}
+	if _, err = database.Exec(`CREATE TABLE graph_nodes (
+		id TEXT PRIMARY KEY,
+		project_id TEXT NOT NULL,
+		node_type TEXT NOT NULL,
+		label TEXT NOT NULL,
+		path TEXT NOT NULL,
+		metadata TEXT
+	)`); err != nil {
+		t.Fatalf("create legacy nodes: %v", err)
+	}
+	if _, err = database.Exec(`CREATE TABLE graph_edges (
+		id TEXT PRIMARY KEY,
+		project_id TEXT NOT NULL,
+		source_id TEXT NOT NULL,
+		target_id TEXT NOT NULL,
+		relation_type TEXT NOT NULL,
+		confidence TEXT NOT NULL DEFAULT 'EXTRACTED',
+		source_location TEXT
+	)`); err != nil {
+		t.Fatalf("create legacy edges: %v", err)
+	}
+
+	// Re-run the legacy migration: it must drop the legacy tables AND recreate
+	// them with the composite primary key, not leave them missing.
+	if err = migrateLegacyGraphSchema(database); err != nil {
+		t.Fatalf("migrateLegacyGraphSchema: %v", err)
+	}
+
+	nodesPK, err := tablePKInfo(database, "graph_nodes")
+	if err != nil {
+		t.Fatalf("graph_nodes PK info: %v", err)
+	}
+	if len(nodesPK) < 2 || nodesPK[0] != "project_id" || nodesPK[1] != "id" {
+		t.Errorf("graph_nodes should have composite (project_id, id) PK after migration, got %v", nodesPK)
+	}
+
+	edgesPK, err := tablePKInfo(database, "graph_edges")
+	if err != nil {
+		t.Fatalf("graph_edges PK info: %v", err)
+	}
+	if len(edgesPK) < 2 || edgesPK[0] != "project_id" || edgesPK[1] != "id" {
+		t.Errorf("graph_edges should have composite (project_id, id) PK after migration, got %v", edgesPK)
+	}
+}
+
 func TestForeignKeyConstraint(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-mem-fk-test")
 	if err != nil {

@@ -22,6 +22,11 @@ run_with_timeout() {
   fi
 }
 
+# Portable hash of stdin: md5sum (GNU/Linux), md5 -q (BSD/macOS), shasum.
+sv_mem_hash() {
+  { md5sum 2>/dev/null || md5 -q 2>/dev/null || shasum -a 256 2>/dev/null; } | cut -d' ' -f1
+}
+
 TOOL_NAME="${CLAUDE_TOOL_CALL_NAME:-}"
 
 case "$TOOL_NAME" in
@@ -37,11 +42,7 @@ if [ -f ".sv-memory/context-injection-enabled" ]; then
       TOOL_INPUT="$(cat 2>/dev/null || true)"
       FILE_PATH="$(printf '%s' "$TOOL_INPUT" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
       if [ -n "$FILE_PATH" ] && [ -f "$FILE_PATH" ]; then
-        if command -v md5 >/dev/null 2>&1; then
-          CACHE_KEY="$(printf '%s|%s' "$PWD" "$FILE_PATH" | md5 -qs 2>/dev/null || printf '%s|%s' "$PWD" "$FILE_PATH" | md5sum 2>/dev/null | cut -d' ' -f1)"
-        else
-          CACHE_KEY="$(printf '%s|%s' "$PWD" "$FILE_PATH" | shasum -a 256 2>/dev/null | cut -d' ' -f1)"
-        fi
+        CACHE_KEY="$(printf '%s|%s' "$PWD" "$FILE_PATH" | sv_mem_hash)"
         CACHE_FILE="/tmp/.sv-memory-ctx-${CACHE_KEY}"
         if [ ! -f "$CACHE_FILE" ]; then
           CONTEXT_OUTPUT="$(run_with_timeout 2 sv-memory context "$FILE_PATH" --max-memories 3 2>/dev/null || true)"

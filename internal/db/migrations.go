@@ -3,7 +3,46 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"sort"
 )
+
+const graphNodesDDL = `CREATE TABLE IF NOT EXISTS graph_nodes (
+    project_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    node_type TEXT NOT NULL,
+    label TEXT NOT NULL,
+    path TEXT NOT NULL,
+    metadata TEXT,
+    PRIMARY KEY(project_id, id),
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);`
+
+const graphEdgesDDL = `CREATE TABLE IF NOT EXISTS graph_edges (
+    id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    relation_type TEXT NOT NULL,
+    confidence TEXT NOT NULL DEFAULT 'EXTRACTED',
+    source_location TEXT,
+    PRIMARY KEY(project_id, id),
+    FOREIGN KEY(project_id, source_id) REFERENCES graph_nodes(project_id, id) ON DELETE CASCADE,
+    FOREIGN KEY(project_id, target_id) REFERENCES graph_nodes(project_id, id) ON DELETE CASCADE,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    UNIQUE(project_id, source_id, target_id, relation_type)
+);`
+
+const graphFilesMetaDDL = `CREATE TABLE IF NOT EXISTS graph_files_meta (
+    project_id TEXT NOT NULL,
+    path TEXT NOT NULL,
+    mtime_ms INTEGER NOT NULL,
+    size INTEGER NOT NULL,
+    PRIMARY KEY(project_id, path),
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);`
+
+const graphIndexesDDL = `CREATE INDEX IF NOT EXISTS idx_graph_edges_source ON graph_edges(project_id, source_id);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_target ON graph_edges(project_id, target_id);`
 
 const schema = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -59,41 +98,7 @@ CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
     INSERT INTO memories_fts(memories_fts, rowid, what, why, learned) VALUES('delete', old.rowid, old.what, old.why, old.learned);
     INSERT INTO memories_fts(rowid, what, why, learned) VALUES (new.rowid, new.what, new.why, new.learned);
 END;
-
-CREATE TABLE IF NOT EXISTS graph_nodes (
-    project_id TEXT NOT NULL,
-    id TEXT NOT NULL,
-    node_type TEXT NOT NULL,
-    label TEXT NOT NULL,
-    path TEXT NOT NULL,
-    metadata TEXT,
-    PRIMARY KEY(project_id, id),
-    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS graph_edges (
-    id TEXT NOT NULL,
-    project_id TEXT NOT NULL,
-    source_id TEXT NOT NULL,
-    target_id TEXT NOT NULL,
-    relation_type TEXT NOT NULL,
-    confidence TEXT NOT NULL DEFAULT 'EXTRACTED',
-    source_location TEXT,
-    PRIMARY KEY(project_id, id),
-    FOREIGN KEY(project_id, source_id) REFERENCES graph_nodes(project_id, id) ON DELETE CASCADE,
-    FOREIGN KEY(project_id, target_id) REFERENCES graph_nodes(project_id, id) ON DELETE CASCADE,
-    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
-    UNIQUE(project_id, source_id, target_id, relation_type)
-);
-
-CREATE TABLE IF NOT EXISTS graph_files_meta (
-    project_id TEXT NOT NULL,
-    path TEXT NOT NULL,
-    mtime_ms INTEGER NOT NULL,
-    size INTEGER NOT NULL,
-    PRIMARY KEY(project_id, path),
-    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
-);
+` + graphNodesDDL + graphEdgesDDL + graphFilesMetaDDL + graphIndexesDDL + `
 
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
@@ -123,8 +128,6 @@ CREATE TABLE IF NOT EXISTS memory_relations (
     FOREIGN KEY(target_id) REFERENCES memories(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_graph_edges_source ON graph_edges(project_id, source_id);
-CREATE INDEX IF NOT EXISTS idx_graph_edges_target ON graph_edges(project_id, target_id);
 CREATE INDEX IF NOT EXISTS idx_memories_project_created ON memories(project_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_memories_project_category ON memories(project_id, category);
 `
@@ -193,6 +196,7 @@ func applyInitialSchema(db *sql.DB) error {
 func migrateLegacyGraphSchema(db *sql.DB) error {
 	rows, err := db.Query("PRAGMA table_info(graph_nodes)")
 	if err != nil {
+		// graph_nodes does not exist yet (fresh schema) — nothing to migrate.
 		return nil
 	}
 	defer rows.Close()
@@ -211,9 +215,32 @@ func migrateLegacyGraphSchema(db *sql.DB) error {
 			}
 		}
 	}
-	if countPK == 1 {
-		_, _ = db.Exec("DROP TABLE IF EXISTS graph_edges")
-		_, _ = db.Exec("DROP TABLE IF EXISTS graph_nodes")
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("failed reading graph_nodes pragma: %w", err)
+	}
+
+	if countPK != 1 {
+		return nil
+	}
+
+	// Legacy single-column PK shape: the old graph tables cannot hold
+	// project-scoped IDs, so they are dropped and immediately recreated with
+	// the current composite (project_id, id) schema. graph_files_meta already
+	// uses a composite PK and is left untouched.
+	if _, err := db.Exec("DROP TABLE IF EXISTS graph_edges"); err != nil {
+		return fmt.Errorf("failed dropping legacy graph_edges: %w", err)
+	}
+	if _, err := db.Exec("DROP TABLE IF EXISTS graph_nodes"); err != nil {
+		return fmt.Errorf("failed dropping legacy graph_nodes: %w", err)
+	}
+	if _, err := db.Exec(graphNodesDDL); err != nil {
+		return fmt.Errorf("failed recreating graph_nodes: %w", err)
+	}
+	if _, err := db.Exec(graphEdgesDDL); err != nil {
+		return fmt.Errorf("failed recreating graph_edges: %w", err)
+	}
+	if _, err := db.Exec(graphIndexesDDL); err != nil {
+		return fmt.Errorf("failed recreating graph indexes: %w", err)
 	}
 	return nil
 }
@@ -285,14 +312,19 @@ func migrateGraphEdgesCompositePK(db *sql.DB) error {
 	return nil
 }
 
-// tablePKInfo returns the ordered list of PRIMARY KEY column names for a table.
+// tablePKInfo returns the ordered list of PRIMARY KEY column names for a table,
+// ordered by the key column ordinal (the order declared in PRIMARY KEY(...)).
 func tablePKInfo(db *sql.DB, table string) ([]string, error) {
 	rows, err := db.Query("PRAGMA table_info(" + table + ")")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var cols []string
+	type pkCol struct {
+		ordinal int
+		name    string
+	}
+	var pks []pkCol
 	for rows.Next() {
 		var cid int
 		var name string
@@ -304,10 +336,18 @@ func tablePKInfo(db *sql.DB, table string) ([]string, error) {
 			return nil, err
 		}
 		if pk > 0 {
-			cols = append(cols, name)
+			pks = append(pks, pkCol{ordinal: pk, name: name})
 		}
 	}
-	return cols, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sort.Slice(pks, func(i, j int) bool { return pks[i].ordinal < pks[j].ordinal })
+	cols := make([]string, 0, len(pks))
+	for _, c := range pks {
+		cols = append(cols, c.name)
+	}
+	return cols, nil
 }
 
 func columnExists(db *sql.DB, table, col string) (bool, error) {

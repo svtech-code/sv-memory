@@ -173,7 +173,7 @@ var obsidianExportCmd = &cobra.Command{
 		defer database.Close()
 
 		fmt.Printf("Exporting memories to Obsidian vault at %s...\n", vaultPath)
-		if err := memory.ExportObsidian(database, cfg.ProjectID, cfg.ProjPath, outputDir); err != nil {
+		if err := memory.ExportObsidian(database, cfg.ProjectID, vaultPath); err != nil {
 			return fmt.Errorf("obsidian export failed: %w", err)
 		}
 		fmt.Println("Export complete.")

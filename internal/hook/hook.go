@@ -193,6 +193,74 @@ func (e *HookEngine) claudeHookScriptPath(eventDir string) string {
 	return filepath.Join(e.claudeHooksRoot(), eventDir, "sv-memory.sh")
 }
 
+// mergeHookGroup appends hookEntry to the hook group matching matcher within an
+// existing event hook list (Claude Code's settings.json array format), so any
+// user-configured hooks for the same event are preserved. When the entry's
+// command is already present the list is returned unchanged (idempotent).
+func mergeHookGroup(existingRaw interface{}, matcher string, hookEntry map[string]interface{}, command string) []interface{} {
+	groups, _ := existingRaw.([]interface{})
+	for _, g := range groups {
+		group, ok := g.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if m, _ := group["matcher"].(string); m != matcher {
+			continue
+		}
+		entryList, _ := group["hooks"].([]interface{})
+		for _, e := range entryList {
+			entry, ok := e.(map[string]interface{})
+			if ok && entry["command"] == command {
+				return groups
+			}
+		}
+		group["hooks"] = append(entryList, hookEntry)
+		return groups
+	}
+	return append(groups, map[string]interface{}{
+		"matcher": matcher,
+		"hooks":   []interface{}{hookEntry},
+	})
+}
+
+// removeHookEntries deletes hook entries whose command matches command from the
+// given event's hook list, dropping empty groups and the event key itself when
+// nothing remains. Hooks from other tools are kept intact.
+func removeHookEntries(hooks map[string]interface{}, event, command string) {
+	existing, ok := hooks[event]
+	if !ok {
+		return
+	}
+	groups, _ := existing.([]interface{})
+	var kept []interface{}
+	for _, g := range groups {
+		group, ok := g.(map[string]interface{})
+		if !ok {
+			kept = append(kept, g)
+			continue
+		}
+		entryList, _ := group["hooks"].([]interface{})
+		var keptEntries []interface{}
+		for _, e := range entryList {
+			entry, ok := e.(map[string]interface{})
+			if ok && entry["command"] == command {
+				continue
+			}
+			keptEntries = append(keptEntries, e)
+		}
+		if len(keptEntries) == 0 {
+			continue
+		}
+		group["hooks"] = keptEntries
+		kept = append(kept, group)
+	}
+	if len(kept) == 0 {
+		delete(hooks, event)
+	} else {
+		hooks[event] = kept
+	}
+}
+
 func (e *HookEngine) installClaudeCode() ([]string, error) {
 	var created []string
 
@@ -246,12 +314,9 @@ func (e *HookEngine) installClaudeCode() ([]string, error) {
 		if matcher == "" {
 			matcher = "*"
 		}
-		hooks[ev.Event] = []interface{}{
-			map[string]interface{}{
-				"matcher": matcher,
-				"hooks":   []interface{}{hookEntry},
-			},
-		}
+		// Merge into any existing hook groups so pre-existing user hooks for
+		// the same event are preserved rather than overwritten.
+		hooks[ev.Event] = mergeHookGroup(hooks[ev.Event], matcher, hookEntry, scriptPath)
 	}
 	settings["hooks"] = hooks
 
@@ -291,8 +356,10 @@ func (e *HookEngine) uninstallClaudeCode() ([]string, error) {
 		hooksRaw := settings["hooks"]
 		hooks, _ := hooksRaw.(map[string]interface{})
 		if hooks != nil {
+			// Remove only the sv-memory hook entries, keeping any other
+			// user-configured hooks for the same events.
 			for _, ev := range claudeLifecycleEvents {
-				delete(hooks, ev.Event)
+				removeHookEntries(hooks, ev.Event, e.claudeHookScriptPath(ev.Dir))
 			}
 			delete(hooks, "preToolUse")
 			if len(hooks) == 0 {
@@ -349,20 +416,29 @@ func (e *HookEngine) claudeCodeInstalled() bool {
 	if !ok || len(preToolUseArr) == 0 {
 		return false
 	}
-	first, ok := preToolUseArr[0].(map[string]interface{})
-	if !ok {
-		return false
+	// Search every hook group for an sv-memory entry so a user hook listed
+	// first does not hide the install status.
+	for _, g := range preToolUseArr {
+		group, ok := g.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		hooksList, ok := group["hooks"].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, h := range hooksList {
+			hookEntry, ok := h.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			command, _ := hookEntry["command"].(string)
+			if command != "" && filepath.Base(command) == "sv-memory.sh" {
+				return true
+			}
+		}
 	}
-	hooksList, ok := first["hooks"].([]interface{})
-	if !ok || len(hooksList) == 0 {
-		return false
-	}
-	hookEntry, ok := hooksList[0].(map[string]interface{})
-	if !ok {
-		return false
-	}
-	command, _ := hookEntry["command"].(string)
-	return command != "" && filepath.Base(command) == "sv-memory.sh"
+	return false
 }
 
 // --- Codex ---

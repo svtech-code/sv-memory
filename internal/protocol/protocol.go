@@ -142,19 +142,31 @@ func injectToFile(filePath string) (bool, error) {
 		return false, err
 	}
 
-	strContent := string(content)
-	if strings.Contains(strContent, "<!-- SV-MEMORY:START -->") && strings.Contains(strContent, "<!-- SV-MEMORY:END -->") {
-		startIndex := strings.Index(strContent, "<!-- SV-MEMORY:START -->")
-		endIndex := strings.Index(strContent, "<!-- SV-MEMORY:END -->") + len("<!-- SV-MEMORY:END -->")
+	const startMarker = "<!-- SV-MEMORY:START -->"
+	const endMarker = "<!-- SV-MEMORY:END -->"
 
+	strContent := string(content)
+	if strings.Contains(strContent, startMarker) && strings.Contains(strContent, endMarker) {
+		startIndex := strings.Index(strContent, startMarker)
+		endIndex := strings.Index(strContent, endMarker) + len(endMarker)
+
+		// Malformed block: an END marker appears before the START marker. Only
+		// rewrite the region from START to the next END marker so the rest of
+		// the file (user content outside the block) is preserved.
 		if endIndex <= startIndex {
-			// Malformed block (END appears before START) — replace entire file
-			newContent := strings.TrimSpace(protocolTemplate) + "\n"
-			err = os.WriteFile(filePath, []byte(newContent), 0644)
-			if err != nil {
-				return false, err
+			nextEnd := strings.Index(strContent[startIndex+len(startMarker):], endMarker)
+			if nextEnd < 0 {
+				// Orphan START marker with no following END: insert the block
+				// right after START, keeping everything else intact.
+				insertAt := startIndex + len(startMarker)
+				newContent := strContent[:insertAt] + "\n" + strings.TrimSpace(protocolTemplate) + "\n" + strContent[insertAt:]
+				err = os.WriteFile(filePath, []byte(newContent), 0644)
+				if err != nil {
+					return false, err
+				}
+				return true, nil
 			}
-			return true, nil
+			endIndex = startIndex + len(startMarker) + nextEnd + len(endMarker)
 		}
 
 		oldBlock := strContent[startIndex:endIndex]

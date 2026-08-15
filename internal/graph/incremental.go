@@ -80,7 +80,7 @@ func syncGraphFull(db *sql.DB, projectID string, projPath string) error {
 	}
 
 	// Phase 2: Extract function and class calls
-	callEdges := extractCallEdges(projPath, wr.nodes, wr.fileContents)
+	callEdges := extractCallEdges(wr.nodes, wr.fileContents)
 	if err := bulkInsertEdges(tx, projectID, callEdges); err != nil {
 		return err
 	}
@@ -151,6 +151,17 @@ func trySyncGraphIncrementalFiltered(db *sql.DB, projectID string, projPath stri
 	churn := len(toParse) + len(deleted)
 	if totalTracked > 0 && float64(churn)/float64(totalTracked) > 0.30 {
 		return false, nil
+	}
+
+	// Lazy incremental syncs (readOnly set) re-parse only the changed files,
+	// so merge the persisted function/class nodes for unchanged files back in.
+	// This keeps cross-file call resolution working without re-reading the
+	// whole project. It must run before the transaction starts so the single
+	// writer connection is not held while querying.
+	if readOnly != nil {
+		if err = mergeExistingSymbols(db, projectID, wr.nodes); err != nil {
+			return false, fmt.Errorf("failed merging existing symbols: %w", err)
+		}
 	}
 
 	tx, err := db.Begin()
@@ -246,13 +257,25 @@ func trySyncGraphIncrementalFiltered(db *sql.DB, projectID string, projPath stri
 		}
 	}
 
-	// Phase 2: Extract and sync function and class calls (re-create all calls edges)
-	if _, err := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND relation_type = 'calls'", projectID); err != nil {
-		return false, fmt.Errorf("failed deleting old call edges: %w", err)
-	}
-	callEdges := extractCallEdges(projPath, wr.nodes, wr.fileContents)
-	if err := bulkInsertEdges(tx, projectID, callEdges); err != nil {
-		return false, err
+	// Phase 2: Extract and sync function and class calls. A full incremental
+	// sync rebuilds every call edge from the complete symbol map. A lazy sync
+	// (readOnly set) only refreshes call edges for the changed files — the
+	// source-side edges of those files were already removed in step 2, and call
+	// edges that do not touch a changed file are preserved, so a single-file
+	// edit cannot wipe the rest of the calls graph.
+	if readOnly == nil {
+		if _, err := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND relation_type = 'calls'", projectID); err != nil {
+			return false, fmt.Errorf("failed deleting old call edges: %w", err)
+		}
+		callEdges := extractCallEdges(wr.nodes, wr.fileContents)
+		if err := bulkInsertEdges(tx, projectID, callEdges); err != nil {
+			return false, err
+		}
+	} else {
+		callEdges := extractCallEdges(wr.nodes, wr.fileContents)
+		if err := bulkInsertEdges(tx, projectID, callEdges); err != nil {
+			return false, err
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -332,6 +355,35 @@ func bulkInsertEdges(tx *sql.Tx, projectID string, edges []*Edge) error {
 		}
 	}
 	return nil
+}
+
+// mergeExistingSymbols loads previously persisted function/class nodes for
+// files that are not already in nodes (i.e. unchanged files during a lazy
+// incremental sync) so cross-file call resolution still works when only a
+// subset of files is re-parsed. Fresh nodes for changed files are kept.
+func mergeExistingSymbols(db *sql.DB, projectID string, nodes map[string]*Node) error {
+	rows, err := db.Query("SELECT id, node_type, label, path FROM graph_nodes WHERE project_id = ? AND node_type IN ('function', 'class')", projectID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, nodeType, label, path string
+		if err := rows.Scan(&id, &nodeType, &label, &path); err != nil {
+			return err
+		}
+		if _, exists := nodes[id]; exists {
+			continue
+		}
+		nodes[id] = &Node{
+			ID:       id,
+			Type:     nodeType,
+			Label:    label,
+			Path:     path,
+			Metadata: map[string]interface{}{},
+		}
+	}
+	return rows.Err()
 }
 
 func upsertNode(tx *sql.Tx, projectID string, node *Node) error {
