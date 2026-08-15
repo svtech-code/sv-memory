@@ -114,13 +114,20 @@ func GetLastSession(db *sql.DB, projectID string) (*Session, error) {
 	return &s, nil
 }
 
-func GetSessionContext(db *sql.DB, projectID string) (string, error) {
+func GetSessionContext(db *sql.DB, projectID string, limit int) (string, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
 	session, err := GetLastSession(db, projectID)
 	if err != nil {
 		return "", err
 	}
 	if session == nil {
-		mems, searchErr := SearchMemories(db, projectID, "", "", 5)
+		mems, searchErr := SearchMemories(db, projectID, "", "", limit)
 		if searchErr != nil {
 			return "", searchErr
 		}
@@ -150,7 +157,7 @@ func GetSessionContext(db *sql.DB, projectID string) (string, error) {
 		fmt.Fprintf(&sb, "**Summary:** %s\n", security.SanitizeText(session.Summary))
 	}
 
-	mems, err := SearchMemoriesBySessionCompact(db, projectID, session.ID, 10)
+	mems, err := SearchMemoriesBySessionCompact(db, projectID, session.ID, limit)
 	if err != nil {
 		return "", err
 	}
@@ -196,7 +203,7 @@ func GetAutoBootBundle(db *sql.DB, projectID string) (string, error) {
 	// Collect IDs already shown in the previous-session section so the
 	// per-category sections below don't repeat them (dedup).
 	shown := map[string]bool{}
-	sessCtx, err := GetSessionContext(db, projectID)
+	sessCtx, err := GetSessionContext(db, projectID, 0)
 	if err == nil && sessCtx != "" && !strings.HasPrefix(sessCtx, "No previous session") {
 		sb.WriteString(sessCtx)
 		sb.WriteString("\n\n")

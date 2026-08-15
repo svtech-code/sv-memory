@@ -299,7 +299,7 @@ func parseManifests(projPath string, nodes map[string]*Node, manifests []string)
 		case "Cargo.toml":
 			deps = parseCargoToml(content)
 		case "composer.json":
-			deps = parsePackageJSON(content) // same structure
+			deps = parseComposerJSON(content)
 		case "Gemfile":
 			deps = parseGemfile(content)
 		}
@@ -339,6 +339,26 @@ func parsePackageJSON(content []byte) []string {
 		deps = append(deps, name)
 	}
 	for name := range parsed.DevDependencies {
+		deps = append(deps, name)
+	}
+	return deps
+}
+
+func parseComposerJSON(content []byte) []string {
+	// composer.json uses "require" and "require-dev" instead of npm's
+	// "dependencies" / "devDependencies".
+	var parsed struct {
+		Require    map[string]string `json:"require"`
+		RequireDev map[string]string `json:"require-dev"`
+	}
+	if err := json.Unmarshal(content, &parsed); err != nil {
+		return nil
+	}
+	var deps []string
+	for name := range parsed.Require {
+		deps = append(deps, name)
+	}
+	for name := range parsed.RequireDev {
 		deps = append(deps, name)
 	}
 	return deps

@@ -32,12 +32,6 @@ func chunkedSyncDir(projPath string) string {
 	return filepath.Join(projPath, ".sv-memory", "chunks")
 }
 
-func countMemories(db *sql.DB, projectID string) (int, error) {
-	var n int
-	err := db.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ? AND deleted_at IS NULL", projectID).Scan(&n)
-	return n, err
-}
-
 func searchAllMemories(db *sql.DB, projectID string) ([]*Memory, error) {
 	rows, err := db.Query("SELECT "+memoryColumns+
 		" FROM memories WHERE project_id = ? AND deleted_at IS NULL ORDER BY created_at ASC", projectID)
@@ -57,7 +51,7 @@ func searchChangedMemories(db *sql.DB, projectID string, lastSync time.Time) ([]
 		" FROM memories WHERE project_id = ? AND deleted_at IS NULL AND ("+
 		"created_at > ? OR (last_seen_at IS NOT NULL AND last_seen_at > ?)"+
 		") ORDER BY created_at ASC",
-		projectID, lastSync.Format("2006-01-02 15:04:05"), lastSync.Format("2006-01-02 15:04:05"))
+		projectID, lastSync, lastSync)
 	if err != nil {
 		return nil, err
 	}
@@ -277,27 +271,32 @@ func syncToGit(db *sql.DB, projectID string, projPath string, forceJSON bool) er
 		}
 	}
 
-	// No inserts, updates, or deletions since the last sync: skip all I/O.
-	// A forced full flush (SyncToGitForceFull) always proceeds so the monolithic
-	// memories.json is guaranteed to be rewritten on graceful shutdown.
-	if !forceJSON && len(writeSet) == 0 && countNonDeleted(db, projectID, len(full)) {
-		return nil
-	}
-
 	existingChunks, err := writeChunkFiles(chunkDir, writeSet)
 	if err != nil {
 		return err
 	}
 
-	// Remove chunks whose memory no longer exists (soft-deleted or pruned).
+	// Chunks whose memory no longer exists (soft-deleted or pruned) must be
+	// removed so a deleted memory does not linger in the sync store.
 	activeIDs := make(map[string]bool, len(full))
 	for _, m := range full {
 		activeIDs[m.ID] = true
 	}
+	removedOrphan := false
 	for id := range existingChunks {
 		if !activeIDs[id] {
-			os.Remove(filepath.Join(chunkDir, id+".json"))
+			if rmErr := os.Remove(filepath.Join(chunkDir, id+".json")); rmErr == nil {
+				removedOrphan = true
+			}
 		}
+	}
+
+	// No inserts, updates, or deletions since the last sync: skip the rest of
+	// the I/O. A forced full flush (SyncToGitForceFull) always proceeds so the
+	// monolithic memories.json is guaranteed to be rewritten on graceful
+	// shutdown.
+	if !forceJSON && len(writeSet) == 0 && !removedOrphan {
+		return nil
 	}
 
 	// Rewrite the monolithic memories.json on the first sync, on a forced
@@ -329,14 +328,6 @@ func syncToGit(db *sql.DB, projectID string, projPath string, forceJSON bool) er
 	syncCacheMu.Unlock()
 
 	return nil
-}
-
-// countNonDeleted reports whether the live memory count matches the loaded
-// set, used to skip a sync that has nothing to do. When counts differ the
-// caller must proceed (deletions need orphan cleanup).
-func countNonDeleted(db *sql.DB, projectID string, expected int) bool {
-	n, err := countMemories(db, projectID)
-	return err == nil && n == expected
 }
 
 func SyncFromGit(db *sql.DB, projectID string, projPath string) error {

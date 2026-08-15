@@ -88,6 +88,59 @@ func TestSaveMemoryTopicUpsertPreservesCreatedAt(t *testing.T) {
 	}
 }
 
+func TestSaveJudgmentReplacesDuplicate(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-judge-dedup")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_storage.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	if err = db.RegisterProject(database, "proj-judge", "Judge", tempDir); err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// Two memories to relate.
+	a, err := SaveMemory(database, &Memory{
+		ProjectID: "proj-judge", Category: "decision",
+		What: "Use Postgres", Why: "why", Learned: "learned",
+	})
+	if err != nil {
+		t.Fatalf("save memory a: %v", err)
+	}
+	b, err := SaveMemory(database, &Memory{
+		ProjectID: "proj-judge", Category: "decision",
+		What: "Use MySQL", Why: "why", Learned: "learned",
+	})
+	if err != nil {
+		t.Fatalf("save memory b: %v", err)
+	}
+
+	// Re-judging the same pair must replace the previous relation, not
+	// accumulate duplicates.
+	for i := 0; i < 2; i++ {
+		if _, err := SaveJudgment(database, "proj-judge", a.ID, b.ID, "conflicts_with", "changed opinion", "tester"); err != nil {
+			t.Fatalf("SaveJudgment %d: %v", i, err)
+		}
+	}
+
+	var count int
+	if err := database.QueryRow(
+		"SELECT COUNT(*) FROM memory_relations WHERE project_id = ? AND source_id = ? AND target_id = ? AND relation_type = 'conflicts_with'",
+		"proj-judge", a.ID, b.ID).Scan(&count); err != nil {
+		t.Fatalf("count relations: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 relation after re-judging, got %d", count)
+	}
+}
+
 func TestListPruneConsolidateProjects(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-mem-projects-test")
 	if err != nil {
@@ -1213,7 +1266,7 @@ func TestGetSessionContextEdgeCases(t *testing.T) {
 			t.Fatalf("failed to register project: %v", err)
 		}
 
-		ctx, err := GetSessionContext(database, projectID)
+		ctx, err := GetSessionContext(database, projectID, 0)
 		if err != nil {
 			t.Fatalf("failed GetSessionContext: %v", err)
 		}
@@ -1249,7 +1302,7 @@ func TestGetSessionContextEdgeCases(t *testing.T) {
 			t.Fatalf("failed to save memory: %v", err)
 		}
 
-		ctx, err := GetSessionContext(database, projectID)
+		ctx, err := GetSessionContext(database, projectID, 0)
 		if err != nil {
 			t.Fatalf("failed GetSessionContext: %v", err)
 		}

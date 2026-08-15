@@ -20,6 +20,18 @@ type StaleReport struct {
 	HasChanges bool     // true when Changed/Deleted is non-empty
 }
 
+// isManifestPath reports whether relPath is one of the well-known manifest
+// filenames registered as graph nodes (their extensions are not in
+// supportedScanExts, so the staleness probe must include them explicitly).
+func isManifestPath(relPath string) bool {
+	for _, mf := range manifestFilenames {
+		if relPath == mf {
+			return true
+		}
+	}
+	return false
+}
+
 // DetectStaleFiles walks the project doing only os.Stat per file (no content
 // reads) and compares mtime/size against graph_files_meta. It returns the set
 // of files that changed, were deleted, or whether a full rebuild is needed.
@@ -64,7 +76,11 @@ func DetectStaleFiles(db *sql.DB, projectID string, projPath string) (*StaleRepo
 			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(relPath))
-		if !supportedScanExts[ext] {
+		// Manifest files (package.json, go.mod, …) are registered as graph
+		// nodes but their extensions are not in supportedScanExts, so they must
+		// be probed explicitly or a manifest edit would never trigger a resync
+		// and the depends_on edges would go stale.
+		if !supportedScanExts[ext] && !isManifestPath(relPath) {
 			return nil
 		}
 

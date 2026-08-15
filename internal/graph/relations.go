@@ -104,15 +104,30 @@ var (
 )
 
 // isStdlib returns true if the import is a built-in module for the given
-// language extension (e.g. "os" in Python, "fmt" in Go, "fs" in Node).
+// language extension (e.g. "os" in Python, "fmt" in Go, "fs" in Node). A
+// submodule resolves to its top-level package, so "net/http" (Go), "os.path"
+// (Python) and "fs/promises" (Node) are all recognized as standard library.
 func isStdlib(imp, ext string) bool {
+	top := imp
+	switch ext {
+	case ".py":
+		// Python submodules are dot-separated (os.path).
+		if i := strings.IndexByte(imp, '.'); i > 0 {
+			top = imp[:i]
+		}
+	default:
+		// Go and Node use slash-separated subpackages (net/http, fs/promises).
+		if i := strings.IndexByte(imp, '/'); i > 0 {
+			top = imp[:i]
+		}
+	}
 	switch ext {
 	case ".go":
-		return goStdlib[imp]
+		return goStdlib[top]
 	case ".py":
-		return pyStdlib[imp]
+		return pyStdlib[top]
 	case ".js", ".ts", ".jsx", ".tsx":
-		return nodeStdlib[imp]
+		return nodeStdlib[top]
 	}
 	return false
 }

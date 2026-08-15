@@ -489,6 +489,20 @@ func (s *Server) handleGraphExplain(ctx context.Context, req mcp.CallToolRequest
 	return s.respond(req, sb.String()), nil
 }
 
+// graphHasCentrality reports whether any graph node carries betweenness
+// centrality metadata, the signal used to decide whether the lazy
+// compute+reload path is needed.
+func graphHasCentrality(g *graph.InMemoryGraph) bool {
+	for _, node := range g.Nodes {
+		if node.Metadata != nil {
+			if _, ok := node.Metadata["betweenness_centrality"]; ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (s *Server) handleGodNodes(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	topNStr := req.GetString("top_n", "10")
 	topN := 10
@@ -504,19 +518,15 @@ func (s *Server) handleGodNodes(ctx context.Context, req mcp.CallToolRequest) (*
 		return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
 	}
 
-	// Lazy-calculate communities and centrality if missing
-	hasBC := false
-	for _, node := range g.Nodes {
-		if node.Metadata != nil {
-			if _, ok := node.Metadata["betweenness_centrality"]; ok {
-				hasBC = true
-				break
-			}
-		}
-	}
-	if !hasBC {
+	// Lazy-calculate communities and centrality if missing.
+	if !graphHasCentrality(g) {
 		debugLog("betweenness_centrality missing, calculating communities and centrality...")
 		s.computeCentralityIfMissing()
+		// Reload the graph so the local copy carries the freshly computed
+		// centrality (computeCentralityIfMissing invalidates the cache).
+		if g, err = s.getOrLoadGraph(); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
+		}
 	}
 	type rankedNode struct {
 		id     string
@@ -585,15 +595,20 @@ func (s *Server) handleSurprisingConnections(ctx context.Context, req mcp.CallTo
 
 	limitStr := req.GetString("limit", "10")
 	limit := 10
-	if d, err := strconv.Atoi(limitStr); err == nil && d > 0 {
+	if d, convErr := strconv.Atoi(limitStr); convErr == nil && d > 0 {
 		limit = d
 	}
 	if limit > 50 {
 		limit = 50
 	}
 
-	if g.BetweennessCentrality() == nil {
-		return mcp.NewToolResultError("centrality data not available"), nil
+	// Lazily compute and reload when betweenness centrality is missing, like
+	// the other graph tools, so a freshly-synced graph does not error here.
+	if !graphHasCentrality(g) {
+		s.computeCentralityIfMissing()
+		if g, err = s.getOrLoadGraph(); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
+		}
 	}
 
 	centrality := g.BetweennessCentrality()

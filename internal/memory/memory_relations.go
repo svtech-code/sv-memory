@@ -20,24 +20,41 @@ func SaveJudgment(db *sql.DB, projectID, sourceID, targetID, relationType, reaso
 	reason = security.SanitizeText(reason)
 	judgedBy = security.SanitizeText(judgedBy)
 
-	var srcExists, tgtExists bool
-	_ = db.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ? AND id = ? AND deleted_at IS NULL", projectID, sourceID).Scan(&srcExists)
-	_ = db.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ? AND id = ? AND deleted_at IS NULL", projectID, targetID).Scan(&tgtExists)
-	if !srcExists || !tgtExists {
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	var srcExists, tgtExists int
+	if err := tx.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ? AND id = ? AND deleted_at IS NULL", projectID, sourceID).Scan(&srcExists); err != nil {
+		return nil, fmt.Errorf("failed to check source memory: %w", err)
+	}
+	if err := tx.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ? AND id = ? AND deleted_at IS NULL", projectID, targetID).Scan(&tgtExists); err != nil {
+		return nil, fmt.Errorf("failed to check target memory: %w", err)
+	}
+	if srcExists == 0 || tgtExists == 0 {
 		return nil, fmt.Errorf("one or both memories not found or are deleted (source=%v target=%v)", srcExists, tgtExists)
 	}
 
-	_, err := db.Exec(`
+	// Re-judging the same pair replaces the previous relation instead of
+	// accumulating duplicates. The former ON CONFLICT(id) upsert never fired
+	// because the id is freshly generated on every call.
+	if _, err := tx.Exec(
+		"DELETE FROM memory_relations WHERE project_id = ? AND source_id = ? AND target_id = ? AND relation_type = ?",
+		projectID, sourceID, targetID, relationType); err != nil {
+		return nil, fmt.Errorf("failed to remove previous judgment: %w", err)
+	}
+
+	if _, err := tx.Exec(`
 		INSERT INTO memory_relations (id, project_id, source_id, target_id, relation_type, reason, judged_by, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			relation_type = excluded.relation_type,
-			reason = excluded.reason,
-			judged_by = excluded.judged_by,
-			created_at = excluded.created_at
-	`, id, projectID, sourceID, targetID, relationType, reason, judgedBy, now)
-	if err != nil {
+	`, id, projectID, sourceID, targetID, relationType, reason, judgedBy, now); err != nil {
 		return nil, fmt.Errorf("failed to save judgment: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit judgment: %w", err)
 	}
 	return &MemoryRelation{
 		ID:           id,

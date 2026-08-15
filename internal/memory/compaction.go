@@ -73,7 +73,7 @@ func compactMemoriesSince(db *sql.DB, projectID string, since time.Time) (*Compa
 	args := []interface{}{projectID}
 	if !since.IsZero() {
 		topicQuery += ` AND MAX(created_at) > ?`
-		args = append(args, since.Format("2006-01-02 15:04:05"))
+		args = append(args, since)
 	}
 
 	rows, err := db.Query(topicQuery, args...)

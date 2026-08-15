@@ -340,11 +340,22 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 		mem.ReviewAfter = now.Add(decayReviewAfter(mem.Category))
 	}
 
+	// The dedup and topic-key upsert each pair a SELECT with a write. Without a
+	// transaction two concurrent SaveMemory calls can interleave those steps and
+	// create two rows for the same topic_key (or double-increment a duplicate).
+	// Running the whole save inside one transaction on the single writer
+	// connection serializes the check-and-write pairs.
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
 	if mem.TopicKey != "" {
 		var existingID string
 		var revCount int
 		var existingCreatedAtStr string
-		err := db.QueryRow(
+		err = tx.QueryRow(
 			"SELECT id, revision_count, created_at FROM memories WHERE project_id = ? AND topic_key = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1",
 			mem.ProjectID, mem.TopicKey,
 		).Scan(&existingID, &revCount, &existingCreatedAtStr)
@@ -369,14 +380,16 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 				topic_key = ?, revision_count = ?, normalized_hash = ?,
 				last_seen_at = ?, review_after = ?, created_at = ?, deleted_at = NULL
 			WHERE id = ?`
-			_, err := db.Exec(query,
+			if _, uErr := tx.Exec(query,
 				mem.Category, mem.What, mem.Why, mem.WherePath, mem.Learned,
 				mem.GitBranch, mem.GitCommit, mem.Author, mem.Impact,
 				mem.ErrorsFaced, mem.NextSteps, mem.SessionID,
 				mem.TopicKey, mem.RevisionCount, mem.NormalizedHash,
-				now, mem.ReviewAfter, mem.CreatedAt, mem.ID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to update memory via topic_key: %w", err)
+				now, mem.ReviewAfter, mem.CreatedAt, mem.ID); uErr != nil {
+				return nil, fmt.Errorf("failed to update memory via topic_key: %w", uErr)
+			}
+			if cErr := tx.Commit(); cErr != nil {
+				return nil, fmt.Errorf("failed to commit topic-key upsert: %w", cErr)
 			}
 			return mem, nil
 		}
@@ -385,19 +398,27 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 	if mem.TopicKey == "" {
 		var existingID string
 		var dupCount int
-		err := db.QueryRow(
-			"SELECT id, duplicate_count FROM memories WHERE project_id = ? AND normalized_hash = ? AND category = ? AND created_at > datetime('now', '-24 hours')",
-			mem.ProjectID, mem.NormalizedHash, mem.Category,
+		// Compare against a Go-computed cutoff instead of SQLite's
+		// datetime('now') (which is UTC): created_at is stored with the local
+		// offset, so the two formats never compared correctly for zones west
+		// of UTC. Binding the cutoff as a time.Time keeps both sides in the
+		// same RFC3339Nano format.
+		cutoff := time.Now().Add(-24 * time.Hour)
+		err = tx.QueryRow(
+			"SELECT id, duplicate_count FROM memories WHERE project_id = ? AND normalized_hash = ? AND category = ? AND created_at > ?",
+			mem.ProjectID, mem.NormalizedHash, mem.Category, cutoff,
 		).Scan(&existingID, &dupCount)
 		if err == nil {
-			_, err := db.Exec("UPDATE memories SET duplicate_count = ?, last_seen_at = ? WHERE id = ?",
-				dupCount+1, now, existingID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to update duplicate count: %w", err)
+			if _, dErr := tx.Exec("UPDATE memories SET duplicate_count = ?, last_seen_at = ? WHERE id = ?",
+				dupCount+1, now, existingID); dErr != nil {
+				return nil, fmt.Errorf("failed to update duplicate count: %w", dErr)
 			}
 			mem.ID = existingID
 			mem.DuplicateCount = dupCount + 1
 			mem.LastSeenAt = now
+			if cErr := tx.Commit(); cErr != nil {
+				return nil, fmt.Errorf("failed to commit duplicate update: %w", cErr)
+			}
 			return mem, nil
 		}
 	}
@@ -416,9 +437,11 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 		mem.LastSeenAt = now
 	}
 
-	_, err := db.Exec(memoryInsertConflictQuery(), memoryInsertArgs(mem, mem.CreatedAt)...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to save memory: %w", err)
+	if _, iErr := tx.Exec(memoryInsertConflictQuery(), memoryInsertArgs(mem, mem.CreatedAt)...); iErr != nil {
+		return nil, fmt.Errorf("failed to save memory: %w", iErr)
+	}
+	if cErr := tx.Commit(); cErr != nil {
+		return nil, fmt.Errorf("failed to commit save: %w", cErr)
 	}
 	return mem, nil
 }
@@ -530,23 +553,43 @@ func DeleteProject(db *sql.DB, id string, hard bool) error {
 		return tx.Commit()
 	}
 
-	if _, err := db.Exec("UPDATE memories SET deleted_at=? WHERE project_id=? AND deleted_at IS NULL", time.Now(), id); err != nil {
-		return fmt.Errorf("failed to soft-delete memories: %w", err)
+	// Soft delete: mark memories as deleted and clean the derived data
+	// (sessions, relations, graph) in one transaction so a failure cannot leave
+	// the project partially cleaned. The graph is rebuildable via sync, so it
+	// is removed for consistency with the hard-delete path.
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	if _, err := db.Exec("DELETE FROM sessions WHERE project_id=?", id); err != nil {
-		return fmt.Errorf("failed to delete sessions: %w", err)
-	}
-	if _, err := db.Exec("DELETE FROM memory_relations WHERE project_id=?", id); err != nil {
-		return fmt.Errorf("failed to delete relations: %w", err)
-	}
+	defer tx.Rollback()
+
 	var n int
-	if err := db.QueryRow("SELECT COUNT(*) FROM projects WHERE id=?", id).Scan(&n); err != nil {
+	if err := tx.QueryRow("SELECT COUNT(*) FROM projects WHERE id=?", id).Scan(&n); err != nil {
 		return fmt.Errorf("failed to check project: %w", err)
 	}
 	if n == 0 {
 		return fmt.Errorf("project %s not found", id)
 	}
-	return nil
+
+	if _, err := tx.Exec("UPDATE memories SET deleted_at=? WHERE project_id=? AND deleted_at IS NULL", time.Now(), id); err != nil {
+		return fmt.Errorf("failed to soft-delete memories: %w", err)
+	}
+	if _, err := tx.Exec("DELETE FROM sessions WHERE project_id=?", id); err != nil {
+		return fmt.Errorf("failed to delete sessions: %w", err)
+	}
+	if _, err := tx.Exec("DELETE FROM memory_relations WHERE project_id=?", id); err != nil {
+		return fmt.Errorf("failed to delete relations: %w", err)
+	}
+	if _, err := tx.Exec("DELETE FROM graph_edges WHERE project_id=?", id); err != nil {
+		return fmt.Errorf("failed to delete graph edges: %w", err)
+	}
+	if _, err := tx.Exec("DELETE FROM graph_nodes WHERE project_id=?", id); err != nil {
+		return fmt.Errorf("failed to delete graph nodes: %w", err)
+	}
+	if _, err := tx.Exec("DELETE FROM graph_files_meta WHERE project_id=?", id); err != nil {
+		return fmt.Errorf("failed to delete graph file metadata: %w", err)
+	}
+	return tx.Commit()
 }
 
 func DeleteMemory(db *sql.DB, projectID, id string, hard bool) error {
@@ -560,7 +603,13 @@ func DeleteMemory(db *sql.DB, projectID, id string, hard bool) error {
 			return fmt.Errorf("memory %s not found", id)
 		}
 	} else {
-		result, err := db.Exec("UPDATE memories SET deleted_at = ? WHERE project_id = ? AND id = ? AND deleted_at IS NULL",
+		tx, err := db.Begin()
+		if err != nil {
+			return fmt.Errorf("failed to begin transaction: %w", err)
+		}
+		defer tx.Rollback()
+
+		result, err := tx.Exec("UPDATE memories SET deleted_at = ? WHERE project_id = ? AND id = ? AND deleted_at IS NULL",
 			time.Now(), projectID, id)
 		if err != nil {
 			return fmt.Errorf("failed to soft-delete memory: %w", err)
@@ -568,6 +617,15 @@ func DeleteMemory(db *sql.DB, projectID, id string, hard bool) error {
 		n, _ := result.RowsAffected()
 		if n == 0 {
 			return fmt.Errorf("memory %s not found or already deleted", id)
+		}
+
+		// A soft delete must not leave relations pointing at a deleted memory:
+		// the FK cascade only fires on a real DELETE.
+		if _, err := tx.Exec("DELETE FROM memory_relations WHERE source_id = ? OR target_id = ?", id, id); err != nil {
+			return fmt.Errorf("failed to clean relations: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("failed to commit soft delete: %w", err)
 		}
 	}
 	return nil

@@ -89,7 +89,12 @@ func (s *Server) handleSessionSummary(ctx context.Context, req mcp.CallToolReque
 
 func (s *Server) handleContext(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	startQuery := time.Now()
-	contextStr, err := memory.GetSessionContext(s.pool.Reader, s.cfg.ProjectID)
+	limitStr := req.GetString("limit", "")
+	limit := 0
+	if l, convErr := strconv.Atoi(limitStr); convErr == nil && l > 0 {
+		limit = l
+	}
+	contextStr, err := memory.GetSessionContext(s.pool.Reader, s.cfg.ProjectID, limit)
 	debugLog("mem_context took %s", time.Since(startQuery))
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to get session context: %v", err)), nil

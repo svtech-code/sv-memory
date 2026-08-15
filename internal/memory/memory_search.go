@@ -337,11 +337,20 @@ func jaccardSimilarity(a, b []string) float64 {
 }
 
 func FindSimilarMemories(db *sql.DB, projectID, title string, limit int, threshold float64) ([]*MemoryCandidate, error) {
+	if limit < 1 {
+		limit = 1
+	}
 	tokens := tokenizeTitle(title)
 	if len(tokens) == 0 {
 		return nil, nil
 	}
-	ftsQuery := strings.Join(tokens, " OR ")
+	// Quote every token so FTS5 treats hyphens/underscores literally instead of
+	// interpreting "-" as the NOT operator or "_" as a wildcard.
+	quoted := make([]string, len(tokens))
+	for i, t := range tokens {
+		quoted[i] = `"` + t + `"`
+	}
+	ftsQuery := strings.Join(quoted, " OR ")
 
 	rows, err := db.Query(`
 		SELECT m.id, m.category, m.what
@@ -510,7 +519,7 @@ func GetTimelineCompact(db *sql.DB, projectID, obsID string, before, after int) 
 		rows, qErr := db.Query(`
 		SELECT id, category, what, created_at
 		FROM memories WHERE project_id = ? AND created_at < ? AND id != ? AND deleted_at IS NULL
-		ORDER BY created_at DESC LIMIT ?`, projectID, targetTime.Format("2006-01-02 15:04:05"), obsID, before)
+		ORDER BY created_at DESC LIMIT ?`, projectID, targetTime, obsID, before)
 		if qErr != nil {
 			return nil, nil, qErr
 		}
@@ -528,7 +537,7 @@ func GetTimelineCompact(db *sql.DB, projectID, obsID string, before, after int) 
 		rows, qErr := db.Query(`
 		SELECT id, category, what, created_at
 		FROM memories WHERE project_id = ? AND created_at > ? AND id != ? AND deleted_at IS NULL
-		ORDER BY created_at ASC LIMIT ?`, projectID, targetTime.Format("2006-01-02 15:04:05"), obsID, after)
+		ORDER BY created_at ASC LIMIT ?`, projectID, targetTime, obsID, after)
 		if qErr != nil {
 			return nil, nil, qErr
 		}

@@ -39,7 +39,8 @@ func NewDBPool(dbPath string) (*Pool, error) {
 
 	r, rerr := openDBWithTuning(dbPath, false)
 	if rerr != nil {
-		return &Pool{Writer: w, Reader: w}, nil
+		w.Close()
+		return nil, fmt.Errorf("failed to open reader at %s: %w", dbPath, rerr)
 	}
 	return &Pool{Writer: w, Reader: r}, nil
 }
