@@ -38,7 +38,6 @@ func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) 
 	relationType := req.GetString("relation_type", "")
 	direction := req.GetString("direction", "out")
 	mermaidFlag := req.GetString("mermaid", "") == "true"
-	tokenBudget := resolveTokenBudget(req.GetString("token_budget", ""))
 
 	// Load or retrieve the in-memory graph cache.
 	startQuery := time.Now()
@@ -154,23 +153,10 @@ func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) 
 		sb.WriteString("*No connections/edges found in this range.*\n")
 	}
 
-	responseText := sb.String()
-	if tokenBudget > 0 && len(responseText) > tokenBudget*4 {
-		totalNodes := len(subGraph.Nodes)
-		totalEdges := len(subGraph.Edges)
-		// Truncate to budget, ensure we don't cut mid-line
-		maxChars := tokenBudget * 4
-		truncated := responseText[:maxChars]
-		// Find last newline to avoid cutting mid-line
-		if lastNewline := strings.LastIndex(truncated, "\n"); lastNewline > 0 {
-			truncated = truncated[:lastNewline]
-		}
-		responseText = fmt.Sprintf(
-			"[!] TRUNCATED: showing ~%d chars (~%d tokens) of estimated %d total. The graph has %d nodes and %d edges. Narrow your query with depth, relation_type, direction, or increase token_budget.\n\n%s",
-			maxChars, tokenBudget, len(responseText)/4, totalNodes, totalEdges, truncated)
-	}
-
-	return mcp.NewToolResultText(responseText), nil
+	// Route through s.respond so the shared token-budget truncation applies
+	// and the estimated tokens are accrued into the session token ledger
+	// (sv_mem_stats reports them).
+	return s.respond(req, sb.String()), nil
 }
 
 func (s *Server) handleGraphPath(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -242,7 +228,7 @@ func (s *Server) handleGraphPath(ctx context.Context, req mcp.CallToolRequest) (
 		}
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("Shortest path (%d hops):\n%s", len(path)-1, strings.Join(pathParts, ""))), nil
+	return s.respond(req, fmt.Sprintf("Shortest path (%d hops):\n%s", len(path)-1, strings.Join(pathParts, ""))), nil
 }
 
 func (s *Server) handleGraphSync(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

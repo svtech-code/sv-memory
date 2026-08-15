@@ -339,3 +339,54 @@ func TestSessionTokenLedger(t *testing.T) {
 		t.Fatalf("expected search to accrue tokens (start=%d search=%d)", afterStart, afterSearch)
 	}
 }
+
+func TestGraphQueryPathAccrueTokenLedger(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	writeMockCodeFiles(t, tempDir)
+
+	server := NewServer(pool, cfg)
+	ctx := context.Background()
+
+	// sv_graph_query and sv_graph_path route through s.respond, so each call
+	// must accrue estimated tokens into the session ledger (sv_mem_stats).
+	qReq := mcpgo.CallToolRequest{}
+	qReq.Params.Name = "sv_graph_query"
+	qReq.Params.Arguments = map[string]any{"path_or_node": "index.js", "depth": "1"}
+	if res, err := server.GetTool("sv_graph_query").Handler(ctx, qReq); err != nil || res.IsError {
+		t.Fatalf("sv_graph_query failed: err=%v res=%v", err, res.Content)
+	}
+
+	pReq := mcpgo.CallToolRequest{}
+	pReq.Params.Name = "sv_graph_path"
+	pReq.Params.Arguments = map[string]any{"source": "index.js", "target": "components/Button.tsx", "max_hops": "5"}
+	if res, err := server.GetTool("sv_graph_path").Handler(ctx, pReq); err != nil || res.IsError {
+		t.Fatalf("sv_graph_path failed: err=%v res=%v", err, res.Content)
+	}
+
+	statsReq := mcpgo.CallToolRequest{}
+	statsReq.Params.Name = "sv_mem_stats"
+	res, err := server.GetTool("sv_mem_stats").Handler(ctx, statsReq)
+	if err != nil {
+		t.Fatalf("sv_mem_stats failed: %v", err)
+	}
+	text := textContent(res.Content[0])
+	marker := "Estimated tokens injected this session:"
+	idx := strings.Index(text, marker)
+	if idx < 0 {
+		t.Fatalf("missing ledger line in stats:\n%s", text)
+	}
+	rest := strings.TrimSpace(text[idx+len(marker):])
+	rest = strings.Trim(rest, "* ")
+	n := 0
+	for _, c := range rest {
+		if c < '0' || c > '9' {
+			break
+		}
+		n = n*10 + int(c-'0')
+	}
+	if n <= 0 {
+		t.Errorf("expected graph query/path to accrue tokens in the ledger, got %d", n)
+	}
+}

@@ -67,6 +67,13 @@ func (s *Server) handleProposeSpec(ctx context.Context, req mcp.CallToolRequest)
 		}
 	}
 
+	// Advance the lifecycle draft -> proposed once the change is fully formed,
+	// so ListChangesByStatus("proposed") and the mirror reflect the state the
+	// AGENTS.md cycle documents.
+	if c, err = memory.UpdateChangeStatus(s.pool.Writer, s.cfg.ProjectID, c.ID, memory.ChangeStatusProposed); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to mark change proposed: %v", err)), nil
+	}
+
 	// Store delta requirements (single capability per change) when provided.
 	var reqSummary []string
 	if requirements != "" {
@@ -164,6 +171,18 @@ func (s *Server) handleValidateDecision(ctx context.Context, req mcp.CallToolReq
 		sb.WriteString("\n*Fix warnings in the delta requirements (edit the mirror at `.sv-memory/specs/changes/" + c.Slug + ".md` and run `sv-memory specs import " + c.Slug + "`).*\n")
 	}
 	sb.WriteString("\n\nTo proceed once the proposal is sound, run `sv_commit_spec change_id=\"" + c.ID + "\"`.")
+
+	// Advance the lifecycle proposed -> validated when the proposal is sound
+	// (PASS or WARN). A BLOCK keeps the change proposed so the conflict must be
+	// resolved first; terminal states are never re-stamped.
+	if preflight.Verdict != memory.PreflightBlock &&
+		c.Status != memory.ChangeStatusApplied &&
+		c.Status != memory.ChangeStatusArchived &&
+		c.Status != memory.ChangeStatusRejected {
+		if _, tErr := memory.UpdateChangeStatus(s.pool.Writer, s.cfg.ProjectID, c.ID, memory.ChangeStatusValidated); tErr == nil {
+			sb.WriteString("\n_Status updated to `validated`._")
+		}
+	}
 	return s.respond(req, sb.String()), nil
 }
 

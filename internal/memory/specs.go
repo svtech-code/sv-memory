@@ -341,15 +341,8 @@ func UpdateChange(db *sql.DB, projectID, id string, upd ChangeUpdate) (*Change, 
 		tasks = security.SanitizeText(*upd.Tasks)
 	}
 
-	if len(title) > 1000 {
-		return nil, fmt.Errorf("field 'title' exceeds maximum length of 1000 characters")
-	}
-	for name, v := range map[string]string{
-		"what": what, "goal": goal, "where_path": wherePath, "capability_path": capabilityPath, "design": design, "tasks": tasks,
-	} {
-		if len(v) > maxChangeFieldChars {
-			return nil, fmt.Errorf("field '%s' exceeds maximum length of %d characters", name, maxChangeFieldChars)
-		}
+	if err := validateChangeFields(title, what, goal, wherePath, capabilityPath, design, tasks); err != nil {
+		return nil, err
 	}
 
 	if _, err := db.Exec(`

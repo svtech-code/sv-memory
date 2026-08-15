@@ -73,15 +73,8 @@ func CreateChange(db *sql.DB, projectID, slug, title, what, goal, wherePath, des
 	if strings.TrimSpace(title) == "" {
 		return nil, errors.New("change title cannot be empty")
 	}
-	if len(title) > 1000 {
-		return nil, fmt.Errorf("field 'title' exceeds maximum length of 1000 characters")
-	}
-	for name, v := range map[string]string{
-		"what": what, "goal": goal, "where_path": wherePath, "design": design, "tasks": tasks,
-	} {
-		if len(v) > maxChangeFieldChars {
-			return nil, fmt.Errorf("field '%s' exceeds maximum length of %d characters", name, maxChangeFieldChars)
-		}
+	if err := validateChangeFields(title, what, goal, wherePath, "", design, tasks); err != nil {
+		return nil, err
 	}
 
 	slug = security.SanitizeText(strings.TrimSpace(slug))

@@ -47,13 +47,13 @@ func TestProposeSpecHandler(t *testing.T) {
 		t.Errorf("expected pre-flight section, got: %s", text)
 	}
 
-	// The change must be persisted with draft status.
-	changes, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusDraft)
+	// The change must be persisted and advanced to proposed status.
+	changes, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusProposed)
 	if err != nil {
 		t.Fatalf("failed to list changes: %v", err)
 	}
 	if len(changes) != 1 {
-		t.Fatalf("expected 1 draft change, got %d", len(changes))
+		t.Fatalf("expected 1 proposed change, got %d", len(changes))
 	}
 	if changes[0].Slug != "implement-session-auth" {
 		t.Errorf("expected slug, got %s", changes[0].Slug)
@@ -143,7 +143,7 @@ func TestValidateDecisionHandler(t *testing.T) {
 		t.Fatalf("propose errored: %v", propRes.Content)
 	}
 
-	changes, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusDraft)
+	changes, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusProposed)
 	if err != nil || len(changes) != 1 {
 		t.Fatalf("expected 1 change, got %d (err=%v)", len(changes), err)
 	}
@@ -211,7 +211,7 @@ func TestCommitSpecHandler(t *testing.T) {
 		t.Fatalf("propose failed: err=%v res=%v", err, res.Content)
 	}
 
-	changes, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusDraft)
+	changes, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusProposed)
 	if err != nil || len(changes) != 1 {
 		t.Fatalf("expected 1 change, got %d (err=%v)", len(changes), err)
 	}
@@ -279,7 +279,7 @@ func TestCommitSpecBlockedByInvariant(t *testing.T) {
 		t.Fatalf("propose failed: err=%v res=%v", err, res.Content)
 	}
 
-	changes, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusDraft)
+	changes, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusProposed)
 	if err != nil || len(changes) != 1 {
 		t.Fatalf("expected 1 change, got %d (err=%v)", len(changes), err)
 	}
@@ -295,10 +295,10 @@ func TestCommitSpecBlockedByInvariant(t *testing.T) {
 		t.Errorf("expected block message, got: %s", textContent(res.Content[0]))
 	}
 
-	// The change must still be draft (not applied) — the gate held.
-	drafts, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusDraft)
+	// The change must still be proposed (not applied) — the gate held.
+	drafts, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusProposed)
 	if err != nil || len(drafts) != 1 {
-		t.Fatalf("expected change to stay draft, got %d (err=%v)", len(drafts), err)
+		t.Fatalf("expected change to stay proposed, got %d (err=%v)", len(drafts), err)
 	}
 }
 
@@ -324,7 +324,7 @@ func TestCommitSpecForceOverridesBlock(t *testing.T) {
 		t.Fatalf("propose failed: err=%v res=%v", err, res.Content)
 	}
 
-	changes, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusDraft)
+	changes, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusProposed)
 	if err != nil || len(changes) != 1 {
 		t.Fatalf("expected 1 change, got %d (err=%v)", len(changes), err)
 	}
@@ -431,9 +431,9 @@ The system MUST require a TOTP second factor during login.
 		t.Errorf("expected capability and requirement summary in response, got: %s", text)
 	}
 
-	changes, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusDraft)
+	changes, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusProposed)
 	if err != nil || len(changes) != 1 {
-		t.Fatalf("expected 1 draft change, got %d (err=%v)", len(changes), err)
+		t.Fatalf("expected 1 proposed change, got %d (err=%v)", len(changes), err)
 	}
 	if changes[0].CapabilityPath != "auth" {
 		t.Errorf("expected capability path auth, got %q", changes[0].CapabilityPath)
@@ -481,7 +481,7 @@ func TestCommitSpecMergesRequirements(t *testing.T) {
 		t.Fatalf("propose failed: err=%v res=%v", err, res.Content)
 	}
 
-	changes, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusDraft)
+	changes, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusProposed)
 	if err != nil || len(changes) != 1 {
 		t.Fatalf("expected 1 change, got %d (err=%v)", len(changes), err)
 	}
@@ -572,7 +572,7 @@ func TestValidateDecisionReportsRequirements(t *testing.T) {
 		t.Fatalf("propose failed: err=%v res=%v", err, res.Content)
 	}
 
-	changes, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusDraft)
+	changes, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusProposed)
 	if err != nil || len(changes) != 1 {
 		t.Fatalf("expected 1 change, got %d (err=%v)", len(changes), err)
 	}

@@ -57,6 +57,62 @@ func parseTimeOrNow(s string) time.Time {
 	return time.Now()
 }
 
+// maxFieldChars is the shared field-length cap for the free-text memory fields,
+// kept in one place so SaveMemory and UpdateMemory cannot drift apart on the
+// limits they enforce.
+const maxFieldChars = 4000
+
+// validateMemoryFields enforces the per-field length caps shared by the
+// SaveMemory and UpdateMemory paths. topicKey and sessionID carry their own
+// (smaller) limits because they are identifiers, not prose.
+func validateMemoryFields(what, why, learned, wherePath, impact, errorsFaced, nextSteps, topicKey, sessionID string) error {
+	if len(what) > 1000 {
+		return fmt.Errorf("field 'what' exceeds maximum length of 1000 characters")
+	}
+	if len(why) > maxFieldChars {
+		return fmt.Errorf("field 'why' exceeds maximum length of %d characters", maxFieldChars)
+	}
+	if len(learned) > maxFieldChars {
+		return fmt.Errorf("field 'learned' exceeds maximum length of %d characters", maxFieldChars)
+	}
+	if len(wherePath) > 1000 {
+		return fmt.Errorf("field 'where_path' exceeds maximum length of 1000 characters")
+	}
+	if len(impact) > maxFieldChars {
+		return fmt.Errorf("field 'impact' exceeds maximum length of %d characters", maxFieldChars)
+	}
+	if len(errorsFaced) > maxFieldChars {
+		return fmt.Errorf("field 'errors_faced' exceeds maximum length of %d characters", maxFieldChars)
+	}
+	if len(nextSteps) > maxFieldChars {
+		return fmt.Errorf("field 'next_steps' exceeds maximum length of %d characters", maxFieldChars)
+	}
+	if len(topicKey) > 256 {
+		return fmt.Errorf("field 'topic_key' exceeds maximum length of 256 characters")
+	}
+	if len(sessionID) > 64 {
+		return fmt.Errorf("field 'session_id' exceeds maximum length of 64 characters")
+	}
+	return nil
+}
+
+// validateChangeFields enforces the shared field-length caps of the spec-driven
+// change lifecycle (CreateChange and UpdateChange enforce the same limits).
+func validateChangeFields(title, what, goal, wherePath, capabilityPath, design, tasks string) error {
+	if len(title) > 1000 {
+		return fmt.Errorf("field 'title' exceeds maximum length of 1000 characters")
+	}
+	for name, v := range map[string]string{
+		"what": what, "goal": goal, "where_path": wherePath,
+		"capability_path": capabilityPath, "design": design, "tasks": tasks,
+	} {
+		if len(v) > maxChangeFieldChars {
+			return fmt.Errorf("field '%s' exceeds maximum length of %d characters", name, maxChangeFieldChars)
+		}
+	}
+	return nil
+}
+
 func nullString(s string) interface{} {
 	if s == "" {
 		return nil

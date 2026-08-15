@@ -258,26 +258,8 @@ func UpdateMemory(db *sql.DB, projectID, id string, upd MemoryUpdate) (*Memory, 
 		nextSteps = *upd.NextSteps
 	}
 
-	if len(what) > 1000 {
-		return nil, fmt.Errorf("field 'what' exceeds maximum length of 1000 characters")
-	}
-	if len(why) > 4000 {
-		return nil, fmt.Errorf("field 'why' exceeds maximum length of 4000 characters")
-	}
-	if len(learned) > 4000 {
-		return nil, fmt.Errorf("field 'learned' exceeds maximum length of 4000 characters")
-	}
-	if len(wherePath) > 1000 {
-		return nil, fmt.Errorf("field 'where_path' exceeds maximum length of 1000 characters")
-	}
-	if len(impact) > 4000 {
-		return nil, fmt.Errorf("field 'impact' exceeds maximum length of 4000 characters")
-	}
-	if len(errorsFaced) > 4000 {
-		return nil, fmt.Errorf("field 'errors_faced' exceeds maximum length of 4000 characters")
-	}
-	if len(nextSteps) > 4000 {
-		return nil, fmt.Errorf("field 'next_steps' exceeds maximum length of 4000 characters")
+	if err = validateMemoryFields(what, why, learned, wherePath, impact, errorsFaced, nextSteps, "", ""); err != nil {
+		return nil, err
 	}
 
 	what = security.SanitizeText(what)
@@ -329,32 +311,8 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 	if mem.ProjectID == "" {
 		return nil, errors.New("memory ProjectID cannot be empty")
 	}
-	if len(mem.What) > 1000 {
-		return nil, fmt.Errorf("field 'what' exceeds maximum length of 1000 characters")
-	}
-	if len(mem.Why) > 4000 {
-		return nil, fmt.Errorf("field 'why' exceeds maximum length of 4000 characters")
-	}
-	if len(mem.Learned) > 4000 {
-		return nil, fmt.Errorf("field 'learned' exceeds maximum length of 4000 characters")
-	}
-	if len(mem.WherePath) > 1000 {
-		return nil, fmt.Errorf("field 'where_path' exceeds maximum length of 1000 characters")
-	}
-	if len(mem.Impact) > 4000 {
-		return nil, fmt.Errorf("field 'impact' exceeds maximum length of 4000 characters")
-	}
-	if len(mem.ErrorsFaced) > 4000 {
-		return nil, fmt.Errorf("field 'errors_faced' exceeds maximum length of 4000 characters")
-	}
-	if len(mem.NextSteps) > 4000 {
-		return nil, fmt.Errorf("field 'next_steps' exceeds maximum length of 4000 characters")
-	}
-	if len(mem.TopicKey) > 256 {
-		return nil, fmt.Errorf("field 'topic_key' exceeds maximum length of 256 characters")
-	}
-	if len(mem.SessionID) > 64 {
-		return nil, fmt.Errorf("field 'session_id' exceeds maximum length of 64 characters")
+	if err := validateMemoryFields(mem.What, mem.Why, mem.Learned, mem.WherePath, mem.Impact, mem.ErrorsFaced, mem.NextSteps, mem.TopicKey, mem.SessionID); err != nil {
+		return nil, err
 	}
 
 	mem.What = security.SanitizeText(mem.What)
