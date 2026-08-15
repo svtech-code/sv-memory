@@ -275,6 +275,7 @@ CREATE TABLE IF NOT EXISTS memories (
     normalized_hash TEXT,
     deleted_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    change_id TEXT,             -- vincula una decisión confirmada a su change
     FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
@@ -375,6 +376,27 @@ CREATE TABLE IF NOT EXISTS memory_relations (
     FOREIGN KEY(project_id, source_id) REFERENCES memories(project_id, id) ON DELETE CASCADE,
     FOREIGN KEY(project_id, target_id) REFERENCES memories(project_id, id) ON DELETE CASCADE
 );
+
+-- Ciclo de vida de cambios (motor de decisiones spec-driven)
+-- Cada propuesta recorre el ciclo de decisión:
+-- 'draft' → 'proposed' → 'validated' → 'applied' (→ 'archived') | 'rejected'
+CREATE TABLE IF NOT EXISTS changes (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    slug TEXT NOT NULL,          -- kebab-case, UNIQUE por proyecto
+    status TEXT NOT NULL DEFAULT 'draft',
+    title TEXT NOT NULL,
+    what TEXT,                   -- propuesta: por qué y qué cambia
+    goal TEXT,
+    where_path TEXT,             -- rutas de código afectadas (edges AFFECTS)
+    design TEXT,                 -- enfoque técnico
+    tasks TEXT,                  -- checklist de implementación
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME,
+    archived_at DATETIME,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    UNIQUE(project_id, slug)
+);
 ```
 
 > Nota: en bases de datos anteriores, las columnas `status` y `score` se agregan de forma idempotente mediante la migración en `internal/db/migrations.go`.
@@ -388,6 +410,8 @@ CREATE INDEX IF NOT EXISTS idx_memories_project_created ON memories(project_id, 
 CREATE INDEX IF NOT EXISTS idx_memories_project_category ON memories(project_id, category);
 CREATE INDEX IF NOT EXISTS idx_memories_topic ON memories(project_id, topic_key);
 CREATE INDEX IF NOT EXISTS idx_memories_hash ON memories(project_id, normalized_hash);
+CREATE INDEX IF NOT EXISTS idx_memories_change ON memories(project_id, change_id);
+CREATE INDEX IF NOT EXISTS idx_changes_project_status ON changes(project_id, status);
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_active_started ON sessions(project_id, started_at DESC) WHERE status = 'active';
 CREATE INDEX IF NOT EXISTS idx_sessions_completed_ended ON sessions(project_id, ended_at DESC) WHERE status = 'completed';

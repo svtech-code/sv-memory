@@ -152,6 +152,7 @@ var migrations = []migration{
 	{11, "add_last_compaction_at", addLastCompactionAt},
 	{12, "add_session_partial_indexes", addSessionPartialIndexes},
 	{13, "add_user_prompts", addUserPrompts},
+	{14, "add_change_lifecycle", addChangeLifecycle},
 }
 
 func applyMigrations(db *sql.DB) error {
@@ -593,5 +594,51 @@ func addUserPrompts(db *sql.DB) error {
 			return fmt.Errorf("failed to create user_prompts schema: %w", err)
 		}
 	}
+	return nil
+}
+
+// addChangeLifecycle adds the changes table (spec-driven proposal lifecycle)
+// plus a nullable change_id column on memories so a committed decision can be
+// traced back to the change that produced it. Both additions are additive and
+// idempotent; the memories column uses ON DELETE SET NULL so deleting a change
+// never orphans the memory, it just unlinks it.
+func addChangeLifecycle(db *sql.DB) error {
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS changes (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			slug TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'draft',
+			title TEXT NOT NULL,
+			what TEXT,
+			goal TEXT,
+			where_path TEXT,
+			design TEXT,
+			tasks TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME,
+			archived_at DATETIME,
+			FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+			UNIQUE(project_id, slug)
+		);`,
+		"CREATE INDEX IF NOT EXISTS idx_changes_project_status ON changes(project_id, status);",
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("failed to create changes schema: %w", err)
+		}
+	}
+
+	if exists, err := columnExists(db, "memories", "change_id"); err != nil {
+		return err
+	} else if !exists {
+		if _, err := db.Exec("ALTER TABLE memories ADD COLUMN change_id TEXT REFERENCES changes(id) ON DELETE SET NULL;"); err != nil {
+			return fmt.Errorf("failed to add column change_id to memories: %w", err)
+		}
+	}
+	if _, err := db.Exec("CREATE INDEX IF NOT EXISTS idx_memories_change ON memories(project_id, change_id);"); err != nil {
+		return fmt.Errorf("failed to create idx_memories_change: %w", err)
+	}
+
 	return nil
 }

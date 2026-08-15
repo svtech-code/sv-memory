@@ -3,6 +3,12 @@
 All notable changes follow [Conventional Commits](https://www.conventionalcommits.org/).
 Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automatically.
 
+## [Unreleased]
+
+### Added
+
+- **Change lifecycle schema (spec-driven decision engine, Phase 1):** new `changes` table models a proposal through the decision cycle (`draft → proposed → validated → applied → archived/rejected`) with a project-unique kebab-case `slug`, free-text `what/goal/design/tasks` fields, and `where_path` for the AFFECTS edge wiring. A nullable `change_id` column on `memories` (ON DELETE SET NULL) lets a committed decision be traced back to the change that produced it without orphaning the memory. The `internal/memory` package gains the `Change` domain type plus `CreateChange`, `GetChange`/`GetChangeBySlug`, `ListChangesByStatus`, `UpdateChangeStatus`, and `SetMemoryChangeID` (full CRUD + lifecycle transition validation). The graph schema vocabulary is extended with `spec`/`decision`/`rule` node types and `affects`/`constrains`/`implements` edge types (values are free-form TEXT, no destructive migration). Migration v14 is additive and idempotent, following the existing migration pattern. This is the data foundation for the propose → validate → commit engine; the MCP tool surface is unchanged in this phase.
+
 ## [v0.11.0] - 2026-08-15
 
 ### Added
