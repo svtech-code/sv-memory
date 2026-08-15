@@ -154,6 +154,7 @@ var migrations = []migration{
 	{13, "add_user_prompts", addUserPrompts},
 	{14, "add_change_lifecycle", addChangeLifecycle},
 	{15, "add_spec_requirements", addSpecRequirements},
+	{16, "add_change_capability_path", addChangeCapabilityPath},
 }
 
 func applyMigrations(db *sql.DB) error {
@@ -360,6 +361,7 @@ func columnExists(db *sql.DB, table, col string) (bool, error) {
 		"memory_relations": true,
 		"sessions":         true,
 		"projects":         true,
+		"changes":          true,
 	}
 	if !allowed[table] {
 		return false, fmt.Errorf("columnExists: unknown table %q", table)
@@ -704,6 +706,23 @@ func addSpecRequirements(db *sql.DB) error {
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
 			return fmt.Errorf("failed to create spec requirements schema: %w", err)
+		}
+	}
+	return nil
+}
+
+// addChangeCapabilityPath adds a capability_path column to the changes table.
+// In the single-capability-per-change model each change targets one capability
+// (defaulting to its slug); the column carries an explicit override when the
+// agent proposes with a distinct capability name. Additive and idempotent.
+func addChangeCapabilityPath(db *sql.DB) error {
+	exists, err := columnExists(db, "changes", "capability_path")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		if _, err := db.Exec("ALTER TABLE changes ADD COLUMN capability_path TEXT;"); err != nil {
+			return fmt.Errorf("failed to add column capability_path to changes: %w", err)
 		}
 	}
 	return nil

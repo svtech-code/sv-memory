@@ -39,19 +39,20 @@ func ChangeStatusValid(status string) bool {
 // travels through the propose -> validate -> apply -> archive lifecycle and,
 // once committed, produces one or more decision/standard memories.
 type Change struct {
-	ID         string    `json:"id"`
-	ProjectID  string    `json:"project_id"`
-	Slug       string    `json:"slug"`
-	Status     string    `json:"status"`
-	Title      string    `json:"title"`
-	What       string    `json:"what,omitempty"`
-	Goal       string    `json:"goal,omitempty"`
-	WherePath  string    `json:"where_path,omitempty"`
-	Design     string    `json:"design,omitempty"`
-	Tasks      string    `json:"tasks,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at,omitempty"`
-	ArchivedAt time.Time `json:"archived_at,omitempty"`
+	ID             string    `json:"id"`
+	ProjectID      string    `json:"project_id"`
+	Slug           string    `json:"slug"`
+	Status         string    `json:"status"`
+	Title          string    `json:"title"`
+	What           string    `json:"what,omitempty"`
+	Goal           string    `json:"goal,omitempty"`
+	WherePath      string    `json:"where_path,omitempty"`
+	CapabilityPath string    `json:"capability_path,omitempty"`
+	Design         string    `json:"design,omitempty"`
+	Tasks          string    `json:"tasks,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at,omitempty"`
+	ArchivedAt     time.Time `json:"archived_at,omitempty"`
 }
 
 // maxChangeFieldChars caps the free-text fields of a change so a maliciously
@@ -91,12 +92,15 @@ func CreateChange(db *sql.DB, projectID, slug, title, what, goal, wherePath, des
 	design = security.SanitizeText(design)
 	tasks = security.SanitizeText(tasks)
 
+	// A change targets a single capability, defaulting to its slug.
+	capabilityPath := security.SanitizeText(strings.TrimSpace(slug))
+
 	id := newID()
 	now := time.Now()
 	if _, err := db.Exec(`
-		INSERT INTO changes (id, project_id, slug, status, title, what, goal, where_path, design, tasks, created_at)
-		VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)`,
-		id, projectID, slug, title, what, goal, wherePath, design, tasks, now); err != nil {
+		INSERT INTO changes (id, project_id, slug, status, title, what, goal, where_path, capability_path, design, tasks, created_at)
+		VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, projectID, slug, title, what, goal, wherePath, capabilityPath, design, tasks, now); err != nil {
 		// Surface the UNIQUE(project_id, slug) violation clearly so the caller
 		// can offer an upsert/continue instead of a cryptic constraint error.
 		if strings.Contains(err.Error(), "UNIQUE") {
@@ -105,24 +109,25 @@ func CreateChange(db *sql.DB, projectID, slug, title, what, goal, wherePath, des
 		return nil, fmt.Errorf("failed to create change: %w", err)
 	}
 	return &Change{
-		ID:        id,
-		ProjectID: projectID,
-		Slug:      slug,
-		Status:    ChangeStatusDraft,
-		Title:     title,
-		What:      what,
-		Goal:      goal,
-		WherePath: wherePath,
-		Design:    design,
-		Tasks:     tasks,
-		CreatedAt: now,
+		ID:             id,
+		ProjectID:      projectID,
+		Slug:           slug,
+		Status:         ChangeStatusDraft,
+		Title:          title,
+		What:           what,
+		Goal:           goal,
+		WherePath:      wherePath,
+		CapabilityPath: capabilityPath,
+		Design:         design,
+		Tasks:          tasks,
+		CreatedAt:      now,
 	}, nil
 }
 
 // GetChange returns a change by ID within a project, or nil when not found.
 func GetChange(db *sql.DB, projectID, id string) (*Change, error) {
 	row := db.QueryRow(`
-		SELECT id, project_id, slug, status, title, what, goal, where_path, design, tasks, created_at, updated_at, archived_at
+		SELECT id, project_id, slug, status, title, what, goal, where_path, capability_path, design, tasks, created_at, updated_at, archived_at
 		FROM changes WHERE project_id = ? AND id = ?`, projectID, id)
 	c, err := scanChange(row)
 	if err == sql.ErrNoRows {
@@ -138,7 +143,7 @@ func GetChange(db *sql.DB, projectID, id string) (*Change, error) {
 // found. Used to deduplicate proposals with the same topic before creating.
 func GetChangeBySlug(db *sql.DB, projectID, slug string) (*Change, error) {
 	row := db.QueryRow(`
-		SELECT id, project_id, slug, status, title, what, goal, where_path, design, tasks, created_at, updated_at, archived_at
+		SELECT id, project_id, slug, status, title, what, goal, where_path, capability_path, design, tasks, created_at, updated_at, archived_at
 		FROM changes WHERE project_id = ? AND slug = ?`, projectID, slug)
 	c, err := scanChange(row)
 	if err == sql.ErrNoRows {
@@ -155,15 +160,16 @@ func GetChangeBySlug(db *sql.DB, projectID, slug string) (*Change, error) {
 func scanChange(row *sql.Row) (*Change, error) {
 	var c Change
 	var createdAtStr, updatedAtStr, archivedAtStr sql.NullString
-	var what, goal, wherePath, design, tasks sql.NullString
+	var what, goal, wherePath, capabilityPath, design, tasks sql.NullString
 	if err := row.Scan(&c.ID, &c.ProjectID, &c.Slug, &c.Status, &c.Title,
-		&what, &goal, &wherePath, &design, &tasks,
+		&what, &goal, &wherePath, &capabilityPath, &design, &tasks,
 		&createdAtStr, &updatedAtStr, &archivedAtStr); err != nil {
 		return nil, err
 	}
 	c.What = what.String
 	c.Goal = goal.String
 	c.WherePath = wherePath.String
+	c.CapabilityPath = capabilityPath.String
 	c.Design = design.String
 	c.Tasks = tasks.String
 	c.CreatedAt = parseTimeOrNow(createdAtStr.String)
@@ -205,7 +211,7 @@ func UpdateChangeStatus(db *sql.DB, projectID, id, status string) (*Change, erro
 // a single lifecycle state, most recently created first.
 func ListChangesByStatus(db *sql.DB, projectID, status string) ([]*Change, error) {
 	query := `
-		SELECT id, project_id, slug, status, title, what, goal, where_path, design, tasks, created_at, updated_at, archived_at
+		SELECT id, project_id, slug, status, title, what, goal, where_path, capability_path, design, tasks, created_at, updated_at, archived_at
 		FROM changes WHERE project_id = ?`
 	args := []interface{}{projectID}
 	if status != "" {
@@ -227,15 +233,16 @@ func ListChangesByStatus(db *sql.DB, projectID, status string) ([]*Change, error
 	for rows.Next() {
 		var c Change
 		var createdAtStr, updatedAtStr, archivedAtStr sql.NullString
-		var what, goal, wherePath, design, tasks sql.NullString
+		var what, goal, wherePath, capabilityPath, design, tasks sql.NullString
 		if err := rows.Scan(&c.ID, &c.ProjectID, &c.Slug, &c.Status, &c.Title,
-			&what, &goal, &wherePath, &design, &tasks,
+			&what, &goal, &wherePath, &capabilityPath, &design, &tasks,
 			&createdAtStr, &updatedAtStr, &archivedAtStr); err != nil {
 			return nil, err
 		}
 		c.What = what.String
 		c.Goal = goal.String
 		c.WherePath = wherePath.String
+		c.CapabilityPath = capabilityPath.String
 		c.Design = design.String
 		c.Tasks = tasks.String
 		c.CreatedAt = parseTimeOrNow(createdAtStr.String)
@@ -264,6 +271,30 @@ func SetMemoryChangeID(db *sql.DB, projectID, memoryID, changeID string) error {
 		return fmt.Errorf("failed to link memory to change: %w", err)
 	}
 	return nil
+}
+
+// SetChangeCapabilityPath overrides the capability a change targets (defaults
+// to its slug at creation). Used by the propose path when the agent specifies a
+// distinct capability name. Returns the updated change.
+func SetChangeCapabilityPath(db *sql.DB, projectID, id, capabilityPath string) (*Change, error) {
+	existing, err := GetChange(db, projectID, id)
+	if err != nil {
+		return nil, err
+	}
+	if existing == nil {
+		return nil, fmt.Errorf("change %s not found in project", id)
+	}
+	capabilityPath = security.SanitizeText(strings.TrimSpace(capabilityPath))
+	if capabilityPath == "" {
+		capabilityPath = existing.Slug
+	}
+	if _, err := db.Exec(`
+		UPDATE changes SET capability_path = ?, updated_at = ?
+		WHERE project_id = ? AND id = ?`,
+		capabilityPath, time.Now(), projectID, id); err != nil {
+		return nil, fmt.Errorf("failed to update change capability: %w", err)
+	}
+	return GetChange(db, projectID, id)
 }
 
 // ChangeStats returns the count of active (not archived/rejected) changes per

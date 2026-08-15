@@ -43,6 +43,9 @@ func ChangeToMarkdown(c *Change) string {
 	if c.WherePath != "" {
 		fmt.Fprintf(&sb, "- **Where:** `%s`\n", c.WherePath)
 	}
+	if c.CapabilityPath != "" {
+		fmt.Fprintf(&sb, "- **Capability:** `%s`\n", c.CapabilityPath)
+	}
 	fmt.Fprintf(&sb, "- **Created:** %s\n", c.CreatedAt.Format(time.RFC3339))
 
 	if c.What != "" {
@@ -80,6 +83,9 @@ func ParseChangeMarkdown(content string) (*Change, error) {
 		case strings.HasPrefix(trimmed, "- **Where:**"):
 			c.WherePath = strings.TrimSpace(strings.TrimPrefix(trimmed, "- **Where:**"))
 			c.WherePath = strings.Trim(c.WherePath, "` ")
+		case strings.HasPrefix(trimmed, "- **Capability:**"):
+			c.CapabilityPath = strings.TrimSpace(strings.TrimPrefix(trimmed, "- **Capability:**"))
+			c.CapabilityPath = strings.Trim(c.CapabilityPath, "` ")
 		case trimmed == "## Proposal":
 			if v, ok := sectionContent(lines, i+1, "## "); ok {
 				c.What = v
@@ -140,6 +146,9 @@ func WriteSpecMirror(db *sql.DB, projectID, projPath string) error {
 
 	for _, c := range all {
 		body := ChangeToMarkdown(c)
+		if deltas, dErr := LoadChangeDeltas(db, projectID, c.ID); dErr == nil && len(deltas) > 0 {
+			body += "\n\n" + DeltasToMarkdown(deltas)
+		}
 		body = security.SanitizeText(body)
 		if c.Status == ChangeStatusArchived || c.Status == ChangeStatusRejected {
 			// Move to archive with a date prefix for chronological ordering.
@@ -167,6 +176,11 @@ func WriteSpecMirror(db *sql.DB, projectID, projPath string) error {
 				_ = os.Remove(filepath.Join(changesDir, e.Name()))
 			}
 		}
+	}
+
+	// Project the materialized current state per capability.
+	if err = writeCapabilityMirrors(db, projectID, projPath); err != nil {
+		return err
 	}
 	return nil
 }
@@ -199,8 +213,13 @@ func ImportChangeFromMarkdown(db *sql.DB, projectID, projPath, slug string) (*Ch
 		}
 		return nil, fmt.Errorf("failed to read spec mirror %s: %w", path, err)
 	}
+	content := string(data)
 
-	parsed, err := ParseChangeMarkdown(string(data))
+	// Delta sections are stripped before change-field parsing so ParseChangeMarkdown
+	// never absorbs "## ADDED Requirements" content into the Tasks/Design sections.
+	deltas := ParseSpecDeltas(content)
+	changePart := stripDeltaSections(content)
+	parsed, err := ParseChangeMarkdown(changePart)
 	if err != nil {
 		return nil, err
 	}
@@ -228,6 +247,9 @@ func ImportChangeFromMarkdown(db *sql.DB, projectID, projPath, slug string) (*Ch
 	if parsed.WherePath != "" && parsed.WherePath != existing.WherePath {
 		upd.WherePath = &parsed.WherePath
 	}
+	if parsed.CapabilityPath != "" && parsed.CapabilityPath != existing.CapabilityPath {
+		upd.CapabilityPath = &parsed.CapabilityPath
+	}
 	if parsed.Design != "" && parsed.Design != existing.Design {
 		upd.Design = &parsed.Design
 	}
@@ -236,22 +258,46 @@ func ImportChangeFromMarkdown(db *sql.DB, projectID, projPath, slug string) (*Ch
 	}
 
 	changed := upd.Title != nil || upd.What != nil || upd.Goal != nil ||
-		upd.WherePath != nil || upd.Design != nil || upd.Tasks != nil
-	if !changed {
-		return existing, nil
+		upd.WherePath != nil || upd.CapabilityPath != nil || upd.Design != nil || upd.Tasks != nil
+	if changed {
+		if existing, err = UpdateChange(db, projectID, existing.ID, upd); err != nil {
+			return nil, err
+		}
 	}
-	return UpdateChange(db, projectID, existing.ID, upd)
+
+	// Reconcile the delta requirements. The capability defaults to the change's
+	// (updated) value so a human-edited Capability line moves the requirements.
+	// Reconcile even with zero deltas: a human removing every delta section
+	// clears the change's stored requirements.
+	if err = ReplaceChangeRequirements(db, projectID, existing.ID, existing.CapabilityPath, deltas); err != nil {
+		return nil, err
+	}
+	return existing, nil
+}
+
+// stripDeltaSections removes everything from the first delta section header
+// (## ADDED/MODIFIED/REMOVED/RENAMED Requirements) onwards, leaving only the
+// change-level body for ParseChangeMarkdown.
+func stripDeltaSections(content string) string {
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		if level, text, ok := headerLine(strings.TrimSpace(line)); ok && level == 2 && deltaOpForHeader(text) != "" {
+			return strings.Join(lines[:i], "\n")
+		}
+	}
+	return content
 }
 
 // ChangeUpdate holds the fields an import can reconcile into a change. A nil
 // field keeps the stored value; a non-nil field overwrites it.
 type ChangeUpdate struct {
-	Title     *string
-	What      *string
-	Goal      *string
-	WherePath *string
-	Design    *string
-	Tasks     *string
+	Title          *string
+	What           *string
+	Goal           *string
+	WherePath      *string
+	CapabilityPath *string
+	Design         *string
+	Tasks          *string
 }
 
 // UpdateChange partially updates a change by ID from a reconciled mirror edit.
@@ -282,6 +328,10 @@ func UpdateChange(db *sql.DB, projectID, id string, upd ChangeUpdate) (*Change, 
 	if upd.WherePath != nil {
 		wherePath = security.SanitizeText(*upd.WherePath)
 	}
+	capabilityPath := existing.CapabilityPath
+	if upd.CapabilityPath != nil {
+		capabilityPath = security.SanitizeText(*upd.CapabilityPath)
+	}
 	design := existing.Design
 	if upd.Design != nil {
 		design = security.SanitizeText(*upd.Design)
@@ -295,7 +345,7 @@ func UpdateChange(db *sql.DB, projectID, id string, upd ChangeUpdate) (*Change, 
 		return nil, fmt.Errorf("field 'title' exceeds maximum length of 1000 characters")
 	}
 	for name, v := range map[string]string{
-		"what": what, "goal": goal, "where_path": wherePath, "design": design, "tasks": tasks,
+		"what": what, "goal": goal, "where_path": wherePath, "capability_path": capabilityPath, "design": design, "tasks": tasks,
 	} {
 		if len(v) > maxChangeFieldChars {
 			return nil, fmt.Errorf("field '%s' exceeds maximum length of %d characters", name, maxChangeFieldChars)
@@ -303,9 +353,9 @@ func UpdateChange(db *sql.DB, projectID, id string, upd ChangeUpdate) (*Change, 
 	}
 
 	if _, err := db.Exec(`
-		UPDATE changes SET title = ?, what = ?, goal = ?, where_path = ?, design = ?, tasks = ?, updated_at = ?
+		UPDATE changes SET title = ?, what = ?, goal = ?, where_path = ?, capability_path = ?, design = ?, tasks = ?, updated_at = ?
 		WHERE project_id = ? AND id = ?`,
-		title, what, goal, wherePath, design, tasks, time.Now(), projectID, id); err != nil {
+		title, what, goal, wherePath, capabilityPath, design, tasks, time.Now(), projectID, id); err != nil {
 		return nil, fmt.Errorf("failed to update change: %w", err)
 	}
 	return GetChange(db, projectID, id)
