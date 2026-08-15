@@ -74,12 +74,3 @@ func RecentPrompts(db *sql.DB, projectID, sessionID string, limit int) ([]*UserP
 	}
 	return prompts, rows.Err()
 }
-
-// CountPrompts returns the number of prompts recorded for a project.
-func CountPrompts(db *sql.DB, projectID string) (int, error) {
-	var count int
-	if err := db.QueryRow("SELECT COUNT(*) FROM user_prompts WHERE project_id = ?", projectID).Scan(&count); err != nil {
-		return 0, fmt.Errorf("failed to count user prompts: %w", err)
-	}
-	return count, nil
-}

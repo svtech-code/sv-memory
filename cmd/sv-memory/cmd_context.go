@@ -1,13 +1,12 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/svtech-code/sv-memory/internal/config"
-	"github.com/svtech-code/sv-memory/internal/db"
 	"github.com/svtech-code/sv-memory/internal/memory"
 )
 
@@ -21,26 +20,14 @@ var contextCmd = &cobra.Command{
 	Short: "Show a compact context pack (graph role + linked memories) for a code path",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		cfg, err := config.LoadConfig(cwd)
-		if err != nil {
-			return err
-		}
-		database, err := db.InitDB(cfg.DBPath)
-		if err != nil {
-			return err
-		}
-		defer database.Close()
-
-		pack, err := memory.GetContextPack(database, cfg.ProjectID, args[0], contextMaxMemories)
-		if err != nil {
-			return err
-		}
-		fmt.Println(memory.RenderContextPack(pack, contextWhyChars))
-		return nil
+		return withProject(func(cfg *config.Config, database *sql.DB) error {
+			pack, err := memory.GetContextPack(database, cfg.ProjectID, args[0], contextMaxMemories)
+			if err != nil {
+				return err
+			}
+			fmt.Println(memory.RenderContextPack(pack, contextWhyChars))
+			return nil
+		})
 	},
 }
 

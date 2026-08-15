@@ -216,46 +216,33 @@ func SearchMemoriesByPaths(db *sql.DB, projectID string, searchTerm string, cate
 // scanCompactMemoriesScored is the FTS5 variant of scanCompactMemories; it also
 // reads the BM25 score column so the agent can see per-result relevance.
 func scanCompactMemoriesScored(rows *sql.Rows) ([]*MemorySearchResult, error) {
-	var results []*MemorySearchResult
-	for rows.Next() {
-		var r MemorySearchResult
-		var createdAtStr string
-		var topicKey sql.NullString
-		var revisionCount, duplicateCount sql.NullInt64
-		var score sql.NullFloat64
-		err := rows.Scan(&r.ID, &r.Category, &r.What, &topicKey, &revisionCount, &duplicateCount, &createdAtStr, &score)
-		if err != nil {
-			return nil, fmt.Errorf("failed scanning compact memory row: %w", err)
-		}
-		r.TopicKey = topicKey.String
-		r.What = security.SanitizeText(r.What)
-		if revisionCount.Valid {
-			r.RevisionCount = int(revisionCount.Int64)
-		}
-		if duplicateCount.Valid {
-			r.DuplicateCount = int(duplicateCount.Int64)
-		}
-		if score.Valid {
-			r.Score = score.Float64
-		}
-		if t, err := parseTime(createdAtStr); err == nil {
-			r.CreatedAt = t
-		} else {
-			r.CreatedAt = time.Now()
-		}
-		results = append(results, &r)
-	}
-	return results, rows.Err()
+	return scanCompactMemoriesWithScore(rows, true)
 }
 
 func scanCompactMemories(rows *sql.Rows) ([]*MemorySearchResult, error) {
+	return scanCompactMemoriesWithScore(rows, false)
+}
+
+// scanCompactMemoriesWithScore scans compact memory rows (id, category, what,
+// topic_key, revision_count, duplicate_count, created_at) and, when withScore
+// is set, an additional trailing BM25 score column.
+func scanCompactMemoriesWithScore(rows *sql.Rows, withScore bool) ([]*MemorySearchResult, error) {
 	var results []*MemorySearchResult
 	for rows.Next() {
 		var r MemorySearchResult
 		var createdAtStr string
 		var topicKey sql.NullString
 		var revisionCount, duplicateCount sql.NullInt64
-		err := rows.Scan(&r.ID, &r.Category, &r.What, &topicKey, &revisionCount, &duplicateCount, &createdAtStr)
+		var err error
+		if withScore {
+			var score sql.NullFloat64
+			err = rows.Scan(&r.ID, &r.Category, &r.What, &topicKey, &revisionCount, &duplicateCount, &createdAtStr, &score)
+			if err == nil && score.Valid {
+				r.Score = score.Float64
+			}
+		} else {
+			err = rows.Scan(&r.ID, &r.Category, &r.What, &topicKey, &revisionCount, &duplicateCount, &createdAtStr)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("failed scanning compact memory row: %w", err)
 		}
@@ -267,11 +254,7 @@ func scanCompactMemories(rows *sql.Rows) ([]*MemorySearchResult, error) {
 		if duplicateCount.Valid {
 			r.DuplicateCount = int(duplicateCount.Int64)
 		}
-		if t, err := parseTime(createdAtStr); err == nil {
-			r.CreatedAt = t
-		} else {
-			r.CreatedAt = time.Now()
-		}
+		r.CreatedAt = parseTimeOrNow(createdAtStr)
 		results = append(results, &r)
 	}
 	return results, rows.Err()
@@ -399,11 +382,6 @@ func FindSimilarMemories(db *sql.DB, projectID, title string, limit int, thresho
 }
 
 func SearchMemories(db *sql.DB, projectID string, searchTerm string, category string, limit int) ([]*Memory, error) {
-	return SearchMemoriesScoped(db, projectID, searchTerm, category, "", limit)
-}
-
-func SearchMemoriesScoped(db *sql.DB, projectID string, searchTerm string, category string, pathFilter string, limit int) ([]*Memory, error) {
-	pathFilter = sanitizePathFilter(pathFilter)
 	var query string
 	var args []interface{}
 
@@ -416,10 +394,6 @@ func SearchMemoriesScoped(db *sql.DB, projectID string, searchTerm string, categ
 		if category != "" {
 			query += " AND category = ?"
 			args = append(args, category)
-		}
-		if pathFilter != "" {
-			query += " AND (where_path LIKE ? ESCAPE '\\' OR where_path = ?)"
-			args = append(args, "%"+pathFilter+"%", pathFilter)
 		}
 		query += " ORDER BY created_at DESC"
 	} else {
@@ -441,10 +415,6 @@ func SearchMemoriesScoped(db *sql.DB, projectID string, searchTerm string, categ
 		if category != "" {
 			query += " AND m.category = ?"
 			args = append(args, category)
-		}
-		if pathFilter != "" {
-			query += " AND (m.where_path LIKE ? ESCAPE '\\' OR m.where_path = ?)"
-			args = append(args, "%"+pathFilter+"%", pathFilter)
 		}
 		query += " ORDER BY bm25(memories_fts, 10.0, 5.0, 2.0)"
 	}
@@ -530,11 +500,7 @@ func GetTimelineCompact(db *sql.DB, projectID, obsID string, before, after int) 
 				return nil, fmt.Errorf("failed scanning timeline row: %w", err)
 			}
 			r.What = security.SanitizeText(r.What)
-			if t, err := parseTime(createdAtStr); err == nil {
-				r.CreatedAt = t
-			} else {
-				r.CreatedAt = time.Now()
-			}
+			r.CreatedAt = parseTimeOrNow(createdAtStr)
 			results = append(results, &r)
 		}
 		return results, rows.Err()
@@ -612,11 +578,7 @@ func scanMemories(rows *sql.Rows) ([]*Memory, error) {
 				mem.LastSeenAt = t
 			}
 		}
-		if t, err := parseTime(createdAtStr); err == nil {
-			mem.CreatedAt = t
-		} else {
-			mem.CreatedAt = time.Now()
-		}
+		mem.CreatedAt = parseTimeOrNow(createdAtStr)
 		memories = append(memories, &mem)
 	}
 	return memories, rows.Err()

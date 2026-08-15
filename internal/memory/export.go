@@ -53,33 +53,9 @@ func ImportJSON(db *sql.DB, projectID, filePath string) (int, error) {
 		return 0, nil
 	}
 
-	tx, err := db.Begin()
-	if err != nil {
-		return 0, fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	query := memoryInsertConflictQuery()
-	stmt, err := tx.Prepare(query)
-	if err != nil {
-		return 0, fmt.Errorf("failed to prepare insert statement: %w", err)
-	}
-	defer stmt.Close()
-
-	for _, mem := range memories {
-		mem.ProjectID = projectID
-		sanitizeMemoryFields(mem)
-		createdAt := mem.CreatedAt
-		if createdAt.IsZero() {
-			createdAt = time.Now()
-		}
-		if _, err := stmt.Exec(memoryInsertArgs(mem, createdAt)...); err != nil {
-			return 0, fmt.Errorf("failed to import memory %s: %w", mem.ID, err)
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("failed to commit import: %w", err)
+	// Strict import: an insert failure aborts instead of silently skipping.
+	if _, err := importMemoriesIntoDB(db, projectID, memories, false, true); err != nil {
+		return 0, err
 	}
 
 	return len(memories), nil

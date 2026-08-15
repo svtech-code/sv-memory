@@ -69,9 +69,10 @@ func SaveSessionSummary(db *sql.DB, id, goal, discoveries, accomplished, nextSte
 func GetActiveSession(db *sql.DB, projectID string) (*Session, error) {
 	row := db.QueryRow("SELECT id, project_id, goal, directory, started_at, ended_at, summary, status FROM sessions WHERE project_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1", projectID)
 	var s Session
-	var startedAtStr, endedAtStr string
+	var startedAtStr string
+	var endedAt sql.NullString
 	var goal, directory, summary sql.NullString
-	err := row.Scan(&s.ID, &s.ProjectID, &goal, &directory, &startedAtStr, &endedAtStr, &summary, &s.Status)
+	err := row.Scan(&s.ID, &s.ProjectID, &goal, &directory, &startedAtStr, &endedAt, &summary, &s.Status)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

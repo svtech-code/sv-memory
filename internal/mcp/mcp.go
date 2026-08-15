@@ -379,7 +379,7 @@ func truncateField(s string, maxChars int) string {
 // resolveTokenBudget returns the token budget for a tool response. An explicit
 // per-tool token_budget argument wins when positive; otherwise the global
 // max_response_tokens config default applies (0 = unlimited).
-func resolveTokenBudget(req mcp.CallToolRequest, explicit string) int {
+func resolveTokenBudget(explicit string) int {
 	budget := 0
 	if explicit != "" {
 		if t, convErr := strconv.Atoi(explicit); convErr == nil && t > 0 {
@@ -417,7 +417,7 @@ func truncateToTokenBudget(responseText string, tokenBudget int) string {
 // It also accrues the estimated token count (chars/4) of the final text into
 // the session token ledger so sv_mem_stats can report context injected so far.
 func (s *Server) respond(req mcp.CallToolRequest, text string) *mcp.CallToolResult {
-	final := truncateToTokenBudget(text, resolveTokenBudget(req, req.GetString("token_budget", "")))
+	final := truncateToTokenBudget(text, resolveTokenBudget(req.GetString("token_budget", "")))
 	s.sessionTokens.Add(int64(len(final) / 4))
 	return mcp.NewToolResultText(final)
 }

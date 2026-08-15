@@ -28,33 +28,21 @@ var graphPathCmd = &cobra.Command{
 	Short: "Find the shortest path between two nodes in the dependency graph",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		cfg, err := config.LoadConfig(cwd)
-		if err != nil {
-			return err
-		}
-		database, err := db.InitDB(cfg.DBPath)
-		if err != nil {
-			return err
-		}
-		defer database.Close()
+		return withProject(func(cfg *config.Config, database *sql.DB) error {
+			// Load graph using internal/graph package
+			g, err := graph.LoadFullGraph(database, cfg.ProjectID)
+			if err != nil {
+				return err
+			}
 
-		// Load graph using internal/graph package
-		g, err := graph.LoadFullGraph(database, cfg.ProjectID)
-		if err != nil {
-			return err
-		}
-
-		path := g.ShortestPath(args[0], args[1], 10)
-		if len(path) == 0 {
-			fmt.Printf("No path found between %s and %s.\n", args[0], args[1])
+			path := g.ShortestPath(args[0], args[1], 10)
+			if len(path) == 0 {
+				fmt.Printf("No path found between %s and %s.\n", args[0], args[1])
+				return nil
+			}
+			fmt.Printf("Path found: %s\n", strings.Join(path, " -> "))
 			return nil
-		}
-		fmt.Printf("Path found: %s\n", strings.Join(path, " -> "))
-		return nil
+		})
 	},
 }
 
@@ -354,7 +342,7 @@ var graphMergeCmd = &cobra.Command{
 		}
 
 		merged := ga.Merge(gb)
-		jsonStr := merged.MergeToJSON(gb)
+		jsonStr := merged.SerializeJSON()
 
 		output, _ := cmd.Flags().GetString("output")
 		if output == "" {

@@ -98,9 +98,16 @@ func (g *InMemoryGraph) Merge(other *InMemoryGraph) *InMemoryGraph {
 	return result
 }
 
+// MergeToJSON returns a deterministic JSON serialization of the union of g and
+// other, merging other into g first.
 func (g *InMemoryGraph) MergeToJSON(other *InMemoryGraph) string {
-	merged := g.Merge(other)
+	return g.Merge(other).SerializeJSON()
+}
 
+// SerializeJSON returns a deterministic JSON serialization of the graph. Node
+// IDs are sorted and edge duplicates are dropped so the output is stable across
+// runs.
+func (g *InMemoryGraph) SerializeJSON() string {
 	type mergeEdge struct {
 		Source string `json:"source"`
 		Target string `json:"target"`
@@ -113,21 +120,21 @@ func (g *InMemoryGraph) MergeToJSON(other *InMemoryGraph) string {
 	}
 
 	m := mergeGraph{
-		Nodes: make([]*Node, 0, len(merged.Nodes)),
+		Nodes: make([]*Node, 0, len(g.Nodes)),
 		Edges: make([]mergeEdge, 0),
 	}
 
-	nodeIDs := make([]string, 0, len(merged.Nodes))
-	for id := range merged.Nodes {
+	nodeIDs := make([]string, 0, len(g.Nodes))
+	for id := range g.Nodes {
 		nodeIDs = append(nodeIDs, id)
 	}
 	sort.Strings(nodeIDs)
 	for _, id := range nodeIDs {
-		m.Nodes = append(m.Nodes, merged.Nodes[id])
+		m.Nodes = append(m.Nodes, g.Nodes[id])
 	}
 
 	seen := make(map[string]bool)
-	for _, edges := range merged.EdgesBySource {
+	for _, edges := range g.EdgesBySource {
 		for _, e := range edges {
 			key := e.SourceID + "->" + e.TargetID
 			if seen[key] {

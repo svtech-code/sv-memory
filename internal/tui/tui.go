@@ -72,9 +72,9 @@ func RunTUI(db *sql.DB, projectID, projPath string) error {
 		case "diagnostics":
 			runDiagnosticsTUI(db, projectID, projPath)
 		case "obsidian":
-			exportObsidianTUI(db, projectID, projPath)
+			exportObsidianTUI(db, projectID)
 		case "cypher":
-			exportCypherTUI(db, projectID, projPath)
+			exportCypherTUI(db, projectID)
 		}
 	}
 }
@@ -235,7 +235,7 @@ func runDiagnosticsTUI(db *sql.DB, projectID, projPath string) {
 	showNote("Graph Health Diagnostics", content)
 }
 
-func exportObsidianTUI(db *sql.DB, projectID, projPath string) {
+func exportObsidianTUI(db *sql.DB, projectID string) {
 	outDir := "./obsidian_vault"
 	if err := graph.ExportObsidianVault(db, projectID, outDir); err != nil {
 		showNote("Export Obsidian Vault", fmt.Sprintf("Export failed: %v", err))
@@ -244,7 +244,7 @@ func exportObsidianTUI(db *sql.DB, projectID, projPath string) {
 	showNote("Export Obsidian Vault", fmt.Sprintf("Exported Obsidian Vault successfully to %s!", outDir))
 }
 
-func exportCypherTUI(db *sql.DB, projectID, projPath string) {
+func exportCypherTUI(db *sql.DB, projectID string) {
 	outFile := "./graph.cypher"
 	if err := graph.ExportCypher(db, projectID, outFile); err != nil {
 		showNote("Export Cypher Script", fmt.Sprintf("Export failed: %v", err))

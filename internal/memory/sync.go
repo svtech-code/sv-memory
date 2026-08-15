@@ -133,34 +133,71 @@ func warnIfLocalDiverges(tx *sql.Tx, projectID string, mem *Memory) {
 	}
 }
 
-// importChunkFromFile reads a chunk (or memories.json entry) and imports it into
-// the running transaction. Unparseable content (e.g. a file left with git merge
-// conflict markers after a same-ID concurrent edit) is skipped with a warning
-// instead of aborting the whole import, so the remaining chunks still arrive.
-func importChunkFromFile(tx *sql.Tx, projectID, chunkPath, name string, stmt *sql.Stmt, skipped *int) {
+// importMemoriesIntoDB inserts memories into the project using upsert semantics
+// inside a single transaction. Every memory is re-bound to projectID, sanitized,
+// and given a default created_at when zero. When warn is true, divergences from
+// the local DB are logged before the insert. When strict is true an insert
+// failure aborts the import; otherwise the failing row is skipped and counted.
+// Returns the number of skipped rows.
+func importMemoriesIntoDB(db *sql.DB, projectID string, memories []*Memory, warn, strict bool) (int, error) {
+	if len(memories) == 0 {
+		return 0, nil
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(memoryInsertConflictQuery())
+	if err != nil {
+		return 0, fmt.Errorf("failed to prepare insert statement: %w", err)
+	}
+	defer stmt.Close()
+
+	skipped := 0
+	for _, mem := range memories {
+		mem.ProjectID = projectID
+		sanitizeMemoryFields(mem)
+		createdAt := mem.CreatedAt
+		if createdAt.IsZero() {
+			createdAt = time.Now()
+		}
+		if warn {
+			warnIfLocalDiverges(tx, projectID, mem)
+		}
+		if _, err := stmt.Exec(memoryInsertArgs(mem, createdAt)...); err != nil {
+			if strict {
+				return 0, fmt.Errorf("failed to import memory %s: %w", mem.ID, err)
+			}
+			logSyncWarning("skipping memory %s: failed to import (%v)", mem.ID, err)
+			skipped++
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("failed to commit import: %w", err)
+	}
+	return skipped, nil
+}
+
+// readChunkMemory reads and parses a single sync chunk. Unparseable content
+// (e.g. a file left with git merge conflict markers after a same-ID concurrent
+// edit) is skipped with a warning instead of aborting the whole import, so the
+// remaining chunks still arrive. Returns nil for skipped chunks.
+func readChunkMemory(chunkPath, name string) *Memory {
 	data, err := os.ReadFile(chunkPath)
 	if err != nil {
 		logSyncWarning("skipping %s: failed to read (%v)", name, err)
-		*skipped++
-		return
+		return nil
 	}
 	var mem Memory
 	if unmarshalErr := json.Unmarshal(data, &mem); unmarshalErr != nil {
 		logSyncWarning("skipping %s: failed to parse (unresolved git merge conflict markers or corrupt JSON) — resolve the file and re-run 'sv-memory sync' (%v)", name, unmarshalErr)
-		*skipped++
-		return
+		return nil
 	}
-	mem.ProjectID = projectID
-	sanitizeMemoryFields(&mem)
-	createdAt := mem.CreatedAt
-	if createdAt.IsZero() {
-		createdAt = time.Now()
-	}
-	warnIfLocalDiverges(tx, projectID, &mem)
-	if _, execErr := stmt.Exec(memoryInsertArgs(&mem, createdAt)...); execErr != nil {
-		logSyncWarning("skipping %s: failed to import (%v)", name, execErr)
-		*skipped++
-	}
+	return &mem
 }
 
 func SyncFromGitChunked(db *sql.DB, projectID string, projPath string) error {
@@ -174,32 +211,25 @@ func SyncFromGitChunked(db *sql.DB, projectID string, projPath string) error {
 		return fmt.Errorf("failed to read chunks directory: %w", err)
 	}
 
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	query := memoryInsertConflictQuery()
-	stmt, err := tx.Prepare(query)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	var skipped int
+	var memories []*Memory
+	var skippedParse int
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
-		importChunkFromFile(tx, projectID, filepath.Join(chunkDir, entry.Name()), entry.Name(), stmt, &skipped)
+		if mem := readChunkMemory(filepath.Join(chunkDir, entry.Name()), entry.Name()); mem != nil {
+			memories = append(memories, mem)
+		} else {
+			skippedParse++
+		}
 	}
 
-	if err := tx.Commit(); err != nil {
+	skipped, err := importMemoriesIntoDB(db, projectID, memories, true, false)
+	if err != nil {
 		return err
 	}
-	if skipped > 0 {
-		logSyncWarning("%d of %d chunk(s) skipped; the rest imported successfully", skipped, len(entries))
+	if total := skippedParse + skipped; total > 0 {
+		logSyncWarning("%d of %d chunk(s) skipped; the rest imported successfully", total, len(entries))
 	}
 	return nil
 }
@@ -331,35 +361,8 @@ func SyncFromGit(db *sql.DB, projectID string, projPath string) error {
 		return nil
 	}
 
-	tx, err := db.Begin()
+	skipped, err := importMemoriesIntoDB(db, projectID, memories, true, false)
 	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	query := memoryInsertConflictQuery()
-	stmt, err := tx.Prepare(query)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	var skipped int
-	for _, mem := range memories {
-		mem.ProjectID = projectID
-		sanitizeMemoryFields(mem)
-		createdAt := mem.CreatedAt
-		if createdAt.IsZero() {
-			createdAt = time.Now()
-		}
-		warnIfLocalDiverges(tx, projectID, mem)
-		if _, err := stmt.Exec(memoryInsertArgs(mem, createdAt)...); err != nil {
-			logSyncWarning("skipping memory %s: failed to import (%v)", mem.ID, err)
-			skipped++
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
 		return err
 	}
 	if skipped > 0 {

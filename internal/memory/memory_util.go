@@ -47,6 +47,16 @@ func parseTime(s string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("cannot parse time %q", s)
 }
 
+// parseTimeOrNow parses s with parseTime and falls back to time.Now() when the
+// stored value cannot be parsed, matching the lenient display behavior used by
+// the memory scan helpers.
+func parseTimeOrNow(s string) time.Time {
+	if t, err := parseTime(s); err == nil {
+		return t
+	}
+	return time.Now()
+}
+
 func nullString(s string) interface{} {
 	if s == "" {
 		return nil

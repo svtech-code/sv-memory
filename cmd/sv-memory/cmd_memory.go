@@ -3,12 +3,10 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/svtech-code/sv-memory/internal/config"
-	"github.com/svtech-code/sv-memory/internal/db"
 	"github.com/svtech-code/sv-memory/internal/memory"
 	"github.com/svtech-code/sv-memory/internal/security"
 )
@@ -77,34 +75,20 @@ var exportCmd = &cobra.Command{
 	Short: "Export all non-deleted memories to a portable JSON file",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
+		return withProject(func(cfg *config.Config, database *sql.DB) error {
+			outputFile := "sv-memory-export.json"
+			if len(args) > 0 {
+				outputFile = args[0]
+			}
 
-		cfg, err := config.LoadConfig(cwd)
-		if err != nil {
-			return err
-		}
+			n, err := memory.ExportJSON(database, cfg.ProjectID, outputFile)
+			if err != nil {
+				return fmt.Errorf("export failed: %w", err)
+			}
 
-		outputFile := "sv-memory-export.json"
-		if len(args) > 0 {
-			outputFile = args[0]
-		}
-
-		database, err := db.InitDB(cfg.DBPath)
-		if err != nil {
-			return err
-		}
-		defer database.Close()
-
-		n, err := memory.ExportJSON(database, cfg.ProjectID, outputFile)
-		if err != nil {
-			return fmt.Errorf("export failed: %w", err)
-		}
-
-		fmt.Printf("Exported %d memories to %s\n", n, outputFile)
-		return nil
+			fmt.Printf("Exported %d memories to %s\n", n, outputFile)
+			return nil
+		})
 	},
 }
 
@@ -147,36 +131,22 @@ var obsidianExportCmd = &cobra.Command{
 	Use:   "obsidian-export",
 	Short: "Export all memories as Markdown files in Obsidian vault format",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
+		return withProject(func(cfg *config.Config, database *sql.DB) error {
+			outputDir, _ := cmd.Flags().GetString("output")
+			if outputDir == "" {
+				outputDir = ".obsidian-sv-memory"
+			}
+			vaultPath, err := security.ValidateWritePath(cfg.ProjPath, outputDir)
+			if err != nil {
+				return fmt.Errorf("invalid output path: %w", err)
+			}
 
-		cfg, err := config.LoadConfig(cwd)
-		if err != nil {
-			return err
-		}
-
-		outputDir, _ := cmd.Flags().GetString("output")
-		if outputDir == "" {
-			outputDir = ".obsidian-sv-memory"
-		}
-		vaultPath, err := security.ValidateWritePath(cfg.ProjPath, outputDir)
-		if err != nil {
-			return fmt.Errorf("invalid output path: %w", err)
-		}
-
-		database, err := db.InitDB(cfg.DBPath)
-		if err != nil {
-			return err
-		}
-		defer database.Close()
-
-		fmt.Printf("Exporting memories to Obsidian vault at %s...\n", vaultPath)
-		if err := memory.ExportObsidian(database, cfg.ProjectID, vaultPath); err != nil {
-			return fmt.Errorf("obsidian export failed: %w", err)
-		}
-		fmt.Println("Export complete.")
-		return nil
+			fmt.Printf("Exporting memories to Obsidian vault at %s...\n", vaultPath)
+			if err := memory.ExportObsidian(database, cfg.ProjectID, vaultPath); err != nil {
+				return fmt.Errorf("obsidian export failed: %w", err)
+			}
+			fmt.Println("Export complete.")
+			return nil
+		})
 	},
 }

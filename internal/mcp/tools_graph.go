@@ -37,7 +37,7 @@ func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) 
 
 	relationType := req.GetString("relation_type", "")
 	direction := req.GetString("direction", "out")
-	tokenBudget := resolveTokenBudget(req, req.GetString("token_budget", ""))
+	tokenBudget := resolveTokenBudget(req.GetString("token_budget", ""))
 
 	// Load or retrieve the in-memory graph cache.
 	startQuery := time.Now()
@@ -713,7 +713,7 @@ func (s *Server) handleGraphMerge(ctx context.Context, req mcp.CallToolRequest) 
 	}
 
 	merged := ga.Merge(gb)
-	jsonStr := merged.MergeToJSON(gb)
+	jsonStr := merged.SerializeJSON()
 
 	if output != "" {
 		if err := os.WriteFile(output, []byte(jsonStr), 0644); err != nil {

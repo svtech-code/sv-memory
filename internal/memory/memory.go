@@ -476,14 +476,9 @@ func GetMemory(db *sql.DB, projectID, id string) (*Memory, error) {
 			mem.ReviewAfter = t
 		}
 	}
-	if t, err := parseTime(createdAtStr); err == nil {
-		mem.CreatedAt = t
-	} else {
-		mem.CreatedAt = time.Now()
-	}
+	mem.CreatedAt = parseTimeOrNow(createdAtStr)
 	return &mem, nil
 }
-
 func DeleteSession(db *sql.DB, id string) error {
 	var memCount int
 	if err := db.QueryRow("SELECT COUNT(*) FROM memories WHERE session_id=?", id).Scan(&memCount); err != nil {

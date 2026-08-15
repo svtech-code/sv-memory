@@ -104,17 +104,7 @@ func ResolveContextNode(db *sql.DB, projectID, query string) (*ContextNode, erro
 		Degree: fanIn + fanOut,
 	}
 	if metadata != "" {
-		var m map[string]interface{}
-		if jsonErr := json.Unmarshal([]byte(metadata), &m); jsonErr == nil {
-			switch v := m["community_id"].(type) {
-			case float64:
-				node.CommunityID = int(v)
-			case int:
-				node.CommunityID = v
-			case int64:
-				node.CommunityID = int(v)
-			}
-		}
+		node.CommunityID = parseCommunityID(metadata)
 	}
 	return node, nil
 }

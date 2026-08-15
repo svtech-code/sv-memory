@@ -124,8 +124,8 @@ func (s *Server) handleStats(ctx context.Context, req mcp.CallToolRequest) (*mcp
 
 	// Current project info (folded in from the former sv_mem_current_project).
 	fmt.Fprintf(&sb, "**Current project:** `%s` (ID: `%s`", s.cfg.ProjName, s.cfg.ProjectID)
-	var projName, projPath string
-	if err := s.pool.Reader.QueryRow("SELECT name, path FROM projects WHERE id=?", s.cfg.ProjectID).Scan(&projName, &projPath); err == nil {
+	var projPath string
+	if err := s.pool.Reader.QueryRow("SELECT path FROM projects WHERE id=?", s.cfg.ProjectID).Scan(&projPath); err == nil {
 		fmt.Fprintf(&sb, ", path: `%s`)", projPath)
 	} else {
 		sb.WriteString(")")

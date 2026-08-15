@@ -424,7 +424,10 @@ type BridgeNode struct {
 
 // DetectBridgeNodes identifies nodes that connect edges across 2 or more distinct communities.
 func (g *InMemoryGraph) DetectBridgeNodes() []BridgeNode {
-	communities := g.DetectCommunities()
+	// Use the same Leiden detection that populates the persisted community_id
+	// so bridge-node community assignments are consistent with the rest of the
+	// graph tooling.
+	communities := g.LeidenDetectCommunities()
 	var bridgeNodes []BridgeNode
 
 	for id, node := range g.Nodes {

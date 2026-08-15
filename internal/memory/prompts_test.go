@@ -80,8 +80,8 @@ func TestSavePromptAndRecentPrompts(t *testing.T) {
 	}
 
 	// Count reflects both.
-	count, err := CountPrompts(dbc, projectID)
-	if err != nil {
+	var count int
+	if err := dbc.QueryRow("SELECT COUNT(*) FROM user_prompts WHERE project_id = ?", projectID).Scan(&count); err != nil {
 		t.Fatalf("failed to count prompts: %v", err)
 	}
 	if count != 2 {
