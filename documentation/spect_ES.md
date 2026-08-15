@@ -233,7 +233,18 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 
 #### 29. `sv-memory context <path>`
 
-- Imprime un **context pack compacto** para un archivo, paquete o símbolo: el rol estructural del nodo (tipo, fan-in/fan-out, comunidad, flag de hub) más las memorias vinculadas a esa ruta (`where_path` o aristas `rationale_for`), cada una como título + `why` truncado. Flags: `--max-memories N` (default 5), `--why-chars N` (default 300). Rápido y acotado — es el punto de entrada que llama el hook opcional de inyección de contexto en la primera lectura de archivo.
+- Imprime un **context pack compacto** para un archivo, paquete o símbolo: el rol estructural del nodo (tipo, fan-in/fan-out, comunidad, flag de hub) más las memorias vinculadas a esa ruta (`where_path` o aristas `rationale_for`), cada una como título + `why` truncado. Flags: `--max-memories N` (default 5), `--why-chars N` (default 300), `--include-changes` (lista también los spec changes activos que afectan la ruta). Rápido y acotado — es el punto de entrada que llama el hook opcional de inyección de contexto en la primera lectura de archivo.
+
+#### 30. `sv-memory specs`
+
+Gestión del mirror de spec changes. El store SQLite es la fuente de verdad; el mirror es una proyección Markdown legible por humanos y versionada con git bajo `.sv-memory/specs/`.
+
+- `export`: escribe cada change activo en `.sv-memory/specs/changes/<slug>.md` y mueve los archivados/rechazados a `.sv-memory/specs/archive/<fecha>-<slug>.md`, eliminando mirrors huérfanos.
+- `import <slug>`: reconcilia un mirror editado por humanos de vuelta al store (solo los campos editados; la identidad nunca cambia; un mirror jamás crea un change).
+- `list`: muestra el estado y estado del mirror de cada change.
+- `archive <slug>`: mueve un change aplicado a `archived` y reubica su mirror.
+
+El mirror también se escribe automáticamente con el Git sync incremental, de modo que las propuestas se mantienen sincronizadas sin pasos manuales.
 
 ---
 
@@ -1113,6 +1124,15 @@ El motor de decisiones extiende el vocabulario del grafo (los valores son TEXT l
 - **Tipos de arista:** `affects` (un change toca entidades de código vía `where_path`), `constrains` (una regla acota una decisión), `implements` (una decisión/entidad cumple un requisito de spec).
 
 El bundle del Auto-Boot expone un hint `📋 Active changes: N` cuando existen changes no terminales (costo de tokens cero cuando está sano), y `sv_mem_context_pack(include_changes='true')` lista las propuestas que afectan una ruta para que el agente las revise antes de modificar el código.
+
+### Mirror Markdown (visible para humanos, bidireccional)
+
+Cada change se proyecta automáticamente dentro del repo como un archivo Markdown versionado con git bajo `.sv-memory/specs/`, de modo que los humanos lean texto plano mientras el store SQLite sigue siendo la fuente de verdad (sin drift):
+
+- **Layout:** changes activos en `.sv-memory/specs/changes/<slug>.md`; archivados/rechazados en `.sv-memory/specs/archive/<fecha>-<slug>.md`.
+- **Formato:** encabezado `# Título`, líneas de identidad/estado y secciones `## Proposal` / `## Goal` / `## Design` / `## Tasks`. Solo el contenido editable por humanos hace round-trip al importar.
+- **Bidireccional:** `sv-memory specs import <slug>` parsea un mirror editado por humanos y reconcilia los campos cambiados de vuelta al DB (los campos de identidad nunca se modifican, y un mirror jamás crea un change). `sv-memory specs export` refresca todo el árbol y elimina mirrors huérfanos; `sv-memory specs archive <slug>` mueve un change aplicado a `archived`.
+- **Automático:** el Git sync incremental (`SyncToGit`) escribe el mirror tras cada pasada de chunks, best-effort — un fallo del mirror se registra y nunca falla el sync de memoria.
 
 ---
 

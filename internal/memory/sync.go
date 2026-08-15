@@ -300,6 +300,15 @@ func syncToGit(db *sql.DB, projectID string, projPath string, forceJSON bool) er
 		}
 	}
 
+	// Keep the human-readable spec mirror (.sv-memory/specs/) in sync with the
+	// authoritative change store. Written before the early-return below so a
+	// sync with only change activity (no memory writes) still refreshes the
+	// mirror. Best-effort: a mirror failure is logged and never fails the
+	// memory sync or the debounced write path.
+	if err := WriteSpecMirror(db, projectID, projPath); err != nil {
+		logSyncWarning("spec mirror write failed: %v", err)
+	}
+
 	// No inserts, updates, or deletions since the last sync: skip the rest of
 	// the I/O. A forced full flush (SyncToGitForceFull) always proceeds so the
 	// monolithic memories.json is guaranteed to be rewritten on graceful

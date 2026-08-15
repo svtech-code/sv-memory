@@ -200,6 +200,7 @@ sv-memory tui
 | `sv-memory configure get/set/list` | **Setup**       | Reads/writes YAML config values globally or project-locally (`--local`).                 |
 | `sv-memory setup [agent]`          | **Setup**       | One-shot agent integration (MCP config + hooks/plugins + protocol + permissions) for claude-code, opencode, cursor, windsurf, antigravity, codex. `--all` wires every agent; no args shows per-agent status. See [AGENT-SETUP.md](documentation/AGENT-SETUP.md). |
 | `sv-memory sync`                   | **Git Sync**    | Manual bidirectional sync between SQLite DB and `.sv-memory/chunks/*.json`.              |
+| `sv-memory specs export/import/list/archive` | **Spec Mirror** | Manages the human-readable Markdown projection of spec changes under `.sv-memory/specs/` (auto-written by sync; import reconciles human edits back into the authoritative store). |
 | `sv-memory diagnose`               | **Diagnostics** | Verifies DB connections, schema integrity, write permissions, and paths.                 |
 | `sv-memory stats`                  | **Analytics**   | Displays project memory counts, 24h saves, active sessions, and relations.               |
 | `sv-memory export [file]`          | **Export**      | Exports all non-deleted memories of the project to a portable JSON file.                 |

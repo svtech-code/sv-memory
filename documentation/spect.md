@@ -233,7 +233,18 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 
 #### 29. `sv-memory context <path>`
 
-- Prints a **compact context pack** for a file, package, or symbol: the node's structural role (type, fan-in/fan-out, community, hub flag) plus the memories linked to that path (`where_path` or `rationale_for` edges), each as title + truncated `why`. Flags: `--max-memories N` (default 5), `--why-chars N` (default 300). Fast and bounded — this is the entry point the optional PreToolUse context-injection hook calls on first file read.
+- Prints a **compact context pack** for a file, package, or symbol: the node's structural role (type, fan-in/fan-out, community, hub flag) plus the memories linked to that path (`where_path` or `rationale_for` edges), each as title + truncated `why`. Flags: `--max-memories N` (default 5), `--why-chars N` (default 300), `--include-changes` (also list active spec changes affecting the path). Fast and bounded — this is the entry point the optional PreToolUse context-injection hook calls on first file read.
+
+#### 30. `sv-memory specs`
+
+Spec-driven change mirror management. The SQLite store is authoritative; the mirror is a git-versioned, human-readable Markdown projection under `.sv-memory/specs/`.
+
+- `export`: writes every active change to `.sv-memory/specs/changes/<slug>.md` and moves archived/rejected changes to `.sv-memory/specs/archive/<date>-<slug>.md`, pruning orphaned mirrors.
+- `import <slug>`: reconciles a human-edited mirror back into the store (only edited fields; identity never changes; a mirror can never create a change).
+- `list`: shows each change's status and mirror state.
+- `archive <slug>`: moves an applied change to `archived` and relocates its mirror.
+
+The mirror is also written automatically by the incremental Git sync, so proposals stay in sync with zero manual steps.
 
 ---
 
@@ -1114,6 +1125,15 @@ The decision engine extends the graph vocabulary (values are free-form TEXT, no 
 - **Edge types:** `affects` (a change touches code entities via `where_path`), `constrains` (a rule bounds a decision), `implements` (a decision/entity fulfills a spec requirement).
 
 The Auto-Boot bundle surfaces a `📋 Active changes: N` hint when non-terminal changes exist (zero token cost when healthy), and `sv_mem_context_pack(include_changes='true')` lists the proposals affecting a path so the agent reviews them before modifying the code.
+
+### Markdown Mirror (human-visible, bidirectional)
+
+Every change is auto-projected into the repo as a git-versioned Markdown file under `.sv-memory/specs/`, so humans read plain text while the SQLite store stays authoritative (no drift):
+
+- **Layout:** active changes at `.sv-memory/specs/changes/<slug>.md`; archived/rejected at `.sv-memory/specs/archive/<date>-<slug>.md`.
+- **Format:** a `# Title` heading, identity/status bullet lines, and `## Proposal` / `## Goal` / `## Design` / `## Tasks` sections. Only the human-editable content round-trips on import.
+- **Bidirectional:** `sv-memory specs import <slug>` parses a human-edited mirror and reconciles the changed fields back into the DB (identity fields are never modified, and a mirror can never create a change). `sv-memory specs export` refreshes the whole tree and prunes orphaned mirrors; `sv-memory specs archive <slug>` moves an applied change to `archived`.
+- **Automatic:** the incremental Git sync (`SyncToGit`) writes the mirror after every chunk pass, best-effort — a mirror failure is logged and never fails the memory sync.
 
 ---
 

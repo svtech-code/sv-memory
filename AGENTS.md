@@ -72,6 +72,7 @@ Proposals go through a lifecycle before code is written. Use it for any behavior
 - **Validate:** 'sv_validate_decision(change_id=...)' re-checks a proposal after edits (PASS/WARN/BLOCK). Deterministic by default; pass semantic="true" to opt into agent re-ranking.
 - **Commit:** 'sv_commit_spec(change_id=...)' promotes the change into a durable decision/standard memory, links it to the change_id, wires the rationale_for edge, and stamps it applied. A pre-flight BLOCK rejects the commit unless force="true" explicitly overrides the invariant. Call after implementation, before 'sv_mem_session_end'.
 - Lifecycle states: 'draft' → 'proposed' → 'validated' → 'applied' (→ 'archived') | 'rejected'. Committed decisions get topic_key 'decision/<slug>'.
+- **Human-visible mirror:** every change is auto-projected to '.sv-memory/specs/changes/<slug>.md' (git-synced). Humans can edit those files; 'sv-memory specs import <slug>' reconciles the edits back into the store (the SQLite DB stays authoritative). 'sv-memory specs export/list/archive' manage the mirror.
 
 ## Graph Refresh:
 
@@ -94,6 +95,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **Project admin:** sv_mem_merge_projects (merge project variants into a canonical project)
 - **Context Pack:** sv_mem_context_pack (one bounded call: graph role + linked memories + active changes for a file/package/symbol)
 - **Decision Engine:** sv_propose_spec, sv_validate_decision, sv_commit_spec (propose → validate → commit cycle with pre-flight checks)
+- **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive (human-readable Markdown projection of changes under .sv-memory/specs/)
 - **Graph:** sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_viz, sv_graph_merge
 
 ## Repository Restrictions & Commit Standards:
