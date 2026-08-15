@@ -157,10 +157,10 @@ internal/memory/conflicts.go  ScanConflicts
 
 ## Flow 6 — Context pack (`sv_mem_context_pack`)
 
-The graph→memory bridge in one bounded call.
+The graph→memory bridge in one bounded call. Passing `include_changes="true"` additionally surfaces active spec changes whose `where_path` matches the path.
 
 ```text
-sv_mem_context_pack(path)
+sv_mem_context_pack(path, [include_changes])
    │
    ▼
 internal/memory/contextpack.go  GetContextPack
@@ -168,6 +168,7 @@ internal/memory/contextpack.go  GetContextPack
    │  node role: type, fan-in/fan-out, community, hub flag
    │  linked memories via where_path ∪ rationale_for edges
    │  each rendered as title + why truncated to bundle_why_chars
+   │  (include_changes) active changes for the path (changesForPath)
    ▼
 compact pack returned (max memories bounded by context_pack_max_memories)
 ```

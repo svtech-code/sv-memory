@@ -74,6 +74,13 @@ The top search result is already expanded inline — only drill further when nec
 2. Use `sv_graph_explain` on key modules to understand their centrality.
 3. Save the decision with category `architecture` or `decision` and a topic_key.
 
+### Before proposing or changing behavior (Spec-Driven Decision Cycle)
+
+1. Call `sv_mem_context_pack(path=..., include_changes="true")` to surface the node role, linked decisions/standards, and active changes affecting the path.
+2. Call `sv_propose_spec(slug=..., title=..., what=..., where_path=...)` to register the change and run the pre-flight check (BLOCK/WARN/PASS against pinned rules and invariants).
+3. After edits, call `sv_validate_decision(change_id=...)` to re-check (deterministic by default; `semantic="true"` opts into agent re-ranking).
+4. After implementing, call `sv_commit_spec(change_id=...)` to promote the change into a durable decision/standard memory and stamp it applied.
+
 ### After adding new files or packages
 
 1. Call `sv_graph_sync` so the dependency graph reflects the new structure.
@@ -93,5 +100,7 @@ The top search result is already expanded inline — only drill further when nec
 - **Knowledge quality:** `sv_mem_suggest_topic_key`, `sv_mem_judge`, `sv_mem_compare`, `sv_mem_compact`, `sv_mem_review`, `sv_mem_capture_passive`, `sv_mem_conflicts`, `sv_mem_stats`, `sv_mem_diagnose`
 - **User intent:** `sv_mem_capture_prompt` (record what the user asked, recoverable via `sv_mem_context`)
 - **Project admin:** `sv_mem_merge_projects` (merge project variants into a canonical project)
-- **Context Pack:** `sv_mem_context_pack` (one bounded call: graph role + linked memories for a file/package/symbol)
+- **Context Pack:** `sv_mem_context_pack` (one bounded call: graph role + linked memories + active changes for a file/package/symbol)
+- **Decision Engine:** `sv_propose_spec`, `sv_validate_decision`, `sv_commit_spec` (propose → validate → commit cycle with pre-flight checks)
+- **Spec Mirror (CLI):** `sv-memory specs export | import <slug> | list | archive` (human-readable Markdown projection of changes under `.sv-memory/specs/`)
 - **Graph:** `sv_graph_query`, `sv_graph_explain`, `sv_graph_god_nodes`, `sv_graph_path`, `sv_graph_sync`, `sv_graph_surprising_connections`, `sv_graph_viz`, `sv_graph_merge`

@@ -80,3 +80,27 @@ func TestInjectProtocol_UpdateExisting(t *testing.T) {
 		t.Errorf("expected no changes on second run, got: %v", injected2)
 	}
 }
+
+// TestProtocolTemplateContainsSpecDriven guards the injected template against
+// drifting out of sync with the Spec-Driven Decision Engine: if the template
+// ever loses the decision-cycle section or its tools, a future sv-memory init /
+// setup <agent> would inject a protocol that omits sv_propose_spec /
+// sv_validate_decision / sv_commit_spec from the agent's operating rules.
+func TestProtocolTemplateContainsSpecDriven(t *testing.T) {
+	required := []string{
+		"## Spec-Driven Decision Cycle (before proposing or changing behavior):",
+		"sv_propose_spec",
+		"sv_validate_decision",
+		"sv_commit_spec",
+		"sv_mem_context_pack(path=\"<file|pkg>\", include_changes=\"true\")",
+		"**Decision Engine:**",
+		"**Spec Mirror (CLI):**",
+		"sv-memory specs export",
+		"'draft' → 'proposed' → 'validated' → 'applied' (→ 'archived') | 'rejected'",
+	}
+	for _, s := range required {
+		if !strings.Contains(protocolTemplate, s) {
+			t.Errorf("protocolTemplate is missing the spec-driven marker %q — re-sync the injected template", s)
+		}
+	}
+}

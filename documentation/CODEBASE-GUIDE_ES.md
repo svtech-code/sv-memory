@@ -159,10 +159,10 @@ internal/memory/conflicts.go  ScanConflicts
 
 ## Flujo 6 — Context pack (`sv_mem_context_pack`)
 
-El puente grafo→memoria en una sola llamada acotada.
+El puente grafo→memoria en una sola llamada acotada. Pasando `include_changes="true"` además se exponen los spec changes activos cuyo `where_path` coincide con la ruta.
 
 ```text
-sv_mem_context_pack(path)
+sv_mem_context_pack(path, [include_changes])
    │
    ▼
 internal/memory/contextpack.go  GetContextPack
@@ -170,6 +170,7 @@ internal/memory/contextpack.go  GetContextPack
    │  rol del nodo: tipo, fan-in/fan-out, comunidad, flag de hub
    │  memorias vinculadas vía where_path ∪ aristas rationale_for
    │  cada una renderizada como título + why truncado a bundle_why_chars
+   │  (include_changes) changes activos de la ruta (changesForPath)
    ▼
 pack compacto devuelto (memorias limitadas por context_pack_max_memories)
 ```
