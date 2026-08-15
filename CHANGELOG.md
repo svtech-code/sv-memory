@@ -392,4 +392,6 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 [v0.9.0]: https://github.com/svtech-code/sv-memory/compare/v0.8.0...v0.9.0
 [v0.10.0]: https://github.com/svtech-code/sv-memory/compare/v0.9.0...v0.10.0
 [v0.11.0]: https://github.com/svtech-code/sv-memory/compare/v0.10.0...v0.11.0
-[Unreleased]: https://github.com/svtech-code/sv-memory/compare/v0.11.0...main
+[v0.12.0]: https://github.com/svtech-code/sv-memory/compare/v0.11.0...v0.12.0
+[v0.13.0]: https://github.com/svtech-code/sv-memory/compare/v0.12.0...v0.13.0
+[Unreleased]: https://github.com/svtech-code/sv-memory/compare/v0.13.0...main
