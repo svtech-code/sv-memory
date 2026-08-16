@@ -14,7 +14,7 @@ conflictos) y dónde mirar al extender el proyecto. Complementa la especificaci�
 | `internal/db/` | Apertura/ajuste de SQLite, migraciones, pool WAL lector/escritor | `db.go`, `pool.go`, `migrations.go` |
 | `internal/graph/` | Escáner, construcción del grafo de dependencias (incremental + completo), BFS, comunidades Leiden, betweenness, god nodes, aristas AST de llamadas | `graph.go`, `incremental.go`, `relations.go`, `communities.go`, `leiden.go`, `memory.go` |
 | `internal/graph/extractor/` | Extractor tree-sitter (símbolos, imports, refs AST de llamadas), fallback regex | `tree_sitter.go`, `regex.go`, `extractor.go` |
-| `internal/mcp/` | Servidor MCP stdio + 31 handlers de herramientas | `mcp.go`, `tools_*.go` |
+| `internal/mcp/` | Servidor MCP stdio + 31 handlers de herramientas | `mcp.go` (núcleo + registro de tools), `server_sync.go`, `graph_load.go`, `respond.go`, `tools_*.go` |
 | `internal/memory/` | CRUD de memorias, sesiones, dedup, conflictos, compactación, git sync, context pack, stats | `memory.go`, `save.go`, `memory_session.go`, `conflicts.go`, `contextpack.go`, `sync.go`, `prompts.go` |
 | `internal/hook/` | Scripts/skills de hooks PreToolUse + ciclo de vida (Claude Code, OpenCode, Antigravity, Codex) | `hook.go`, `templates.go`, `scripts/` |
 | `internal/protocol/` | Inyección de protocolo en AGENTS.md / `.cursorrules` / `.windsurfrules` | `protocol.go` |
