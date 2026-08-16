@@ -15,7 +15,7 @@ conflictos) y dónde mirar al extender el proyecto. Complementa la especificaci�
 | `internal/graph/` | Escáner, construcción del grafo de dependencias (incremental + completo), BFS, comunidades Leiden, betweenness, god nodes, aristas AST de llamadas | `graph.go`, `incremental.go`, `relations.go`, `communities.go`, `leiden.go`, `memory.go` |
 | `internal/graph/extractor/` | Extractor tree-sitter (símbolos, imports, refs AST de llamadas), fallback regex | `tree_sitter.go`, `regex.go`, `extractor.go` |
 | `internal/mcp/` | Servidor MCP stdio + 31 handlers de herramientas | `mcp.go`, `tools_*.go` |
-| `internal/memory/` | CRUD de memorias, sesiones, dedup, conflictos, compactación, git sync, context pack, stats | `memory.go`, `memory_session.go`, `conflicts.go`, `contextpack.go`, `sync.go`, `prompts.go` |
+| `internal/memory/` | CRUD de memorias, sesiones, dedup, conflictos, compactación, git sync, context pack, stats | `memory.go`, `save.go`, `memory_session.go`, `conflicts.go`, `contextpack.go`, `sync.go`, `prompts.go` |
 | `internal/hook/` | Scripts/skills de hooks PreToolUse + ciclo de vida (Claude Code, OpenCode, Antigravity, Codex) | `hook.go`, `templates.go`, `scripts/` |
 | `internal/protocol/` | Inyección de protocolo en AGENTS.md / `.cursorrules` / `.windsurfrules` | `protocol.go` |
 | `internal/perm/` | Gestión de allow-lists de herramientas MCP (Antigravity, Claude Code) | `perm.go` |
@@ -36,11 +36,12 @@ internal/mcp/tools_save.go  handleSave
    │  auto-asocia session_id vía GetActiveSession (pool lector)
    │  cachea metadata de git (branch/commit/author, TTL 30s)
    ▼
-internal/memory/memory.go  SaveMemory
+internal/memory/memory.go  SaveMemory (orquestador)
    │  calcula normalized_hash (what+why+learned+where_path)
-   │  → chequeo de dedup en ventana móvil (24h)
-   │  → upsert por topic_key (revision_count++) o insert
-   │  → helper compartido memoryInsertArgs (18 columnas)
+   │  delega en helpers de save.go sobre una única transacción de escritor:
+   │    upsertByTopicKey → upsert por topic_key (revision_count++)
+   │    bumpDuplicate   → chequeo de dedup en ventana móvil (24h)
+   │    insertMemory    → insert nuevo vía helper compartido memoryInsertArgs
    ▼
 SQLite (escritor)  ──  memories + memories_fts (triggers mantienen FTS5 en sync)
    │
@@ -52,8 +53,8 @@ SQLite (escritor)  ──  memories + memories_fts (triggers mantienen FTS5 en s
 ```
 
 **Dónde extender:** un campo nuevo en el guardado toca `memoryInsertArgs` en
-`memory.go`, la migración de la tabla `memories` en `migrations.go` y el handler
-MCP en `tools_save.go`.
+`memory_util.go`, la migración de la tabla `memories` en `migrations.go` y el handler
+MCP en `tools_save.go`. Los caminos de guardado viven en `save.go`.
 
 ## Flujo 2 — Consultar el grafo de dependencias (`sv_graph_query`)
 

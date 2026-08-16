@@ -3,6 +3,12 @@
 All notable changes follow [Conventional Commits](https://www.conventionalcommits.org/).
 Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automatically.
 
+## Unreleased
+
+### Changed
+
+- **`SaveMemory` slimmed to an orchestrator over a new `internal/memory/save.go`:** the ~140-line save monolith is now a clean three-path flow — validate/sanitize, then delegate to `upsertByTopicKey` (topic-key upsert, `revision_count++`), `bumpDuplicate` (24h rolling-window dedup), and `insertMemory` (fresh insert) — each operating on the same single-writer transaction so the concurrency guarantees are unchanged. Zero behavior change, zero API change; each branch is now independently testable and readable. Codebase guide (EN/ES) updated.
+
 ## [v0.13.1] - 2026-08-15
 
 ### Fixed

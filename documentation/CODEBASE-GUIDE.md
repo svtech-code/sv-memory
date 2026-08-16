@@ -15,7 +15,7 @@ where to look when extending the project. It complements the specification
 | `internal/graph/` | Scanner, dependency graph build (incremental + full), BFS query, Leiden communities, betweenness, god nodes, AST call edges | `graph.go`, `incremental.go`, `relations.go`, `communities.go`, `leiden.go`, `memory.go` |
 | `internal/graph/extractor/` | tree-sitter extractor (symbols, imports, AST call refs), regex fallback | `tree_sitter.go`, `regex.go`, `extractor.go` |
 | `internal/mcp/` | MCP stdio server + 31 tool handlers | `mcp.go`, `tools_*.go` |
-| `internal/memory/` | Memory CRUD, sessions, dedup, conflicts, compaction, git sync, context pack, stats | `memory.go`, `memory_session.go`, `conflicts.go`, `contextpack.go`, `sync.go`, `prompts.go` |
+| `internal/memory/` | Memory CRUD, sessions, dedup, conflicts, compaction, git sync, context pack, stats | `memory.go`, `save.go`, `memory_session.go`, `conflicts.go`, `contextpack.go`, `sync.go`, `prompts.go` |
 | `internal/hook/` | PreToolUse + lifecycle hook scripts/skills (Claude Code, OpenCode, Antigravity, Codex) | `hook.go`, `templates.go`, `scripts/` |
 | `internal/protocol/` | AGENTS.md / `.cursorrules` / `.windsurfrules` protocol injection | `protocol.go` |
 | `internal/perm/` | MCP tool allow-list management (Antigravity, Claude Code) | `perm.go` |
@@ -36,11 +36,12 @@ internal/mcp/tools_save.go  handleSave
    │  auto-associates session_id via GetActiveSession (reader pool)
    │  caches git metadata (branch/commit/author, 30s TTL)
    ▼
-internal/memory/memory.go  SaveMemory
+internal/memory/memory.go  SaveMemory (orchestrator)
    │  computes normalized_hash (what+why+learned+where_path)
-   │  → dedup check in rolling window (24h)
-   │  → topic_key upsert (revision_count++) or insert
-   │  → memoryInsertArgs shared helper (18 columns)
+   │  defers to save.go helpers on a single writer transaction:
+   │    upsertByTopicKey → topic_key upsert (revision_count++)
+   │    bumpDuplicate   → dedup check in rolling window (24h)
+   │    insertMemory    → fresh insert via memoryInsertArgs shared helper
    ▼
 SQLite (writer)  ──  memories + memories_fts (triggers keep FTS5 in sync)
    │
@@ -52,8 +53,8 @@ SQLite (writer)  ──  memories + memories_fts (triggers keep FTS5 in sync)
 ```
 
 **Where to extend:** a new field on save touches `memoryInsertArgs` in
-`memory.go`, the `memories` table migration in `migrations.go`, and the MCP
-handler in `tools_save.go`.
+`memory_util.go`, the `memories` table migration in `migrations.go`, and the MCP
+handler in `tools_save.go`. The save paths themselves live in `save.go`.
 
 ## Flow 2 — Querying the dependency graph (`sv_graph_query`)
 
