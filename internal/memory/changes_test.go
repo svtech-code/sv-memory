@@ -99,7 +99,7 @@ func TestCreateChangeValidation(t *testing.T) {
 	if _, err = CreateChange(database, projectID, "slug", "", "", "", "", "", ""); err == nil {
 		t.Error("expected empty title to be rejected")
 	}
-	long := strings.Repeat("x", maxChangeFieldChars+1)
+	long := strings.Repeat("x", maxFieldChars+1)
 	if _, err = CreateChange(database, projectID, "slug", "title", long, "", "", "", ""); err == nil {
 		t.Error("expected oversized 'what' to be rejected")
 	}

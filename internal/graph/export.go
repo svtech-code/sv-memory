@@ -138,8 +138,24 @@ func sanitizeFilename(name string) string {
 	return r.Replace(name)
 }
 
+// escapeCypherStr escapes a value for embedding inside a double-quoted Cypher
+// string literal: the backslash first (so escape sequences cannot be smuggled),
+// then the closing quote, the single quote, and control characters (newline,
+// tab, carriage return, backspace, form feed). A label/id containing any of
+// these would otherwise terminate the string literal early or inject an escape
+// sequence into the exported .cypher file.
 func escapeCypherStr(s string) string {
-	return strings.ReplaceAll(s, "\"", "\\\"")
+	r := strings.NewReplacer(
+		"\\", "\\\\",
+		"\"", "\\\"",
+		"'", "\\'",
+		"\n", "\\n",
+		"\t", "\\t",
+		"\r", "\\r",
+		"\b", "\\b",
+		"\f", "\\f",
+	)
+	return r.Replace(s)
 }
 
 func sanitizeCypherLabel(s string) string {

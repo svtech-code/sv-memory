@@ -2,10 +2,20 @@ package graph
 
 import (
 	"fmt"
+	"html"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
+
+// escapeWikiLabel neutralizes a label before it is written into the Markdown
+// wiki: the HTML-unsafe characters are entity-escaped (so a crafted label
+// cannot inject raw HTML when the wiki is rendered) and the pipe character is
+// doubled (so a label containing '|' cannot break the surrounding table).
+func escapeWikiLabel(s string) string {
+	return strings.ReplaceAll(html.EscapeString(s), "|", "\\|")
+}
 
 func (g *InMemoryGraph) ExportWiki(outputDir string, commLabels map[int]string, communities map[string]int, centrality map[string]float64) error {
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
@@ -88,7 +98,7 @@ func (g *InMemoryGraph) writeWikiIndex(outputDir string, commIDs []int, commMemb
 			return err
 		}
 		for _, gn := range godNodes {
-			if err := writef("| **%s** | %d |\n", gn.label, gn.deg); err != nil {
+			if err := writef("| **%s** | %d |\n", escapeWikiLabel(gn.label), gn.deg); err != nil {
 				return err
 			}
 		}
@@ -113,7 +123,7 @@ func (g *InMemoryGraph) writeWikiIndex(outputDir string, commIDs []int, commMemb
 				topLabel = n.Label
 			}
 		}
-		if err := writef("| %d | **%s** | %d | %s |\n", cID, label, len(members), topLabel); err != nil {
+		if err := writef("| %d | **%s** | %d | %s |\n", cID, escapeWikiLabel(label), len(members), escapeWikiLabel(topLabel)); err != nil {
 			return err
 		}
 	}
@@ -135,7 +145,7 @@ func (g *InMemoryGraph) writeWikiCommunity(outputDir string, cID int, members []
 		return err
 	}
 
-	if err := writef("# Community %d: %s\n\n", cID, label); err != nil {
+	if err := writef("# Community %d: %s\n\n", cID, escapeWikiLabel(label)); err != nil {
 		return err
 	}
 	if err := writef("- **Size:** %d nodes\n", len(members)); err != nil {
@@ -164,7 +174,7 @@ func (g *InMemoryGraph) writeWikiCommunity(outputDir string, cID int, members []
 	for _, id := range members {
 		n := g.Nodes[id]
 		if err := writef("| **%s** | `%s` | %d | %d | %.2f | %d |\n",
-			n.Label, n.Type, g.FanIn[id], g.FanOut[id], centrality[id], degTotal[id]); err != nil {
+			escapeWikiLabel(n.Label), n.Type, g.FanIn[id], g.FanOut[id], centrality[id], degTotal[id]); err != nil {
 			return err
 		}
 	}
@@ -179,7 +189,7 @@ func (g *InMemoryGraph) writeWikiCommunity(outputDir string, cID int, members []
 		}
 		for _, ce := range crossCommEdges {
 			if err := writef("| **%s** | **%s** | %s | `%s` |\n",
-				ce.sourceLabel, ce.targetLabel, ce.targetCommLabel, ce.relationType); err != nil {
+				escapeWikiLabel(ce.sourceLabel), escapeWikiLabel(ce.targetLabel), escapeWikiLabel(ce.targetCommLabel), ce.relationType); err != nil {
 				return err
 			}
 		}

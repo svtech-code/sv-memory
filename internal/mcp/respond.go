@@ -11,12 +11,12 @@ import (
 	"github.com/svtech-code/sv-memory/internal/memory"
 )
 
-// maxFieldChars is the default maximum character count per text field in
-// sv_mem_get responses. When a field exceeds this limit it is truncated
+// maxFieldTruncateChars is the default maximum character count per text field
+// in sv_mem_get responses. When a field exceeds this limit it is truncated
 // with a "[truncated N chars]" suffix to keep token consumption bounded.
 // Callers can override with the max_chars tool argument (0 = unlimited).
 // Tunable via the max_field_chars config key; this constant is the fallback.
-const maxFieldChars = 1000
+const maxFieldTruncateChars = 1000
 
 // timelineWhyChars caps the rationale shown for the central observation in
 // sv_mem_timeline, keeping the response lean while avoiding a full

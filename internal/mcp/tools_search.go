@@ -236,7 +236,7 @@ func (s *Server) handleGet(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 	if err != nil {
 		return mcp.NewToolResultError("missing required field: id"), nil
 	}
-	maxChars := configuredInt("max_field_chars", maxFieldChars)
+	maxChars := configuredInt("max_field_chars", maxFieldTruncateChars)
 	maxCharsStr := req.GetString("max_chars", "")
 	if maxCharsStr != "" {
 		if m, convErr := strconv.Atoi(maxCharsStr); convErr == nil && m >= 0 {

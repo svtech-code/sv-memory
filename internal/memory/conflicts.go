@@ -70,13 +70,7 @@ func ListConflicts(db *sql.DB, projectID string, status string) ([]*MemoryRelati
 
 		r.SourceWhat = srcWhat.String
 		r.TargetWhat = tgtWhat.String
-		if t, err := time.Parse("2006-01-02 15:04:05", createdAtStr); err == nil {
-			r.CreatedAt = t
-		} else if t, err := time.Parse(time.RFC3339, createdAtStr); err == nil {
-			r.CreatedAt = t
-		} else {
-			r.CreatedAt = time.Now() // Fallback
-		}
+		r.CreatedAt = parseTimeOrNow(createdAtStr)
 
 		list = append(list, &r)
 	}

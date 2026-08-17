@@ -98,7 +98,10 @@ func validateMemoryFields(what, why, learned, wherePath, impact, errorsFaced, ne
 }
 
 // validateChangeFields enforces the shared field-length caps of the spec-driven
-// change lifecycle (CreateChange and UpdateChange enforce the same limits).
+// change lifecycle (CreateChange and UpdateChange enforce the same limits). The
+// change fields share the maxFieldChars cap with the memory fields so a
+// maliciously large proposal cannot bloat the SQLite row or the later
+// context-pack render.
 func validateChangeFields(title, what, goal, wherePath, capabilityPath, design, tasks string) error {
 	if len(title) > 1000 {
 		return fmt.Errorf("field 'title' exceeds maximum length of 1000 characters")
@@ -107,8 +110,8 @@ func validateChangeFields(title, what, goal, wherePath, capabilityPath, design, 
 		"what": what, "goal": goal, "where_path": wherePath,
 		"capability_path": capabilityPath, "design": design, "tasks": tasks,
 	} {
-		if len(v) > maxChangeFieldChars {
-			return fmt.Errorf("field '%s' exceeds maximum length of %d characters", name, maxChangeFieldChars)
+		if len(v) > maxFieldChars {
+			return fmt.Errorf("field '%s' exceeds maximum length of %d characters", name, maxFieldChars)
 		}
 	}
 	return nil

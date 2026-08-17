@@ -55,10 +55,6 @@ type Change struct {
 	ArchivedAt     time.Time `json:"archived_at,omitempty"`
 }
 
-// maxChangeFieldChars caps the free-text fields of a change so a maliciously
-// large proposal cannot bloat the SQLite row or the later context-pack render.
-const maxChangeFieldChars = 4000
-
 // CreateChange inserts a new change in the draft state. The slug must be
 // non-empty and unique per project; title is required. Free-text fields are
 // sanitized (secret redaction) before persistence, matching the memory save
