@@ -29,14 +29,8 @@ const (
 	updateUserAgent   = "sv-memory-updater"
 )
 
-type releaseAsset struct {
-	Name               string `json:"name"`
-	BrowserDownloadURL string `json:"browser_download_url"`
-}
-
 type releaseInfo struct {
-	TagName string         `json:"tag_name"`
-	Assets  []releaseAsset `json:"assets"`
+	TagName string `json:"tag_name"`
 }
 
 var updateCmd = &cobra.Command{

@@ -89,7 +89,7 @@ var configureCmd = &cobra.Command{
 	Use:   "configure",
 	Short: "Configure local editor and CLI environments (Cursor, VS Code, Zed, Windsurf, Claude Code, OpenCode, Codex, Antigravity) with sv-memory",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		config.ShowBanner(version)
+		config.ShowBanner()
 
 		// 1. Phase 1: Editors
 		predefinedEditors := config.GetPredefinedEditors()

@@ -410,7 +410,7 @@ func configureOpenCode(configPath string, execPath string) error {
 }
 
 // ShowBanner prints the SV Tech styled ASCII logo and version details.
-func ShowBanner(version string) {
+func ShowBanner() {
 	cHex := "\x1b[38;2;0;176;194m"
 	reset := "\x1b[39m"
 

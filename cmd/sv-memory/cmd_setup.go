@@ -43,15 +43,15 @@ func setupAgentWiring(agent string, strict bool) error {
 	case "claude-code":
 		return setupClaudeCode(cwd, execPath, mode)
 	case "opencode":
-		return setupOpenCode(cwd, execPath, mode)
+		return setupOpenCode(cwd, mode)
 	case "cursor":
 		return setupCursor(cwd, execPath)
 	case "windsurf":
 		return setupWindsurf(cwd, execPath)
 	case "antigravity":
-		return setupAntigravity(cwd, execPath, mode)
+		return setupAntigravity(cwd, mode)
 	case "codex":
-		return setupCodex(cwd, execPath, mode)
+		return setupCodex(cwd, mode)
 	default:
 		return fmt.Errorf("unsupported agent %q (supported: %v)", agent, setupAgents)
 	}
@@ -89,7 +89,7 @@ func setupClaudeCode(cwd, execPath string, mode hook.Mode) error {
 	return nil
 }
 
-func setupOpenCode(cwd, execPath string, mode hook.Mode) error {
+func setupOpenCode(cwd string, mode hook.Mode) error {
 	// MCP config via opencode.json (resolve the auto-config path from the
 	// predefined CLI list so the file lands in ~/.config/opencode/).
 	tool := config.TargetTool{Name: "OpenCode", Type: "cli", ID: "opencode", Auto: true, ConfigPath: predefinedCLI("opencode")}
@@ -146,7 +146,7 @@ func predefinedCLI(id string) string {
 	return ""
 }
 
-func setupAntigravity(cwd, execPath string, mode hook.Mode) error {
+func setupAntigravity(cwd string, mode hook.Mode) error {
 	tool := config.TargetTool{Name: "Antigravity CLI (agy)", Type: "cli", ID: "antigravity", Auto: true, ConfigPath: predefinedCLI("antigravity")}
 	if isAuto, msg, err := config.ConfigureTargetTool(tool); err != nil {
 		return fmt.Errorf("antigravity MCP config failed: %w", err)
@@ -172,7 +172,7 @@ func setupAntigravity(cwd, execPath string, mode hook.Mode) error {
 	return nil
 }
 
-func setupCodex(cwd, execPath string, mode hook.Mode) error {
+func setupCodex(cwd string, mode hook.Mode) error {
 	tool := config.TargetTool{Name: "Codex", Type: "cli", ID: "codex", Auto: true, ConfigPath: predefinedCLI("codex")}
 	if isAuto, msg, err := config.ConfigureTargetTool(tool); err != nil {
 		return fmt.Errorf("codex MCP config failed: %w", err)
