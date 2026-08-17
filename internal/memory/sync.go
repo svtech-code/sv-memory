@@ -87,13 +87,8 @@ func writeChunkFiles(chunkDir string, mems []*Memory) (map[string]bool, error) {
 			return nil, fmt.Errorf("failed to marshal chunk %s: %w", mem.ID, marshalErr)
 		}
 		chunkPath := filepath.Join(chunkDir, mem.ID+".json")
-		tmpPath := chunkPath + ".tmp"
-		if writeErr := os.WriteFile(tmpPath, data, 0644); writeErr != nil {
+		if writeErr := atomicWriteFile(chunkPath, data); writeErr != nil {
 			return nil, fmt.Errorf("failed to write chunk %s: %w", mem.ID, writeErr)
-		}
-		if renameErr := os.Rename(tmpPath, chunkPath); renameErr != nil {
-			os.Remove(tmpPath)
-			return nil, fmt.Errorf("failed to rename chunk %s: %w", mem.ID, renameErr)
 		}
 		delete(existingChunks, mem.ID)
 	}
@@ -327,13 +322,8 @@ func syncToGit(db *sql.DB, projectID string, projPath string, forceJSON bool) er
 		if jErr != nil {
 			return fmt.Errorf("failed to marshal memories JSON: %w", jErr)
 		}
-		tmpFile := syncFile + ".tmp"
-		if wErr := os.WriteFile(tmpFile, data, 0644); wErr != nil {
-			return fmt.Errorf("failed to write temp memories file: %w", wErr)
-		}
-		if rErr := os.Rename(tmpFile, syncFile); rErr != nil {
-			os.Remove(tmpFile)
-			return fmt.Errorf("failed to rename temp file: %w", rErr)
+		if err := atomicWriteFile(syncFile, data); err != nil {
+			return fmt.Errorf("failed to write temp memories file: %w", err)
 		}
 		nextJSON = 0
 	}

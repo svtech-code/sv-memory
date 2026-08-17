@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/svtech-code/sv-memory/internal/graph/schema"
 )
 
 // GraphDiagnosticReport summarizes integrity issues found in the structural code graph.
@@ -65,7 +67,7 @@ func DiagnoseGraph(db *sql.DB, projectID, projPath string) (*GraphDiagnosticRepo
 
 	// 5. Missing physical files (file nodes pointing to missing disk files)
 	if projPath != "" {
-		rows, err := db.Query("SELECT path FROM graph_nodes WHERE project_id = ? AND node_type IN ('file', 'document', 'sql')", projectID)
+		rows, err := db.Query("SELECT path FROM graph_nodes WHERE project_id = ? AND node_type IN ('"+schema.NodeTypeFile+"', '"+schema.NodeTypeDocument+"', '"+schema.NodeTypeSQL+"')", projectID)
 		if err == nil {
 			defer rows.Close()
 			for rows.Next() {

@@ -187,13 +187,8 @@ func WriteSpecMirror(db *sql.DB, projectID, projPath string) error {
 
 // writeMirrorFile writes a spec mirror file atomically (tmp + rename).
 func writeMirrorFile(path, body string) error {
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, []byte(body), 0644); err != nil {
+	if err := atomicWriteFile(path, []byte(body)); err != nil {
 		return fmt.Errorf("failed to write spec mirror %s: %w", path, err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("failed to rename spec mirror %s: %w", path, err)
 	}
 	return nil
 }

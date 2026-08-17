@@ -2,9 +2,10 @@ package graph
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/svtech-code/sv-memory/internal/graph/schema"
 )
 
 // MemoryRationaleRef describes an active memory that should be linked to the
@@ -81,30 +82,18 @@ func EnsureMemoryRationaleEdge(db *sql.DB, projectID string, ref MemoryRationale
 	}
 
 	label := ref.Category + ": " + truncateNodeLabel(ref.What)
-	meta, _ := json.Marshal(map[string]interface{}{
+	meta := map[string]interface{}{
 		"memory":    true,
 		"memory_id": ref.ID,
 		"category":  ref.Category,
-	})
+	}
 
-	if _, err := db.Exec(`
-		INSERT INTO graph_nodes (id, project_id, node_type, label, path, metadata)
-		VALUES (?, ?, 'document', ?, ?, ?)
-		ON CONFLICT(id, project_id) DO UPDATE SET
-			node_type = excluded.node_type,
-			label = excluded.label,
-			path = excluded.path,
-			metadata = excluded.metadata
-	`, ref.ID, projectID, label, where, string(meta)); err != nil {
+	if err := upsertGraphNode(db, projectID, ref.ID, schema.NodeTypeDocument, label, where, meta); err != nil {
 		return fmt.Errorf("failed to upsert memory rationale node: %w", err)
 	}
 
 	edgeID := ref.ID + "->" + targetID + "-rationale_for"
-	if _, err := db.Exec(`
-		INSERT INTO graph_edges (id, project_id, source_id, target_id, relation_type, confidence, source_location)
-		VALUES (?, ?, ?, ?, 'rationale_for', 'INFERRED', '')
-		ON CONFLICT DO NOTHING
-	`, edgeID, projectID, ref.ID, targetID); err != nil {
+	if err := insertGraphEdge(db, projectID, edgeID, ref.ID, targetID, schema.EdgeRationaleFor, "INFERRED", ""); err != nil {
 		return fmt.Errorf("failed to upsert memory rationale edge: %w", err)
 	}
 

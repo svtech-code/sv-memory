@@ -243,9 +243,9 @@ func parseFiles(projPath string, nodes map[string]*Node, toParse []string, fileC
 			}
 
 			if found {
-				relType := "imports"
+				relType := schema.EdgeImports
 				if res.ext == ".md" {
-					relType = "references"
+					relType = schema.EdgeReferences
 				}
 				edgeID := fmt.Sprintf("%s-%s-%s", res.sourcePath, targetID, relType)
 				edges = append(edges, &Edge{
@@ -260,17 +260,17 @@ func parseFiles(projPath string, nodes map[string]*Node, toParse []string, fileC
 				if _, exists := nodes[pkgNodeID]; !exists {
 					nodes[pkgNodeID] = &Node{
 						ID:    pkgNodeID,
-						Type:  "package",
+						Type:  schema.NodeTypePackage,
 						Label: imp,
 						Path:  imp,
 					}
 				}
-				edgeID := fmt.Sprintf("%s-%s-%s", res.sourcePath, pkgNodeID, "imports")
+				edgeID := fmt.Sprintf("%s-%s-%s", res.sourcePath, pkgNodeID, schema.EdgeImports)
 				edges = append(edges, &Edge{
 					ID:           edgeID,
 					SourceID:     res.sourcePath,
 					TargetID:     pkgNodeID,
-					RelationType: "imports",
+					RelationType: schema.EdgeImports,
 					Confidence:   "EXTRACTED",
 				})
 			}
@@ -308,7 +308,7 @@ func parseManifests(projPath string, nodes map[string]*Node, manifests []string)
 			if _, exists := nodes[pkgID]; !exists {
 				nodes[pkgID] = &Node{
 					ID:    pkgID,
-					Type:  "package",
+					Type:  schema.NodeTypePackage,
 					Label: dep,
 					Path:  dep,
 				}
@@ -318,7 +318,7 @@ func parseManifests(projPath string, nodes map[string]*Node, manifests []string)
 				ID:           edgeID,
 				SourceID:     mf,
 				TargetID:     pkgID,
-				RelationType: "depends_on",
+				RelationType: schema.EdgeDependsOn,
 				Confidence:   "INFERRED",
 			})
 		}

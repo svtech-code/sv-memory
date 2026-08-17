@@ -2,8 +2,9 @@ package graph
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
+
+	"github.com/svtech-code/sv-memory/internal/graph/schema"
 )
 
 // SpecCapabilityRef describes a spec capability that should be linked into the
@@ -33,21 +34,13 @@ func EnsureSpecCapabilityEdges(db *sql.DB, projectID string, ref SpecCapabilityR
 
 	capID := capabilityNodeID(ref.CapabilityPath)
 	label := "capability: " + truncateNodeLabel(ref.CapabilityPath)
-	meta, _ := json.Marshal(map[string]interface{}{
+	meta := map[string]interface{}{
 		"spec":           true,
 		"capability":     ref.CapabilityPath,
 		"related_change": ref.ChangeID,
-	})
+	}
 
-	if _, err := db.Exec(`
-		INSERT INTO graph_nodes (id, project_id, node_type, label, path, metadata)
-		VALUES (?, ?, 'spec', ?, ?, ?)
-		ON CONFLICT(id, project_id) DO UPDATE SET
-			node_type = 'spec',
-			label = excluded.label,
-			path = excluded.path,
-			metadata = excluded.metadata
-	`, capID, projectID, label, ref.CapabilityPath, string(meta)); err != nil {
+	if err := upsertGraphNode(db, projectID, capID, schema.NodeTypeSpec, label, ref.CapabilityPath, meta); err != nil {
 		return fmt.Errorf("failed to upsert capability node: %w", err)
 	}
 
@@ -68,11 +61,7 @@ func EnsureSpecCapabilityEdges(db *sql.DB, projectID string, ref SpecCapabilityR
 	}
 
 	edgeID := codeNodeID + "->" + capID + "-implements"
-	if _, err := db.Exec(`
-		INSERT INTO graph_edges (id, project_id, source_id, target_id, relation_type, confidence, source_location)
-		VALUES (?, ?, ?, ?, 'implements', 'INFERRED', '')
-		ON CONFLICT DO NOTHING
-	`, edgeID, projectID, codeNodeID, capID); err != nil {
+	if err := insertGraphEdge(db, projectID, edgeID, codeNodeID, capID, schema.EdgeImplements, "INFERRED", ""); err != nil {
 		return fmt.Errorf("failed to upsert capability implements edge: %w", err)
 	}
 	return nil
@@ -99,11 +88,7 @@ func LinkDecisionToCapability(db *sql.DB, projectID, memoryID, capabilityPath st
 	}
 	capID := capabilityNodeID(capabilityPath)
 	edgeID := memoryID + "->" + capID + "-implements"
-	if _, err := db.Exec(`
-		INSERT INTO graph_edges (id, project_id, source_id, target_id, relation_type, confidence, source_location)
-		VALUES (?, ?, ?, ?, 'implements', 'INFERRED', '')
-		ON CONFLICT DO NOTHING
-	`, edgeID, projectID, memoryID, capID); err != nil {
+	if err := insertGraphEdge(db, projectID, edgeID, memoryID, capID, schema.EdgeImplements, "INFERRED", ""); err != nil {
 		return fmt.Errorf("failed to link decision to capability: %w", err)
 	}
 	return nil

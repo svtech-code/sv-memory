@@ -134,9 +134,9 @@ func TestShowBannerTUI(t *testing.T) {
 }
 
 func TestTUITheme(t *testing.T) {
-	theme := tuiTheme()
+	theme := Theme()
 	if theme == nil {
-		t.Fatal("tuiTheme() returned nil")
+		t.Fatal("Theme() returned nil")
 	}
 	// The theme must be fully wired: every focused element style should be
 	// non-zero, otherwise the TUI would render without its brand styling.

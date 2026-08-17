@@ -17,6 +17,7 @@ const (
 	NodeTypeIndex     = "index"
 	NodeTypeType      = "type"
 	NodeTypeRationale = "rationale"
+	NodeTypeSQL       = "sql"
 	NodeTypeDocument  = "document"
 	NodeTypeSpec      = "spec"
 	NodeTypeDecision  = "decision"

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/svtech-code/sv-memory/internal/graph/extractor"
+	"github.com/svtech-code/sv-memory/internal/graph/schema"
 )
 
 func resolveImport(projPath, sourcePath, imp string, nodes map[string]*Node) (string, bool) {
@@ -206,7 +207,7 @@ func extractASTCallEdges(nodes map[string]*Node, fileContents map[string][]byte,
 	fileSymbols := make(map[string][]*Node)
 	langSymbols := make(map[string][]*Node)
 	for _, node := range nodes {
-		if node.Type != "function" && node.Type != "class" {
+		if node.Type != schema.NodeTypeFunction && node.Type != schema.NodeTypeClass {
 			continue
 		}
 		fileSymbols[node.Path] = append(fileSymbols[node.Path], node)
@@ -262,7 +263,7 @@ func extractASTCallEdges(nodes map[string]*Node, fileContents map[string][]byte,
 				ID:             edgeID,
 				SourceID:       caller.ID,
 				TargetID:       target.ID,
-				RelationType:   "calls",
+				RelationType:   schema.EdgeCalls,
 				Confidence:     "EXTRACTED",
 				SourceLocation: fmt.Sprintf("L%d:%d", ref.Line, ref.Col),
 			})
@@ -319,7 +320,7 @@ func extractHeuristicCallEdges(nodes map[string]*Node, fileContents map[string][
 
 	langSymbols := make(map[string][]*Node)
 	for _, node := range nodes {
-		if node.Type == "function" || node.Type == "class" {
+		if node.Type == schema.NodeTypeFunction || node.Type == schema.NodeTypeClass {
 			ext := strings.ToLower(filepath.Ext(node.Path))
 			lang := getLanguageGroup(ext)
 			if lang != "" {
@@ -330,7 +331,7 @@ func extractHeuristicCallEdges(nodes map[string]*Node, fileContents map[string][
 
 	fileSymbols := make(map[string][]*Node)
 	for _, node := range nodes {
-		if node.Type == "function" || node.Type == "class" {
+		if node.Type == schema.NodeTypeFunction || node.Type == schema.NodeTypeClass {
 			fileSymbols[node.Path] = append(fileSymbols[node.Path], node)
 		}
 	}
@@ -403,7 +404,7 @@ func extractHeuristicCallEdges(nodes map[string]*Node, fileContents map[string][
 						ID:             edgeID,
 						SourceID:       caller.ID,
 						TargetID:       callee.ID,
-						RelationType:   "calls",
+						RelationType:   schema.EdgeCalls,
 						Confidence:     "INFERRED",
 						SourceLocation: sourceLoc,
 					})
@@ -560,7 +561,7 @@ func resolveMarkdownLink(projPath, sourcePath, target string, nodes map[string]*
 func extractContainsEdges(nodes map[string]*Node) []*Edge {
 	var edges []*Edge
 	for id, node := range nodes {
-		if node.Type == "document" || node.Type == "sql" {
+		if node.Type == schema.NodeTypeDocument || node.Type == schema.NodeTypeSQL {
 			prefix := id + ":"
 			for childID := range nodes {
 				if strings.HasPrefix(childID, prefix) && childID != id {
@@ -569,7 +570,7 @@ func extractContainsEdges(nodes map[string]*Node) []*Edge {
 						ID:           edgeID,
 						SourceID:     id,
 						TargetID:     childID,
-						RelationType: "contains",
+						RelationType: schema.EdgeContains,
 						Confidence:   "INFERRED",
 					})
 				}

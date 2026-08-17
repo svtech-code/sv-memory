@@ -23,13 +23,8 @@ func ExportJSON(db *sql.DB, projectID, filePath string) (int, error) {
 		return 0, fmt.Errorf("failed to marshal memories JSON: %w", err)
 	}
 
-	tmpPath := filePath + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
-		return 0, fmt.Errorf("failed to write export file: %w", err)
-	}
-	if err := os.Rename(tmpPath, filePath); err != nil {
-		os.Remove(tmpPath)
-		return 0, fmt.Errorf("failed to finalize export file: %w", err)
+	if err := atomicWriteFile(filePath, data); err != nil {
+		return 0, err
 	}
 
 	return len(memories), nil

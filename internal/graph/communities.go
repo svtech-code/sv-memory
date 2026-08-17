@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/svtech-code/sv-memory/internal/graph/schema"
 )
 
 // DetectCommunities runs a label propagation community detection algorithm on the graph.
@@ -235,7 +237,7 @@ func (g *InMemoryGraph) DetectCommunityLabels(communities map[string]int, centra
 			continue
 		}
 		label := cleanLabel(node, 50)
-		if node.Type == "file" && label != "" {
+		if node.Type == schema.NodeTypeFile && label != "" {
 			if existing, has := commBest[cID]; !has || centrality[id] > centrality[existing] {
 				commBest[cID] = id
 			}
@@ -273,7 +275,7 @@ func cleanLabel(node *Node, maxLen int) string {
 	if runes := []rune(label); len(runes) > maxLen {
 		label = string(runes[:maxLen])
 	}
-	if node.Type == "file" {
+	if node.Type == schema.NodeTypeFile {
 		return label
 	}
 	firstLine := strings.SplitN(label, "\n", 2)

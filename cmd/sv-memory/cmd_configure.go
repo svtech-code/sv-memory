@@ -9,50 +9,19 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
 	"github.com/svtech-code/sv-memory/internal/config"
 	"github.com/svtech-code/sv-memory/internal/mcp"
 	"github.com/svtech-code/sv-memory/internal/perm"
+	"github.com/svtech-code/sv-memory/internal/tui"
 )
 
-// bannerCyan is the brand color used by the SV Tech banner (#00B0C2).
-const bannerCyan = "#00B0C2"
-
-// configureTheme returns a huh theme that matches the SV Tech banner color.
-// The selection colors (green ✓ from ThemeCharm) are kept untouched so the
-// selected-option indicator stays green as before.
+// configureTheme returns the shared SV Tech huh theme. The selection colors
+// (green ✓ from ThemeCharm) are kept untouched so the selected-option indicator
+// stays green as before.
 func configureTheme() *huh.Theme {
-	t := huh.ThemeCharm()
-
-	cyan := lipgloss.Color(bannerCyan)
-	lightCyan := lipgloss.Color("#4FB8C4")
-
-	// Structural elements → banner cyan; selection stays green (from ThemeCharm).
-	t.Focused.Base = t.Focused.Base.BorderForeground(cyan)
-	t.Focused.Card = t.Focused.Base
-	t.Focused.Title = t.Focused.Title.Foreground(cyan).Bold(true)
-	t.Focused.NoteTitle = t.Focused.NoteTitle.Foreground(cyan).Bold(true)
-	t.Focused.Description = t.Focused.Description.Foreground(lightCyan)
-	t.Focused.SelectSelector = t.Focused.SelectSelector.Foreground(cyan)
-	t.Focused.MultiSelectSelector = t.Focused.MultiSelectSelector.Foreground(cyan)
-	t.Focused.NextIndicator = t.Focused.NextIndicator.Foreground(cyan)
-	t.Focused.PrevIndicator = t.Focused.PrevIndicator.Foreground(cyan)
-	t.Focused.FocusedButton = t.Focused.FocusedButton.Foreground(lipgloss.Color("#000000")).Background(cyan)
-	t.Focused.BlurredButton = t.Focused.BlurredButton.Foreground(cyan).Background(lipgloss.Color("#111111"))
-	t.Focused.TextInput.Cursor = t.Focused.TextInput.Cursor.Foreground(cyan)
-	t.Focused.TextInput.Prompt = t.Focused.TextInput.Prompt.Foreground(cyan)
-
-	t.Blurred = t.Focused
-	t.Blurred.Base = t.Focused.Base.BorderStyle(lipgloss.HiddenBorder())
-	t.Blurred.Card = t.Blurred.Base
-	t.Blurred.NextIndicator = lipgloss.NewStyle()
-	t.Blurred.PrevIndicator = lipgloss.NewStyle()
-
-	t.Group.Title = t.Focused.Title
-	t.Group.Description = t.Focused.Description
-	return t
+	return tui.Theme()
 }
 
 // configureKeyMap binds the Esc key to go back to the previous step. Ctrl+C

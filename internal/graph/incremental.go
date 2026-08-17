@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/svtech-code/sv-memory/internal/graph/schema"
 	"github.com/svtech-code/sv-memory/internal/security"
 )
 
@@ -233,7 +234,7 @@ func trySyncGraphIncrementalFiltered(db *sql.DB, projectID string, projPath stri
 	edges = append(edges, manifestEdges...)
 	// Upsert package nodes (from both code and manifest parsers).
 	for _, node := range wr.nodes {
-		if node.Type == "package" {
+		if node.Type == schema.NodeTypePackage {
 			if err := upsertNode(tx, projectID, node); err != nil {
 				return false, fmt.Errorf("failed upserting package node %s: %w", node.ID, err)
 			}
@@ -264,7 +265,7 @@ func trySyncGraphIncrementalFiltered(db *sql.DB, projectID string, projPath stri
 	// edges that do not touch a changed file are preserved, so a single-file
 	// edit cannot wipe the rest of the calls graph.
 	if readOnly == nil {
-		if _, err := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND relation_type = 'calls'", projectID); err != nil {
+		if _, err := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND relation_type = '"+schema.EdgeCalls+"'", projectID); err != nil {
 			return false, fmt.Errorf("failed deleting old call edges: %w", err)
 		}
 		callEdges := extractCallEdges(wr.nodes, wr.fileContents)
@@ -362,7 +363,7 @@ func bulkInsertEdges(tx *sql.Tx, projectID string, edges []*Edge) error {
 // incremental sync) so cross-file call resolution still works when only a
 // subset of files is re-parsed. Fresh nodes for changed files are kept.
 func mergeExistingSymbols(db *sql.DB, projectID string, nodes map[string]*Node) error {
-	rows, err := db.Query("SELECT id, node_type, label, path FROM graph_nodes WHERE project_id = ? AND node_type IN ('function', 'class')", projectID)
+	rows, err := db.Query("SELECT id, node_type, label, path FROM graph_nodes WHERE project_id = ? AND node_type IN ('"+schema.NodeTypeFunction+"', '"+schema.NodeTypeClass+"')", projectID)
 	if err != nil {
 		return err
 	}
@@ -388,21 +389,7 @@ func mergeExistingSymbols(db *sql.DB, projectID string, nodes map[string]*Node) 
 
 func upsertNode(tx *sql.Tx, projectID string, node *Node) error {
 	sanitizeNodeForPersist(node)
-	metaBytes, _ := json.Marshal(node.Metadata)
-	metaStr := string(metaBytes)
-	if metaStr == "null" {
-		metaStr = "{}"
-	}
-	_, err := tx.Exec(`
-		INSERT INTO graph_nodes (id, project_id, node_type, label, path, metadata)
-		VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id, project_id) DO UPDATE SET
-			node_type = excluded.node_type,
-			label = excluded.label,
-			path = excluded.path,
-			metadata = excluded.metadata
-	`, node.ID, projectID, node.Type, node.Label, node.Path, metaStr)
-	return err
+	return upsertGraphNode(tx, projectID, node.ID, node.Type, node.Label, node.Path, node.Metadata)
 }
 
 func loadFileMeta(db *sql.DB, projectID string) (map[string]fileMetaEntry, error) {

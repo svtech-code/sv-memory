@@ -17,10 +17,10 @@ import (
 // matches the theme used by `sv-memory configure` so both UIs look alike.
 const bannerCyan = "#00B0C2"
 
-// tuiTheme returns a huh theme that matches the SV Tech brand color, mirroring
-// configureTheme() in cmd/sv-memory so the interactive TUI and the configure
-// wizard share the same look.
-func tuiTheme() *huh.Theme {
+// Theme returns a huh theme that matches the SV Tech brand color. It is the
+// single source for the interactive TUI and the `sv-memory configure` wizard
+// (cmd/sv-memory delegates to it) so both UIs share the same look.
+func Theme() *huh.Theme {
 	t := huh.ThemeCharm()
 
 	cyan := lipgloss.Color(bannerCyan)
@@ -152,7 +152,7 @@ func mainMenu(projectID string) (string, error) {
 				).
 				Value(&choice),
 		).Title("MAIN MENU\n"),
-	).WithTheme(tuiTheme())
+	).WithTheme(Theme())
 	if err := form.Run(); err != nil {
 		return "", err
 	}
@@ -178,7 +178,7 @@ func showNote(title, content string) {
 				Next(true).
 				NextLabel("Back to main menu"),
 		).Title("SV-MEMORY"),
-	).WithTheme(tuiTheme()).Run()
+	).WithTheme(Theme()).Run()
 }
 
 func showRecentMemories(db *sql.DB, projectID string) {
@@ -195,7 +195,7 @@ func searchMemoriesTUI(db *sql.DB, projectID string) {
 				Description("Enter a search query (FTS5 BM25 keyword search).").
 				Value(&query),
 		).Title("SEARCH"),
-	).WithTheme(tuiTheme()).Run(); err != nil {
+	).WithTheme(Theme()).Run(); err != nil {
 		return // aborted → back to main menu
 	}
 	query = strings.TrimSpace(query)
@@ -215,7 +215,7 @@ func inspectMemoryByID(db *sql.DB, projectID string) {
 				Description("Enter a memory ID to view its full details.").
 				Value(&id),
 		).Title("INSPECT"),
-	).WithTheme(tuiTheme()).Run(); err != nil {
+	).WithTheme(Theme()).Run(); err != nil {
 		return // aborted → back to main menu
 	}
 	id = strings.TrimSpace(id)

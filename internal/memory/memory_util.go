@@ -2,6 +2,7 @@ package memory
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -136,6 +137,22 @@ func TruncateText(s string, maxChars int) string {
 	}
 	runes := []rune(s)
 	return string(runes[:maxChars]) + fmt.Sprintf("... [truncated %d chars]", len(runes)-maxChars)
+}
+
+// atomicWriteFile writes data to path atomically: it writes to a temp sibling
+// first, then renames it into place, removing the temp on failure. Readers
+// never observe a partially written file. The single implementation behind the
+// JSON export, git-sync chunk/monolith writes, and the spec mirror.
+func atomicWriteFile(path string, data []byte) error {
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write temp file %s: %w", tmpPath, err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to rename temp file %s: %w", path, err)
+	}
+	return nil
 }
 
 // sanitizeMemoryFields redacts secrets from every free-text field of a memory

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/svtech-code/sv-memory/internal/graph/schema"
 )
 
 // gitignoreMatcher evaluates file paths against .gitignore-style patterns.
@@ -373,12 +375,12 @@ func scanFilesFiltered(projPath string, readOnly map[string]bool) (*walkResult, 
 			}
 		}
 
-		nodeType := "file"
+		nodeType := schema.NodeTypeFile
 		switch ext {
 		case ".md":
-			nodeType = "document"
+			nodeType = schema.NodeTypeDocument
 		case ".sql":
-			nodeType = "sql"
+			nodeType = schema.NodeTypeSQL
 		}
 		nodes[relPath] = &Node{
 			ID:       relPath,
@@ -405,7 +407,7 @@ func scanFilesFiltered(projPath string, readOnly map[string]bool) (*walkResult, 
 
 			nodes[mf] = &Node{
 				ID:    mf,
-				Type:  "file",
+				Type:  schema.NodeTypeFile,
 				Label: mf,
 				Path:  mf,
 				Metadata: map[string]interface{}{
