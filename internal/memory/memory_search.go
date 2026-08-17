@@ -60,71 +60,7 @@ func SearchPinnedMemories(db *sql.DB, projectID string, limit int) ([]*MemorySea
 // match, default) or "any" (broader recall — a memory matching one or more
 // tokens is returned).
 func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string, category string, pathFilter string, matchMode string, limit int, offset int) ([]*MemorySearchResult, error) {
-	pathFilter = sanitizePathFilter(pathFilter)
-	var query string
-	var args []interface{}
-
-	if searchTerm == "" {
-		query = "SELECT " + compactColumns + `
-		FROM memories
-		WHERE project_id = ? AND deleted_at IS NULL
-		`
-		args = append(args, projectID)
-		if category != "" {
-			query += " AND category = ?"
-			args = append(args, category)
-		}
-		if pathFilter != "" {
-			query += " AND (where_path LIKE ? ESCAPE '\\' OR where_path = ?)"
-			args = append(args, "%"+pathFilter+"%", pathFilter)
-		}
-		query += " ORDER BY created_at DESC"
-	} else {
-		searchTerm = sanitizeFTS5QueryWithMode(searchTerm, matchMode)
-		// An empty sanitized query (e.g. only quotes) must not reach `MATCH ''`,
-		// which raises an FTS5 syntax error. Treat it as "no results".
-		if searchTerm == "" {
-			return nil, nil
-		}
-		query = `
-		SELECT m.id, m.category, m.what,
-			m.topic_key, m.revision_count, m.duplicate_count, m.created_at,
-			bm25(memories_fts, ` + bm25Weights + `) AS score
-		FROM memories m
-		JOIN memories_fts f ON m.rowid = f.rowid
-		WHERE m.project_id = ? AND memories_fts MATCH ? AND m.deleted_at IS NULL
-		`
-		args = append(args, projectID, searchTerm)
-		if category != "" {
-			query += " AND m.category = ?"
-			args = append(args, category)
-		}
-		if pathFilter != "" {
-			query += " AND (m.where_path LIKE ? ESCAPE '\\' OR m.where_path = ?)"
-			args = append(args, "%"+pathFilter+"%", pathFilter)
-		}
-		query += " ORDER BY bm25(memories_fts, " + bm25Weights + ")"
-	}
-
-	if limit > 0 {
-		query += " LIMIT ?"
-		args = append(args, limit)
-		if offset > 0 {
-			query += " OFFSET ?"
-			args = append(args, offset)
-		}
-	}
-
-	rows, err := db.Query(query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("failed searching compact memories: %w", err)
-	}
-	defer rows.Close()
-
-	if searchTerm == "" {
-		return scanCompactMemories(rows)
-	}
-	return scanCompactMemoriesScored(rows)
+	return searchMemoriesCompact(db, projectID, searchTerm, category, pathFilter, matchMode, nil, limit, offset)
 }
 
 // SearchMemoriesByPaths is the graph-aware variant of SearchMemoriesCompactScoped:
@@ -133,6 +69,15 @@ func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string
 // for the whole community in one call. When paths is empty it behaves exactly
 // like the plain path-filtered search.
 func SearchMemoriesByPaths(db *sql.DB, projectID string, searchTerm string, category string, matchMode string, pathFilter string, paths []string, limit int, offset int) ([]*MemorySearchResult, error) {
+	return searchMemoriesCompact(db, projectID, searchTerm, category, pathFilter, matchMode, paths, limit, offset)
+}
+
+// searchMemoriesCompact is the shared core of SearchMemoriesCompactScoped and
+// SearchMemoriesByPaths: a project-scoped FTS5 search with optional category,
+// path, and graph-community (paths) filters. When paths is non-empty the path
+// predicate ORs the exact where_path IN (...) set with the LIKE filter so a
+// module search also surfaces memories from the whole community.
+func searchMemoriesCompact(db *sql.DB, projectID string, searchTerm string, category string, pathFilter string, matchMode string, paths []string, limit int, offset int) ([]*MemorySearchResult, error) {
 	pathFilter = sanitizePathFilter(pathFilter)
 
 	// Build the path predicate: keep the precise filter and OR in the community
@@ -173,6 +118,8 @@ func SearchMemoriesByPaths(db *sql.DB, projectID string, searchTerm string, cate
 		query += " ORDER BY created_at DESC"
 	} else {
 		searchTerm = sanitizeFTS5QueryWithMode(searchTerm, matchMode)
+		// An empty sanitized query (e.g. only quotes) must not reach `MATCH ''`,
+		// which raises an FTS5 syntax error. Treat it as "no results".
 		if searchTerm == "" {
 			return nil, nil
 		}
@@ -203,7 +150,7 @@ func SearchMemoriesByPaths(db *sql.DB, projectID string, searchTerm string, cate
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed searching compact memories by paths: %w", err)
+		return nil, fmt.Errorf("failed searching compact memories: %w", err)
 	}
 	defer rows.Close()
 
