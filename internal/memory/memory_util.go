@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"strings"
@@ -129,6 +130,13 @@ func nullTime(t time.Time) interface{} {
 		return nil
 	}
 	return t
+}
+
+// sqlExecer is the minimal interface shared by *sql.DB and *sql.Tx so the
+// memory package can run the same Exec on a standalone connection or inside a
+// caller's transaction (the atomic spec commit runs several writes in one tx).
+type sqlExecer interface {
+	Exec(query string, args ...interface{}) (sql.Result, error)
 }
 
 // TruncateText shortens s to maxChars (by runes to avoid splitting UTF-8

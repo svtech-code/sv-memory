@@ -183,6 +183,16 @@ func MergeDeltas(db *sql.DB, projectID, capabilityPath string, deltas []Delta) e
 	}
 	defer tx.Rollback()
 
+	if err := mergeDeltasInTx(tx, projectID, capabilityPath, deltas); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// mergeDeltasInTx applies deltas to the materialized capability state inside an
+// existing transaction. It is the shared body of MergeDeltas and the atomic
+// spec commit so both run the same RENAMED/ADDED/MODIFIED/REMOVED semantics.
+func mergeDeltasInTx(tx *sql.Tx, projectID, capabilityPath string, deltas []Delta) error {
 	now := time.Now()
 	for _, op := range []string{DeltaRenamed, DeltaAdded, DeltaModified, DeltaRemoved} {
 		for _, d := range deltas {
@@ -198,7 +208,7 @@ func MergeDeltas(db *sql.DB, projectID, capabilityPath string, deltas []Delta) e
 			}
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 func mergeRequirement(tx *sql.Tx, projectID, capabilityPath, op, name, renameTo, body string, scenarios []Scenario, now time.Time) error {

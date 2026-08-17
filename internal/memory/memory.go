@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -308,23 +307,10 @@ func computeHash(what, why, learned, wherePath string) string {
 }
 
 func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
-	if mem.ProjectID == "" {
-		return nil, errors.New("memory ProjectID cannot be empty")
-	}
-	if err := validateMemoryFields(mem.What, mem.Why, mem.Learned, mem.WherePath, mem.Impact, mem.ErrorsFaced, mem.NextSteps, mem.TopicKey, mem.SessionID); err != nil {
+	now := time.Now()
+	if err := prepareMemoryForSave(mem, now); err != nil {
 		return nil, err
 	}
-
-	mem.What = security.SanitizeText(mem.What)
-	mem.Why = security.SanitizeText(mem.Why)
-	mem.WherePath = security.SanitizeText(mem.WherePath)
-	mem.Learned = security.SanitizeText(mem.Learned)
-	mem.GitBranch = security.SanitizeText(mem.GitBranch)
-	mem.GitCommit = security.SanitizeText(mem.GitCommit)
-	mem.Author = security.SanitizeText(mem.Author)
-	mem.Impact = security.SanitizeText(mem.Impact)
-	mem.ErrorsFaced = security.SanitizeText(mem.ErrorsFaced)
-	mem.NextSteps = security.SanitizeText(mem.NextSteps)
 
 	// Best-effort: link the memory to its code node in the structural graph via
 	// a rationale_for edge. Runs on every save path (new, topic upsert, dedup)
@@ -338,12 +324,6 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 		})
 	}()
 
-	now := time.Now()
-	mem.NormalizedHash = computeHash(mem.What, mem.Why, mem.Learned, mem.WherePath)
-	if mem.ReviewAfter.IsZero() {
-		mem.ReviewAfter = now.Add(decayReviewAfter(mem.Category))
-	}
-
 	// The dedup and topic-key upsert each pair a SELECT with a write. Without a
 	// transaction two concurrent SaveMemory calls can interleave those steps and
 	// create two rows for the same topic_key (or double-increment a duplicate).
@@ -355,28 +335,7 @@ func SaveMemory(db *sql.DB, mem *Memory) (*Memory, error) {
 	}
 	defer tx.Rollback()
 
-	// Path 1: topic-key upsert
-	if handled, err := upsertByTopicKey(tx, mem, now); err != nil {
-		return nil, err
-	} else if handled {
-		if cErr := tx.Commit(); cErr != nil {
-			return nil, fmt.Errorf("failed to commit topic-key upsert: %w", cErr)
-		}
-		return mem, nil
-	}
-
-	// Path 2: duplicate suppression
-	if handled, err := bumpDuplicate(tx, mem, now); err != nil {
-		return nil, err
-	} else if handled {
-		if cErr := tx.Commit(); cErr != nil {
-			return nil, fmt.Errorf("failed to commit duplicate update: %w", cErr)
-		}
-		return mem, nil
-	}
-
-	// Path 3: fresh insert
-	if err := insertMemory(tx, mem, now); err != nil {
+	if err := saveMemoryInTx(tx, mem, now); err != nil {
 		return nil, err
 	}
 	if cErr := tx.Commit(); cErr != nil {

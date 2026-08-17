@@ -249,27 +249,36 @@ func (s *Server) handleCommitSpec(ctx context.Context, req mcp.CallToolRequest) 
 	if mem.Why == "" {
 		mem.Why = "No explicit goal recorded for the change; see change " + c.Slug
 	}
-	saved, err := memory.SaveMemory(s.pool.Writer, mem)
+
+	// Load the delta requirements for the atomic commit. Zero deltas is a
+	// valid commit (a decision without requirements).
+	deltas, dErr := memory.LoadChangeDeltas(s.pool.Writer, s.cfg.ProjectID, c.ID)
+	if dErr != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to load change requirements: %v", dErr)), nil
+	}
+
+	// Commit the authoritative state atomically: decision memory + change link
+	// + capability delta merge + lifecycle stamp all land (or none do). On a
+	// partial failure (e.g. ADDED of an existing requirement) nothing is
+	// persisted, so the delta can be fixed and the commit retried cleanly.
+	saved, err := memory.CommitChangeAtomic(s.pool.Writer, mem, c.ID, c.CapabilityPath, deltas, memory.ChangeStatusApplied)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to commit decision memory: %v", err)), nil
+		return mcp.NewToolResultError(fmt.Sprintf("failed to commit spec: %v — fix the delta and re-run sv_validate_decision", err)), nil
 	}
-	if err = memory.SetMemoryChangeID(s.pool.Writer, s.cfg.ProjectID, saved.ID, c.ID); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to link memory to change: %v", err)), nil
-	}
-
-	// Merge the change's delta requirements into the capability's current state.
-	// Runs AFTER the decision memory is persisted: if the merge fails (ADDED of
-	// an existing requirement, RENAMED of a missing one), the capability state
-	// is left untouched and the commit can be retried once the delta is fixed.
-	var mergedReqs int
-	if reqCount, mErr := mergeChangeDeltas(s, c); mErr != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to merge requirements: %v — fix the delta and re-run sv_validate_decision", mErr)), nil
-	} else if reqCount > 0 {
-		mergedReqs = reqCount
+	mergedReqs := 0
+	for _, d := range deltas {
+		mergedReqs += len(d.Requirements)
 	}
 
-	// Wire the committed decision to the capability (implements edge) so the
-	// graph connects decision -> capability -> code. Best-effort.
+	// Graph wiring and conflict judgments are derived, best-effort concerns
+	// that run AFTER the authoritative transaction commits, so a graph hiccup
+	// never rolls back the commit.
+	_ = graph.EnsureMemoryRationaleEdge(s.pool.Writer, s.cfg.ProjectID, graph.MemoryRationaleRef{
+		ID:        saved.ID,
+		Category:  saved.Category,
+		What:      saved.What,
+		WherePath: saved.WherePath,
+	})
 	_ = graph.LinkDecisionToCapability(s.pool.Writer, s.cfg.ProjectID, saved.ID, c.CapabilityPath)
 	_ = graph.EnsureSpecCapabilityEdges(s.pool.Writer, s.cfg.ProjectID, graph.SpecCapabilityRef{
 		ChangeID:       c.ID,
@@ -290,10 +299,6 @@ func (s *Server) handleCommitSpec(ctx context.Context, req mcp.CallToolRequest) 
 			}
 		}
 	}
-
-	if _, err = memory.UpdateChangeStatus(s.pool.Writer, s.cfg.ProjectID, c.ID, memory.ChangeStatusApplied); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to mark change applied: %v", err)), nil
-	}
 	s.scheduleSync()
 
 	var sb strings.Builder
@@ -307,25 +312,4 @@ func (s *Server) handleCommitSpec(ctx context.Context, req mcp.CallToolRequest) 
 		sb.WriteString("\n_Committed with a WARN — review the flagged rules with `sv_mem_judge` if they should be superseded._\n")
 	}
 	return s.respond(req, sb.String()), nil
-}
-
-// mergeChangeDeltas merges the change's requirements into its capability's
-// current state and returns the number of requirement rows merged. Zero deltas
-// is a no-op success.
-func mergeChangeDeltas(s *Server, c *memory.Change) (int, error) {
-	deltas, err := memory.LoadChangeDeltas(s.pool.Writer, s.cfg.ProjectID, c.ID)
-	if err != nil {
-		return 0, err
-	}
-	if len(deltas) == 0 {
-		return 0, nil
-	}
-	if err := memory.MergeDeltas(s.pool.Writer, s.cfg.ProjectID, c.CapabilityPath, deltas); err != nil {
-		return 0, err
-	}
-	total := 0
-	for _, d := range deltas {
-		total += len(d.Requirements)
-	}
-	return total, nil
 }

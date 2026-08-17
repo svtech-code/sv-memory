@@ -656,3 +656,80 @@ func saveRuleForTest(t *testing.T, pool *db.Pool, cfg *config.Config, category, 
 	}
 	_ = saved
 }
+
+// TestCommitSpecAtomicOnMergeFailure verifies that a spec commit whose delta
+// merge fails (an ADDED requirement that already exists in the capability
+// state) leaves NO partial state behind: the decision memory is not saved, the
+// capability is not mutated, and the change stays proposed so the delta can be
+// fixed and the commit retried cleanly.
+func TestCommitSpecAtomicOnMergeFailure(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	// Pre-seed the capability state with a requirement that the change's ADDED
+	// delta will collide with.
+	if _, err := pool.Writer.Exec(
+		"INSERT INTO spec_capabilities (id, project_id, capability_path, requirement, updated_at) VALUES (?, ?, 'auth', 'Existing Req', CURRENT_TIMESTAMP)",
+		"seed-req", cfg.ProjectID,
+	); err != nil {
+		t.Fatalf("seed capability requirement: %v", err)
+	}
+
+	server := NewServer(pool, cfg)
+	propose := server.GetTool("sv_propose_spec")
+	commit := server.GetTool("sv_commit_spec")
+
+	ctx := context.Background()
+	propReq := mcpgo.CallToolRequest{}
+	propReq.Params.Name = "sv_propose_spec"
+	propReq.Params.Arguments = map[string]any{
+		"slug":            "collide-req",
+		"title":           "Collide req",
+		"what":            "Add a requirement that already exists",
+		"capability_path": "auth",
+		"requirements":    "## ADDED Requirements\n\n### Requirement: Existing Req\nSome body.",
+	}
+	if res, err := propose.Handler(ctx, propReq); err != nil || res.IsError {
+		t.Fatalf("propose failed: err=%v res=%v", err, res.Content)
+	}
+
+	changes, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusProposed)
+	if err != nil || len(changes) != 1 {
+		t.Fatalf("expected 1 proposed change, got %d (err=%v)", len(changes), err)
+	}
+
+	comReq := mcpgo.CallToolRequest{}
+	comReq.Params.Name = "sv_commit_spec"
+	comReq.Params.Arguments = map[string]any{"change_id": changes[0].ID}
+	comRes, err := commit.Handler(ctx, comReq)
+	if err != nil {
+		t.Fatalf("commit returned error: %v", err)
+	}
+	if !comRes.IsError {
+		t.Fatalf("expected commit to fail on merge conflict, got: %s", textContent(comRes.Content[0]))
+	}
+
+	// No decision memory must exist for the change.
+	dec, err := memory.SearchMemories(pool.Reader, cfg.ProjectID, "collide", "decision", 5)
+	if err != nil {
+		t.Fatalf("search decision memory: %v", err)
+	}
+	if len(dec) != 0 {
+		t.Fatalf("expected NO decision memory after failed commit, got %d", len(dec))
+	}
+
+	// The capability state must be untouched (only the seed row).
+	reqs, err := memory.CapabilityRequirements(pool.Reader, cfg.ProjectID, "auth")
+	if err != nil {
+		t.Fatalf("load capability requirements: %v", err)
+	}
+	if len(reqs) != 1 {
+		t.Fatalf("expected capability untouched (1 seed row), got %d", len(reqs))
+	}
+
+	// The change must still be proposed (not applied).
+	proposed, err := memory.ListChangesByStatus(pool.Reader, cfg.ProjectID, memory.ChangeStatusProposed)
+	if err != nil || len(proposed) != 1 {
+		t.Fatalf("expected change still proposed, got %d (err=%v)", len(proposed), err)
+	}
+}

@@ -2,9 +2,64 @@ package memory
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/svtech-code/sv-memory/internal/security"
 )
+
+// prepareMemoryForSave validates and sanitizes a memory and stamps the derived
+// fields (normalized hash, review deadline) shared by every save path. Shared by
+// SaveMemory and the atomic spec commit so the two cannot drift on the rules.
+func prepareMemoryForSave(mem *Memory, now time.Time) error {
+	if mem.ProjectID == "" {
+		return errors.New("memory ProjectID cannot be empty")
+	}
+	if err := validateMemoryFields(mem.What, mem.Why, mem.Learned, mem.WherePath, mem.Impact, mem.ErrorsFaced, mem.NextSteps, mem.TopicKey, mem.SessionID); err != nil {
+		return err
+	}
+
+	mem.What = security.SanitizeText(mem.What)
+	mem.Why = security.SanitizeText(mem.Why)
+	mem.WherePath = security.SanitizeText(mem.WherePath)
+	mem.Learned = security.SanitizeText(mem.Learned)
+	mem.GitBranch = security.SanitizeText(mem.GitBranch)
+	mem.GitCommit = security.SanitizeText(mem.GitCommit)
+	mem.Author = security.SanitizeText(mem.Author)
+	mem.Impact = security.SanitizeText(mem.Impact)
+	mem.ErrorsFaced = security.SanitizeText(mem.ErrorsFaced)
+	mem.NextSteps = security.SanitizeText(mem.NextSteps)
+
+	mem.NormalizedHash = computeHash(mem.What, mem.Why, mem.Learned, mem.WherePath)
+	if mem.ReviewAfter.IsZero() {
+		mem.ReviewAfter = now.Add(decayReviewAfter(mem.Category))
+	}
+	return nil
+}
+
+// saveMemoryInTx runs the full save logic (topic-key upsert, duplicate
+// suppression, or fresh insert) inside an existing transaction. It is the
+// shared body of SaveMemory and the atomic spec commit, which both want the
+// three check-and-write pairs serialized on the single writer connection.
+func saveMemoryInTx(tx *sql.Tx, mem *Memory, now time.Time) error {
+	// Path 1: topic-key upsert
+	if handled, err := upsertByTopicKey(tx, mem, now); err != nil {
+		return err
+	} else if handled {
+		return nil
+	}
+
+	// Path 2: duplicate suppression
+	if handled, err := bumpDuplicate(tx, mem, now); err != nil {
+		return err
+	} else if handled {
+		return nil
+	}
+
+	// Path 3: fresh insert
+	return insertMemory(tx, mem, now)
+}
 
 // upsertByTopicKey handles the topic-key upsert path within a transaction.
 // Returns true if the memory was upserted and the transaction should be committed.

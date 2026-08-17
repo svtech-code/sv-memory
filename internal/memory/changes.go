@@ -176,24 +176,35 @@ func scanChange(row *sql.Row) (*Change, error) {
 // archive timestamp; every transition bumps updated_at. Returns the change
 // with its new state, or an error when the change does not exist.
 func UpdateChangeStatus(db *sql.DB, projectID, id, status string) (*Change, error) {
+	if err := execChangeStatusUpdate(db, projectID, id, status); err != nil {
+		return nil, err
+	}
+	return GetChange(db, projectID, id)
+}
+
+// execChangeStatusUpdate performs the status UPDATE on either a *sql.DB or a
+// *sql.Tx, returning a not-found error when the change does not exist. It is
+// shared by UpdateChangeStatus and the atomic spec commit so both transition
+// the lifecycle with identical rules.
+func execChangeStatusUpdate(exec sqlExecer, projectID, id, status string) error {
 	if !ChangeStatusValid(status) {
-		return nil, fmt.Errorf("invalid change status %q", status)
+		return fmt.Errorf("invalid change status %q", status)
 	}
 	now := time.Now()
 	var archivedAt interface{}
 	if status == ChangeStatusApplied || status == ChangeStatusArchived {
 		archivedAt = now
 	}
-	res, err := db.Exec(`
+	res, err := exec.Exec(`
 		UPDATE changes SET status = ?, updated_at = ?, archived_at = COALESCE(?, archived_at)
 		WHERE project_id = ? AND id = ?`, status, now, archivedAt, projectID, id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update change status: %w", err)
+		return fmt.Errorf("failed to update change status: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return nil, fmt.Errorf("change %s not found in project", id)
+		return fmt.Errorf("change %s not found in project", id)
 	}
-	return GetChange(db, projectID, id)
+	return nil
 }
 
 // ListChangesByStatus returns the changes of a project, optionally filtered by
@@ -254,7 +265,13 @@ func ListChangesByStatus(db *sql.DB, projectID, status string) ([]*Change, error
 // change side: an unknown change_id is stored as-is and surfaced later only by
 // explicit memory lookup, so a commit never fails because of a stale change.
 func SetMemoryChangeID(db *sql.DB, projectID, memoryID, changeID string) error {
-	if _, err := db.Exec(
+	return execMemoryChangeLink(db, projectID, memoryID, changeID)
+}
+
+// execMemoryChangeLink performs the memory->change link UPDATE on either a
+// *sql.DB or a *sql.Tx, shared by SetMemoryChangeID and the atomic spec commit.
+func execMemoryChangeLink(exec sqlExecer, projectID, memoryID, changeID string) error {
+	if _, err := exec.Exec(
 		"UPDATE memories SET change_id = ? WHERE project_id = ? AND id = ? AND deleted_at IS NULL",
 		nullString(changeID), projectID, memoryID); err != nil {
 		return fmt.Errorf("failed to link memory to change: %w", err)
