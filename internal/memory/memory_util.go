@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -169,18 +170,42 @@ func TruncateText(s string, maxChars int) string {
 	return string(runes[:maxChars]) + fmt.Sprintf("... [truncated %d chars]", len(runes)-maxChars)
 }
 
-// atomicWriteFile writes data to path atomically: it writes to a temp sibling
-// first, then renames it into place, removing the temp on failure. Readers
-// never observe a partially written file. The single implementation behind the
-// JSON export, git-sync chunk/monolith writes, and the spec mirror.
+// atomicWriteFile writes data to path atomically: it writes to a unique temp
+// sibling first, fsyncs it, then renames it into place. Readers never observe
+// a partially written file, a crash cannot leave a truncated file renamed into
+// place, and concurrent writers to the same path never collide on a shared temp
+// name. The single implementation behind the JSON export, git-sync
+// chunk/monolith writes, and the spec mirror.
 func atomicWriteFile(path string, data []byte) error {
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temp file %s: %w", tmpPath, err)
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".sv-memory-*.tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file in %s: %w", filepath.Dir(path), err)
 	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
+	tmpName := tmp.Name()
+	// CreateTemp creates with 0600 (owner-only): chunk/mirror files may carry
+	// memory content, so they should not be world-readable while pending rename.
+	if _, err = tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("failed to write temp file %s: %w", tmpName, err)
+	}
+	if err = tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("failed to sync temp file %s: %w", tmpName, err)
+	}
+	if err = tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("failed to close temp file %s: %w", tmpName, err)
+	}
+	if err = os.Rename(tmpName, path); err != nil {
+		os.Remove(tmpName)
 		return fmt.Errorf("failed to rename temp file %s: %w", path, err)
+	}
+	// fsync the parent directory so the rename itself is durable.
+	if dir, dErr := os.Open(filepath.Dir(path)); dErr == nil {
+		_ = dir.Sync()
+		_ = dir.Close()
 	}
 	return nil
 }

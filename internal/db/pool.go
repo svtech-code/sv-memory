@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -45,7 +46,27 @@ func NewDBPool(dbPath string) (*Pool, error) {
 	return &Pool{Writer: w, Reader: r}, nil
 }
 
+// ensurePrivateFile creates an empty SQLite database file with owner-only
+// permissions when it does not already exist. SQLite otherwise creates the file
+// with the process umask (0644 by default), leaving the memory store readable
+// by any local user; the WAL and SHM companion files inherit this mode. The
+// mode of an existing file is left untouched so a user's explicit permissions
+// are preserved.
+func ensurePrivateFile(dbPath string) error {
+	f, err := os.OpenFile(dbPath, os.O_RDWR|os.O_CREATE, 0600)
+	if err != nil {
+		return fmt.Errorf("failed to create database file %s: %w", dbPath, err)
+	}
+	return f.Close()
+}
+
 func openDBWithTuning(dbPath string, isWriter bool) (*sql.DB, error) {
+	// The writer owns the file lifecycle; the read-only reader never creates it.
+	if isWriter {
+		if err := ensurePrivateFile(dbPath); err != nil {
+			return nil, err
+		}
+	}
 	pragmaParams := "_pragma=foreign_keys(ON)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=temp_store(MEMORY)&_pragma=cache_size(-20000)&_pragma=mmap_size(268435456)&_pragma=busy_timeout(5000)"
 	var dsn string
 	if !isWriter {

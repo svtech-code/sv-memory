@@ -6,6 +6,29 @@ import (
 	"testing"
 )
 
+func TestInitDBCreatesPrivateFile(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-db-perms")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "private_storage.db")
+	database, err := InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to initialize database: %v", err)
+	}
+	defer database.Close()
+
+	info, err := os.Stat(dbPath)
+	if err != nil {
+		t.Fatalf("failed to stat database file: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0600 {
+		t.Errorf("expected database file mode 0600, got %#o", perm)
+	}
+}
+
 func TestInitDBAndRegisterProject(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-mem-db-test")
 	if err != nil {
