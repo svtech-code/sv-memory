@@ -9,11 +9,11 @@ de integración de un solo comando de Engram (`engram setup`).
 
 | Agente          | Comando                      | Qué se instala                                                                                   |
 | :-------------- | :--------------------------- | :----------------------------------------------------------------------------------------------- |
-| Claude Code     | `sv-memory setup claude-code` | Config MCP, hooks `PreToolUse` + ciclo de vida (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`), protocolo en `AGENTS.md`, allow-list de las 31 herramientas |
+| Claude Code     | `sv-memory setup claude-code` | Config MCP, hooks `PreToolUse` + ciclo de vida (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`), protocolo en `AGENTS.md`, allow-list de las 34 herramientas |
 | OpenCode        | `sv-memory setup opencode`    | Config MCP, skill `SKILL.md`, plugin nativo TypeScript (tool `sv_memory_context`), protocolo en `AGENTS.md` |
 | Cursor          | `sv-memory setup cursor`      | Config MCP `.cursor/mcp.json`, inyección de protocolo en `.cursorrules` |
 | Windsurf        | `sv-memory setup windsurf`    | Config MCP `.windsurf/mcp_config.json`, inyección de protocolo en `.windsurfrules` |
-| Antigravity CLI | `sv-memory setup antigravity` | Config MCP, hooks `PreToolUse` (soft/strict), protocolo en `AGENTS.md`, allow-list de las 31 herramientas |
+| Antigravity CLI | `sv-memory setup antigravity` | Config MCP, hooks `PreToolUse` (soft/strict), protocolo en `AGENTS.md`, allow-list de las 34 herramientas |
 | Codex           | `sv-memory setup codex`       | Config MCP en `~/.codex/config.toml`, hooks, protocolo en `AGENTS.md` |
 
 ## Inicio rápido
@@ -83,7 +83,7 @@ en un proyecto ya configurado: `setup <agente>` ya instala hooks e inyecta el pr
   - `PreCompact` — se dispara justo antes de la compactación y le pide al agente guardar un
     resumen de sesión primero (recuperación de contexto).
   - `SubagentStop` — recuerda persistir hallazgos duraderos de los subagentes.
-- **Permisos:** las 31 herramientas sv-memory se añaden al allow-list de
+- **Permisos:** las 34 herramientas sv-memory se añaden al allow-list de
   `~/.claude/settings.json` (`mcp__sv-memory__<tool>`) para que el agente las llame sin
   pedir aprobación.
 
@@ -116,7 +116,7 @@ en un proyecto ya configurado: `setup <agente>` ya instala hooks e inyecta el pr
   permite la lectura y sugiere vía `AGENTS.md`; `--strict` bloquea la primera lectura cruda
   de archivo de cada sesión. El modo estricto es fail-open: nunca bloquea el agente cuando
   sv-memory falta o `SV_MEMORY_STRICT_DISABLE=1` está definido.
-- **Permisos:** las 31 herramientas sv-memory se añaden al allow-list de Antigravity
+- **Permisos:** las 34 herramientas sv-memory se añaden al allow-list de Antigravity
   (`mcp(sv-memory/<tool>)`).
 
 ### Codex

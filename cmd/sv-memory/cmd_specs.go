@@ -60,7 +60,7 @@ var specsListCmd = &cobra.Command{
 				return err
 			}
 			if len(changes) == 0 {
-				fmt.Println("No spec changes found in this project. Create one with sv_propose_spec or 'sv-memory specs new'.")
+				fmt.Println("No spec changes found in this project. Create one with sv_propose_spec.")
 				return nil
 			}
 			mirrors, _ := memory.ListSpecMirrors(cfg.ProjPath)

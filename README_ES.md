@@ -23,7 +23,7 @@
   <a href="#-arquitectura">Arquitectura</a> •
   <a href="#-inicio-rápido">Inicio Rápido</a> •
   <a href="#-referencia-de-comandos-cli">Comandos CLI</a> •
-  <a href="#-herramientas-mcp-31-herramientas">Herramientas MCP</a> •
+  <a href="#-herramientas-mcp-34-herramientas">Herramientas MCP</a> •
   <a href="documentation/getting_started_guide_ES.md">Guía (ES)</a> •
   <a href="documentation/CODEBASE-GUIDE_ES.md">Código (ES)</a> •
   <a href="documentation/getting_started_guide.md">Guide (EN)</a>
@@ -178,7 +178,7 @@ sv-memory hooks install --platform claude-code --context-injection
 Reinicia tu asistente de IA y confirma que todo quedó conectado:
 
 ```bash
-sv-memory permissions status --platform antigravity   # Granted: 31 / 31
+sv-memory permissions status --platform antigravity   # Granted: 34 / 34
 sv-memory hooks status                                # antigravity: ✅ installed
 sv-memory diagnose
 ```
@@ -226,14 +226,14 @@ sv-memory tui
 | `sv-memory obsidian-export`        | **Exportación**   | Exporta memorias a una bóveda de notas Markdown de Obsidian (`[[wikilinks]]`).                        |
 | `sv-memory conflicts`              | **Memoria**       | Detecta superposiciones semánticas y conflictos entre memorias del proyecto.                          |
 | `sv-memory hooks install`          | **Hooks**         | Instala hooks PreToolUse para Claude Code, Antigravity CLI y OpenCode.                                |
-| `sv-memory permissions list`       | **Permisos**      | Lista las 31 herramientas MCP de sv-memory con descripciones.                                         |
+| `sv-memory permissions list`       | **Permisos**      | Lista las 34 herramientas MCP de sv-memory con descripciones.                                         |
 | `sv-memory permissions status`     | **Permisos**      | Muestra permisos MCP otorgados/faltantes por plataforma.                                              |
 | `sv-memory permissions grant`      | **Permisos**      | Escribe allow-lists de herramientas MCP (`--all`/`--tool`, `--dry-run`) para Antigravity/Claude Code. |
 | `sv-memory permissions revoke`     | **Permisos**      | Elimina entradas de sv-memory de la allow-list conservando permisos no relacionados.                  |
 
 ---
 
-## 🧩 Herramientas MCP (31 Herramientas)
+## 🧩 Herramientas MCP (34 Herramientas)
 
 ### 🧠 Herramientas de Memoria
 
@@ -311,10 +311,10 @@ gestionar esa allow-list automáticamente, ya sea desde el asistente `configure`
 (Fase 4) o de forma independiente:
 
 ```bash
-# Muestra las 31 herramientas con descripciones
+# Muestra las 34 herramientas con descripciones
 sv-memory permissions list
 
-# Otorga las 31 herramientas a Antigravity CLI (usa --dry-run primero para previsualizar)
+# Otorga las 34 herramientas a Antigravity CLI (usa --dry-run primero para previsualizar)
 sv-memory permissions grant --platform antigravity --all --dry-run
 sv-memory permissions grant --platform antigravity --all
 
@@ -332,7 +332,7 @@ sv-memory permissions revoke --platform antigravity
 - Las entradas no relacionadas (p. ej. `command(npm run)`) siempre se conservan.
 - Reinicia tu asistente de IA tras otorgar permisos para que cargue los cambios.
 
-En el asistente `sv-memory configure`, la **Fase 4** lista las 31 herramientas para que
+En el asistente `sv-memory configure`, la **Fase 4** lista las 34 herramientas para que
 selecciones cuáles autorizar (con `a` seleccionas todas y `x` ninguna) en las plataformas
 configuradas.
 

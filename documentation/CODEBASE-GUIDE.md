@@ -14,7 +14,7 @@ where to look when extending the project. It complements the specification
 | `internal/db/` | SQLite open/tuning, migrations, WAL reader/writer pool | `db.go`, `pool.go`, `migrations.go` |
 | `internal/graph/` | Scanner, dependency graph build (incremental + full), BFS query, Leiden communities, betweenness, god nodes, AST call edges | `graph.go`, `incremental.go`, `relations.go`, `communities.go`, `leiden.go`, `memory.go` |
 | `internal/graph/extractor/` | tree-sitter extractor (symbols, imports, AST call refs), regex fallback | `tree_sitter.go`, `regex.go`, `extractor.go` |
-| `internal/mcp/` | MCP stdio server + 31 tool handlers | `mcp.go` (core + tool registration), `server_sync.go`, `graph_load.go`, `respond.go`, `tools_*.go` |
+| `internal/mcp/` | MCP stdio server + 34 tool handlers | `mcp.go` (core + tool registration), `server_sync.go`, `graph_load.go`, `respond.go`, `tools_*.go` |
 | `internal/memory/` | Memory CRUD, sessions, dedup, conflicts, compaction, git sync, context pack, stats | `memory.go`, `save.go`, `memory_session.go`, `conflicts.go`, `contextpack.go`, `sync.go`, `prompts.go` |
 | `internal/hook/` | PreToolUse + lifecycle hook scripts/skills (Claude Code, OpenCode, Antigravity, Codex) | `hook.go`, `templates.go`, `scripts/` |
 | `internal/protocol/` | AGENTS.md / `.cursorrules` / `.windsurfrules` protocol injection | `protocol.go` |
