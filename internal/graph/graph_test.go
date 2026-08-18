@@ -994,6 +994,63 @@ func TestSyncGraphASTCallEdgesExtracted(t *testing.T) {
 	}
 }
 
+// TestSyncGraphASTCallTopLevelNoPanic guards against a nil-caller panic in
+// extractASTCallEdges: a call at the top level of a file (before the first
+// function/class, or in a file with no functions) has no containing caller, so
+// the AST resolver used to dereference a nil caller and panic. The top-level
+// call must be safely skipped.
+func TestSyncGraphASTCallTopLevelNoPanic(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-graph-topcall-test")
+	if err != nil {
+		t.Fatalf("failed to create temp workspace: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_topcall.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-topcall-test"
+	if err = db.RegisterProject(database, projectID, "Top Call Test Proj", tempDir); err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// helper() is defined in its own file; another JS file calls it at the
+	// TOP LEVEL (line 1), before any function/class exists in that file. This
+	// reproduces the nil-caller path (no symbol has start line <= the call).
+	helper := `export function helper() { return 1; }
+`
+	topLevel := `import { helper } from "./helper.js";
+helper();
+`
+	if err = os.WriteFile(filepath.Join(tempDir, "helper.js"), []byte(helper), 0644); err != nil {
+		t.Fatalf("failed writing helper.js: %v", err)
+	}
+	if err = os.WriteFile(filepath.Join(tempDir, "main.js"), []byte(topLevel), 0644); err != nil {
+		t.Fatalf("failed writing main.js: %v", err)
+	}
+
+	// Must not panic; the top-level call is skipped (no source caller).
+	if err = SyncGraph(database, projectID, tempDir); err != nil {
+		t.Fatalf("SyncGraph failed: %v", err)
+	}
+
+	// The helper function may still be reachable from an import edge, but there
+	// must be no 'calls' edge whose source is the top-level main.js call.
+	var count int
+	if err = database.QueryRow(
+		"SELECT COUNT(*) FROM graph_edges WHERE project_id = ? AND relation_type = 'calls' AND source_id = 'main.js'",
+		projectID).Scan(&count); err != nil {
+		t.Fatalf("failed counting top-level calls edges: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected no calls edge sourced from top-level main.js, got %d", count)
+	}
+}
+
 func TestSyncGraphMixedGoPythonFallsBackToHeuristicForGo(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-mem-graph-mixed-test")
 	if err != nil {

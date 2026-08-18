@@ -248,9 +248,15 @@ func extractASTCallEdges(nodes map[string]*Node, fileContents map[string][]byte,
 			}
 			// Resolve caller: the last symbol whose start line <= call line.
 			caller := resolveCallerAtLine(symbols, ref.Line)
+			if caller == nil {
+				// A top-level call before the first function/class (or in a
+				// file with no functions) has no containing caller; skip it
+				// instead of dereferencing a nil caller below.
+				continue
+			}
 			// Resolve callee: same file first, then cross-file same language.
 			target := resolveCalleeNode(fileSymbols[filePath], ref.Callee, langSymbols[getLanguageGroup(ext)], caller)
-			if caller == nil || target == nil {
+			if target == nil {
 				continue
 			}
 
@@ -291,6 +297,9 @@ func resolveCallerAtLine(symbols []*Node, line int) *Node {
 // language group. Ambiguous cross-file names resolve to the same-file match if
 // any; otherwise the caller is not attributed.
 func resolveCalleeNode(fileSymbols []*Node, callee string, langSymbols []*Node, caller *Node) *Node {
+	if caller == nil {
+		return nil
+	}
 	// Same file first.
 	for _, s := range fileSymbols {
 		if s.Label == callee {
