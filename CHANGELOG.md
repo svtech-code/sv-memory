@@ -3,12 +3,14 @@
 All notable changes follow [Conventional Commits](https://www.conventionalcommits.org/).
 Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automatically.
 
-## Unreleased
+## [v0.14.0] - 2026-08-18
 
 ### Fixed
 
+- **AST call extraction no longer panics on top-level calls:** `extractASTCallEdges` used to dereference a nil caller when a call appeared at the top level of a JS/TS/Python/Rust/Java file (before its first function/class, or in a file with none) and matched a cross-file callee — crashing `sync`/`graph rebuild`. The containing-caller guard now runs *before* callee resolution, and `resolveCalleeNode` nil-guards its caller defensively. New regression test `TestSyncGraphASTCallTopLevelNoPanic` proves the top-level call is skipped without panicking.
+- **`TestInitDBCreatesPrivateFile` no longer fails on Windows:** the POSIX permission assertion is now skipped on Windows, where `os.Stat().Mode().Perm()` always reports `0666` and `os.Chmod` only toggles the read-only attribute — the owner-only `0600` restriction is only meaningful and verifiable on unix-like systems.
 - **Compaction is atomic (audit P1):** the synthesis row is now inserted *before* the older topic-key entries are soft-deleted and a failed insert aborts the whole transaction. Previously the soft-deletes were committed even when the synthesis insert failed, silently and permanently losing every memory of the topic. New regression test `TestCompactMemoriesRollsBackOnSynthesisFailure` forces the insert to fail via a trigger and verifies the originals survive.
-- **Path-traversal resistance for imported memory IDs and spec slugs (audit P2):** memory IDs arriving via `ImportJSON`/git-sync chunks are validated against a conservative `[A-Za-z0-9_-]{1,64}` rule before reaching the DB — an unsafe id would otherwise become a chunk/vault file name and escape `.sv-memory/chunks` on the next sync. `CreateChange` and `ImportChangeFromMarkdown` now reject slugs containing absolute paths or traversal segments by reusing the existing `validateCapabilityPath` guard.
+- **Path-traversal resistance for imported memory IDs and spec slugs (audit P2):** memory IDs arriving via `ImportJSON`/git-sync chunks are validated against a conservative `[A-Za-z0-9_-]{1,64}` rule before reaching the DB — an unsafe id would otherwise become a chunk/vault file name and escape `.sv-memory/chunks` on the next sync. `CreateChange` and `ImportChangeFromMarkdown` now reject slugs containing absolute paths or traversal segments by reusing the existing `validateCapabilityPath` guard. The `validMemoryID` character check was later simplified to satisfy staticcheck's `QF1001` (no De Morgan negation) with a dedicated `TestValidMemoryID`.
 - **Hardened atomic writes and database permissions (audit P3):** `atomicWriteFile` now writes to a unique `os.CreateTemp` sibling (owner-only 0600), `fsync`s it before the rename, and `fsync`s the parent directory afterwards — no more predictable `<path>.tmp` collision for concurrent writers, no symlink-clobber window, no crash-truncated file renamed into place. The SQLite database file is pre-created with 0600 (`ensurePrivateFile`) so the memory store and its WAL/SHM companions are no longer world-readable on multi-user machines (new `TestInitDBCreatesPrivateFile`).
 
 ### Changed
@@ -438,4 +440,5 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 [v0.12.0]: https://github.com/svtech-code/sv-memory/compare/v0.11.0...v0.12.0
 [v0.13.0]: https://github.com/svtech-code/sv-memory/compare/v0.12.0...v0.13.0
 [v0.13.1]: https://github.com/svtech-code/sv-memory/compare/v0.13.0...v0.13.1
-[Unreleased]: https://github.com/svtech-code/sv-memory/compare/v0.13.1...main
+[v0.14.0]: https://github.com/svtech-code/sv-memory/compare/v0.13.1...v0.14.0
+[Unreleased]: https://github.com/svtech-code/sv-memory/compare/v0.14.0...main
