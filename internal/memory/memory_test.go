@@ -2280,6 +2280,30 @@ func TestSyncFromGitRedactsSecretsInChunks(t *testing.T) {
 	}
 }
 
+// TestValidMemoryID covers the conservative id-safety rule used by the import
+// paths: only alphanumerics plus '-' and '_' are allowed, with a length bound.
+// Path separators and traversal segments must be rejected.
+func TestValidMemoryID(t *testing.T) {
+	valid := []string{"abc123", "a-b_c", "0123456789abcdef", "A1-b_9"}
+	for _, id := range valid {
+		if !validMemoryID(id) {
+			t.Errorf("expected %q to be a valid memory id", id)
+		}
+	}
+
+	invalid := []string{"", "../../x", "a/b", "a\\b", "a..b", ".", "..", "has space", "tab\t", "ñoño"}
+	for _, id := range invalid {
+		if validMemoryID(id) {
+			t.Errorf("expected %q to be an invalid memory id", id)
+		}
+	}
+
+	tooLong := strings.Repeat("a", 65)
+	if validMemoryID(tooLong) {
+		t.Error("expected an id longer than 64 chars to be rejected")
+	}
+}
+
 // TestImportRejectsUnsafeIDs verifies that a chunk/JSON carrying a
 // path-traversal id is never persisted: the strict ImportJSON path rejects it
 // outright and the lenient git-sync path skips it (the id would otherwise
