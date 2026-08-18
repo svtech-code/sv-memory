@@ -56,6 +56,12 @@ func ImportJSON(db *sql.DB, projectID, filePath string) (int, error) {
 	return len(memories), nil
 }
 
+// obsidianFooter returns the standard footer appended to every exported
+// Obsidian file so readers know when and with what tool the vault was generated.
+func obsidianFooter() string {
+	return fmt.Sprintf("---\n*Exported from sv-memory on %s*\n", time.Now().Format("2006-01-02 15:04:05"))
+}
+
 // exportObsidianNode represents a graph node in the export.
 type exportObsidianNode struct {
 	id       string
@@ -243,7 +249,7 @@ revision: %d
 		body += "\n"
 	}
 
-	body += fmt.Sprintf("---\n*Exported from sv-memory on %s*\n", time.Now().Format("2006-01-02 15:04:05"))
+	body += obsidianFooter()
 
 	writePath := filepath.Join(vaultDir, mem.ID+".md")
 	return os.WriteFile(writePath, []byte(fm+body), 0644)
@@ -439,7 +445,7 @@ path: "%s"
 		body += "\n"
 	}
 
-	body += fmt.Sprintf("---\n*Exported from sv-memory on %s*\n", time.Now().Format("2006-01-02 15:04:05"))
+	body += obsidianFooter()
 	return os.WriteFile(filePath, []byte(fm+body), 0644)
 }
 
@@ -474,6 +480,6 @@ label: "%s"
 		body += "\n"
 	}
 
-	body += fmt.Sprintf("---\n*Exported from sv-memory on %s*\n", time.Now().Format("2006-01-02 15:04:05"))
+	body += obsidianFooter()
 	return os.WriteFile(filePath, []byte(fm+body), 0644)
 }

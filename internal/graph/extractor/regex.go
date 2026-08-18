@@ -79,7 +79,7 @@ func (r *RegexExtractor) Extract(content []byte, relPath, ext string) ([]Symbol,
 			if len(m) > 1 {
 				name := string(m[1])
 				exported := strings.HasPrefix(string(m[0]), "export")
-				line := r.findLineNumber(lines, string(m[0]))
+				line := findLineNumberInLines(lines, string(m[0]))
 				addSymbol(name, "function", exported, line)
 			}
 		}
@@ -88,7 +88,7 @@ func (r *RegexExtractor) Extract(content []byte, relPath, ext string) ([]Symbol,
 			if len(m) > 1 {
 				name := string(m[1])
 				exported := strings.HasPrefix(string(m[0]), "export")
-				line := r.findLineNumber(lines, string(m[0]))
+				line := findLineNumberInLines(lines, string(m[0]))
 				addSymbol(name, "class", exported, line)
 			}
 		}
@@ -96,14 +96,14 @@ func (r *RegexExtractor) Extract(content []byte, relPath, ext string) ([]Symbol,
 		for _, m := range pyFuncRegex.FindAllSubmatch(content, -1) {
 			if len(m) > 1 {
 				name := string(m[1])
-				line := r.findLineNumber(lines, string(m[0]))
+				line := findLineNumberInLines(lines, string(m[0]))
 				addSymbol(name, "function", true, line)
 			}
 		}
 		for _, m := range pyClassRegex.FindAllSubmatch(content, -1) {
 			if len(m) > 1 {
 				name := string(m[1])
-				line := r.findLineNumber(lines, string(m[0]))
+				line := findLineNumberInLines(lines, string(m[0]))
 				addSymbol(name, "class", true, line)
 			}
 		}
@@ -115,7 +115,7 @@ func (r *RegexExtractor) Extract(content []byte, relPath, ext string) ([]Symbol,
 					continue
 				}
 				isExported := name[0] >= 'A' && name[0] <= 'Z'
-				line := r.findLineNumber(lines, string(m[0]))
+				line := findLineNumberInLines(lines, string(m[0]))
 				addSymbol(name, "function", isExported, line)
 			}
 		}
@@ -123,7 +123,7 @@ func (r *RegexExtractor) Extract(content []byte, relPath, ext string) ([]Symbol,
 			if len(m) > 1 {
 				name := string(m[1])
 				isExported := name[0] >= 'A' && name[0] <= 'Z'
-				line := r.findLineNumber(lines, string(m[0]))
+				line := findLineNumberInLines(lines, string(m[0]))
 				addSymbol(name, "class", isExported, line)
 			}
 		}
@@ -137,7 +137,7 @@ func (r *RegexExtractor) Extract(content []byte, relPath, ext string) ([]Symbol,
 							symType = "class"
 						}
 						name := string(m[i])
-						line := r.findLineNumber(lines, string(m[0]))
+						line := findLineNumberInLines(lines, string(m[0]))
 						addSymbol(name, symType, true, line)
 					}
 				}
@@ -314,16 +314,6 @@ func (r *RegexExtractor) GetExportsCount(content []byte, ext string) int {
 	switch ext {
 	case ".js", ".jsx", ".ts", ".tsx", ".astro":
 		return len(jsExportRegex.FindAll(content, -1))
-	}
-	return 0
-}
-
-func (r *RegexExtractor) findLineNumber(lines []string, substr string) int {
-	substr = strings.TrimSpace(substr)
-	for i, line := range lines {
-		if strings.Contains(line, substr) {
-			return i + 1
-		}
 	}
 	return 0
 }

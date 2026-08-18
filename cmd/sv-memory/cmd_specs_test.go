@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/svtech-code/sv-memory/internal/memory"
 )
 
 func TestSpecsSubcommandsRegistered(t *testing.T) {
@@ -24,25 +26,25 @@ func TestSpecsSubcommandsRegistered(t *testing.T) {
 	}
 }
 
-func TestTruncateTitle(t *testing.T) {
-	if got := truncateTitle("short", 60); got != "short" {
+func TestSpecsListTitleTruncation(t *testing.T) {
+	if got := memory.TruncateText("short", 60); got != "short" {
 		t.Errorf("expected short title unchanged, got %q", got)
 	}
 	long := strings.Repeat("x", 100)
-	got := truncateTitle(long, 10)
-	if len([]rune(got)) > 11 {
-		t.Errorf("expected truncated title, got %q (len %d)", got, len([]rune(got)))
+	got := memory.TruncateText(long, 10)
+	if len([]rune(got)) >= len([]rune(long)) {
+		t.Errorf("expected truncated title, got %q (runes %d)", got, len([]rune(got)))
 	}
-	if !strings.HasSuffix(got, "…") {
-		t.Errorf("expected ellipsis suffix, got %q", got)
+	if !strings.Contains(got, "truncated") {
+		t.Errorf("expected truncation notice, got %q", got)
 	}
 }
 
-func TestTruncateTitleRuneSafe(t *testing.T) {
+func TestSpecsListTitleTruncationRuneSafe(t *testing.T) {
 	// Multi-byte runes must not split UTF-8 sequences.
 	long := strings.Repeat("é", 50)
-	got := truncateTitle(long, 10)
-	if len([]rune(got)) > 11 {
+	got := memory.TruncateText(long, 10)
+	if len([]rune(got)) >= len([]rune(long)) {
 		t.Errorf("expected rune-safe truncation, got %q (runes %d)", got, len([]rune(got)))
 	}
 }

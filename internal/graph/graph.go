@@ -70,14 +70,10 @@ func parseSymbols(relPath, ext string, content []byte) ([]*Node, map[string]inte
 		"exports_count": 0,
 	}
 
-	// Calculate exports_count for javascript-like languages.
-	if regexExt, ok := currentExtractor.(*extractor.RegexExtractor); ok {
-		meta["exports_count"] = regexExt.GetExportsCount(content, ext)
-	} else if tsExt, ok := currentExtractor.(*extractor.TreeSitterExtractor); ok {
-		// Use a temporary regex extractor helper for exports count in Hito 3.2.
-		meta["exports_count"] = extractor.NewRegexExtractor().GetExportsCount(content, ext)
-		_ = tsExt
-	}
+	// exports_count for javascript-like languages is computed with the regex
+	// extractor regardless of the primary parser engine (cheap and accurate for
+	// export statements; the tree-sitter extractor delegates to the same logic).
+	meta["exports_count"] = extractor.NewRegexExtractor().GetExportsCount(content, ext)
 
 	symbols, _, err := currentExtractor.Extract(content, relPath, ext)
 	if err != nil {

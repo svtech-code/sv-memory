@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -75,18 +74,11 @@ var specsListCmd = &cobra.Command{
 				if mirrorSet[c.Slug] {
 					mirror = "yes"
 				}
-				fmt.Printf("%-12s %-24s %-10s %s\n", c.Status, c.Slug, mirror, truncateTitle(c.Title, 60))
+				fmt.Printf("%-12s %-24s %-10s %s\n", c.Status, c.Slug, mirror, memory.TruncateText(c.Title, 60))
 			}
 			return nil
 		})
 	},
-}
-
-func truncateTitle(s string, max int) string {
-	if len([]rune(s)) <= max {
-		return s
-	}
-	return strings.TrimSpace(string([]rune(s)[:max-1])) + "…"
 }
 
 var specsCapabilitiesCmd = &cobra.Command{
