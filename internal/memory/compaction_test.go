@@ -285,6 +285,56 @@ func TestCompactMemoriesSkipsSingleRowHighRevision(t *testing.T) {
 	}
 }
 
+func TestCompactMemoriesRollsBackOnSynthesisFailure(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_compact_atomic.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-compact-atomic"
+	if regErr := db.RegisterProject(database, projectID, "Compact Atomic Proj", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
+	}
+
+	_, err = database.Exec(`
+		INSERT INTO memories (id, project_id, category, what, why, learned, where_path, topic_key, revision_count, created_at)
+		VALUES
+		('a-1', ?, 'decision', 'First', 'why 1', 'learned 1', 'a.go', 'decision/fail-me', 1, datetime('now', '-2 hours')),
+		('a-2', ?, 'decision', 'Second', 'why 2', 'learned 2', 'b.go', 'decision/fail-me', 2, datetime('now', '-1 hour'));
+	`, projectID, projectID)
+	if err != nil {
+		t.Fatalf("failed inserting test memories: %v", err)
+	}
+
+	// Force the synthesis insert to fail deterministically. The trigger is
+	// created AFTER seeding so it only fires on the compaction insert.
+	if _, err = database.Exec(`
+		CREATE TRIGGER fail_compaction_synthesis
+		BEFORE INSERT ON memories
+		WHEN NEW.topic_key = 'decision/fail-me'
+		BEGIN
+			SELECT RAISE(ABORT, 'forced synthesis insert failure');
+		END;`); err != nil {
+		t.Fatalf("failed creating failure trigger: %v", err)
+	}
+
+	if _, err = CompactMemories(database, projectID); err == nil {
+		t.Fatal("expected CompactMemories to return an error when the synthesis insert fails")
+	}
+
+	// Atomicity: a failed synthesis must NOT soft-delete the older entries.
+	active, err := SearchMemories(database, projectID, "", "", 10)
+	if err != nil {
+		t.Fatalf("failed searching active memories: %v", err)
+	}
+	if len(active) != 2 {
+		t.Fatalf("expected both original memories to survive a failed synthesis (rollback), got %d", len(active))
+	}
+}
+
 func TestCompactMemoriesIncrementalOnlyProcessesNewTopics(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test_compact_incr.db")

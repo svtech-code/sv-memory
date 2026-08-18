@@ -168,20 +168,13 @@ func compactMemoriesSince(db *sql.DB, projectID string, since time.Time) (*Compa
 			}
 		}
 
-		// Soft-delete older entries
-		now := time.Now()
-		for _, m := range group {
-			if _, e := tx.Exec("UPDATE memories SET deleted_at = ? WHERE id = ?", now, m.ID); e != nil {
-				return nil, fmt.Errorf("compaction: failed soft-deleting %s: %w", m.ID, e)
-			}
-		}
-
 		// Create clean unified memory, preserving session + metadata of the
 		// chosen source entry so session context recovery keeps working. The
 		// synthesized row keeps the source created_at for chronological
 		// continuity, recomputes the dedup hash from the consolidated content,
 		// and carries over last_seen_at/review_after/pinned so the row stays on
 		// the policy-review and dedup radar after compaction.
+		now := time.Now()
 		synth := &Memory{
 			ID:             newID(),
 			ProjectID:      projectID,
@@ -213,13 +206,26 @@ func compactMemoriesSince(db *sql.DB, projectID string, since time.Time) (*Compa
 			synth.ReviewAfter = now.Add(decayReviewAfter(synth.Category))
 		}
 
-		_, insErr := tx.Exec(memoryInsertConflictQuery(), memoryInsertArgs(synth, synth.CreatedAt)...)
-		if insErr == nil {
-			report.ProcessedTopics++
-			report.MemoriesCompacted += len(group)
-			report.NewSynthesesCreated++
-			report.TopicKeys = append(report.TopicKeys, tk)
+		// Insert the synthesis FIRST so a failure aborts the transaction
+		// (defer tx.Rollback) and the older entries are never soft-deleted.
+		// Soft-deleting before the insert would silently lose every memory of
+		// the topic if the synthesis insert failed while the transaction
+		// still committed.
+		if _, insErr := tx.Exec(memoryInsertConflictQuery(), memoryInsertArgs(synth, synth.CreatedAt)...); insErr != nil {
+			return nil, fmt.Errorf("compaction: failed inserting synthesis for %s: %w", tk, insErr)
 		}
+
+		// Soft-delete older entries only after the synthesis is persisted.
+		for _, m := range group {
+			if _, e := tx.Exec("UPDATE memories SET deleted_at = ? WHERE id = ?", now, m.ID); e != nil {
+				return nil, fmt.Errorf("compaction: failed soft-deleting %s: %w", m.ID, e)
+			}
+		}
+
+		report.ProcessedTopics++
+		report.MemoriesCompacted += len(group)
+		report.NewSynthesesCreated++
+		report.TopicKeys = append(report.TopicKeys, tk)
 	}
 
 	if err := tx.Commit(); err != nil {
