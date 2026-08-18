@@ -2,7 +2,6 @@ package graph
 
 import (
 	"encoding/json"
-	"fmt"
 	"sort"
 )
 
@@ -98,12 +97,6 @@ func (g *InMemoryGraph) Merge(other *InMemoryGraph) *InMemoryGraph {
 	return result
 }
 
-// MergeToJSON returns a deterministic JSON serialization of the union of g and
-// other, merging other into g first.
-func (g *InMemoryGraph) MergeToJSON(other *InMemoryGraph) string {
-	return g.Merge(other).SerializeJSON()
-}
-
 // SerializeJSON returns a deterministic JSON serialization of the graph. Node
 // IDs are sorted and edge duplicates are dropped so the output is stable across
 // runs.
@@ -151,58 +144,4 @@ func (g *InMemoryGraph) SerializeJSON() string {
 
 	jsonBytes, _ := json.MarshalIndent(m, "", "  ")
 	return string(jsonBytes)
-}
-
-func (g *InMemoryGraph) MergeFromJSON(jsonStr string) error {
-	type mergeEdge struct {
-		Source string `json:"source"`
-		Target string `json:"target"`
-		Type   string `json:"type"`
-	}
-	type mergeGraph struct {
-		Nodes []*Node     `json:"nodes"`
-		Edges []mergeEdge `json:"edges"`
-	}
-
-	var m mergeGraph
-	if err := json.Unmarshal([]byte(jsonStr), &m); err != nil {
-		return fmt.Errorf("failed to parse graph JSON: %w", err)
-	}
-
-	for _, n := range m.Nodes {
-		if existing, ok := g.Nodes[n.ID]; ok {
-			for k, v := range n.Metadata {
-				existing.Metadata[k] = v
-			}
-		} else {
-			if n.Metadata == nil {
-				n.Metadata = make(map[string]interface{})
-			}
-			g.Nodes[n.ID] = n
-		}
-	}
-
-	seen := make(map[string]bool)
-	for _, mEdge := range m.Edges {
-		key := mEdge.Source + "|" + mEdge.Target + "|" + mEdge.Type
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-
-		e := &Edge{
-			ID:           fmt.Sprintf("%s-%s-%s", mEdge.Source, mEdge.Target, mEdge.Type),
-			SourceID:     mEdge.Source,
-			TargetID:     mEdge.Target,
-			RelationType: mEdge.Type,
-			Confidence:   "EXTRACTED",
-		}
-
-		g.EdgesBySource[e.SourceID] = append(g.EdgesBySource[e.SourceID], e)
-		g.EdgesByTarget[e.TargetID] = append(g.EdgesByTarget[e.TargetID], e)
-		g.FanOut[e.SourceID]++
-		g.FanIn[e.TargetID]++
-	}
-
-	return nil
 }

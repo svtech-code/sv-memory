@@ -72,23 +72,11 @@ func TestGraphCache(t *testing.T) {
 		t.Fatalf("expected cache miss after mtime decreased, got hit")
 	}
 
-	// 8. Test manual clear
+	// 8. Test manual invalidation of a single project.
 	cache.Put(projectID, g, 1, 2000)
-	cache.Clear()
+	cache.Invalidate(projectID)
 	if _, ok := cache.Get(database, projectID); ok {
-		t.Fatalf("expected cache miss after Clear()")
-	}
-
-	cache.Put(projectID, g, 1, 2000)
-	cache.Put("other-project", g, 1, 2000)
-	if len(cache.Entries()) != 2 {
-		t.Fatalf("expected two cache entries, got %d", len(cache.Entries()))
-	}
-	if removed := cache.InvalidateAll(); removed != 2 {
-		t.Errorf("InvalidateAll() removed %d entries, want 2", removed)
-	}
-	if cache.Len() != 0 {
-		t.Errorf("cache length after InvalidateAll() = %d, want 0", cache.Len())
+		t.Fatalf("expected cache miss after Invalidate()")
 	}
 }
 
@@ -114,8 +102,8 @@ func TestGraphCacheLRUEviction(t *testing.T) {
 		cache.Put(pid, g, 1, int64(i))
 	}
 
-	if cache.Len() != 3 {
-		t.Fatalf("expected cache Len 3 after exceeding capacity, got %d", cache.Len())
+	if cache.lru.Len() != 3 {
+		t.Fatalf("expected cache length 3 after exceeding capacity, got %d", cache.lru.Len())
 	}
 	if _, ok := cache.lru.Get("proj-1"); ok {
 		t.Error("expected proj-1 to be evicted (LRU), but it is still present")

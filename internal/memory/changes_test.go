@@ -314,47 +314,6 @@ func TestGetChangeBySlug(t *testing.T) {
 	}
 }
 
-func TestSetMemoryChangeID(t *testing.T) {
-	tempDir := t.TempDir()
-	database, err := db.InitDB(filepath.Join(tempDir, "changes_link.db"))
-	if err != nil {
-		t.Fatalf("failed to init db: %v", err)
-	}
-	defer database.Close()
-
-	projectID := "proj-changes-link"
-	if err = db.RegisterProject(database, projectID, "Link", tempDir); err != nil {
-		t.Fatalf("failed to register project: %v", err)
-	}
-
-	c, err := CreateChange(database, projectID, "slug", "Title", "", "", "", "", "")
-	if err != nil {
-		t.Fatalf("failed to create change: %v", err)
-	}
-	mem, err := SaveMemory(database, &Memory{
-		ProjectID: projectID,
-		Category:  "decision",
-		What:      "Decision from change",
-		Why:       "why",
-		Learned:   "learned",
-	})
-	if err != nil {
-		t.Fatalf("failed to save memory: %v", err)
-	}
-
-	if err = SetMemoryChangeID(database, projectID, mem.ID, c.ID); err != nil {
-		t.Fatalf("failed to link memory to change: %v", err)
-	}
-
-	var changeID sql.NullString
-	if err = database.QueryRow("SELECT change_id FROM memories WHERE id = ?", mem.ID).Scan(&changeID); err != nil {
-		t.Fatalf("failed to read change_id: %v", err)
-	}
-	if !changeID.Valid || changeID.String != c.ID {
-		t.Errorf("expected change_id %q, got %v", c.ID, changeID)
-	}
-}
-
 func TestChangeLifecycleMigrationIdempotent(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "migrate.db")

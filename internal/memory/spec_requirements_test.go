@@ -49,7 +49,9 @@ func TestActiveSpecCapabilityRefs(t *testing.T) {
 		t.Fatalf("failed to store requirements: %v", err)
 	}
 	// Merge so the current state (spec_capabilities) also carries the capability.
-	if err = MergeChangeDeltas(database, projectID, c.ID); err != nil {
+	if err = MergeDeltas(database, projectID, "auth", []Delta{{Op: DeltaAdded, Requirements: []Requirement{
+		{Name: "Login", Body: "The system SHALL log users in."},
+	}}}); err != nil {
 		t.Fatalf("failed to merge: %v", err)
 	}
 

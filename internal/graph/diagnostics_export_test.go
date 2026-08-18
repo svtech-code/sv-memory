@@ -113,29 +113,3 @@ func TestDiagnoseAndExport(t *testing.T) {
 		t.Errorf("expected non-empty cypher script")
 	}
 }
-
-func TestDetectBridgeNodes(t *testing.T) {
-	g := &InMemoryGraph{
-		Nodes: map[string]*Node{
-			"a": {ID: "a", Label: "A"},
-			"b": {ID: "b", Label: "B"},
-			"c": {ID: "c", Label: "C"},
-			"d": {ID: "d", Label: "D"},
-		},
-		EdgesBySource: map[string][]*Edge{
-			"b": {{SourceID: "b", TargetID: "a"}, {SourceID: "b", TargetID: "c"}},
-			"c": {{SourceID: "c", TargetID: "d"}},
-		},
-		EdgesByTarget: map[string][]*Edge{
-			"a": {{SourceID: "b", TargetID: "a"}},
-			"c": {{SourceID: "b", TargetID: "c"}},
-			"d": {{SourceID: "c", TargetID: "d"}},
-		},
-		FanIn:  map[string]int{"a": 1, "c": 1, "d": 1},
-		FanOut: map[string]int{"b": 2, "c": 1},
-	}
-
-	bridges := g.DetectBridgeNodes()
-	// Should not panic and return bridge nodes slice
-	_ = bridges
-}

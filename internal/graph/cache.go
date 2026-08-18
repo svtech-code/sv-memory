@@ -35,11 +35,6 @@ func NewGraphCache() *GraphCache {
 	return &GraphCache{lru: c}
 }
 
-// Len returns the number of cached project graphs.
-func (c *GraphCache) Len() int {
-	return c.lru.Len()
-}
-
 // Get returns the cached InMemoryGraph if the underlying database table has not changed.
 // Validates against both the file count and max mtime to detect both deletions
 // (which lower max mtime) and modifications/restorations.
@@ -78,24 +73,4 @@ func (c *GraphCache) Put(projectID string, g *InMemoryGraph, fileCount int, maxM
 // Invalidate clears the cached entry for a project.
 func (c *GraphCache) Invalidate(projectID string) {
 	c.lru.Remove(projectID)
-}
-
-// Clear flushes all entries in the cache.
-func (c *GraphCache) Clear() {
-	c.lru.Purge()
-}
-
-// Entries returns the project IDs currently held in the cache, most-recently-used first.
-func (c *GraphCache) Entries() []string {
-	keys := c.lru.Keys()
-	out := make([]string, 0, len(keys))
-	out = append(out, keys...)
-	return out
-}
-
-// InvalidateAll clears every cached entry and returns the number removed.
-func (c *GraphCache) InvalidateAll() int {
-	n := c.Len()
-	c.Clear()
-	return n
 }

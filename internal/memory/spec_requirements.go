@@ -278,26 +278,6 @@ func mergeRequirement(tx *sql.Tx, projectID, capabilityPath, op, name, renameTo,
 	return nil
 }
 
-// MergeChangeDeltas loads a change's deltas and merges them into its
-// capability's current state. Used by the commit path.
-func MergeChangeDeltas(db *sql.DB, projectID, changeID string) error {
-	c, err := GetChange(db, projectID, changeID)
-	if err != nil {
-		return err
-	}
-	if c == nil {
-		return fmt.Errorf("change %s not found in project", changeID)
-	}
-	deltas, err := LoadChangeDeltas(db, projectID, changeID)
-	if err != nil {
-		return err
-	}
-	if len(deltas) == 0 {
-		return nil
-	}
-	return MergeDeltas(db, projectID, c.CapabilityPath, deltas)
-}
-
 // ListCapabilities returns the distinct capability paths present in the current
 // state, ordered.
 func ListCapabilities(db *sql.DB, projectID string) ([]string, error) {

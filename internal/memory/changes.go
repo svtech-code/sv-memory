@@ -268,16 +268,10 @@ func ListChangesByStatus(db *sql.DB, projectID, status string) ([]*Change, error
 	return changes, nil
 }
 
-// SetMemoryChangeID links a memory to the change that produced it (used by the
-// decision engine when committing a proposal). Linking is best-effort on the
-// change side: an unknown change_id is stored as-is and surfaced later only by
-// explicit memory lookup, so a commit never fails because of a stale change.
-func SetMemoryChangeID(db *sql.DB, projectID, memoryID, changeID string) error {
-	return execMemoryChangeLink(db, projectID, memoryID, changeID)
-}
-
 // execMemoryChangeLink performs the memory->change link UPDATE on either a
-// *sql.DB or a *sql.Tx, shared by SetMemoryChangeID and the atomic spec commit.
+// *sql.DB or a *sql.Tx. Linking is best-effort on the change side: an unknown
+// change_id is stored as-is and surfaced later only by explicit memory lookup,
+// so a commit never fails because of a stale change.
 func execMemoryChangeLink(exec sqlExecer, projectID, memoryID, changeID string) error {
 	if _, err := exec.Exec(
 		"UPDATE memories SET change_id = ? WHERE project_id = ? AND id = ? AND deleted_at IS NULL",

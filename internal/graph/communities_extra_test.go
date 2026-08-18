@@ -32,11 +32,6 @@ func TestCommunityLabelsInfoAndSurprisingConnections(t *testing.T) {
 		t.Errorf("DetectCommunityLabels() = %#v", labels)
 	}
 
-	info := g.GetCommunityInfo(communities, map[string]float64{"a": 1, "b": 1, "c": 2})
-	if info[2].TopNodeID != "c" || info[2].NodeCount != 2 || info[2].AvgCentrality != 1.5 {
-		t.Errorf("GetCommunityInfo(2) = %#v", info[2])
-	}
-
 	connections := g.FindSurprisingConnections(communities, map[string]float64{"a": 2, "b": 1, "c": 2}, 1)
 	if len(connections) != 1 || connections[0].SourceID != "a" || connections[0].TargetID != "b" {
 		t.Errorf("FindSurprisingConnections() = %#v", connections)

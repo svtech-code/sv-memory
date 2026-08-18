@@ -195,15 +195,6 @@ func UpdateCommunitiesAndCentrality(db *sql.DB, projectID string) error {
 	return tx.Commit()
 }
 
-type CommunityInfo struct {
-	ID            int
-	Label         string
-	NodeCount     int
-	TopNodeID     string
-	TopNodeLabel  string
-	AvgCentrality float64
-}
-
 // ExtractCommunities reads community_id from node metadata and returns a community map.
 func (g *InMemoryGraph) ExtractCommunities() map[string]int {
 	communities := make(map[string]int)
@@ -374,103 +365,4 @@ func (g *InMemoryGraph) FindSurprisingConnections(communities map[string]int, ce
 	}
 
 	return candidates
-}
-
-func (g *InMemoryGraph) GetCommunityInfo(communities map[string]int, centrality map[string]float64) map[int]*CommunityInfo {
-	commInfo := make(map[int]*CommunityInfo)
-	commNodes := make(map[int][]string)
-	for id, cID := range communities {
-		commNodes[cID] = append(commNodes[cID], id)
-	}
-
-	labels := g.DetectCommunityLabels(communities, centrality)
-
-	for cID, nodes := range commNodes {
-		info := &CommunityInfo{
-			ID:        cID,
-			Label:     labels[cID],
-			NodeCount: len(nodes),
-		}
-		var totalBC float64
-		var bestNode, bestLabel string
-		var bestBC float64
-		for _, nid := range nodes {
-			bc := centrality[nid]
-			totalBC += bc
-			if bc > bestBC {
-				bestBC = bc
-				bestNode = nid
-				if n, ok := g.Nodes[nid]; ok {
-					bestLabel = n.Label
-				}
-			}
-		}
-		info.TopNodeID = bestNode
-		info.TopNodeLabel = bestLabel
-		if len(nodes) > 0 {
-			info.AvgCentrality = totalBC / float64(len(nodes))
-		}
-		commInfo[cID] = info
-	}
-
-	return commInfo
-}
-
-// BridgeNode represents a node that bridges two or more distinct communities.
-type BridgeNode struct {
-	NodeID               string `json:"node_id"`
-	Label                string `json:"label"`
-	CommunityID          int    `json:"community_id"`
-	ConnectedCommunities []int  `json:"connected_communities"`
-	NeighborCount        int    `json:"neighbor_count"`
-}
-
-// DetectBridgeNodes identifies nodes that connect edges across 2 or more distinct communities.
-func (g *InMemoryGraph) DetectBridgeNodes() []BridgeNode {
-	// Use the same Leiden detection that populates the persisted community_id
-	// so bridge-node community assignments are consistent with the rest of the
-	// graph tooling.
-	communities := g.LeidenDetectCommunities()
-	var bridgeNodes []BridgeNode
-
-	for id, node := range g.Nodes {
-		ownComm := communities[id]
-		connectedCommMap := make(map[int]bool)
-
-		for _, e := range g.EdgesBySource[id] {
-			if targetComm, ok := communities[e.TargetID]; ok {
-				connectedCommMap[targetComm] = true
-			}
-		}
-		for _, e := range g.EdgesByTarget[id] {
-			if sourceComm, ok := communities[e.SourceID]; ok {
-				connectedCommMap[sourceComm] = true
-			}
-		}
-
-		if len(connectedCommMap) >= 2 {
-			var connComms []int
-			for c := range connectedCommMap {
-				connComms = append(connComms, c)
-			}
-			sort.Ints(connComms)
-
-			bridgeNodes = append(bridgeNodes, BridgeNode{
-				NodeID:               id,
-				Label:                node.Label,
-				CommunityID:          ownComm,
-				ConnectedCommunities: connComms,
-				NeighborCount:        len(g.EdgesBySource[id]) + len(g.EdgesByTarget[id]),
-			})
-		}
-	}
-
-	sort.Slice(bridgeNodes, func(i, j int) bool {
-		if len(bridgeNodes[i].ConnectedCommunities) != len(bridgeNodes[j].ConnectedCommunities) {
-			return len(bridgeNodes[i].ConnectedCommunities) > len(bridgeNodes[j].ConnectedCommunities)
-		}
-		return bridgeNodes[i].NeighborCount > bridgeNodes[j].NeighborCount
-	})
-
-	return bridgeNodes
 }
