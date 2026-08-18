@@ -3,6 +3,7 @@ package db
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -23,6 +24,15 @@ func TestInitDBCreatesPrivateFile(t *testing.T) {
 	info, err := os.Stat(dbPath)
 	if err != nil {
 		t.Fatalf("failed to stat database file: %v", err)
+	}
+
+	// Windows has no POSIX permission bits: os.Stat().Mode().Perm() always
+	// reports 0666 for a normal (non-read-only) file and os.Chmod only toggles
+	// the read-only attribute (the 0200 writable bit). The owner-only 0600
+	// restriction is only meaningful and verifiable on unix-like systems, so
+	// the permission assertion is skipped there.
+	if runtime.GOOS == "windows" {
+		return
 	}
 	if perm := info.Mode().Perm(); perm != 0600 {
 		t.Errorf("expected database file mode 0600, got %#o", perm)
