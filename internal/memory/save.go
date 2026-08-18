@@ -144,6 +144,11 @@ func insertMemory(tx *sql.Tx, mem *Memory, now time.Time) error {
 	if mem.ID == "" {
 		mem.ID = newID()
 	}
+	// A caller-supplied ID must be path-safe: it becomes a chunk/vault file
+	// name on sync/export, so refuse anything that could escape the store.
+	if !validMemoryID(mem.ID) {
+		return fmt.Errorf("failed to save memory: unsafe id %q", mem.ID)
+	}
 	if mem.CreatedAt.IsZero() {
 		mem.CreatedAt = now
 	}

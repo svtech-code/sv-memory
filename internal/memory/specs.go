@@ -200,6 +200,11 @@ func writeMirrorFile(path, body string) error {
 // file does not exist. A mirror edit never creates a new change — the slug must
 // already exist in the store.
 func ImportChangeFromMarkdown(db *sql.DB, projectID, projPath, slug string) (*Change, error) {
+	// Reject traversal slugs the same way CreateChange does: the slug names the
+	// mirror file, so it must not escape .sv-memory/specs/changes/.
+	if _, err := validateCapabilityPath(slug); err != nil {
+		return nil, fmt.Errorf("invalid change slug: %w", err)
+	}
 	path := filepath.Join(specChangesDir(projPath), slug+".md")
 	data, err := os.ReadFile(path)
 	if err != nil {

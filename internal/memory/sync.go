@@ -152,6 +152,19 @@ func importMemoriesIntoDB(db *sql.DB, projectID string, memories []*Memory, warn
 	for _, mem := range memories {
 		mem.ProjectID = projectID
 		sanitizeMemoryFields(mem)
+		// Reject path-dangerous IDs before they reach the DB: every ID becomes
+		// a file name (chunk/monolith export, obsidian vault), so an unsafe id
+		// from an imported chunk could write outside .sv-memory/chunks on the
+		// next SyncToGit. Generated IDs are 16 lowercase hex; anything with
+		// separators or traversal segments is refused.
+		if !validMemoryID(mem.ID) {
+			if strict {
+				return 0, fmt.Errorf("failed to import memory: unsafe id %q", mem.ID)
+			}
+			logSyncWarning("skipping memory with unsafe id %q", mem.ID)
+			skipped++
+			continue
+		}
 		createdAt := mem.CreatedAt
 		if createdAt.IsZero() {
 			createdAt = time.Now()

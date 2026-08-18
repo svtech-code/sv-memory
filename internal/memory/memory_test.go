@@ -2280,6 +2280,61 @@ func TestSyncFromGitRedactsSecretsInChunks(t *testing.T) {
 	}
 }
 
+// TestImportRejectsUnsafeIDs verifies that a chunk/JSON carrying a
+// path-traversal id is never persisted: the strict ImportJSON path rejects it
+// outright and the lenient git-sync path skips it (the id would otherwise
+// become a chunk file name and escape .sv-memory/chunks on the next SyncToGit).
+func TestImportRejectsUnsafeIDs(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_unsafe_id.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-unsafe-id"
+	if err = db.RegisterProject(database, projectID, "Unsafe ID Proj", tempDir); err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	unsafe := &Memory{ID: "../../../evil", ProjectID: projectID, Category: "journal",
+		What: "unsafe", Why: "unsafe", Learned: "unsafe", CreatedAt: time.Now()}
+	data, err := json.Marshal(unsafe)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	// Strict path (ImportJSON) must abort.
+	importPath := filepath.Join(tempDir, "unsafe.json")
+	if err = os.WriteFile(importPath, data, 0644); err != nil {
+		t.Fatalf("failed to write import file: %v", err)
+	}
+	if _, err = ImportJSON(database, projectID, importPath); err == nil {
+		t.Fatal("expected ImportJSON to reject a path-traversal id")
+	}
+
+	// Lenient path (git-sync chunk) must skip the chunk, not import it.
+	chunkDir := filepath.Join(tempDir, ".sv-memory", "chunks")
+	if err = os.MkdirAll(chunkDir, 0755); err != nil {
+		t.Fatalf("failed to create chunks dir: %v", err)
+	}
+	if err = os.WriteFile(filepath.Join(chunkDir, "unsafe.json"), data, 0644); err != nil {
+		t.Fatalf("failed to write chunk: %v", err)
+	}
+	if err = SyncFromGit(database, projectID, tempDir); err != nil {
+		t.Fatalf("SyncFromGit should not fail on an unsafe chunk, got: %v", err)
+	}
+
+	var count int
+	if err = database.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ?", projectID).Scan(&count); err != nil {
+		t.Fatalf("failed counting memories: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected unsafe ids to be rejected (0 imported), got %d", count)
+	}
+}
+
 func TestGetTimelineCompact(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-mem-timeline-test")
 	if err != nil {

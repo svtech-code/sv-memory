@@ -22,6 +22,25 @@ func newID() string {
 	return strings.ReplaceAll(uuid.New().String(), "-", "")[:16]
 }
 
+// validMemoryID reports whether an id is safe to use as a primary key and as a
+// file name component inside .sv-memory/chunks. New IDs are generated as 16
+// lowercase hex chars (newID), but the import paths (ImportJSON, git-sync
+// chunks) receive raw data, so path separators and traversal segments are
+// rejected. The check is deliberately conservative — any value made only of
+// alphanumerics plus '-' and '_' passes — so legacy IDs of any length keep
+// importing without enforcing an exact format.
+func validMemoryID(id string) bool {
+	if id == "" || len(id) > 64 {
+		return false
+	}
+	for _, r := range id {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_') {
+			return false
+		}
+	}
+	return true
+}
+
 // maxPathFilterLen bounds the length of the where_path LIKE filter so a
 // maliciously large value cannot build an unbounded LIKE pattern.
 const maxPathFilterLen = 200

@@ -74,6 +74,14 @@ func CreateChange(db *sql.DB, projectID, slug, title, what, goal, wherePath, des
 	}
 
 	slug = security.SanitizeText(strings.TrimSpace(slug))
+	// The slug becomes the mirror file name under .sv-memory/specs/changes/, so
+	// reject absolute paths and traversal segments before it can escape the
+	// store (validateCapabilityPath already enforces the same rule for the
+	// capability mirror).
+	slug, err := validateCapabilityPath(slug)
+	if err != nil {
+		return nil, fmt.Errorf("invalid change slug: %w", err)
+	}
 	title = security.SanitizeText(strings.TrimSpace(title))
 	what = security.SanitizeText(what)
 	goal = security.SanitizeText(goal)
@@ -82,11 +90,11 @@ func CreateChange(db *sql.DB, projectID, slug, title, what, goal, wherePath, des
 	tasks = security.SanitizeText(tasks)
 
 	// A change targets a single capability, defaulting to its slug.
-	capabilityPath := security.SanitizeText(strings.TrimSpace(slug))
+	capabilityPath := slug
 
 	id := newID()
 	now := time.Now()
-	if _, err := db.Exec(`
+	if _, err = db.Exec(`
 		INSERT INTO changes (id, project_id, slug, status, title, what, goal, where_path, capability_path, design, tasks, created_at)
 		VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, projectID, slug, title, what, goal, wherePath, capabilityPath, design, tasks, now); err != nil {

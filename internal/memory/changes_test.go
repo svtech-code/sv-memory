@@ -80,6 +80,33 @@ func TestCreateChangeDuplicateSlug(t *testing.T) {
 	}
 }
 
+func TestCreateChangeRejectsTraversalSlug(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := db.InitDB(filepath.Join(tempDir, "changes_trav.db"))
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-changes-trav"
+	if err = db.RegisterProject(database, projectID, "Trav", tempDir); err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// A traversal slug must never reach the store: it would name the mirror
+	// file and escape .sv-memory/specs/changes/ on the next sync.
+	for _, bad := range []string{"../../x", "/abs/path", "a/../../b", "../"} {
+		if _, err = CreateChange(database, projectID, bad, "Title", "", "", "", "", ""); err == nil {
+			t.Errorf("expected slug %q to be rejected", bad)
+		}
+	}
+
+	// A safe kebab-case slug still works.
+	if _, err = CreateChange(database, projectID, "implement-session-auth", "Title", "", "", "", "", ""); err != nil {
+		t.Fatalf("expected safe slug to be accepted, got: %v", err)
+	}
+}
+
 func TestCreateChangeValidation(t *testing.T) {
 	tempDir := t.TempDir()
 	database, err := db.InitDB(filepath.Join(tempDir, "changes_val.db"))
