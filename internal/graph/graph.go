@@ -87,7 +87,7 @@ func parseSymbols(relPath, ext string, content []byte) ([]*Node, map[string]inte
 	var symbolNodes []*Node
 	var rationales []string
 	for _, sym := range symbols {
-		if sym.Type == "rationale" {
+		if sym.Type == schema.NodeTypeRationale {
 			if sym.Name != "" {
 				rationales = append(rationales, security.SanitizeText(sym.Name))
 			}

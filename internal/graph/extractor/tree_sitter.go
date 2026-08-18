@@ -5,6 +5,8 @@ import (
 
 	"github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/grammars"
+
+	"github.com/svtech-code/sv-memory/internal/graph/schema"
 )
 
 // TreeSitterExtractor implements AST-based extraction using gotreesitter.
@@ -87,7 +89,7 @@ func (t *TreeSitterExtractor) Extract(content []byte, relPath, ext string) ([]Sy
 			if hasPrefix {
 				symbols = append(symbols, Symbol{
 					Name:     cleanText,
-					Type:     "rationale",
+					Type:     schema.NodeTypeRationale,
 					Line:     int(n.StartPoint().Row) + 1,
 					Exported: false,
 				})

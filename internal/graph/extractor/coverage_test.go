@@ -3,6 +3,8 @@ package extractor
 import (
 	"strings"
 	"testing"
+
+	"github.com/svtech-code/sv-memory/internal/graph/schema"
 )
 
 func TestRegexExtractorMarkdownAndSQL(t *testing.T) {
@@ -68,7 +70,7 @@ func TestMDSemanticExtractor(t *testing.T) {
 	if len(imports) != 0 {
 		t.Errorf("semantic imports = %v, want none", imports)
 	}
-	if !hasSymbolType(symbols, "Title", "section") || !hasSymbolType(symbols, "mermaid", "diagram") {
+	if !hasSymbolType(symbols, "Title", schema.NodeTypeSection) || !hasSymbolType(symbols, "mermaid", "diagram") {
 		t.Errorf("semantic symbols missing expected entities: %#v", symbols)
 	}
 }

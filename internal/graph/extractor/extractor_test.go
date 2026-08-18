@@ -2,6 +2,8 @@ package extractor
 
 import (
 	"testing"
+
+	"github.com/svtech-code/sv-memory/internal/graph/schema"
 )
 
 func TestTreeSitterExtractor_Go(t *testing.T) {
@@ -242,7 +244,7 @@ func main() {}
 
 	foundRationales := make(map[string]bool)
 	for _, sym := range symbols {
-		if sym.Type == "rationale" {
+		if sym.Type == schema.NodeTypeRationale {
 			foundRationales[sym.Name] = true
 		}
 	}

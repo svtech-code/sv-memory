@@ -3,6 +3,8 @@ package extractor
 import (
 	"regexp"
 	"strings"
+
+	"github.com/svtech-code/sv-memory/internal/graph/schema"
 )
 
 // Helper regexes for legacy fallback extraction.
@@ -299,7 +301,7 @@ func (r *RegexExtractor) Extract(content []byte, relPath, ext string) ([]Symbol,
 				}
 			}
 			if hasPrefix {
-				addSymbol(cleanText, "rationale", false, i+1)
+				addSymbol(cleanText, schema.NodeTypeRationale, false, i+1)
 			}
 		}
 	}
@@ -378,7 +380,7 @@ func extractMarkdownSymbols(lines []string) []Symbol {
 			if title != "" {
 				symbols = append(symbols, Symbol{
 					Name:     title,
-					Type:     "section",
+					Type:     schema.NodeTypeSection,
 					Line:     i + 1,
 					Exported: false,
 					Metadata: map[string]interface{}{"level": level},
@@ -400,14 +402,14 @@ func extractSQLSymbols(lines []string) ([]Symbol, []string) {
 	for _, m := range sqlCreateTableRegex.FindAllSubmatch(content, -1) {
 		if len(m) > 2 && len(m[2]) > 0 {
 			tableName := string(m[2])
-			schema := ""
+			schemaName := ""
 			if len(m[1]) > 0 {
-				schema = string(m[1])
+				schemaName = string(m[1])
 			}
 			line := findLineNumberInLines(lines, string(m[0]))
 			meta := map[string]interface{}{"line": line}
-			if schema != "" {
-				meta["schema"] = schema
+			if schemaName != "" {
+				meta["schema"] = schemaName
 			}
 			// Extract column definitions from the CREATE TABLE body
 			columns := extractSQLColumns(content, string(m[0]))
@@ -416,7 +418,7 @@ func extractSQLSymbols(lines []string) ([]Symbol, []string) {
 			}
 			symbols = append(symbols, Symbol{
 				Name:     tableName,
-				Type:     "table",
+				Type:     schema.NodeTypeTable,
 				Line:     line,
 				Exported: true,
 				Metadata: meta,
@@ -428,18 +430,18 @@ func extractSQLSymbols(lines []string) ([]Symbol, []string) {
 	for _, m := range sqlCreateViewRegex.FindAllSubmatch(content, -1) {
 		if len(m) > 2 && len(m[2]) > 0 {
 			viewName := string(m[2])
-			schema := ""
+			schemaName := ""
 			if len(m[1]) > 0 {
-				schema = string(m[1])
+				schemaName = string(m[1])
 			}
 			line := findLineNumberInLines(lines, string(m[0]))
 			meta := map[string]interface{}{"line": line}
-			if schema != "" {
-				meta["schema"] = schema
+			if schemaName != "" {
+				meta["schema"] = schemaName
 			}
 			symbols = append(symbols, Symbol{
 				Name:     viewName,
-				Type:     "view",
+				Type:     schema.NodeTypeView,
 				Line:     line,
 				Exported: true,
 				Metadata: meta,
@@ -461,7 +463,7 @@ func extractSQLSymbols(lines []string) ([]Symbol, []string) {
 			meta["unique"] = isUnique
 			symbols = append(symbols, Symbol{
 				Name:     idxName,
-				Type:     "index",
+				Type:     schema.NodeTypeIndex,
 				Line:     line,
 				Exported: true,
 				Metadata: meta,
@@ -477,7 +479,7 @@ func extractSQLSymbols(lines []string) ([]Symbol, []string) {
 			line := findLineNumberInLines(lines, string(m[0]))
 			symbols = append(symbols, Symbol{
 				Name:     typeName,
-				Type:     "type",
+				Type:     schema.NodeTypeType,
 				Line:     line,
 				Exported: true,
 				Metadata: map[string]interface{}{

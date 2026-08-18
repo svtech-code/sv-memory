@@ -3,9 +3,8 @@ package schema
 // Node types understood by the graph. 'file' | 'package' | 'function' | 'class'
 // | 'section' | 'table' | 'view' | 'index' | 'type' | 'rationale' are produced
 // by the code scanner; 'document' nodes are created for saved memories (see
-// graph.EnsureMemoryRationaleEdge). The spec-driven decision engine extends the
-// vocabulary with 'spec', 'decision', and 'rule' nodes so proposals and their
-// governing invariants become first-class citizens of the graph.
+// graph.EnsureMemoryRationaleEdge), 'sql' nodes for SQL entities, and the
+// spec-driven decision engine adds 'spec' nodes for proposal capabilities.
 const (
 	NodeTypeFile      = "file"
 	NodeTypePackage   = "package"
@@ -20,16 +19,12 @@ const (
 	NodeTypeSQL       = "sql"
 	NodeTypeDocument  = "document"
 	NodeTypeSpec      = "spec"
-	NodeTypeDecision  = "decision"
-	NodeTypeRule      = "rule"
 )
 
 // Edge relation types understood by the graph. The code scanner produces
-// 'imports' | 'calls' | 'depends_on' | 'contains' | 'references', and saved
-// memories are linked to their code nodes with 'rationale_for'. The spec-driven
-// decision engine adds 'affects' (a change/proposal touches code entities),
-// 'constrains' (a rule bounds a decision), and 'implements' (a decision or
-// entity fulfills a spec requirement).
+// 'imports' | 'calls' | 'depends_on' | 'contains' | 'references', saved
+// memories are linked to their code nodes with 'rationale_for', and the spec
+// engine links capabilities to their code entities with 'implements'.
 const (
 	EdgeImports      = "imports"
 	EdgeCalls        = "calls"
@@ -37,8 +32,6 @@ const (
 	EdgeContains     = "contains"
 	EdgeReferences   = "references"
 	EdgeRationaleFor = "rationale_for"
-	EdgeAffects      = "affects"
-	EdgeConstrains   = "constrains"
 	EdgeImplements   = "implements"
 )
 
