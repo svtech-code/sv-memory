@@ -126,7 +126,7 @@ func searchMemoriesCompact(db *sql.DB, projectID string, searchTerm string, cate
 		query = `
 		SELECT m.id, m.category, m.what,
 			m.topic_key, m.revision_count, m.duplicate_count, m.created_at,
-			bm25(memories_fts, ` + bm25Weights + `) AS score
+			` + triFactorScoreExpr + ` AS score
 		FROM memories m
 		JOIN memories_fts f ON m.rowid = f.rowid
 		WHERE m.project_id = ? AND memories_fts MATCH ? AND m.deleted_at IS NULL` + pathClause
@@ -136,7 +136,7 @@ func searchMemoriesCompact(db *sql.DB, projectID string, searchTerm string, cate
 			query += " AND m.category = ?"
 			args = append(args, category)
 		}
-		query += " ORDER BY bm25(memories_fts, " + bm25Weights + ")"
+		query += " ORDER BY " + triFactorScoreExpr
 	}
 
 	if limit > 0 {

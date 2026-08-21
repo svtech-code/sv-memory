@@ -162,3 +162,37 @@ func SyncGraphIfStale(db *sql.DB, projectID string, projPath string) (bool, erro
 	}
 	return true, nil
 }
+
+// DetectStaleMemoryBindings returns the IDs of memories whose where_path
+// references files that no longer exist on disk.
+func DetectStaleMemoryBindings(db *sql.DB, projectID, projPath string) ([]string, error) {
+	if projPath == "" {
+		return nil, nil
+	}
+	rows, err := db.Query("SELECT id, where_path FROM memories WHERE project_id = ? AND where_path IS NOT NULL AND where_path != '' AND deleted_at IS NULL", projectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query memories with where_path: %w", err)
+	}
+	defer rows.Close()
+
+	var staleIDs []string
+	for rows.Next() {
+		var memID, wherePath string
+		if scanErr := rows.Scan(&memID, &wherePath); scanErr != nil {
+			continue
+		}
+		paths := strings.Split(wherePath, ",")
+		for _, p := range paths {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			absPath := filepath.Join(projPath, filepath.FromSlash(p))
+			if _, statErr := os.Stat(absPath); os.IsNotExist(statErr) {
+				staleIDs = append(staleIDs, memID)
+				break
+			}
+		}
+	}
+	return staleIDs, rows.Err()
+}

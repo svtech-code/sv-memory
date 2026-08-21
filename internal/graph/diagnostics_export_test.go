@@ -113,3 +113,58 @@ func TestDiagnoseAndExport(t *testing.T) {
 		t.Errorf("expected non-empty cypher script")
 	}
 }
+
+func TestStaleMemoryBindings(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_stale_mem.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-stale-mem"
+	if err = db.RegisterProject(database, projectID, "Stale Mem Project", tempDir); err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// Create an existing file
+	existingFile := filepath.Join(tempDir, "pkg", "live.go")
+	if err = os.MkdirAll(filepath.Dir(existingFile), 0755); err != nil {
+		t.Fatalf("failed to create dir: %v", err)
+	}
+	if err = os.WriteFile(existingFile, []byte("package pkg\n"), 0644); err != nil {
+		t.Fatalf("failed to write live.go: %v", err)
+	}
+
+	// Insert memories: one pointing to existing file, one pointing to missing file
+	_, err = database.Exec(`
+		INSERT INTO memories (id, project_id, category, what, why, learned, where_path) VALUES
+		('mem-live', ?, 'decision', 'use pkg', 'speed', 'fast', 'pkg/live.go'),
+		('mem-stale', ?, 'decision', 'old logic', 'legacy', 'none', 'pkg/deleted.go');
+	`, projectID, projectID)
+	if err != nil {
+		t.Fatalf("failed to insert test memories: %v", err)
+	}
+
+	// Test DetectStaleMemoryBindings
+	staleIDs, err := DetectStaleMemoryBindings(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("failed DetectStaleMemoryBindings: %v", err)
+	}
+	if len(staleIDs) != 1 || staleIDs[0] != "mem-stale" {
+		t.Fatalf("expected ['mem-stale'], got %v", staleIDs)
+	}
+
+	// Test DiagnoseGraph reports stale memory binding
+	report, err := DiagnoseGraph(database, projectID, tempDir)
+	if err != nil {
+		t.Fatalf("failed DiagnoseGraph: %v", err)
+	}
+	if report.StaleMemoryBindings != 1 {
+		t.Errorf("expected 1 stale memory binding, got %d", report.StaleMemoryBindings)
+	}
+	if report.IsHealthy {
+		t.Errorf("expected graph report to be marked unhealthy due to stale memory binding")
+	}
+}

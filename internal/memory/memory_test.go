@@ -1822,6 +1822,62 @@ func TestFTS5PrefixMatchingAndScore(t *testing.T) {
 	}
 }
 
+func TestTriFactorScoreRanking(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-trifactor-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "test-trifactor"
+	if err = db.RegisterProject(database, projectID, "TriFactor Test", tempDir); err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// 1. Save unpinned vs pinned memory with similar search terms
+	_, err = SaveMemory(database, &Memory{
+		ID: "rank-unpinned", ProjectID: projectID, Category: "journal",
+		What: "microservice retry policy for payment processing", Why: "network faults",
+		Learned: "exponential backoff", CreatedAt: time.Now().Add(-10 * time.Minute),
+		Pinned: false,
+	})
+	if err != nil {
+		t.Fatalf("failed to save unpinned memory: %v", err)
+	}
+
+	_, err = SaveMemory(database, &Memory{
+		ID: "rank-pinned", ProjectID: projectID, Category: "journal",
+		What: "microservice retry policy for invoice processing", Why: "network faults",
+		Learned: "exponential backoff", CreatedAt: time.Now().Add(-10 * time.Minute),
+		Pinned: true,
+	})
+	if err != nil {
+		t.Fatalf("failed to save pinned memory: %v", err)
+	}
+
+	// Pinned memory should rank higher (more negative score)
+	results, err := SearchMemoriesCompact(database, projectID, "microservice retry policy", "", 10, 0)
+	if err != nil {
+		t.Fatalf("search 'microservice retry policy': %v", err)
+	}
+	if len(results) < 2 {
+		t.Fatalf("expected at least 2 results, got %d", len(results))
+	}
+	if results[0].ID != "rank-pinned" {
+		t.Errorf("expected pinned memory first, got %s", results[0].ID)
+	}
+	if results[0].Score >= results[1].Score {
+		t.Errorf("expected pinned memory score (%f) to be lower/more negative than unpinned (%f)", results[0].Score, results[1].Score)
+	}
+}
+
 func TestNewID(t *testing.T) {
 	if got := len(newID()); got != 16 {
 		t.Errorf("newID() length = %d, want 16", got)

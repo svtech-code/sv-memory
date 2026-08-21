@@ -246,6 +246,22 @@ const compactColumns = `id, category, what,
 // ordering expressions so the SELECT and ORDER BY cannot drift apart.
 const bm25Weights = "10.0, 5.0, 2.0"
 
+// triFactorScoreExpr computes a composite relevance score combining FTS5 BM25,
+// memory importance (pinned state, category tier, revision count), and recency decay.
+// Because BM25 produces negative values (lower/more negative is better),
+// multiplying by an importance factor >= 1.0 increases negative magnitude (ranks higher),
+// while recency decay scales the magnitude according to age.
+const triFactorScoreExpr = `(bm25(memories_fts, ` + bm25Weights + `) * (
+		1.0 + (COALESCE(m.pinned, 0) * 0.25) +
+		(CASE m.category
+			WHEN 'decision' THEN 0.05
+			WHEN 'architecture' THEN 0.04
+			WHEN 'standard' THEN 0.03
+			WHEN 'bugfix' THEN 0.01
+			ELSE 0.0 END) +
+		(MIN(COALESCE(m.revision_count, 0), 10) * 0.01)
+	) * (1.0 / (1.0 + 0.001 * MAX(0, julianday('now') - COALESCE(julianday(m.created_at), julianday('now'))))))`
+
 // memoryInsertArgs returns the ordered argument list matching
 // memoryInsertConflictQuery() column order. It must stay in sync with that
 // query and the memories table columns.

@@ -12,14 +12,15 @@ import (
 
 // GraphDiagnosticReport summarizes integrity issues found in the structural code graph.
 type GraphDiagnosticReport struct {
-	TotalNodes    int      `json:"total_nodes"`
-	TotalEdges    int      `json:"total_edges"`
-	DanglingEdges int      `json:"dangling_edges"`
-	OrphanNodes   int      `json:"orphan_nodes"`
-	SelfLoops     int      `json:"self_loops"`
-	MissingFiles  int      `json:"missing_files"`
-	IssuesSummary []string `json:"issues_summary"`
-	IsHealthy     bool     `json:"is_healthy"`
+	TotalNodes          int      `json:"total_nodes"`
+	TotalEdges          int      `json:"total_edges"`
+	DanglingEdges       int      `json:"dangling_edges"`
+	OrphanNodes         int      `json:"orphan_nodes"`
+	SelfLoops           int      `json:"self_loops"`
+	MissingFiles        int      `json:"missing_files"`
+	StaleMemoryBindings int      `json:"stale_memory_bindings,omitempty"`
+	IssuesSummary       []string `json:"issues_summary"`
+	IsHealthy           bool     `json:"is_healthy"`
 }
 
 // DiagnoseGraph performs a health check on the SQLite graph tables for a project.
@@ -84,6 +85,37 @@ func DiagnoseGraph(db *sql.DB, projectID, projPath string) (*GraphDiagnosticRepo
 				report.IssuesSummary = append(report.IssuesSummary, fmt.Sprintf("Found %d file nodes pointing to missing files on disk.", report.MissingFiles))
 			}
 		}
+
+		// 6. Stale memory bindings (memories with where_path pointing to deleted or missing files)
+		mRows, mErr := db.Query("SELECT id, where_path FROM memories WHERE project_id = ? AND where_path IS NOT NULL AND where_path != '' AND deleted_at IS NULL", projectID)
+		if mErr == nil {
+			defer mRows.Close()
+			for mRows.Next() {
+				var memID, wherePath string
+				if scanErr := mRows.Scan(&memID, &wherePath); scanErr == nil {
+					paths := strings.Split(wherePath, ",")
+					hasMissing := false
+					for _, p := range paths {
+						p = strings.TrimSpace(p)
+						if p == "" {
+							continue
+						}
+						absPath := filepath.Join(projPath, filepath.FromSlash(p))
+						if _, statErr := os.Stat(absPath); os.IsNotExist(statErr) {
+							hasMissing = true
+							break
+						}
+					}
+					if hasMissing {
+						report.StaleMemoryBindings++
+					}
+				}
+			}
+			if report.StaleMemoryBindings > 0 {
+				report.IsHealthy = false
+				report.IssuesSummary = append(report.IssuesSummary, fmt.Sprintf("Found %d memories bound to missing files on disk (stale where_path).", report.StaleMemoryBindings))
+			}
+		}
 	}
 
 	return report, nil
@@ -99,6 +131,9 @@ func (r *GraphDiagnosticReport) String() string {
 	fmt.Fprintf(&sb, "- **Orphan Nodes:** %d\n", r.OrphanNodes)
 	fmt.Fprintf(&sb, "- **Self Loops:** %d\n", r.SelfLoops)
 	fmt.Fprintf(&sb, "- **Missing Files:** %d\n", r.MissingFiles)
+	if r.StaleMemoryBindings > 0 {
+		fmt.Fprintf(&sb, "- **Stale Memory Bindings:** %d\n", r.StaleMemoryBindings)
+	}
 
 	if r.IsHealthy {
 		sb.WriteString("\n**Status:** ✅ Graph is healthy! No integrity issues found.\n")

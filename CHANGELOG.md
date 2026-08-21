@@ -3,6 +3,14 @@
 All notable changes follow [Conventional Commits](https://www.conventionalcommits.org/).
 Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automatically.
 
+## [Unreleased]
+
+### Added
+
+- **Tri-Factor Relevance Ranking in Memory Search:** Combined FTS5 BM25 with importance weighting (pinned boost, category tiering for decisions/architecture/standards, revision count) and recency decay (`triFactorScoreExpr` in `internal/memory/memory_util.go` and `internal/memory/memory_search.go`), ensuring high-priority architectural decisions and fresh memories rank above stale trivial entries.
+- **AST / Code Staleness Detection for Memories:** Added `DetectStaleMemoryBindings` in `internal/graph/stale.go` and wired stale memory binding diagnostics (`where_path` references to deleted or missing files) into `DiagnoseGraph` and `GraphDiagnosticReport` in `internal/graph/diagnostics.go`.
+- **Test Suite Enhancements:** Added `TestTriFactorScoreRanking` in `internal/memory/memory_test.go` and `TestStaleMemoryBindings` in `internal/graph/diagnostics_export_test.go`.
+
 ## [v0.14.0] - 2026-08-18
 
 ### Fixed
