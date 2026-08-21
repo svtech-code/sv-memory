@@ -357,3 +357,48 @@ func TestContextPackComputesBlastRadius(t *testing.T) {
 		t.Errorf("expected rendered context pack to show hop depths, got:\n%s", rendered)
 	}
 }
+
+func TestContextPackAutoSyncsIfStale(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := db.InitDB(filepath.Join(tempDir, "ctx_stale.db"))
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-ctx-stale"
+	if regErr := db.RegisterProject(database, projectID, "Stale Proj", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
+	}
+
+	initialSrc := "package main\nfunc InitialFunction() {}\n"
+	serviceFile := filepath.Join(tempDir, "service.go")
+	if err = os.WriteFile(serviceFile, []byte(initialSrc), 0644); err != nil {
+		t.Fatalf("failed writing service.go: %v", err)
+	}
+
+	if err = graph.SyncGraph(database, projectID, tempDir); err != nil {
+		t.Fatalf("failed syncing graph: %v", err)
+	}
+
+	// Now modify service.go to add NewFunction without calling SyncGraph
+	updatedSrc := "package main\nfunc InitialFunction() {}\nfunc NewFunction() {\n\tprintln(\"auto fresh\")\n}\n"
+	if err = os.WriteFile(serviceFile, []byte(updatedSrc), 0644); err != nil {
+		t.Fatalf("failed updating service.go: %v", err)
+	}
+
+	// GetContextPack should automatically trigger the staleness probe and resolve NewFunction!
+	pack, err := GetContextPack(database, projectID, "NewFunction", 5, false)
+	if err != nil {
+		t.Fatalf("GetContextPack failed: %v", err)
+	}
+	if pack.Node == nil {
+		t.Fatal("expected NewFunction to be automatically discovered and resolved via staleness probe")
+	}
+	if pack.Snippet == "" {
+		t.Fatal("expected surgical snippet for auto-synced NewFunction")
+	}
+	if !strings.Contains(pack.Snippet, "func NewFunction()") {
+		t.Errorf("expected snippet to contain 'func NewFunction()', got:\n%s", pack.Snippet)
+	}
+}

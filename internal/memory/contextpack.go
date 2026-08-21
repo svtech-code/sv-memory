@@ -153,6 +153,16 @@ func GetContextPack(db *sql.DB, projectID, query string, maxMemories int, includ
 		maxMemories = 20
 	}
 
+	// 0. Auto-freshness check: refresh graph incrementally if project files changed on disk.
+	var projPath string
+	_ = db.QueryRow("SELECT path FROM projects WHERE id = ?", projectID).Scan(&projPath)
+	if projPath == "" {
+		projPath, _ = os.Getwd()
+	}
+	if projPath != "" {
+		_, _ = graph.SyncGraphIfHasChanges(db, projectID, projPath)
+	}
+
 	node, err := ResolveContextNode(db, projectID, query)
 	if err != nil {
 		return nil, err
@@ -160,17 +170,10 @@ func GetContextPack(db *sql.DB, projectID, query string, maxMemories int, includ
 
 	pack := &ContextPack{Node: node}
 
-	// 0. Extract surgical source code snippet and blast radius for the resolved node if available.
+	// 1. Extract surgical source code snippet and blast radius for the resolved node if available.
 	if node != nil {
-		if node.Path != "" {
-			var projPath string
-			_ = db.QueryRow("SELECT path FROM projects WHERE id = ?", projectID).Scan(&projPath)
-			if projPath == "" {
-				projPath, _ = os.Getwd()
-			}
-			if projPath != "" {
-				pack.Snippet, pack.SnippetLine = extractSurgicalSnippet(projPath, node, maxSnippetLines)
-			}
+		if node.Path != "" && projPath != "" {
+			pack.Snippet, pack.SnippetLine = extractSurgicalSnippet(projPath, node, maxSnippetLines)
 		}
 		pack.BlastRadius, _ = graph.CalculateBlastRadius(db, projectID, node.ID, 3, 10)
 	}

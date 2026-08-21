@@ -163,6 +163,43 @@ func SyncGraphIfStale(db *sql.DB, projectID string, projPath string) (bool, erro
 	return true, nil
 }
 
+// SyncGraphIfHasChanges refreshes the dependency graph only when tracked project files
+// actually changed on disk (HasChanges is true). Unlike SyncGraphIfStale, it does not
+// force a full rebuild if the project has no prior metadata, protecting manual test seeds.
+func SyncGraphIfHasChanges(db *sql.DB, projectID, projPath string) (bool, error) {
+	stale, err := DetectStaleFiles(db, projectID, projPath)
+	if err != nil {
+		return false, err
+	}
+	if !stale.HasChanges {
+		return false, nil
+	}
+
+	readOnly := make(map[string]bool, len(stale.Changed))
+	for _, p := range stale.Changed {
+		readOnly[p] = true
+	}
+
+	if stale.NeedsFull {
+		if syncErr := syncGraphFull(db, projectID, projPath); syncErr != nil {
+			return true, syncErr
+		}
+		return true, nil
+	}
+
+	ok, err := trySyncGraphIncrementalFiltered(db, projectID, projPath, readOnly)
+	if err != nil {
+		return true, err
+	}
+	if ok {
+		return true, nil
+	}
+	if err := syncGraphFull(db, projectID, projPath); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
 // DetectStaleMemoryBindings returns the IDs of memories whose where_path
 // references files that no longer exist on disk.
 func DetectStaleMemoryBindings(db *sql.DB, projectID, projPath string) ([]string, error) {
