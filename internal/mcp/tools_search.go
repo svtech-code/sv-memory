@@ -23,9 +23,9 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 	}
 	category := req.GetString("category", "")
 	pathFilter := req.GetString("path", "")
-	matchMode := req.GetString("match_mode", "all")
-	if matchMode != "any" {
-		matchMode = "all"
+	matchMode := req.GetString("match_mode", "hybrid")
+	if matchMode != "all" && matchMode != "any" && matchMode != "hybrid" {
+		matchMode = "hybrid"
 	}
 	semantic := req.GetString("semantic", "") == "true"
 	semanticAgent := req.GetString("semantic_agent", "")

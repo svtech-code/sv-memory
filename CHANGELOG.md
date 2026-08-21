@@ -11,7 +11,8 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 - **AST / Code Staleness Detection for Memories:** Added `DetectStaleMemoryBindings` in `internal/graph/stale.go` and wired stale memory binding diagnostics (`where_path` references to deleted or missing files) into `DiagnoseGraph` and `GraphDiagnosticReport` in `internal/graph/diagnostics.go`.
 - **Git Post-Commit Hook for Passive Capture:** Added `PlatformGit` support in `internal/hook/hook.go` with automated post-commit hook script installation (`sv-memory hooks install --platform git`), extracting commit hash, message, branch, author, and changed files without delaying git workflow.
 - **CLI Passive Capture Command (`sv-memory capture`):** Added `capture` command to CLI for registering commits and notes into persistent memory and git chunks seamlessly.
-- **Test Suite Enhancements:** Added `TestTriFactorScoreRanking` in `internal/memory/memory_test.go`, `TestStaleMemoryBindings` in `internal/graph/diagnostics_export_test.go`, `TestInstallGitHook` in `internal/hook/hook_test.go`, and `TestCaptureCmdRegistered` in `cmd/sv-memory/cmd_coverage_test.go`.
+- **Pure-Go Local Vector Engine & Hybrid Search (`SearchMemoriesHybrid`):** Implemented subword/n-gram vector embeddings, L2 normalization, and cosine similarity in `internal/memory/semantic_vector.go` to provide resilient hybrid search (`match_mode="hybrid"`), ensuring agents find relevant architectural decisions even when terms vary or inflections differ.
+- **Test Suite Enhancements:** Added `TestTriFactorScoreRanking` in `internal/memory/memory_test.go`, `TestStaleMemoryBindings` in `internal/graph/diagnostics_export_test.go`, `TestInstallGitHook` in `internal/hook/hook_test.go`, `TestCaptureCmdRegistered` in `cmd/sv-memory/cmd_coverage_test.go`, and `TestExtractSubwordsAndCosineSimilarity` / `TestSearchMemoriesHybridSemanticFallback` in `internal/memory/semantic_vector_test.go`.
 
 ## [v0.14.0] - 2026-08-18
 

@@ -57,9 +57,12 @@ func SearchPinnedMemories(db *sql.DB, projectID string, limit int) ([]*MemorySea
 
 // SearchMemoriesCompactScoped searches memories scoped to a project with an
 // optional category and path filter. matchMode is "all" (every token must
-// match, default) or "any" (broader recall — a memory matching one or more
-// tokens is returned).
+// match, default), "any" (broader recall — one or more tokens match), or
+// "hybrid" (combines Tri-Factor FTS5 BM25 with local vector cosine similarity).
 func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string, category string, pathFilter string, matchMode string, limit int, offset int) ([]*MemorySearchResult, error) {
+	if matchMode == "hybrid" {
+		return SearchMemoriesHybrid(db, projectID, searchTerm, category, pathFilter, "all", nil, limit, offset)
+	}
 	return searchMemoriesCompact(db, projectID, searchTerm, category, pathFilter, matchMode, nil, limit, offset)
 }
 
@@ -69,6 +72,9 @@ func SearchMemoriesCompactScoped(db *sql.DB, projectID string, searchTerm string
 // for the whole community in one call. When paths is empty it behaves exactly
 // like the plain path-filtered search.
 func SearchMemoriesByPaths(db *sql.DB, projectID string, searchTerm string, category string, matchMode string, pathFilter string, paths []string, limit int, offset int) ([]*MemorySearchResult, error) {
+	if matchMode == "hybrid" {
+		return SearchMemoriesHybrid(db, projectID, searchTerm, category, pathFilter, "all", paths, limit, offset)
+	}
 	return searchMemoriesCompact(db, projectID, searchTerm, category, pathFilter, matchMode, paths, limit, offset)
 }
 
