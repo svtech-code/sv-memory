@@ -3,7 +3,7 @@
 All notable changes follow [Conventional Commits](https://www.conventionalcommits.org/).
 Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automatically.
 
-## [Unreleased]
+## [v0.15.0] - 2026-08-21
 
 ### Added
 
