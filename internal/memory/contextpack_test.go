@@ -307,3 +307,53 @@ func (a *AuthManager) Authenticate(token string) bool {
 		t.Errorf("expected rendered context pack to have '```go' code block, got:\n%s", rendered)
 	}
 }
+
+func TestContextPackComputesBlastRadius(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := db.InitDB(filepath.Join(tempDir, "ctx_blast.db"))
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-ctx-blast"
+	if regErr := db.RegisterProject(database, projectID, "Blast Proj", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
+	}
+
+	// db.go -> service.go -> api.go
+	dbSrc := "package main\nfunc QueryDB() {}\n"
+	svcSrc := "package main\nfunc ServiceLayer() { QueryDB() }\n"
+	apiSrc := "package main\nfunc Endpoint() { ServiceLayer() }\n"
+
+	if err = os.WriteFile(filepath.Join(tempDir, "db.go"), []byte(dbSrc), 0644); err != nil {
+		t.Fatalf("failed writing db.go: %v", err)
+	}
+	if err = os.WriteFile(filepath.Join(tempDir, "service.go"), []byte(svcSrc), 0644); err != nil {
+		t.Fatalf("failed writing service.go: %v", err)
+	}
+	if err = os.WriteFile(filepath.Join(tempDir, "api.go"), []byte(apiSrc), 0644); err != nil {
+		t.Fatalf("failed writing api.go: %v", err)
+	}
+
+	if err = graph.SyncGraph(database, projectID, tempDir); err != nil {
+		t.Fatalf("failed syncing graph: %v", err)
+	}
+
+	pack, err := GetContextPack(database, projectID, "QueryDB", 5, false)
+	if err != nil {
+		t.Fatalf("GetContextPack failed: %v", err)
+	}
+
+	if len(pack.BlastRadius) < 2 {
+		t.Fatalf("expected at least 2 transitive blast radius nodes, got %d: %+v", len(pack.BlastRadius), pack.BlastRadius)
+	}
+
+	rendered := RenderContextPack(pack, 100)
+	if !strings.Contains(rendered, "### 💥 Transitive blast radius") {
+		t.Errorf("expected rendered context pack to include 'Transitive blast radius' header, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "hop 1") || !strings.Contains(rendered, "hop 2") {
+		t.Errorf("expected rendered context pack to show hop depths, got:\n%s", rendered)
+	}
+}

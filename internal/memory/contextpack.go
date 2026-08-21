@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/svtech-code/sv-memory/internal/graph"
 	"github.com/svtech-code/sv-memory/internal/graph/schema"
 	"github.com/svtech-code/sv-memory/internal/security"
 )
@@ -68,12 +69,13 @@ type ContextCapability struct {
 }
 
 // ContextPack is the fused, token-efficient context for a code path: the
-// node's structural role, surgical source code snippet, plus the memories that
-// explain why the code is the way it is (decisions/standards/bugfixes linked to that path).
+// node's structural role, surgical source code snippet, transitive blast radius,
+// plus the memories that explain why the code is the way it is (decisions/standards/bugfixes linked to that path).
 type ContextPack struct {
 	Node         *ContextNode
 	Snippet      string
 	SnippetLine  int
+	BlastRadius  []graph.BlastRadiusNode
 	Memories     []ContextMemory
 	Dependents   []ContextNeighbor
 	Dependencies []ContextNeighbor
@@ -158,16 +160,19 @@ func GetContextPack(db *sql.DB, projectID, query string, maxMemories int, includ
 
 	pack := &ContextPack{Node: node}
 
-	// 0. Extract surgical source code snippet for the resolved node if available.
-	if node != nil && node.Path != "" {
-		var projPath string
-		_ = db.QueryRow("SELECT path FROM projects WHERE id = ?", projectID).Scan(&projPath)
-		if projPath == "" {
-			projPath, _ = os.Getwd()
+	// 0. Extract surgical source code snippet and blast radius for the resolved node if available.
+	if node != nil {
+		if node.Path != "" {
+			var projPath string
+			_ = db.QueryRow("SELECT path FROM projects WHERE id = ?", projectID).Scan(&projPath)
+			if projPath == "" {
+				projPath, _ = os.Getwd()
+			}
+			if projPath != "" {
+				pack.Snippet, pack.SnippetLine = extractSurgicalSnippet(projPath, node, maxSnippetLines)
+			}
 		}
-		if projPath != "" {
-			pack.Snippet, pack.SnippetLine = extractSurgicalSnippet(projPath, node, maxSnippetLines)
-		}
+		pack.BlastRadius, _ = graph.CalculateBlastRadius(db, projectID, node.ID, 3, 10)
 	}
 
 	seen := map[string]bool{}
@@ -567,6 +572,16 @@ func RenderContextPack(p *ContextPack, whyChars int) string {
 		sb.WriteString("\n### Direct dependents (who imports/calls this):\n")
 		for _, d := range p.Dependents {
 			fmt.Fprintf(&sb, "- `%s` (%s, %s)\n", d.Label, d.RelationType, strings.ToLower(d.Confidence))
+		}
+	}
+	if len(p.BlastRadius) > 0 {
+		sb.WriteString("\n### 💥 Transitive blast radius (affected upstream consumers):\n")
+		for _, b := range p.BlastRadius {
+			hubTag := ""
+			if b.IsHub {
+				hubTag = " ⚠️ Hub"
+			}
+			fmt.Fprintf(&sb, "- `%s` (hop %d, %s)%s\n", b.ID, b.Depth, b.RelationType, hubTag)
 		}
 	}
 	if len(p.Dependencies) > 0 {
