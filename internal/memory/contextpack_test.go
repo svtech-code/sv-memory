@@ -243,3 +243,67 @@ func TestCommunityPathSetAndSearchByPaths(t *testing.T) {
 		t.Errorf("expected c.go memory excluded, got %v", found)
 	}
 }
+
+func TestContextPackExtractsSurgicalSnippet(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := db.InitDB(filepath.Join(tempDir, "ctx_snippet.db"))
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-snippet"
+	if regErr := db.RegisterProject(database, projectID, "Snippet Proj", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
+	}
+
+	src := `package service
+
+import "fmt"
+
+type AuthManager struct {
+	secret string
+}
+
+func (a *AuthManager) Authenticate(token string) bool {
+	if token == "" {
+		return false
+	}
+	fmt.Println("Authenticating token...")
+	return token == a.secret
+}
+`
+	if err = os.WriteFile(filepath.Join(tempDir, "auth.go"), []byte(src), 0644); err != nil {
+		t.Fatalf("failed writing auth.go: %v", err)
+	}
+
+	if err = graph.SyncGraph(database, projectID, tempDir); err != nil {
+		t.Fatalf("failed syncing graph: %v", err)
+	}
+
+	// 1. Context pack for function symbol: auth.go:Authenticate
+	pack, err := GetContextPack(database, projectID, "Authenticate", 5, false)
+	if err != nil {
+		t.Fatalf("failed GetContextPack for Authenticate: %v", err)
+	}
+	if pack.Node == nil {
+		t.Fatal("expected node Authenticate to resolve")
+	}
+	if pack.Snippet == "" {
+		t.Fatalf("expected surgical snippet for Authenticate, got empty")
+	}
+	if !strings.Contains(pack.Snippet, "func (a *AuthManager) Authenticate") {
+		t.Errorf("expected snippet to contain function header, got:\n%s", pack.Snippet)
+	}
+	if !strings.Contains(pack.Snippet, "fmt.Println") {
+		t.Errorf("expected snippet to contain function body, got:\n%s", pack.Snippet)
+	}
+
+	rendered := RenderContextPack(pack, 100)
+	if !strings.Contains(rendered, "### Source Code Snippet") {
+		t.Errorf("expected rendered context pack to have 'Source Code Snippet' section, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "```go") {
+		t.Errorf("expected rendered context pack to have '```go' code block, got:\n%s", rendered)
+	}
+}

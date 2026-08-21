@@ -4,9 +4,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
+	"github.com/svtech-code/sv-memory/internal/graph/schema"
 	"github.com/svtech-code/sv-memory/internal/security"
 )
 
@@ -18,6 +21,7 @@ type ContextNode struct {
 	Label       string
 	Type        string
 	Path        string
+	StartLine   int
 	CommunityID int
 	FanIn       int
 	FanOut      int
@@ -64,10 +68,12 @@ type ContextCapability struct {
 }
 
 // ContextPack is the fused, token-efficient context for a code path: the
-// node's structural role plus the memories that explain why the code is the
-// way it is (decisions/standards/bugfixes linked to that path).
+// node's structural role, surgical source code snippet, plus the memories that
+// explain why the code is the way it is (decisions/standards/bugfixes linked to that path).
 type ContextPack struct {
 	Node         *ContextNode
+	Snippet      string
+	SnippetLine  int
 	Memories     []ContextMemory
 	Dependents   []ContextNeighbor
 	Dependencies []ContextNeighbor
@@ -126,6 +132,7 @@ func ResolveContextNode(db *sql.DB, projectID, query string) (*ContextNode, erro
 	}
 	if metadata != "" {
 		node.CommunityID = parseCommunityID(metadata)
+		node.StartLine = parseStartLine(metadata)
 	}
 	return node, nil
 }
@@ -150,6 +157,19 @@ func GetContextPack(db *sql.DB, projectID, query string, maxMemories int, includ
 	}
 
 	pack := &ContextPack{Node: node}
+
+	// 0. Extract surgical source code snippet for the resolved node if available.
+	if node != nil && node.Path != "" {
+		var projPath string
+		_ = db.QueryRow("SELECT path FROM projects WHERE id = ?", projectID).Scan(&projPath)
+		if projPath == "" {
+			projPath, _ = os.Getwd()
+		}
+		if projPath != "" {
+			pack.Snippet, pack.SnippetLine = extractSurgicalSnippet(projPath, node, maxSnippetLines)
+		}
+	}
+
 	seen := map[string]bool{}
 	var mems []ContextMemory
 
@@ -424,6 +444,75 @@ func parseCommunityID(metadata string) int {
 	return 0
 }
 
+// maxSnippetLines is the maximum number of source lines included in a surgical snippet.
+const maxSnippetLines = 60
+
+// extractSurgicalSnippet extracts up to maxLines of source code from the workspace for a node.
+func extractSurgicalSnippet(projPath string, node *ContextNode, maxLines int) (string, int) {
+	if node == nil || node.Path == "" || projPath == "" {
+		return "", 0
+	}
+	if maxLines <= 0 {
+		maxLines = maxSnippetLines
+	}
+	filePath := filepath.Join(projPath, filepath.FromSlash(node.Path))
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", 0
+	}
+
+	lines := strings.Split(string(content), "\n")
+	if len(lines) == 0 {
+		return "", 0
+	}
+
+	startLine := node.StartLine
+	if startLine <= 0 {
+		startLine = 1
+	}
+	if startLine > len(lines) {
+		startLine = 1
+	}
+
+	endLine := startLine + maxLines - 1
+	truncated := false
+	if endLine > len(lines) {
+		endLine = len(lines)
+	} else if endLine < len(lines) && node.Type != schema.NodeTypeFile {
+		truncated = true
+	}
+
+	selected := lines[startLine-1 : endLine]
+	snippetText := strings.Join(selected, "\n")
+	if truncated {
+		snippetText += fmt.Sprintf("\n... (%d more lines in %s)", len(lines)-endLine, node.Path)
+	}
+
+	return security.SanitizeText(snippetText), startLine
+}
+
+// parseStartLine extracts the start line from a graph node's metadata JSON.
+func parseStartLine(metadata string) int {
+	if metadata == "" {
+		return 0
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(metadata), &m); err != nil {
+		return 0
+	}
+	if lineVal, ok := m["line"]; ok {
+		switch v := lineVal.(type) {
+		case float64:
+			return int(v)
+		case int:
+			return v
+		case int64:
+			return int(v)
+		}
+	}
+	return 0
+}
+
 // RenderContextPack renders a context pack as compact markdown text. Each
 // memory's why is capped at whyChars to keep the pack token-efficient; the
 // agent drills down with sv_mem_get only when needed.
@@ -447,6 +536,17 @@ func RenderContextPack(p *ContextPack, whyChars int) string {
 		if n.Degree > 10 {
 			sb.WriteString("- **Hub:** ⚠️ high connectivity — changes ripple; use `sv_graph_explain` before refactoring\n")
 		}
+	}
+
+	if p.Snippet != "" {
+		ext := "text"
+		if p.Node != nil && p.Node.Path != "" {
+			cleanExt := strings.TrimPrefix(filepath.Ext(p.Node.Path), ".")
+			if cleanExt != "" {
+				ext = cleanExt
+			}
+		}
+		fmt.Fprintf(&sb, "\n### Source Code Snippet (L%d):\n```%s\n%s\n```\n", p.SnippetLine, ext, p.Snippet)
 	}
 
 	if len(p.Memories) > 0 {
