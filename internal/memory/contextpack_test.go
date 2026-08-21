@@ -402,3 +402,44 @@ func TestContextPackAutoSyncsIfStale(t *testing.T) {
 		t.Errorf("expected snippet to contain 'func NewFunction()', got:\n%s", pack.Snippet)
 	}
 }
+
+func TestContextPackSurfacesTasksProgress(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := db.InitDB(filepath.Join(tempDir, "ctx_tasks.db"))
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-ctx-tasks"
+	if regErr := db.RegisterProject(database, projectID, "Tasks Proj", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
+	}
+
+	// Create a change with task checklist affecting internal/auth/
+	tasksMarkdown := "- [x] Step 1: Design tokens\n- [ ] Step 2: Implement handler\n- [x] Step 3: Write tests\n- [ ] Step 4: Validate CI\n"
+	c, err := CreateChange(database, projectID, "auth-tokens", "Add Token Support", "what", "goal", "internal/auth/", "design", tasksMarkdown)
+	if err != nil {
+		t.Fatalf("failed creating change: %v", err)
+	}
+
+	pack, err := GetContextPack(database, projectID, "internal/auth/", 5, true)
+	if err != nil {
+		t.Fatalf("GetContextPack failed: %v", err)
+	}
+
+	if len(pack.Changes) == 0 {
+		t.Fatalf("expected active change to be surfaced for path, got none")
+	}
+	if pack.Changes[0].ID != c.ID {
+		t.Errorf("expected change ID %s, got %s", c.ID, pack.Changes[0].ID)
+	}
+	if pack.Changes[0].TaskProgress != "2/4 (50%)" {
+		t.Errorf("expected TaskProgress '2/4 (50%%)', got %q", pack.Changes[0].TaskProgress)
+	}
+
+	rendered := RenderContextPack(pack, 100)
+	if !strings.Contains(rendered, "tasks: 2/4 (50%)") {
+		t.Errorf("expected rendered context pack to include 'tasks: 2/4 (50%%)', got:\n%s", rendered)
+	}
+}

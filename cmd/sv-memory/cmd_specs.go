@@ -68,13 +68,17 @@ var specsListCmd = &cobra.Command{
 			for _, m := range mirrors {
 				mirrorSet[m] = true
 			}
-			fmt.Printf("%-12s %-24s %-10s %s\n", "STATUS", "SLUG", "MIRROR", "TITLE")
+			fmt.Printf("%-12s %-24s %-10s %-12s %s\n", "STATUS", "SLUG", "MIRROR", "TASKS", "TITLE")
 			for _, c := range changes {
 				mirror := "no"
 				if mirrorSet[c.Slug] {
 					mirror = "yes"
 				}
-				fmt.Printf("%-12s %-24s %-10s %s\n", c.Status, c.Slug, mirror, memory.TruncateText(c.Title, 60))
+				tasksSummary := "-"
+				if prog := memory.ParseTaskProgress(c.Tasks); prog.Total > 0 {
+					tasksSummary = prog.Summary
+				}
+				fmt.Printf("%-12s %-24s %-10s %-12s %s\n", c.Status, c.Slug, mirror, tasksSummary, memory.TruncateText(c.Title, 50))
 			}
 			return nil
 		})

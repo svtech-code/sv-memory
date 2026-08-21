@@ -53,10 +53,11 @@ type ContextNeighbor struct {
 // target path, surfaced by the context pack when include_changes is set. Only
 // the fields needed for the agent to decide whether to review it are carried.
 type ContextChange struct {
-	ID     string
-	Slug   string
-	Status string
-	Title  string
+	ID           string
+	Slug         string
+	Status       string
+	Title        string
+	TaskProgress string
 }
 
 // ContextCapability is a capability (a 'spec' graph node) that the target path
@@ -332,7 +333,7 @@ const (
 func changesForPath(db *sql.DB, projectID, query string) ([]ContextChange, error) {
 	pattern := "%" + sanitizePathFilter(query) + "%"
 	rows, err := db.Query(`
-		SELECT id, slug, status, title
+		SELECT id, slug, status, title, COALESCE(tasks, '')
 		FROM changes
 		WHERE project_id = ? AND status NOT IN ('archived', 'rejected')
 		  AND (where_path LIKE ? ESCAPE '\' OR where_path = ?)
@@ -346,7 +347,9 @@ func changesForPath(db *sql.DB, projectID, query string) ([]ContextChange, error
 	var out []ContextChange
 	for rows.Next() {
 		var c ContextChange
-		if scanErr := rows.Scan(&c.ID, &c.Slug, &c.Status, &c.Title); scanErr == nil {
+		var tasks string
+		if scanErr := rows.Scan(&c.ID, &c.Slug, &c.Status, &c.Title, &tasks); scanErr == nil {
+			c.TaskProgress = ParseTaskProgress(tasks).Summary
 			out = append(out, c)
 		}
 	}
@@ -597,7 +600,11 @@ func RenderContextPack(p *ContextPack, whyChars int) string {
 	if len(p.Changes) > 0 {
 		sb.WriteString("\n### Active changes affecting this path:\n")
 		for _, c := range p.Changes {
-			fmt.Fprintf(&sb, "- **[%s] %s** (`%s`, slug `%s`)\n", strings.ToUpper(c.Status), c.Title, c.ID, c.Slug)
+			if c.TaskProgress != "" {
+				fmt.Fprintf(&sb, "- **[%s] %s** (`%s`, slug `%s`, tasks: %s)\n", strings.ToUpper(c.Status), c.Title, c.ID, c.Slug, c.TaskProgress)
+			} else {
+				fmt.Fprintf(&sb, "- **[%s] %s** (`%s`, slug `%s`)\n", strings.ToUpper(c.Status), c.Title, c.ID, c.Slug)
+			}
 		}
 		sb.WriteString("\n*Review with `sv_validate_decision(change_id=\"<id>\")` before modifying this code.*\n")
 	}

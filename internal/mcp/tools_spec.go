@@ -104,9 +104,16 @@ func (s *Server) handleProposeSpec(ctx context.Context, req mcp.CallToolRequest)
 	if c.WherePath != "" {
 		fmt.Fprintf(&sb, "- **Affects:** `%s`\n", c.WherePath)
 	}
-	fmt.Fprintf(&sb, "- **Capability:** `%s`\n", c.CapabilityPath)
+	if c.CapabilityPath != "" {
+		fmt.Fprintf(&sb, "- **Capability:** `%s`\n", c.CapabilityPath)
+	}
 	if len(reqSummary) > 0 {
 		fmt.Fprintf(&sb, "- **Requirements:** %s\n", strings.Join(reqSummary, ", "))
+	}
+	if c.Tasks != "" {
+		if prog := memory.ParseTaskProgress(c.Tasks); prog.Total > 0 {
+			fmt.Fprintf(&sb, "- **Tasks:** %s\n", prog.Summary)
+		}
 	}
 	if pfErr == nil {
 		sb.WriteString("\n" + renderPreflight(preflight))
@@ -169,6 +176,11 @@ func (s *Server) handleValidateDecision(ctx context.Context, req mcp.CallToolReq
 			fmt.Fprintf(&sb, "- **%s:** %s\n", strings.ToUpper(it.Level), it.Message)
 		}
 		sb.WriteString("\n*Fix warnings in the delta requirements (edit the mirror at `.sv-memory/specs/changes/" + c.Slug + ".md` and run `sv-memory specs import " + c.Slug + "`).*\n")
+	}
+	if c.Tasks != "" {
+		if prog := memory.ParseTaskProgress(c.Tasks); prog.Total > 0 {
+			fmt.Fprintf(&sb, "\n### Tasks progress: %s\n", prog.Summary)
+		}
 	}
 	sb.WriteString("\n\nTo proceed once the proposal is sound, run `sv_commit_spec change_id=\"" + c.ID + "\"`.")
 
