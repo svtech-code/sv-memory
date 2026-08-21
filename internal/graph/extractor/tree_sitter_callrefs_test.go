@@ -18,11 +18,10 @@ func TestExtractCallRefsAST(t *testing.T) {
 		wantCalls []string
 	}{
 		{
-			name: "go-falls-back",
-			// Go is intentionally routed to the heuristic (upstream parser bug);
-			// ExtractCallRefs must signal no AST coverage.
-			content: "package x\nfunc a() {}\nfunc b() { a() }\n",
-			ext:     ".go",
+			name:      "go",
+			content:   "package x\nfunc a() {}\nfunc b() { a() }\n",
+			ext:       ".go",
+			wantCalls: []string{"a"},
 		},
 		{
 			name:      "python",
@@ -59,12 +58,6 @@ func TestExtractCallRefsAST(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			refs, err := refExt.ExtractCallRefs([]byte(tc.content), "test"+tc.ext, tc.ext)
-			if tc.ext == ".go" {
-				if err == nil {
-					t.Fatal("expected ErrNoASTCallRefs for .go")
-				}
-				return
-			}
 			if err != nil {
 				t.Fatalf("ExtractCallRefs failed: %v", err)
 			}

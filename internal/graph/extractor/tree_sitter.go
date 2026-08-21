@@ -24,9 +24,13 @@ func NewTreeSitterExtractor() *TreeSitterExtractor {
 // Extract parses the file content using gotreesitter for supported languages,
 // falling back to RegexExtractor for others or if syntax tree parsing fails.
 func (t *TreeSitterExtractor) Extract(content []byte, relPath, ext string) ([]Symbol, []string, error) {
-	// Go tree-sitter parser has a stack overflow bug with complex new/make type
-	// arguments. Use the regex extractor for Go files until the library is fixed.
+	// Use standard library go/parser and go/ast for Go files (zero-dependency,
+	// immune to upstream tree-sitter C-binding parser bugs).
 	if ext == ".go" {
+		syms, imps, err := parseGoSource(content, relPath)
+		if err == nil {
+			return syms, imps, nil
+		}
 		return t.regexFallback.Extract(content, relPath, ext)
 	}
 
@@ -101,16 +105,17 @@ func (t *TreeSitterExtractor) Extract(content []byte, relPath, ext string) ([]Sy
 }
 
 // ExtractCallRefs returns AST-precision call sites (callee + 1-based
-// line/column) for languages parsed by tree-sitter. Languages handled by the
-// regex fallback (Go due to the upstream stack-overflow bug, Lua, Markdown,
-// shell, Vue/Svelte/Astro script blocks) return ErrNoASTCallRefs so the graph
-// builder falls back to the tokenize heuristic for those files.
+// line/column) for languages parsed by tree-sitter or Go standard AST.
+// Languages handled by the regex fallback (Lua, Markdown, shell, Vue/Svelte/Astro
+// script blocks) return ErrNoASTCallRefs so the graph builder falls back to
+// the tokenize heuristic for those files.
 func (t *TreeSitterExtractor) ExtractCallRefs(content []byte, relPath, ext string) ([]CallRef, error) {
+	if ext == ".go" {
+		return extractGoCallRefsAST(content, relPath)
+	}
+
 	lang := t.GetLanguage(ext)
 	if lang == nil {
-		return nil, ErrNoASTCallRefs
-	}
-	if ext == ".go" {
 		return nil, ErrNoASTCallRefs
 	}
 

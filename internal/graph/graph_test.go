@@ -912,9 +912,9 @@ func helperFunc() {
 	if relType != "calls" {
 		t.Errorf("expected relation_type to be 'calls', got: %q", relType)
 	}
-	// The call is on line 4 of main.go (relative to 1-based index)
-	if sourceLoc != "L4" {
-		t.Errorf("expected source_location to be 'L4', got: %q", sourceLoc)
+	// The call is on line 4, col 2 of main.go (relative to 1-based index)
+	if sourceLoc != "L4:2" && sourceLoc != "L4" {
+		t.Errorf("expected source_location to be 'L4:2' or 'L4', got: %q", sourceLoc)
 	}
 }
 
@@ -1051,7 +1051,7 @@ helper();
 	}
 }
 
-func TestSyncGraphMixedGoPythonFallsBackToHeuristicForGo(t *testing.T) {
+func TestSyncGraphMixedGoPythonASTCallEdges(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-mem-graph-mixed-test")
 	if err != nil {
 		t.Fatalf("failed to create temp workspace: %v", err)
@@ -1071,8 +1071,8 @@ func TestSyncGraphMixedGoPythonFallsBackToHeuristicForGo(t *testing.T) {
 		t.Fatalf("failed to register project: %v", err)
 	}
 
-	// Python file (AST path) and Go file (heuristic path, upstream parser bug).
-	// Both must produce their calls edges — AST must not shadow the Go file.
+	// Python file and Go file both use AST call extraction.
+	// Both must produce their calls edges with confidence EXTRACTED.
 	pythonCode := "def helper():\n    pass\ndef caller():\n    helper()\n"
 	goCode := `package main
 
@@ -1096,24 +1096,27 @@ func callerFunc() {
 		t.Fatalf("SyncGraph failed: %v", err)
 	}
 
-	// The Go calls edge must exist (heuristic fallback).
-	var goSource, goTarget, goConf string
+	// The Go calls edge must exist with AST confidence EXTRACTED.
+	var goSource, goTarget, goConf, goLoc string
 	err = database.QueryRow(`
-		SELECT source_id, target_id, confidence FROM graph_edges
+		SELECT source_id, target_id, confidence, source_location FROM graph_edges
 		WHERE project_id = ? AND relation_type = 'calls'
 		  AND source_id = 'main.go:callerFunc' AND target_id = 'main.go:helperFunc'
-	`, projectID).Scan(&goSource, &goTarget, &goConf)
+	`, projectID).Scan(&goSource, &goTarget, &goConf, &goLoc)
 	if err != nil {
-		t.Fatalf("expected Go heuristic calls edge: %v", err)
+		t.Fatalf("expected Go AST calls edge: %v", err)
 	}
 	if goSource != "main.go:callerFunc" || goTarget != "main.go:helperFunc" {
 		t.Errorf("unexpected Go edge %s -> %s", goSource, goTarget)
 	}
-	if goConf != "INFERRED" {
-		t.Errorf("expected Go heuristic confidence INFERRED, got %q", goConf)
+	if goConf != "EXTRACTED" {
+		t.Errorf("expected Go AST confidence EXTRACTED, got %q", goConf)
+	}
+	if !strings.HasPrefix(goLoc, "L") {
+		t.Errorf("expected Go AST source_location with L<line> prefix, got %q", goLoc)
 	}
 
-	// The Python calls edge must exist with AST confidence.
+	// The Python calls edge must exist with AST confidence EXTRACTED.
 	var pySource, pyTarget, pyConf string
 	err = database.QueryRow(`
 		SELECT source_id, target_id, confidence FROM graph_edges
