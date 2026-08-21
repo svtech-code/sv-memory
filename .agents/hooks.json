@@ -1,0 +1,17 @@
+{
+  "sv-memory": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/msandoval/.work/svtech/sv-memory/.agents/hooks/sv-memory.sh",
+            "timeout": 5,
+            "type": "command"
+          }
+        ],
+        "matcher": "view_file|grep_search|list_dir"
+      }
+    ],
+    "enabled": true
+  }
+}
