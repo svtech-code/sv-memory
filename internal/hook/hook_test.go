@@ -596,6 +596,52 @@ func TestStatusNotInstalled(t *testing.T) {
 	if status[PlatformOpenCode] {
 		t.Error("expected opencode to not be installed in empty dir")
 	}
+	if status[PlatformGit] {
+		t.Error("expected git to not be installed in empty dir")
+	}
+}
+
+func TestInstallGitHook(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-hook-git-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	eng := New(tempDir, ModeSoft)
+
+	// Install
+	results := eng.Install([]Platform{PlatformGit})
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Err != nil {
+		t.Fatalf("install git hook failed: %v", results[0].Err)
+	}
+
+	hookPath := filepath.Join(tempDir, ".git", "hooks", "post-commit")
+	content, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatalf("failed to read installed git hook: %v", err)
+	}
+	if !strings.Contains(string(content), "sv-memory") {
+		t.Errorf("expected git hook to contain 'sv-memory', got:\n%s", string(content))
+	}
+
+	// Status
+	status := eng.Status([]Platform{PlatformGit})
+	if !status[PlatformGit] {
+		t.Error("expected git status to be true")
+	}
+
+	// Uninstall
+	uninstResults := eng.Uninstall([]Platform{PlatformGit})
+	if len(uninstResults) != 1 || uninstResults[0].Err != nil {
+		t.Fatalf("uninstall git hook failed: %v", uninstResults)
+	}
+	if _, err = os.Stat(hookPath); !os.IsNotExist(err) {
+		t.Errorf("expected post-commit hook to be removed")
+	}
 }
 
 func TestInstallAllPlatforms(t *testing.T) {

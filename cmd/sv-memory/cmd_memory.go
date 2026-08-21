@@ -152,3 +152,60 @@ var obsidianExportCmd = &cobra.Command{
 		})
 	},
 }
+
+var captureCmd = &cobra.Command{
+	Use:   "capture",
+	Short: "Passively capture a git commit or journal note into memory",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		commitHash, _ := cmd.Flags().GetString("commit")
+		commitMsg, _ := cmd.Flags().GetString("message")
+		author, _ := cmd.Flags().GetString("author")
+		branch, _ := cmd.Flags().GetString("branch")
+		paths, _ := cmd.Flags().GetString("paths")
+		what, _ := cmd.Flags().GetString("what")
+		why, _ := cmd.Flags().GetString("why")
+
+		if what == "" && commitMsg != "" {
+			what = fmt.Sprintf("git commit: %s", commitMsg)
+		}
+		if what == "" {
+			return fmt.Errorf("either --what or --message is required")
+		}
+		if why == "" && commitHash != "" {
+			why = fmt.Sprintf("automatic post-commit capture for %s", commitHash)
+		}
+		if why == "" {
+			why = "passive capture"
+		}
+
+		return withProject(func(cfg *config.Config, database *sql.DB) error {
+			mem := &memory.Memory{
+				ProjectID: cfg.ProjectID,
+				Category:  "journal",
+				What:      what,
+				Why:       why,
+				Learned:   what,
+				WherePath: paths,
+				GitBranch: branch,
+				GitCommit: commitHash,
+				Author:    author,
+			}
+			saved, err := memory.SaveMemory(database, mem)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Captured memory %s: %s\n", saved.ID, saved.What)
+			return nil
+		})
+	},
+}
+
+func init() {
+	captureCmd.Flags().String("commit", "", "Git commit hash")
+	captureCmd.Flags().String("message", "", "Git commit message")
+	captureCmd.Flags().String("author", "", "Commit author")
+	captureCmd.Flags().String("branch", "", "Git branch")
+	captureCmd.Flags().String("paths", "", "Affected paths/files")
+	captureCmd.Flags().String("what", "", "Observation summary (overrides --message)")
+	captureCmd.Flags().String("why", "", "Observation rationale")
+}

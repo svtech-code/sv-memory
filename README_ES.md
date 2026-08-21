@@ -225,7 +225,8 @@ sv-memory tui
 | `sv-memory graph merge <a> <b>`    | **Grafo**         | Union-merge de dos grafos de proyecto en un snapshot JSON.                                            |
 | `sv-memory obsidian-export`        | **Exportación**   | Exporta memorias a una bóveda de notas Markdown de Obsidian (`[[wikilinks]]`).                        |
 | `sv-memory conflicts`              | **Memoria**       | Detecta superposiciones semánticas y conflictos entre memorias del proyecto.                          |
-| `sv-memory hooks install`          | **Hooks**         | Instala hooks PreToolUse para Claude Code, Antigravity CLI y OpenCode.                                |
+| `sv-memory capture`                | **Memoria**       | Captura pasivamente commits de Git u observaciones en memoria persistente.                            |
+| `sv-memory hooks install`          | **Hooks**         | Instala hooks PreToolUse y Git post-commit para Claude Code, Antigravity, OpenCode y Git.             |
 | `sv-memory permissions list`       | **Permisos**      | Lista las 34 herramientas MCP de sv-memory con descripciones.                                         |
 | `sv-memory permissions status`     | **Permisos**      | Muestra permisos MCP otorgados/faltantes por plataforma.                                              |
 | `sv-memory permissions grant`      | **Permisos**      | Escribe allow-lists de herramientas MCP (`--all`/`--tool`, `--dry-run`) para Antigravity/Claude Code. |

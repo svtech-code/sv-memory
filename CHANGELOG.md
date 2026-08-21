@@ -9,7 +9,9 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 - **Tri-Factor Relevance Ranking in Memory Search:** Combined FTS5 BM25 with importance weighting (pinned boost, category tiering for decisions/architecture/standards, revision count) and recency decay (`triFactorScoreExpr` in `internal/memory/memory_util.go` and `internal/memory/memory_search.go`), ensuring high-priority architectural decisions and fresh memories rank above stale trivial entries.
 - **AST / Code Staleness Detection for Memories:** Added `DetectStaleMemoryBindings` in `internal/graph/stale.go` and wired stale memory binding diagnostics (`where_path` references to deleted or missing files) into `DiagnoseGraph` and `GraphDiagnosticReport` in `internal/graph/diagnostics.go`.
-- **Test Suite Enhancements:** Added `TestTriFactorScoreRanking` in `internal/memory/memory_test.go` and `TestStaleMemoryBindings` in `internal/graph/diagnostics_export_test.go`.
+- **Git Post-Commit Hook for Passive Capture:** Added `PlatformGit` support in `internal/hook/hook.go` with automated post-commit hook script installation (`sv-memory hooks install --platform git`), extracting commit hash, message, branch, author, and changed files without delaying git workflow.
+- **CLI Passive Capture Command (`sv-memory capture`):** Added `capture` command to CLI for registering commits and notes into persistent memory and git chunks seamlessly.
+- **Test Suite Enhancements:** Added `TestTriFactorScoreRanking` in `internal/memory/memory_test.go`, `TestStaleMemoryBindings` in `internal/graph/diagnostics_export_test.go`, `TestInstallGitHook` in `internal/hook/hook_test.go`, and `TestCaptureCmdRegistered` in `cmd/sv-memory/cmd_coverage_test.go`.
 
 ## [v0.14.0] - 2026-08-18
 

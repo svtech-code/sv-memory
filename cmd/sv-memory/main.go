@@ -82,6 +82,7 @@ func init() {
 	rootCmd.AddCommand(graphCmd)
 	rootCmd.AddCommand(contextCmd)
 	rootCmd.AddCommand(setupCmd)
+	rootCmd.AddCommand(captureCmd)
 
 	deleteCmd.AddCommand(deleteSessionCmd)
 	deleteCmd.AddCommand(deleteProjectCmd)
@@ -110,9 +111,9 @@ func init() {
 
 	hooksInstallCmd.Flags().Bool("strict", false, "Enable strict mode (blocks the first raw source read)")
 	hooksInstallCmd.Flags().Bool("context-injection", false, "Enable silent context injection (Claude Code first-read context packs)")
-	hooksInstallCmd.Flags().String("platform", "", "Target platform (claude-code, codex, antigravity, opencode). Default: all")
+	hooksInstallCmd.Flags().String("platform", "", "Target platform (claude-code, codex, antigravity, opencode, git). Default: all")
 	hooksUninstallCmd.Flags().Bool("context-injection", false, "Also disable silent context injection (remove the marker)")
-	hooksUninstallCmd.Flags().String("platform", "", "Target platform (claude-code, codex, antigravity, opencode). Default: all")
+	hooksUninstallCmd.Flags().String("platform", "", "Target platform (claude-code, codex, antigravity, opencode, git). Default: all")
 
 	hooksCmd.AddCommand(hooksInstallCmd)
 	hooksCmd.AddCommand(hooksUninstallCmd)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/svtech-code/sv-memory/internal/protocol"
 )
@@ -25,9 +26,10 @@ const (
 	PlatformCodex       Platform = "codex"
 	PlatformAntigravity Platform = "antigravity"
 	PlatformOpenCode    Platform = "opencode"
+	PlatformGit         Platform = "git"
 )
 
-var supportedPlatforms = []Platform{PlatformClaudeCode, PlatformCodex, PlatformAntigravity, PlatformOpenCode}
+var supportedPlatforms = []Platform{PlatformClaudeCode, PlatformCodex, PlatformAntigravity, PlatformOpenCode, PlatformGit}
 
 // HookEngine manages PreToolUse hook installation for AI assistants.
 type HookEngine struct {
@@ -105,6 +107,8 @@ func (e *HookEngine) Install(platforms []Platform) []InstallResult {
 			r.Files, r.Err = e.installAntigravity()
 		case PlatformOpenCode:
 			r.Files, r.Err = e.installOpenCodeSkill()
+		case PlatformGit:
+			r.Files, r.Err = e.installGit()
 		default:
 			r.Err = fmt.Errorf("unsupported platform: %s", p)
 		}
@@ -131,6 +135,8 @@ func (e *HookEngine) Uninstall(platforms []Platform) []InstallResult {
 			r.Files, r.Err = e.uninstallAntigravity()
 		case PlatformOpenCode:
 			r.Files, r.Err = e.uninstallOpenCodeSkill()
+		case PlatformGit:
+			r.Files, r.Err = e.uninstallGit()
 		default:
 			r.Err = fmt.Errorf("unsupported platform: %s", p)
 		}
@@ -156,6 +162,8 @@ func (e *HookEngine) Status(platforms []Platform) map[Platform]bool {
 			status[p] = e.antigravityInstalled()
 		case PlatformOpenCode:
 			status[p] = e.openCodeSkillInstalled()
+		case PlatformGit:
+			status[p] = e.gitInstalled()
 		default:
 			status[p] = false
 		}
@@ -749,6 +757,53 @@ func (e *HookEngine) uninstallOpenCodeSkill() ([]string, error) {
 func (e *HookEngine) openCodeSkillInstalled() bool {
 	_, err := os.Stat(e.openCodeSkillPath())
 	return err == nil
+}
+
+// --- Git Post-Commit Hook ---
+
+func (e *HookEngine) gitHookPath() string {
+	return filepath.Join(e.projPath, ".git", "hooks", "post-commit")
+}
+
+func (e *HookEngine) installGit() ([]string, error) {
+	var created []string
+
+	hookPath := e.gitHookPath()
+	hooksDir := filepath.Dir(hookPath)
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		return created, fmt.Errorf("failed to create .git/hooks dir: %w", err)
+	}
+
+	content := gitPostCommitScript()
+	if content == "" {
+		return created, fmt.Errorf("missing git post-commit template")
+	}
+
+	if err := os.WriteFile(hookPath, []byte(content), 0755); err != nil {
+		return created, fmt.Errorf("failed to write git post-commit hook: %w", err)
+	}
+	created = append(created, hookPath)
+	return created, nil
+}
+
+func (e *HookEngine) uninstallGit() ([]string, error) {
+	var removed []string
+	hookPath := e.gitHookPath()
+	if err := os.Remove(hookPath); err != nil && !os.IsNotExist(err) {
+		return removed, fmt.Errorf("failed to remove git post-commit hook: %w", err)
+	}
+	if _, err := os.Stat(hookPath); os.IsNotExist(err) {
+		removed = append(removed, hookPath)
+	}
+	return removed, nil
+}
+
+func (e *HookEngine) gitInstalled() bool {
+	data, err := os.ReadFile(e.gitHookPath())
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(data), "sv-memory")
 }
 
 // SupportedPlatforms returns the list of all supported platforms.

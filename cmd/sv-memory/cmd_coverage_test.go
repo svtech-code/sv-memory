@@ -203,3 +203,19 @@ func TestPrintGrantResult(t *testing.T) {
 		}
 	}
 }
+
+func TestCaptureCmdRegistered(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"capture"})
+	if err != nil {
+		t.Fatalf("capture subcommand not found: %v", err)
+	}
+	if cmd == nil || cmd.Name() != "capture" {
+		t.Fatal("expected capture command to be registered on rootCmd")
+	}
+
+	for _, flagName := range []string{"commit", "message", "author", "branch", "paths", "what", "why"} {
+		if cmd.Flags().Lookup(flagName) == nil {
+			t.Errorf("expected flag %q on capture command", flagName)
+		}
+	}
+}
