@@ -213,7 +213,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 1. Tool: sv_mem_save
 	saveTool := mcp.NewTool("sv_mem_save",
-		mcp.WithDescription("Persist a key architectural decision, bug fix, progress journal, or standard guidelines to the project's memory. Supports optional topic_key for upsert semantics (update in place on same project+topic) and session_id for session association."),
+		mcp.WithDescription("Persist a key architectural decision, bug fix, progress journal, or standard guidelines to the project's memory. Supports optional topic_key for upsert semantics (automatically derived from category and title if omitted for non-journal categories) and session_id for session association."),
 		mcp.WithString("category", mcp.Required(), mcp.Description("Category of memory: 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem' | 'discussion' | 'idea' | 'qa'")),
 		mcp.WithString("what", mcp.Required(), mcp.Description("Concise description of the decision, standard, or fix")),
 		mcp.WithString("why", mcp.Required(), mcp.Description("Detailed reasoning for this choice")),
@@ -222,8 +222,8 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		mcp.WithString("impact", mcp.Description("Achievements, successes, or what went well")),
 		mcp.WithString("errors_faced", mcp.Description("Errors faced, roadblocks, or what went wrong")),
 		mcp.WithString("next_steps", mcp.Description("Next actions or pending tasks to continue work")),
-		mcp.WithString("topic_key", mcp.Description("Optional stable topic key for upsert semantics. When set, saves to the same project+topic update in place instead of creating a new record. Format: 'category/kebab-case-description'. Use sv_mem_suggest_topic_key to generate one.")),
-		mcp.WithString("session_id", mcp.Description("Optional session ID to associate this memory with an active session.")),
+		mcp.WithString("topic_key", mcp.Description("Optional stable topic key for upsert semantics. When omitted for non-journal categories, a stable key is auto-generated. Format: 'category/kebab-case-description'.")),
+		mcp.WithString("session_id", mcp.Description("Optional session ID to associate this memory with an active session (auto-detected if omitted).")),
 	)
 	ms.AddTool(saveTool, s.handleSave)
 
@@ -262,9 +262,14 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 4. Tool: sv_mem_session_end
 	sessionEndTool := mcp.NewTool("sv_mem_session_end",
-		mcp.WithDescription("End an active coding session with a summary. Call this before finishing a work session to enable context recovery via sv_mem_context."),
-		mcp.WithString("session_id", mcp.Required(), mcp.Description("The session ID to end")),
+		mcp.WithDescription("End an active coding session with an optional summary. If session_id is omitted, the active session is auto-detected. Call this before finishing work to enable context recovery via sv_mem_context."),
+		mcp.WithString("session_id", mcp.Description("Optional session ID to end (auto-detected if omitted)")),
 		mcp.WithString("summary", mcp.Description("Optional summary of what was accomplished")),
+		mcp.WithString("goal", mcp.Description("Optional goal or objective of the session")),
+		mcp.WithString("accomplished", mcp.Description("Optional what was accomplished during the session")),
+		mcp.WithString("discoveries", mcp.Description("Optional key discoveries or findings")),
+		mcp.WithString("next_steps", mcp.Description("Optional next steps or pending tasks")),
+		mcp.WithString("files", mcp.Description("Optional relevant files modified or created")),
 	)
 	ms.AddTool(sessionEndTool, s.handleSessionEnd)
 

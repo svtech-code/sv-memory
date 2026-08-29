@@ -851,6 +851,93 @@ func TestSessionLifecycleAndJudges(t *testing.T) {
 	}
 }
 
+func TestAutoTopicKeyAndUnifiedSessionEnd(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	server := NewServer(pool, cfg)
+	ctx := context.Background()
+
+	startTool := server.GetTool("sv_mem_session_start")
+	saveTool := server.GetTool("sv_mem_save")
+	endTool := server.GetTool("sv_mem_session_end")
+	getTool := server.GetTool("sv_mem_get")
+
+	// 1. Start session without explicit ID handling
+	resStart, err := startTool.Handler(ctx, mcpgo.CallToolRequest{
+		Params: mcpgo.CallToolParams{
+			Arguments: map[string]any{
+				"goal": "Test ergonomics",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("session_start failed: %v", err)
+	}
+	if !strings.Contains(textContent(resStart.Content[0]), "Session started") {
+		t.Fatalf("unexpected start output: %s", textContent(resStart.Content[0]))
+	}
+
+	// 2. Save decision WITHOUT topic_key (should auto-generate topic_key)
+	resSave, err := saveTool.Handler(ctx, mcpgo.CallToolRequest{
+		Params: mcpgo.CallToolParams{
+			Arguments: map[string]any{
+				"category": "decision",
+				"what":     "Use DuckDB for analytics",
+				"why":      "Fast columnar queries",
+				"learned":  "Columnar engines excel at analytical scans",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("save failed: %v", err)
+	}
+	saveMsg := textContent(resSave.Content[0])
+	if !strings.Contains(saveMsg, "Successfully created memory") {
+		t.Fatalf("unexpected save output: %s", saveMsg)
+	}
+
+	// Extract memory ID
+	parts := strings.Split(saveMsg, "ID: ")
+	if len(parts) < 2 {
+		t.Fatalf("could not extract memory ID: %s", saveMsg)
+	}
+	memID := strings.Split(parts[1], ")")[0]
+
+	// Verify topic_key was auto-generated
+	resGet, err := getTool.Handler(ctx, mcpgo.CallToolRequest{
+		Params: mcpgo.CallToolParams{
+			Arguments: map[string]any{
+				"id": memID,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("get failed: %v", err)
+	}
+	getMsg := textContent(resGet.Content[0])
+	if !strings.Contains(getMsg, "decision/use-duckdb-for-analytics") {
+		t.Errorf("expected auto-derived topic_key in memory, got: %s", getMsg)
+	}
+
+	// 3. End session WITHOUT session_id and WITH inline summary
+	resEnd, err := endTool.Handler(ctx, mcpgo.CallToolRequest{
+		Params: mcpgo.CallToolParams{
+			Arguments: map[string]any{
+				"accomplished": "Implemented DuckDB adapter",
+				"next_steps":   "Add benchmarks",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("endTool failed: %v", err)
+	}
+	endMsg := textContent(resEnd.Content[0])
+	if !strings.Contains(endMsg, "ended successfully") {
+		t.Errorf("expected session ended message, got: %s", endMsg)
+	}
+}
+
 // TestAllToolsMatchesRegisteredTools is the guard test for the single source
 // of truth: every tool registered via NewTool/AddTool in NewServer MUST have a
 // matching entry in AllTools (used by the permission manager). It parses the

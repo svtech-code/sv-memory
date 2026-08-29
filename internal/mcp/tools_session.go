@@ -66,11 +66,36 @@ func (s *Server) handleSessionStart(ctx context.Context, req mcp.CallToolRequest
 }
 
 func (s *Server) handleSessionEnd(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	sessionID, err := req.RequireString("session_id")
-	if err != nil {
-		return mcp.NewToolResultError("missing required field: session_id"), nil
+	sessionID := req.GetString("session_id", "")
+	if sessionID == "" {
+		active, actErr := memory.GetActiveSession(s.pool.Reader, s.cfg.ProjectID)
+		if actErr != nil || active == nil {
+			return mcp.NewToolResultError("no active session found to end; pass session_id explicitly"), nil
+		}
+		sessionID = active.ID
 	}
+
+	goal := req.GetString("goal", "")
+	discoveries := req.GetString("discoveries", "")
+	accomplished := req.GetString("accomplished", "")
+	nextSteps := req.GetString("next_steps", "")
+	files := req.GetString("files", "")
 	summary := req.GetString("summary", "")
+
+	if goal != "" || discoveries != "" || accomplished != "" || nextSteps != "" || files != "" {
+		if err := memory.SaveSessionSummary(s.pool.Writer, sessionID, goal, discoveries, accomplished, nextSteps, files); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to save session summary: %v", err)), nil
+		}
+		if summary == "" {
+			if accomplished != "" {
+				summary = accomplished
+			} else {
+				summary = fmt.Sprintf("Goal: %s\nAccomplished: %s\nDiscoveries: %s\nNext Steps: %s\nFiles: %s",
+					goal, accomplished, discoveries, nextSteps, files)
+			}
+		}
+	}
+
 	if err := memory.EndSession(s.pool.Writer, sessionID, summary); err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to end session: %v", err)), nil
 	}

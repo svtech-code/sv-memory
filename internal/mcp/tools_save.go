@@ -34,6 +34,9 @@ func (s *Server) handleSave(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 	errorsFaced := req.GetString("errors_faced", "")
 	nextSteps := req.GetString("next_steps", "")
 	topicKey := req.GetString("topic_key", "")
+	if topicKey == "" && category != "journal" {
+		topicKey = memory.SuggestTopicKey(category, what)
+	}
 	sessionID := req.GetString("session_id", "")
 
 	// Auto-associate with active session if no explicit session_id provided

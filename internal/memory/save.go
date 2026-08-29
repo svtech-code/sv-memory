@@ -43,15 +43,15 @@ func prepareMemoryForSave(mem *Memory, now time.Time) error {
 // shared body of SaveMemory and the atomic spec commit, which both want the
 // three check-and-write pairs serialized on the single writer connection.
 func saveMemoryInTx(tx *sql.Tx, mem *Memory, now time.Time) error {
-	// Path 1: topic-key upsert
-	if handled, err := upsertByTopicKey(tx, mem, now); err != nil {
+	// Path 1: duplicate suppression (exact identical hash + category within 24h)
+	if handled, err := bumpDuplicate(tx, mem, now); err != nil {
 		return err
 	} else if handled {
 		return nil
 	}
 
-	// Path 2: duplicate suppression
-	if handled, err := bumpDuplicate(tx, mem, now); err != nil {
+	// Path 2: topic-key upsert (same topic_key, evolved content)
+	if handled, err := upsertByTopicKey(tx, mem, now); err != nil {
 		return err
 	} else if handled {
 		return nil
@@ -110,9 +110,6 @@ func upsertByTopicKey(tx *sql.Tx, mem *Memory, now time.Time) (bool, error) {
 // bumpDuplicate handles the duplicate detection path within a transaction.
 // Returns true if a duplicate was found and bumped, and the transaction should be committed.
 func bumpDuplicate(tx *sql.Tx, mem *Memory, now time.Time) (bool, error) {
-	if mem.TopicKey != "" {
-		return false, nil // duplicate check only runs when no topic_key
-	}
 	var existingID string
 	var dupCount int
 	// Compare against a Go-computed cutoff instead of SQLite's
