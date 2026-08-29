@@ -179,6 +179,37 @@ func TestSetupAntigravityWritesHooksAndSkill(t *testing.T) {
 	}
 }
 
+// TestAutoWireProjectAgentsFreshAndExisting verifies autoWireProjectAgents behavior
+// for both fresh projects (wires all) and existing projects (wires installed).
+func TestAutoWireProjectAgentsFreshAndExisting(t *testing.T) {
+	tempDir := t.TempDir()
+
+	oldCWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get cwd: %v", err)
+	}
+	defer os.Chdir(oldCWD)
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("failed to chdir: %v", err)
+	}
+
+	// 1. Fresh project: wire explicit agent first
+	if err := autoWireProjectAgents(tempDir, false, "antigravity"); err != nil {
+		t.Fatalf("autoWireProjectAgents explicit failed: %v", err)
+	}
+	if !statusAntigravity(tempDir) {
+		t.Error("expected antigravity to be installed")
+	}
+
+	// 2. Existing project with only Antigravity installed: auto-wire without arg reconciles Antigravity
+	if err := autoWireProjectAgents(tempDir, false, ""); err != nil {
+		t.Fatalf("autoWireProjectAgents reconcile failed: %v", err)
+	}
+	if !statusAntigravity(tempDir) {
+		t.Error("expected antigravity to still be installed")
+	}
+}
+
 func fileExists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil

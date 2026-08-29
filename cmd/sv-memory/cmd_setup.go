@@ -57,6 +57,53 @@ func setupAgentWiring(agent string, strict bool) error {
 	}
 }
 
+// autoWireProjectAgents wires or reconciles agents in the given directory.
+// In an existing project with configured agents, it reconciles only those agents.
+// In a new project (no agents configured yet), it auto-wires all supported agents
+// (or the explicitly specified agent if requestedAgent is provided).
+func autoWireProjectAgents(cwd string, strict bool, requestedAgent string) error {
+	if requestedAgent != "" {
+		return setupAgentWiring(requestedAgent, strict)
+	}
+
+	installed := make([]string, 0)
+	if statusClaudeCode(cwd) {
+		installed = append(installed, "claude-code")
+	}
+	if statusOpenCode(cwd) {
+		installed = append(installed, "opencode")
+	}
+	if statusCursor(cwd) {
+		installed = append(installed, "cursor")
+	}
+	if statusWindsurf(cwd) {
+		installed = append(installed, "windsurf")
+	}
+	if statusAntigravity(cwd) {
+		installed = append(installed, "antigravity")
+	}
+	if statusCodex(cwd) {
+		installed = append(installed, "codex")
+	}
+
+	targetAgents := installed
+	if len(targetAgents) == 0 {
+		targetAgents = setupAgents
+	}
+
+	anyErr := false
+	for _, a := range targetAgents {
+		if err := setupAgentWiring(a, strict); err != nil {
+			fmt.Printf("⚠️  Warning: agent setup for %s encountered an issue: %v\n", a, err)
+			anyErr = true
+		}
+	}
+	if anyErr {
+		return fmt.Errorf("one or more agent setups failed during initialization")
+	}
+	return nil
+}
+
 func setupClaudeCode(cwd, execPath string, mode hook.Mode) error {
 	// MCP config: `claude mcp add` when the CLI is available; otherwise write a
 	// project-local .mcp.json so the server is still registered.

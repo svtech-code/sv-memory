@@ -78,9 +78,27 @@ var initCmd = &cobra.Command{
 			return fmt.Errorf("failed to build code graph: %w", err)
 		}
 		fmt.Println("Dependency graph built successfully in SQLite.")
+
+		// 6. Auto-wire / reconcile AI coding assistants (skills, hooks, MCP permissions)
+		strict, _ := cmd.Flags().GetBool("strict")
+		agentFlag, _ := cmd.Flags().GetString("agent")
+		skipSetup, _ := cmd.Flags().GetBool("skip-setup")
+		if !skipSetup {
+			fmt.Println("Configuring and reconciling AI assistant integrations...")
+			if err := autoWireProjectAgents(cfg.ProjPath, strict, agentFlag); err != nil {
+				fmt.Printf("Warning: failed to auto-wire assistant integrations: %v\n", err)
+			}
+		}
+
 		fmt.Println("sv-memory successfully initialized! You can now start the MCP server using 'sv-memory mcp'.")
 		return nil
 	},
+}
+
+func init() {
+	initCmd.Flags().Bool("strict", false, "Install strict hooks during agent setup (block first raw read on Antigravity)")
+	initCmd.Flags().String("agent", "", "Explicitly target a single agent during init (defaults to auto-detect/all)")
+	initCmd.Flags().Bool("skip-setup", false, "Skip agent hook/skill/mcp setup during initialization")
 }
 
 var mcpCmd = &cobra.Command{
