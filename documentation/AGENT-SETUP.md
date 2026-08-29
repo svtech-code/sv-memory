@@ -15,28 +15,33 @@ style of Engram's `engram setup`.
 | Windsurf       | `sv-memory setup windsurf`    | `.windsurf/mcp_config.json` MCP config, `.windsurfrules` protocol injection |
 | Antigravity CLI | `sv-memory setup antigravity` | MCP config, native skill (`.agents/skills/sv-memory/SKILL.md`), `PreToolUse` hooks (soft/strict), `AGENTS.md` protocol, 34-tool permission allow-list |
 | Codex          | `sv-memory setup codex`       | MCP config in `~/.codex/config.toml`, hooks, `AGENTS.md` protocol |
+| Git            | `sv-memory hooks install --platform git` | `.git/hooks/post-commit` hook for automated passive commit capture |
 
 ## Quick start
 
 ```bash
 cd /path/to/your-project
-sv-memory init                # one-time project initialization
-sv-memory setup claude-code   # wire one agent
-sv-memory setup --all         # or wire every agent at once
-sv-memory setup               # show per-agent install status
+sv-memory init                # interactive project initialization (prompts for agents, installs Git post-commit hook)
+sv-memory init --agent antigravity # initialize and wire a single agent directly
+sv-memory init --agents claude-code,cursor # initialize and wire specific agents
+sv-memory init --all          # initialize and wire all agents without prompt
+sv-memory setup claude-code   # wire one agent later
+sv-memory setup               # show per-agent and git install status
+sv-memory hooks status        # show PreToolUse hooks, skills, and MCP statuses
 ```
 
 `sv-memory setup` without arguments is read-only: it prints the installation status of
-every supported agent. `setup <agent>` is idempotent — re-running it refreshes the config
+every supported agent and Git. `setup <agent>` is idempotent — re-running it refreshes the config
 without duplicating entries. After installing, **restart your assistant** so it reloads the
 MCP config and hooks.
 
-### Options
+### Init Flags
 
-- `--strict`: install strict hooks. On Antigravity CLI this blocks the first raw file read
-  of each session so the agent must consult `sv_mem_search`/`sv_graph_query` first. On
-  Claude Code strict mode is nudge-only and never blocks.
-- `--all`: install for every supported agent.
+- `--agent <name>`: configure only the specified agent during init (e.g. `antigravity`, `claude-code`).
+- `--agents <a,b,c>`: comma-separated list of agents to configure during init.
+- `--all`: configure all supported assistants without interactive prompt.
+- `--skip-setup`: initialize database, rules, and git hook, skipping assistant wiring.
+- `--strict`: install strict hooks (blocks first raw file read on Antigravity).
 
 ## Updating sv-memory (post-update)
 

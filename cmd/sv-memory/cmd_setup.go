@@ -57,21 +57,14 @@ func setupAgentWiring(agent string, strict bool) error {
 	}
 }
 
-// autoWireProjectAgents wires or reconciles agents in the given directory.
-// In an existing project with configured agents, it reconciles only those agents.
-// In a new project (no agents configured yet), it auto-wires all supported agents
-// (or the explicitly specified agent if requestedAgent is provided).
-func autoWireProjectAgents(cwd string, strict bool, requestedAgent string) error {
-	if requestedAgent != "" {
-		return setupAgentWiring(requestedAgent, strict)
-	}
-
+// installedAgents detects which supported agents are already configured in cwd.
+func installedAgents(cwd string) []string {
 	installed := make([]string, 0)
 	if statusClaudeCode(cwd) {
 		installed = append(installed, "claude-code")
 	}
-	if statusOpenCode(cwd) {
-		installed = append(installed, "opencode")
+	if statusAntigravity(cwd) {
+		installed = append(installed, "antigravity")
 	}
 	if statusCursor(cwd) {
 		installed = append(installed, "cursor")
@@ -79,20 +72,32 @@ func autoWireProjectAgents(cwd string, strict bool, requestedAgent string) error
 	if statusWindsurf(cwd) {
 		installed = append(installed, "windsurf")
 	}
-	if statusAntigravity(cwd) {
-		installed = append(installed, "antigravity")
+	if statusOpenCode(cwd) {
+		installed = append(installed, "opencode")
 	}
 	if statusCodex(cwd) {
 		installed = append(installed, "codex")
 	}
+	return installed
+}
 
-	targetAgents := installed
-	if len(targetAgents) == 0 {
-		targetAgents = setupAgents
-	}
-
+// configureTargetAgents wires the specified agents in cwd.
+func configureTargetAgents(cwd string, strict bool, agents []string) error {
 	anyErr := false
-	for _, a := range targetAgents {
+	for _, a := range agents {
+		found := false
+		for _, sa := range setupAgents {
+			if a == sa {
+				found = true
+				break
+			}
+		}
+		if !found {
+			fmt.Printf("⚠️  Warning: unsupported agent %q (supported: %v)\n", a, setupAgents)
+			anyErr = true
+			continue
+		}
+
 		if err := setupAgentWiring(a, strict); err != nil {
 			fmt.Printf("⚠️  Warning: agent setup for %s encountered an issue: %v\n", a, err)
 			anyErr = true
@@ -102,6 +107,22 @@ func autoWireProjectAgents(cwd string, strict bool, requestedAgent string) error
 		return fmt.Errorf("one or more agent setups failed during initialization")
 	}
 	return nil
+}
+
+// autoWireProjectAgents reconciles agents already configured in the given directory,
+// or sets up the explicitly requested agent. It does not blindly install all agents
+// on an unconfigured directory.
+func autoWireProjectAgents(cwd string, strict bool, requestedAgent string) error {
+	if requestedAgent != "" {
+		return setupAgentWiring(requestedAgent, strict)
+	}
+
+	installed := installedAgents(cwd)
+	if len(installed) == 0 {
+		return nil
+	}
+
+	return configureTargetAgents(cwd, strict, installed)
 }
 
 func setupClaudeCode(cwd, execPath string, mode hook.Mode) error {
@@ -241,7 +262,7 @@ func setupCodex(cwd string, mode hook.Mode) error {
 	return nil
 }
 
-// setupStatus prints the installation status for every supported agent.
+// setupStatus prints the installation status for every supported agent and git.
 func setupStatus() error {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -256,11 +277,12 @@ func setupStatus() error {
 		installed bool
 	}{
 		{"claude-code", statusClaudeCode(cwd)},
-		{"opencode", statusOpenCode(cwd)},
+		{"antigravity", statusAntigravity(cwd)},
 		{"cursor", statusCursor(cwd)},
 		{"windsurf", statusWindsurf(cwd)},
-		{"antigravity", statusAntigravity(cwd)},
+		{"opencode", statusOpenCode(cwd)},
 		{"codex", statusCodex(cwd)},
+		{"git", statusGit(cwd)},
 	}
 	for _, s := range statuses {
 		if s.installed {
@@ -281,13 +303,11 @@ func statusOpenCode(cwd string) bool {
 }
 
 func statusCursor(cwd string) bool {
-	_, err := os.Stat(filepath.Join(cwd, ".cursor", "mcp.json"))
-	return err == nil
+	return hook.New(cwd, hook.ModeSoft).Status([]hook.Platform{hook.PlatformCursor})[hook.PlatformCursor]
 }
 
 func statusWindsurf(cwd string) bool {
-	_, err := os.Stat(filepath.Join(cwd, ".windsurf", "mcp_config.json"))
-	return err == nil
+	return hook.New(cwd, hook.ModeSoft).Status([]hook.Platform{hook.PlatformWindsurf})[hook.PlatformWindsurf]
 }
 
 func statusAntigravity(cwd string) bool {
@@ -296,6 +316,10 @@ func statusAntigravity(cwd string) bool {
 
 func statusCodex(cwd string) bool {
 	return hook.New(cwd, hook.ModeSoft).Status([]hook.Platform{hook.PlatformCodex})[hook.PlatformCodex]
+}
+
+func statusGit(cwd string) bool {
+	return hook.New(cwd, hook.ModeSoft).Status([]hook.Platform{hook.PlatformGit})[hook.PlatformGit]
 }
 
 var setupCmd = &cobra.Command{

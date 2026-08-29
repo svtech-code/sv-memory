@@ -15,28 +15,33 @@ de integración de un solo comando de Engram (`engram setup`).
 | Windsurf        | `sv-memory setup windsurf`    | Config MCP `.windsurf/mcp_config.json`, inyección de protocolo en `.windsurfrules` |
 | Antigravity CLI | `sv-memory setup antigravity` | Config MCP, skill nativa (`.agents/skills/sv-memory/SKILL.md`), hooks `PreToolUse` (soft/strict), protocolo en `AGENTS.md`, allow-list de las 34 herramientas |
 | Codex           | `sv-memory setup codex`       | Config MCP en `~/.codex/config.toml`, hooks, protocolo en `AGENTS.md` |
+| Git             | `sv-memory hooks install --platform git` | Hook `.git/hooks/post-commit` para captura pasiva automática de commits |
 
 ## Inicio rápido
 
 ```bash
 cd /ruta/a/tu-proyecto
-sv-memory init                # inicialización única del proyecto
-sv-memory setup claude-code   # configura un agente
-sv-memory setup --all         # o configura todos de una vez
-sv-memory setup               # muestra el estado de instalación por agente
+sv-memory init                # inicialización interactiva (pregunta asistentes, instala hook post-commit de Git)
+sv-memory init --agent antigravity # inicializa y configura un agente específico directamente
+sv-memory init --agents claude-code,cursor # inicializa y configura múltiples agentes
+sv-memory init --all          # inicializa y configura todos los agentes sin preguntar
+sv-memory setup claude-code   # configura un agente posteriormente
+sv-memory setup               # muestra el estado de instalación por asistente y Git
+sv-memory hooks status        # muestra el estado de hooks PreToolUse, skills y MCP
 ```
 
 `sv-memory setup` sin argumentos es de solo lectura: imprime el estado de instalación de
-cada agente soportado. `setup <agente>` es idempotente — repetirlo refresca la config sin
+cada agente soportado y Git. `setup <agente>` es idempotente — repetirlo refresca la config sin
 duplicar entradas. Después de instalar, **reinicia tu asistente** para que cargue la config
 MCP y los hooks.
 
-### Opciones
+### Flags de Init
 
-- `--strict`: instala hooks estrictos. En Antigravity CLI bloquea la primera lectura cruda
-  de archivo de cada sesión para que el agente consulte primero `sv_mem_search`/
-  `sv_graph_query`. En Claude Code el modo estricto es solo de aviso (nunca bloquea).
-- `--all`: instala para todos los agentes soportados.
+- `--agent <nombre>`: configura únicamente el asistente especificado durante init (ej. `antigravity`, `claude-code`).
+- `--agents <a,b,c>`: lista separada por comas de asistentes a configurar durante init.
+- `--all`: configura todos los asistentes soportados sin menú interactivo.
+- `--skip-setup`: inicializa base de datos, reglas y hook de Git, omitiendo la configuración de asistentes.
+- `--strict`: instala hooks estrictos (bloquea la primera lectura cruda en Antigravity).
 
 ## Actualizar sv-memory (post-actualización)
 

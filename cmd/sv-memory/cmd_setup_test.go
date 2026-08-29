@@ -210,6 +210,52 @@ func TestAutoWireProjectAgentsFreshAndExisting(t *testing.T) {
 	}
 }
 
+// TestConfigureTargetAgents verifies configureTargetAgents sets up only the targeted agents.
+func TestConfigureTargetAgents(t *testing.T) {
+	tempDir := t.TempDir()
+
+	oldCWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get cwd: %v", err)
+	}
+	defer os.Chdir(oldCWD)
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("failed to chdir: %v", err)
+	}
+
+	// Target only cursor
+	if err := configureTargetAgents(tempDir, false, []string{"cursor"}); err != nil {
+		t.Fatalf("configureTargetAgents failed: %v", err)
+	}
+	if !statusCursor(tempDir) {
+		t.Error("expected cursor to be installed")
+	}
+	if statusClaudeCode(tempDir) || statusWindsurf(tempDir) || statusAntigravity(tempDir) || statusCodex(tempDir) {
+		t.Error("expected other agents not to be installed")
+	}
+}
+
+// TestInstalledAgentsDetection verifies installedAgents accurately identifies configured agents.
+func TestInstalledAgentsDetection(t *testing.T) {
+	tempDir := t.TempDir()
+
+	installed := installedAgents(tempDir)
+	if len(installed) != 0 {
+		t.Errorf("expected 0 installed agents in fresh dir, got %v", installed)
+	}
+
+	// Install windsurf
+	_, err := config.ConfigureWindsurf(tempDir, "/usr/local/bin/sv-memory")
+	if err != nil {
+		t.Fatalf("ConfigureWindsurf failed: %v", err)
+	}
+
+	installed = installedAgents(tempDir)
+	if len(installed) != 1 || installed[0] != "windsurf" {
+		t.Errorf("expected [windsurf], got %v", installed)
+	}
+}
+
 func fileExists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil

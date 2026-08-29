@@ -616,11 +616,69 @@ func TestStatusNotInstalled(t *testing.T) {
 	if status[PlatformAntigravity] {
 		t.Error("expected antigravity to not be installed in empty dir")
 	}
+	if status[PlatformCursor] {
+		t.Error("expected cursor to not be installed in empty dir")
+	}
+	if status[PlatformWindsurf] {
+		t.Error("expected windsurf to not be installed in empty dir")
+	}
 	if status[PlatformOpenCode] {
 		t.Error("expected opencode to not be installed in empty dir")
 	}
 	if status[PlatformGit] {
 		t.Error("expected git to not be installed in empty dir")
+	}
+}
+
+func TestInstallCursor(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-hook-cursor-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	eng := New(tempDir, ModeSoft)
+	results := eng.Install([]Platform{PlatformCursor})
+	if len(results) != 1 || results[0].Err != nil {
+		t.Fatalf("install cursor failed: %v", results)
+	}
+
+	if !eng.Status([]Platform{PlatformCursor})[PlatformCursor] {
+		t.Error("expected cursor status to be installed")
+	}
+
+	uninst := eng.Uninstall([]Platform{PlatformCursor})
+	if len(uninst) != 1 || uninst[0].Err != nil {
+		t.Fatalf("uninstall cursor failed: %v", uninst)
+	}
+	if eng.Status([]Platform{PlatformCursor})[PlatformCursor] {
+		t.Error("expected cursor status to not be installed after uninstall")
+	}
+}
+
+func TestInstallWindsurf(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-hook-windsurf-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	eng := New(tempDir, ModeSoft)
+	results := eng.Install([]Platform{PlatformWindsurf})
+	if len(results) != 1 || results[0].Err != nil {
+		t.Fatalf("install windsurf failed: %v", results)
+	}
+
+	if !eng.Status([]Platform{PlatformWindsurf})[PlatformWindsurf] {
+		t.Error("expected windsurf status to be installed")
+	}
+
+	uninst := eng.Uninstall([]Platform{PlatformWindsurf})
+	if len(uninst) != 1 || uninst[0].Err != nil {
+		t.Fatalf("uninstall windsurf failed: %v", uninst)
+	}
+	if eng.Status([]Platform{PlatformWindsurf})[PlatformWindsurf] {
+		t.Error("expected windsurf status to not be installed after uninstall")
 	}
 }
 
@@ -685,5 +743,31 @@ func TestInstallAllPlatforms(t *testing.T) {
 		if r.Err != nil {
 			t.Errorf("install %s failed: %v", r.Platform, r.Err)
 		}
+	}
+}
+
+func TestGitHookWorktree(t *testing.T) {
+	tempDir := t.TempDir()
+	actualGitDir := t.TempDir()
+
+	// Write .git as a file pointing to actualGitDir (worktree / submodule style)
+	gitFilePath := filepath.Join(tempDir, ".git")
+	err := os.WriteFile(gitFilePath, []byte("gitdir: "+actualGitDir+"\n"), 0644)
+	if err != nil {
+		t.Fatalf("failed to write .git file: %v", err)
+	}
+
+	eng := New(tempDir, ModeSoft)
+	results := eng.Install([]Platform{PlatformGit})
+	if len(results) != 1 || results[0].Err != nil {
+		t.Fatalf("install git hook failed: %v", results)
+	}
+
+	hookPath := filepath.Join(actualGitDir, "hooks", "post-commit")
+	if _, err := os.Stat(hookPath); err != nil {
+		t.Fatalf("expected git hook in worktree at %s: %v", hookPath, err)
+	}
+	if !eng.Status([]Platform{PlatformGit})[PlatformGit] {
+		t.Error("expected git status true for worktree")
 	}
 }

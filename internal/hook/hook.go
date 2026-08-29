@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/svtech-code/sv-memory/internal/config"
 	"github.com/svtech-code/sv-memory/internal/protocol"
 )
 
@@ -23,13 +24,23 @@ type Platform string
 
 const (
 	PlatformClaudeCode  Platform = "claude-code"
-	PlatformCodex       Platform = "codex"
 	PlatformAntigravity Platform = "antigravity"
+	PlatformCursor      Platform = "cursor"
+	PlatformWindsurf    Platform = "windsurf"
 	PlatformOpenCode    Platform = "opencode"
+	PlatformCodex       Platform = "codex"
 	PlatformGit         Platform = "git"
 )
 
-var supportedPlatforms = []Platform{PlatformClaudeCode, PlatformCodex, PlatformAntigravity, PlatformOpenCode, PlatformGit}
+var supportedPlatforms = []Platform{
+	PlatformClaudeCode,
+	PlatformAntigravity,
+	PlatformCursor,
+	PlatformWindsurf,
+	PlatformOpenCode,
+	PlatformCodex,
+	PlatformGit,
+}
 
 // HookEngine manages PreToolUse hook installation for AI assistants.
 type HookEngine struct {
@@ -101,12 +112,16 @@ func (e *HookEngine) Install(platforms []Platform) []InstallResult {
 		switch p {
 		case PlatformClaudeCode:
 			r.Files, r.Err = e.installClaudeCode()
-		case PlatformCodex:
-			r.Files, r.Err = e.installCodex()
 		case PlatformAntigravity:
 			r.Files, r.Err = e.installAntigravity()
+		case PlatformCursor:
+			r.Files, r.Err = e.installCursor()
+		case PlatformWindsurf:
+			r.Files, r.Err = e.installWindsurf()
 		case PlatformOpenCode:
 			r.Files, r.Err = e.installOpenCodeSkill()
+		case PlatformCodex:
+			r.Files, r.Err = e.installCodex()
 		case PlatformGit:
 			r.Files, r.Err = e.installGit()
 		default:
@@ -129,12 +144,16 @@ func (e *HookEngine) Uninstall(platforms []Platform) []InstallResult {
 		switch p {
 		case PlatformClaudeCode:
 			r.Files, r.Err = e.uninstallClaudeCode()
-		case PlatformCodex:
-			r.Files, r.Err = e.uninstallCodex()
 		case PlatformAntigravity:
 			r.Files, r.Err = e.uninstallAntigravity()
+		case PlatformCursor:
+			r.Files, r.Err = e.uninstallCursor()
+		case PlatformWindsurf:
+			r.Files, r.Err = e.uninstallWindsurf()
 		case PlatformOpenCode:
 			r.Files, r.Err = e.uninstallOpenCodeSkill()
+		case PlatformCodex:
+			r.Files, r.Err = e.uninstallCodex()
 		case PlatformGit:
 			r.Files, r.Err = e.uninstallGit()
 		default:
@@ -156,12 +175,16 @@ func (e *HookEngine) Status(platforms []Platform) map[Platform]bool {
 		switch p {
 		case PlatformClaudeCode:
 			status[p] = e.claudeCodeInstalled()
-		case PlatformCodex:
-			status[p] = e.codexInstalled()
 		case PlatformAntigravity:
 			status[p] = e.antigravityInstalled()
+		case PlatformCursor:
+			status[p] = e.cursorInstalled()
+		case PlatformWindsurf:
+			status[p] = e.windsurfInstalled()
 		case PlatformOpenCode:
 			status[p] = e.openCodeSkillInstalled()
+		case PlatformCodex:
+			status[p] = e.codexInstalled()
 		case PlatformGit:
 			status[p] = e.gitInstalled()
 		default:
@@ -799,6 +822,20 @@ func (e *HookEngine) openCodeSkillInstalled() bool {
 // --- Git Post-Commit Hook ---
 
 func (e *HookEngine) gitHookPath() string {
+	gitPath := filepath.Join(e.projPath, ".git")
+	if data, err := os.ReadFile(gitPath); err == nil {
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "gitdir:") {
+				targetDir := strings.TrimSpace(strings.TrimPrefix(line, "gitdir:"))
+				if !filepath.IsAbs(targetDir) {
+					targetDir = filepath.Join(e.projPath, targetDir)
+				}
+				return filepath.Join(targetDir, "hooks", "post-commit")
+			}
+		}
+	}
 	return filepath.Join(e.projPath, ".git", "hooks", "post-commit")
 }
 
@@ -841,6 +878,102 @@ func (e *HookEngine) gitInstalled() bool {
 		return false
 	}
 	return strings.Contains(string(data), "sv-memory")
+}
+
+// --- Cursor ---
+
+func (e *HookEngine) cursorMCPPath() string {
+	return filepath.Join(e.projPath, ".cursor", "mcp.json")
+}
+
+func (e *HookEngine) installCursor() ([]string, error) {
+	var created []string
+	execPath, err := os.Executable()
+	if err != nil {
+		return created, err
+	}
+	execPath = filepath.Clean(execPath)
+
+	path, err := config.ConfigureCursor(e.projPath, execPath)
+	if err != nil {
+		return created, fmt.Errorf("cursor config failed: %w", err)
+	}
+	created = append(created, path)
+
+	injected, err := protocol.InjectProtocol(e.projPath)
+	if err != nil {
+		return created, fmt.Errorf("protocol injection failed: %w", err)
+	}
+	for _, f := range injected {
+		created = append(created, f+" (protocol rules injected)")
+	}
+
+	return created, nil
+}
+
+func (e *HookEngine) uninstallCursor() ([]string, error) {
+	var removed []string
+	path := e.cursorMCPPath()
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return removed, fmt.Errorf("failed to remove %s: %w", path, err)
+	}
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		removed = append(removed, path)
+	}
+	return removed, nil
+}
+
+func (e *HookEngine) cursorInstalled() bool {
+	_, err := os.Stat(e.cursorMCPPath())
+	return err == nil
+}
+
+// --- Windsurf ---
+
+func (e *HookEngine) windsurfMCPPath() string {
+	return filepath.Join(e.projPath, ".windsurf", "mcp_config.json")
+}
+
+func (e *HookEngine) installWindsurf() ([]string, error) {
+	var created []string
+	execPath, err := os.Executable()
+	if err != nil {
+		return created, err
+	}
+	execPath = filepath.Clean(execPath)
+
+	path, err := config.ConfigureWindsurf(e.projPath, execPath)
+	if err != nil {
+		return created, fmt.Errorf("windsurf config failed: %w", err)
+	}
+	created = append(created, path)
+
+	injected, err := protocol.InjectProtocol(e.projPath)
+	if err != nil {
+		return created, fmt.Errorf("protocol injection failed: %w", err)
+	}
+	for _, f := range injected {
+		created = append(created, f+" (protocol rules injected)")
+	}
+
+	return created, nil
+}
+
+func (e *HookEngine) uninstallWindsurf() ([]string, error) {
+	var removed []string
+	path := e.windsurfMCPPath()
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return removed, fmt.Errorf("failed to remove %s: %w", path, err)
+	}
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		removed = append(removed, path)
+	}
+	return removed, nil
+}
+
+func (e *HookEngine) windsurfInstalled() bool {
+	_, err := os.Stat(e.windsurfMCPPath())
+	return err == nil
 }
 
 // SupportedPlatforms returns the list of all supported platforms.

@@ -3,6 +3,14 @@
 All notable changes follow [Conventional Commits](https://www.conventionalcommits.org/).
 Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automatically.
 
+## [v0.17.1] - 2026-08-29
+
+### Added
+
+- **Interactive Agent Selection in `sv-memory init`:** `sv-memory init` in terminal sessions now prompts users interactively via a multi-select form to choose which AI assistants to configure (Claude Code, Antigravity, Cursor, Windsurf, OpenCode, Codex), pre-selecting already detected assistants and avoiding unwanted configuration files on fresh repositories. Added flags `--agent <name>`, `--agents <a,b,c>`, `--all`, and `--skip-setup`.
+- **Automatic Git Post-Commit Hook Installation on Init:** `sv-memory init` now automatically checks for Git repository presence (`.git` directory or submodule/worktree file) and installs the post-commit hook (`.git/hooks/post-commit`) out of the box for automatic passive memory capture.
+- **Unified Platform Status Across Commands:** Added `PlatformCursor` and `PlatformWindsurf` to `HookEngine` so that `sv-memory hooks status`, `sv-memory setup`, and `sv-memory hooks install` uniformly manage and report statuses across all 7 supported integration targets (Claude Code, Antigravity, Cursor, Windsurf, OpenCode, Codex, Git).
+
 ## [v0.17.0] - 2026-08-29
 
 ### Added

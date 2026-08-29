@@ -2,14 +2,20 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
+	"github.com/charmbracelet/huh"
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 
 	"github.com/svtech-code/sv-memory/internal/config"
 	"github.com/svtech-code/sv-memory/internal/db"
 	"github.com/svtech-code/sv-memory/internal/graph"
+	"github.com/svtech-code/sv-memory/internal/hook"
 	"github.com/svtech-code/sv-memory/internal/mcp"
 	"github.com/svtech-code/sv-memory/internal/memory"
 	"github.com/svtech-code/sv-memory/internal/protocol"
@@ -79,14 +85,77 @@ var initCmd = &cobra.Command{
 		}
 		fmt.Println("Dependency graph built successfully in SQLite.")
 
-		// 6. Auto-wire / reconcile AI coding assistants (skills, hooks, MCP permissions)
-		strict, _ := cmd.Flags().GetBool("strict")
-		agentFlag, _ := cmd.Flags().GetString("agent")
+		// 6. Install Git post-commit hook if git repository exists
+		gitDir := filepath.Join(cfg.ProjPath, ".git")
+		if _, err := os.Stat(gitDir); err == nil {
+			eng := hook.New(cfg.ProjPath, hook.ModeSoft)
+			results := eng.Install([]hook.Platform{hook.PlatformGit})
+			for _, r := range results {
+				if r.Err != nil {
+					fmt.Printf("⚠️  Warning: failed to install git post-commit hook: %v\n", r.Err)
+				} else {
+					fmt.Println("✅ Git post-commit hook installed (.git/hooks/post-commit).")
+				}
+			}
+		} else {
+			fmt.Println("ℹ️  Git repository not detected (.git not found). Git post-commit hook skipped.")
+		}
+
+		// 7. Auto-wire / reconcile AI coding assistants (skills, hooks, MCP permissions)
 		skipSetup, _ := cmd.Flags().GetBool("skip-setup")
 		if !skipSetup {
-			fmt.Println("Configuring and reconciling AI assistant integrations...")
-			if err := autoWireProjectAgents(cfg.ProjPath, strict, agentFlag); err != nil {
-				fmt.Printf("Warning: failed to auto-wire assistant integrations: %v\n", err)
+			strict, _ := cmd.Flags().GetBool("strict")
+			agentFlag, _ := cmd.Flags().GetString("agent")
+			agentsFlag, _ := cmd.Flags().GetString("agents")
+			allFlag, _ := cmd.Flags().GetBool("all")
+
+			var targetAgents []string
+			if agentFlag != "" {
+				targetAgents = []string{agentFlag}
+			} else if agentsFlag != "" {
+				for _, a := range strings.Split(agentsFlag, ",") {
+					a = strings.TrimSpace(a)
+					if a != "" {
+						targetAgents = append(targetAgents, a)
+					}
+				}
+			} else if allFlag {
+				targetAgents = setupAgents
+			} else {
+				// Interactive prompt if terminal, else reconcile existing installed agents
+				isInteractive := isatty.IsTerminal(os.Stdin.Fd()) || isatty.IsCygwinTerminal(os.Stdin.Fd())
+				installed := installedAgents(cfg.ProjPath)
+
+				if isInteractive {
+					selected, err := promptSelectAgents(installed)
+					if err != nil {
+						if errors.Is(err, huh.ErrUserAborted) {
+							fmt.Println("\nOperación de asistentes cancelada por el usuario.")
+						} else {
+							fmt.Printf("Warning: interactive agent prompt failed: %v\n", err)
+						}
+					} else {
+						targetAgents = selected
+						if len(targetAgents) == 0 {
+							fmt.Println("\nℹ️  No seleccionaste ningún asistente IA. Puedes configurarlos luego con 'sv-memory setup <agent>'.")
+						}
+					}
+				} else {
+					// Non-interactive
+					if len(installed) > 0 {
+						targetAgents = installed
+						fmt.Printf("Reconciliando %d asistente(s) IA configurado(s): %v\n", len(targetAgents), targetAgents)
+					} else {
+						fmt.Println("ℹ️  Ningún asistente IA configurado (modo no interactivo). Usa 'sv-memory setup <agent>' o pasa '--agent <name>' / '--all'.")
+					}
+				}
+			}
+
+			if len(targetAgents) > 0 {
+				fmt.Println("Configurando y reconciliando integraciones de asistentes IA...")
+				if err := configureTargetAgents(cfg.ProjPath, strict, targetAgents); err != nil {
+					fmt.Printf("Warning: failed to configure assistant integrations: %v\n", err)
+				}
 			}
 		}
 
@@ -95,9 +164,42 @@ var initCmd = &cobra.Command{
 	},
 }
 
+func promptSelectAgents(preselected []string) ([]string, error) {
+	var selected []string
+	if len(preselected) > 0 {
+		selected = append(selected, preselected...)
+	}
+
+	options := []huh.Option[string]{
+		huh.NewOption("Claude Code (Hooks + MCP + Permissions)", "claude-code"),
+		huh.NewOption("Antigravity CLI / agy (Hooks + Skill + MCP + Permissions)", "antigravity"),
+		huh.NewOption("Cursor (.cursor/mcp.json)", "cursor"),
+		huh.NewOption("Windsurf (.windsurf/mcp_config.json)", "windsurf"),
+		huh.NewOption("OpenCode (Skill + TS Plugin + MCP)", "opencode"),
+		huh.NewOption("Codex (.codex/hooks.json + MCP)", "codex"),
+	}
+
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("\nConfiguración de Asistentes IA").
+				Description("\nSelecciona los asistentes IA para configurar en este proyecto (Enter para confirmar):").
+				Options(options...).
+				Value(&selected),
+		).Title("ASISTENTES IA"),
+	).WithTheme(configureTheme()).WithKeyMap(configureKeyMap())
+
+	if err := form.Run(); err != nil {
+		return nil, err
+	}
+	return selected, nil
+}
+
 func init() {
 	initCmd.Flags().Bool("strict", false, "Install strict hooks during agent setup (block first raw read on Antigravity)")
-	initCmd.Flags().String("agent", "", "Explicitly target a single agent during init (defaults to auto-detect/all)")
+	initCmd.Flags().String("agent", "", "Explicitly target a single agent during init (e.g. claude-code, antigravity)")
+	initCmd.Flags().String("agents", "", "Comma-separated list of agents to target during init (e.g. claude-code,antigravity)")
+	initCmd.Flags().Bool("all", false, "Configure all supported AI assistant integrations during init")
 	initCmd.Flags().Bool("skip-setup", false, "Skip agent hook/skill/mcp setup during initialization")
 }
 
