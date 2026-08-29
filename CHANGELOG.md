@@ -3,6 +3,15 @@
 All notable changes follow [Conventional Commits](https://www.conventionalcommits.org/).
 Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automatically.
 
+## [Unreleased]
+
+### Added
+
+- **Auto-Derived Topic Keys in `sv_mem_save`:** If `topic_key` is omitted when saving semantic memories (`decision`, `standard`, `architecture`, `bugfix`, `qa`, etc.), `sv_mem_save` automatically derives a stable `category/kebab-case` key via `SuggestTopicKey` to enable upsert semantics without requiring a separate `sv_mem_suggest_topic_key` call.
+- **Unified Single-Call Session End (`sv_mem_session_end`):** `sv_mem_session_end` now auto-resolves the active session ID if omitted, and accepts optional inline summary arguments (`summary`, `accomplished`, `goal`, `discoveries`, `next_steps`, `files`) to save structured accomplishments and mark the session completed in a single roundtrip.
+- **Antigravity Native Skill & Setup Wiring:** Embedded `antigravity-skill.md` template with YAML frontmatter for progressive on-demand disclosure; updated `HookEngine.installAntigravity` and `sv-memory setup antigravity` to automatically create and maintain `.agents/skills/sv-memory/SKILL.md`.
+- **Streamlined Protocol & Single-Call Context Recommendation:** Streamlined the injected `AGENTS.md` protocol rules to emphasize `sv_mem_context_pack(path=...)` as the primary, bounded tool before inspecting or editing code.
+
 ## [v0.16.0] - 2026-08-21
 
 ### Added

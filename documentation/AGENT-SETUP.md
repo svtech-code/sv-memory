@@ -13,7 +13,7 @@ style of Engram's `engram setup`.
 | OpenCode       | `sv-memory setup opencode`    | MCP server config, `SKILL.md` skill, native TypeScript plugin (`sv_memory_context` tool), `AGENTS.md` protocol |
 | Cursor         | `sv-memory setup cursor`      | `.cursor/mcp.json` MCP config, `.cursorrules` protocol injection |
 | Windsurf       | `sv-memory setup windsurf`    | `.windsurf/mcp_config.json` MCP config, `.windsurfrules` protocol injection |
-| Antigravity CLI | `sv-memory setup antigravity` | MCP config, `PreToolUse` hooks (soft/strict), `AGENTS.md` protocol, 34-tool permission allow-list |
+| Antigravity CLI | `sv-memory setup antigravity` | MCP config, native skill (`.agents/skills/sv-memory/SKILL.md`), `PreToolUse` hooks (soft/strict), `AGENTS.md` protocol, 34-tool permission allow-list |
 | Codex          | `sv-memory setup codex`       | MCP config in `~/.codex/config.toml`, hooks, `AGENTS.md` protocol |
 
 ## Quick start
@@ -111,6 +111,8 @@ and `sv-memory setup` (read-only status table).
 ### Antigravity CLI (agy)
 
 - **MCP config:** written to the Antigravity `mcp_config.json` (merged).
+- **Skill:** native skill installed under `.agents/skills/sv-memory/SKILL.md` with YAML
+  frontmatter for progressive on-demand disclosure by the agent.
 - **Hooks:** `.agents/hooks.json` + `.agents/hooks/sv-memory.sh`. Soft mode always allows
   the read and nudges via `AGENTS.md`; `--strict` blocks the first raw file read of each
   session. Strict is fail-open: it never deadlocks when sv-memory is missing or

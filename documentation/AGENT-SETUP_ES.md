@@ -13,7 +13,7 @@ de integración de un solo comando de Engram (`engram setup`).
 | OpenCode        | `sv-memory setup opencode`    | Config MCP, skill `SKILL.md`, plugin nativo TypeScript (tool `sv_memory_context`), protocolo en `AGENTS.md` |
 | Cursor          | `sv-memory setup cursor`      | Config MCP `.cursor/mcp.json`, inyección de protocolo en `.cursorrules` |
 | Windsurf        | `sv-memory setup windsurf`    | Config MCP `.windsurf/mcp_config.json`, inyección de protocolo en `.windsurfrules` |
-| Antigravity CLI | `sv-memory setup antigravity` | Config MCP, hooks `PreToolUse` (soft/strict), protocolo en `AGENTS.md`, allow-list de las 34 herramientas |
+| Antigravity CLI | `sv-memory setup antigravity` | Config MCP, skill nativa (`.agents/skills/sv-memory/SKILL.md`), hooks `PreToolUse` (soft/strict), protocolo en `AGENTS.md`, allow-list de las 34 herramientas |
 | Codex           | `sv-memory setup codex`       | Config MCP en `~/.codex/config.toml`, hooks, protocolo en `AGENTS.md` |
 
 ## Inicio rápido
@@ -112,6 +112,8 @@ en un proyecto ya configurado: `setup <agente>` ya instala hooks e inyecta el pr
 ### Antigravity CLI (agy)
 
 - **Config MCP:** se escribe en el `mcp_config.json` de Antigravity (fusionado).
+- **Skill:** skill nativa instalada bajo `.agents/skills/sv-memory/SKILL.md` con frontmatter YAML
+  para descubrimiento progresivo bajo demanda por el agente.
 - **Hooks:** `.agents/hooks.json` + `.agents/hooks/sv-memory.sh`. El modo soft siempre
   permite la lectura y sugiere vía `AGENTS.md`; `--strict` bloquea la primera lectura cruda
   de archivo de cada sesión. El modo estricto es fail-open: nunca bloquea el agente cuando

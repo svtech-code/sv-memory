@@ -17,9 +17,8 @@ This project uses 'sv-memory' for persistent architectural memory, progress jour
 
 1. **Start:** Call 'sv_mem_session_start' at the beginning of work. It returns an **Auto-Boot Context Bundle** with the previous session summary, key architectural decisions, standards, recent bugfixes, last journals, and top graph hubs — read it and use it as your starting context.
 2. **Associate saves:** Pass 'session_id' to 'sv_mem_save' to group memories under the active session. If omitted, the active session is auto-detected.
-3. **Capture knowledge as you go:** Save journals, decisions, standards, and bugfixes with 'sv_mem_save' (see the Memory Capture Guidelines below). Use 'sv_mem_capture_passive' for lightweight observations that do not need an explicit save decision.
-4. **Summary:** Call 'sv_mem_session_summary' with goal, discoveries, accomplished work, and next steps before closing.
-5. **End:** Call 'sv_mem_session_end' to mark the session as completed and enable context recovery in the next session.
+3. **Capture knowledge as you go:** Save journals, decisions, standards, and bugfixes with 'sv_mem_save' (see the Memory Capture Guidelines below). For evolving categories ('decision', 'standard', 'architecture', 'bugfix'), 'topic_key' is automatically derived if omitted to enable upsert semantics. Use 'sv_mem_capture_passive' for lightweight observations that do not need an explicit save decision.
+4. **End:** Call 'sv_mem_session_end(accomplished=...)' to save the summary and mark the session as completed in a single call (session_id is auto-detected if omitted). Alternatively, call 'sv_mem_session_summary' before 'sv_mem_session_end'.
 
 After a compaction or context reset, call 'sv_mem_context' to recover the last session state (goal, summary, associated memories).
 
@@ -30,6 +29,7 @@ The sv-memory tools (session, memory, graph, diagnostics) may be called in ANY o
 ## Context Initialization (Search-Before-Work):
 
 Memory must be consulted before proposing or executing changes:
+- **Single-Call Context Pack (Recommended):** Call 'sv_mem_context_pack(path="<file|pkg>")' before reading or editing code. It surfaces the node role, linked decisions/standards, active changes, and capability state in one call.
 - **Orientation:** On a new project, call 'sv_mem_stats' first — it is the cheapest overview of memory distribution (categories, counts, sessions).
 - **Targeted search:** Call 'sv_mem_search' with the topic keywords of your task (feature, component, style, module). Filter by category when relevant ('journal', 'postmortem', 'discussion', 'idea', 'qa', 'architecture', 'decision'). Avoid repeating redundant searches — the Auto-Boot Bundle already carries the previous session context.
 - **Proactive search:** On first user message referencing a project, feature, or problem, call 'sv_mem_search' with their keywords before responding. Never answer from assumptions alone — memory first, code second.
@@ -44,9 +44,9 @@ Never dump all fields from search — drill down on demand. The top search resul
 
 ## Topic Keys (Upsert Semantics):
 
-- Use 'sv_mem_suggest_topic_key(category, what)' to generate a stable 'category/kebab-case' key.
-- Pass 'topic_key' to 'sv_mem_save' to enable upsert: saves to the same project+topic update in place (revision_count++) instead of creating a new record.
-- Use topic keys for evolving topics (architecture decisions, design systems, long-running features, recurring patterns). Skip for one-off bugs or single facts.
+- 'sv_mem_save' automatically derives a stable 'category/kebab-case' key for evolving categories if 'topic_key' is omitted.
+- Or use 'sv_mem_suggest_topic_key(category, what)' to preview/generate a custom key.
+- Saves to the same project+topic update in place (revision_count++) instead of creating duplicate records.
 - **Convention:** Always kebab-case in English. Examples: 'standard/design-system', 'architecture/component-card', 'decision/use-bun-instead-of-npm', 'standard/workflow-git-commits', 'bugfix/tab-transition-absolute-position'.
 
 ## Memory Capture Guidelines (when to save what):
