@@ -20,15 +20,14 @@ Cuando trabajas con asistentes de IA en repositorios medianos o grandes, suceden
 
 ---
 
-## 🚀 Flujo de Inicio en 5 Pasos
+## 🚀 Flujo de Inicio en 3 Pasos
 
 ```mermaid
 flowchart TD
-    P1[Paso 1: Instalación del Binario Global] --> P2[Paso 2: Configuración de Editores y CLIs con 'sv-memory configure']
-    P2 --> P3[Paso 3: Inicialización del Proyecto con 'sv-memory init']
-    P3 --> P4[Paso 4: Instalación de Hooks con 'sv-memory hooks install']
-    P4 --> P5[Paso 5: Reinicio del Agente y Verificación]
-    P5 --> D[Flujo de Trabajo Diario con IA & TUI]
+    P1[Paso 1: Instalación del Binario Global] --> P2[Paso 2: Configuración Global con 'sv-memory configure']
+    P2 --> P3[Paso 3: Inicialización Todo-en-Uno con 'sv-memory init']
+    P3 --> P4[Paso 4: Reiniciar Agente y Programar]
+    P4 --> D[Flujo de Trabajo Diario Autónomo con IA & TUI]
 ```
 
 ---
@@ -79,16 +78,15 @@ El comando busca la última release publicada en GitHub, la compara con tu versi
 
 1. Te muestra ambas versiones y **pide confirmación** antes de hacer nada.
 2. Descarga el binario correcto para tu sistema operativo y arquitectura.
-3. **Verifica su checksum SHA-256** contra el publicado en la release (protección contra descargas corruptas o manipuladas).
-4. Reemplaza el binario de forma atómica (en Windows te indica el comando manual, porque no puede sobrescribir un `.exe` en ejecución).
-
-> Tus memorias (BD SQLite en `~/.config/sv-memory/`) y la configuración de tus editores no se ven afectadas al actualizar solo se reemplaza el binario.
+3. **Verifica su checksum SHA-256** contra el publicado en la release.
+4. Reemplaza el binario de forma atómica.
+5. Tras actualizar, ejecuta `sv-memory init` dentro de tus proyectos existentes para refrescar automáticamente skills, hooks y permisos de nuevas herramientas MCP.
 
 ---
 
-### Paso 2: Configuración Interactiva de Editores y CLIs (`sv-memory configure`)
+### Paso 2: Configuración Global de Editores y CLIs (`sv-memory configure`)
 
-Para que tu editor o asistente de terminal (Cursor, Claude Code, Windsurf, Antigravity CLI, OpenCode, etc.) reconozca el servidor MCP de `sv-memory`, ejecuta el asistente interactivo:
+Para que tu editor o asistente de terminal (Cursor, Claude Code, Windsurf, Antigravity CLI, OpenCode, etc.) reconozca el servidor MCP de `sv-memory` a nivel global, ejecuta el asistente interactivo una sola vez:
 
 ```bash
 sv-memory configure
@@ -96,38 +94,45 @@ sv-memory configure
 
 #### ¿Qué hace este comando?
 
-El asistente te guiará a través de fases interactivas en la terminal, navegables con las flechas `↑/↓`, selección múltiple con `ESPACIO`, `Enter` para avanzar, `Esc` para retroceder y `Ctrl+C` para salir:
+El asistente te guiará a través de fases interactivas en la terminal:
 
-1. **Fase 1 (Editores GUI):** Te permite seleccionar editores como **Cursor**, **VS Code**, **Zed** o **Windsurf**. Registra automáticamente el servidor MCP en sus archivos de configuración de usuario (ej. `claude_desktop_config.json` o settings de Cursor).
-2. **Fase 2 (Asistentes de Terminal):** Te permite seleccionar clientes CLI como **Claude Code**, **Antigravity CLI (agy)** u **OpenCode**.
-3. **Fase 3 (Confirmación y aplicación):** Muestra el resumen de herramientas seleccionadas y aplica las configuraciones automáticas o manuales.
-4. **Fase 4 (Permisos MCP):** Lista las **34 herramientas MCP de sv-memory** para que selecciones cuáles autorizar (con `a` seleccionas todas y `x` ninguna). Otorga los permisos en las plataformas configuradas que usan allow-list estática (Antigravity CLI, Claude Code).
-
-> **¿Por qué este paso?**
-> Evita que tengas que editar manualmente archivos JSON de configuración complejos. Con un par de teclas en la terminal, todos tus editores quedan enlazados al servidor MCP de `sv-memory` y los permisos de las herramientas quedan otorgados con total transparencia.
+1. **Fase 1 (Editores GUI):** Registra automáticamente el servidor MCP en archivos de configuración de usuario para **Cursor**, **VS Code**, **Zed** o **Windsurf**.
+2. **Fase 2 (Asistentes de Terminal):** Configura clientes CLI como **Claude Code**, **Antigravity CLI (agy)** u **OpenCode**.
+3. **Fase 3 (Confirmación y aplicación):** Muestra el resumen de herramientas seleccionadas y aplica las configuraciones.
+4. **Fase 4 (Permisos MCP):** Autoriza las **34 herramientas MCP de sv-memory** en las plataformas con allow-list estática.
 
 ---
 
-### Paso 3: Inicialización dentro de tu Proyecto (`sv-memory init`)
+### Paso 3: Inicialización Todo-en-Uno dentro de tu Proyecto (`sv-memory init`)
 
-Navega a la raíz del repositorio o proyecto de código en el que deseas comenzar a trabajar e inicializa `sv-memory`:
+Navega a la raíz de cualquier repositorio o proyecto de código en el que vayas a trabajar con IA y ejecuta:
 
 ```bash
 cd /ruta/a/tu-proyecto
 sv-memory init
 ```
 
-#### ¿Qué sucede internamente al ejecutar `sv-memory init`?
+#### ¿Qué sucede automáticamente al ejecutar `sv-memory init`?
 
-1. **Calcula el Project ID:** Deriva un identificador único basado en el hash del repositorio Git.
-2. **Registro en SQLite:** Registra el proyecto en la base de datos local SQLite (`~/.config/sv-memory/storage.db`).
-3. **Escaneo del Grafo de Código:** Analiza el árbol de archivos y construye el grafo inicial de dependencias (imports, nodos god, comunidades Leiden).
-4. **Sincronización Git:** Importa memorias previas compartidas por tu equipo si existe la carpeta `.sv-memory/chunks/`.
-5. **Inyección de Reglas de Protocolo (`AGENTS.md`):** Crea o actualiza el archivo `AGENTS.md` en la raíz del proyecto. Este archivo contiene las instrucciones para que cualquier agente de IA sepa automáticamente **cuándo consultar**, **cuándo guardar** y **cuándo compactar** información de manera autónoma.
+`sv-memory init` realiza la configuración completa del proyecto en un solo paso:
 
----
+1. **Base de Datos SQLite y Registro:** Inicializa el almacenamiento local (`~/.config/sv-memory/storage.db`).
+2. **Inyección de Reglas de Protocolo (`AGENTS.md` / `.cursorrules`):** Inyecta las instrucciones operativas para que cualquier agente de IA sepa consultar el grafo y guardar decisiones.
+3. **Integración Automática de Asistentes (Skills y Hooks):**
+   - **Antigravity CLI:** Instala `.agents/skills/sv-memory/SKILL.md` (skill nativa on-demand) y `.agents/hooks/`.
+   - **OpenCode:** Instala `.opencode/skills/sv-memory/SKILL.md` y plugin nativo TypeScript (`sv_memory_context`).
+   - **Claude Code:** Instala `.claude/hooks/` (`SessionStart`, `SessionEnd`, `PreCompact`, `PreToolUse`).
+   - **Cursor / Windsurf:** Escribe `.cursor/mcp.json` / `.windsurf/mcp_config.json`.
+4. **Permisos MCP Automáticos:** Concede permisos para las 34 herramientas MCP sin necesidad de confirmaciones manuales repetitivas.
+5. **Sincronización Git:** Importa memorias compartidas desde `.sv-memory/memories.json` si existe.
+6. **Grafo de Dependencias:** Escanea el árbol de código y construye el grafo estructural (imports, nodos god, comunidades Leiden).
 
-### Paso 4: Instalación de Hooks PreToolUse (`sv-memory hooks install`)
+> **Re-ejecución en proyectos existentes:** `sv-memory init` es totalmente idempotente. Ejecutarlo en un proyecto existente reconcilia y actualiza todos los skills activos, hooks y nuevos permisos MCP sin alterar configuraciones previas.
+
+> **Flags opcionales:**
+> - `sv-memory init --strict`: instala hooks en modo estricto (bloquea lecturas crudas de archivos hasta consultar memoria/grafo).
+> - `sv-memory init --agent antigravity`: inicializa o reconcilia un asistente específico.
+> - `sv-memory init --skip-setup`: inicializa solo BD y grafo sin tocar integraciones de agentes.
 
 Ejecuta este paso **dentro de la raíz de tu proyecto** (los hooks se instalan en `.agents/` del proyecto, no de forma global):
 

@@ -38,31 +38,22 @@ MCP y los hooks.
   `sv_graph_query`. En Claude Code el modo estricto es solo de aviso (nunca bloquea).
 - `--all`: instala para todos los agentes soportados.
 
-## Actualizar sv-memory (post-update)
+## Actualizar sv-memory (post-actualización)
 
-`sv-memory update` solo reemplaza el binario (descarga el asset de la release, verifica el
-checksum SHA-256 y lo intercambia atómicamente) — **no toca tu configuración de agente**.
-Así que tras cada actualización, refresca la integración antes de reiniciar el asistente:
+`sv-memory update` reemplaza el binario de forma atómica. Para refrescar skills, hooks, reglas de protocolo y otorgar permisos a nuevas herramientas MCP en tus proyectos existentes, simplemente ejecuta `sv-memory init` dentro de cada proyecto:
 
 ```bash
-sv-memory update                # 1. reemplaza el binario (la primera ejecución también aplica migraciones nuevas de BD)
-sv-memory setup --all           # 2. CRÍTICO: re-cablea todos los agentes (o `setup <agente>` por agente)
+sv-memory update                # 1. reemplaza el binario
+cd /ruta/a/tu-proyecto
+sv-memory init                  # 2. auto-reconcilia skills, hooks, AGENTS.md y permisos MCP
 ```
 
-Por qué el paso 2 es crítico:
-- `sv-memory setup <agente>` re-escanea el conjunto actual de tools y **otorga a la
-  allow-list estática cualquier tool MCP nueva** (`~/.claude/settings.json`, `opencode.json`,
-  `.cursor/mcp.json`, `.windsurf/mcp_config.json`, …). Si lo omites, las tools añadidas por
-  la release quedan bloqueadas y el agente pide permiso en cada llamada.
-- **Re-inyecta el protocolo** (`AGENTS.md` / `.cursorrules` / `.windsurfrules`) y refresca el
-  `SKILL.md` de OpenCode, para que las instrucciones del agente coincidan con el binario nuevo.
-- Es **idempotente** — re-ejecutarlo es seguro, solo añade lo que falta.
+Por qué el paso 2 es recomendado:
+- `sv-memory init` re-escanea las herramientas actuales y **concede cualquier nueva herramienta MCP** en las listas de permisos (`~/.claude/settings.json`, `opencode.json`, `.cursor/mcp.json`, `.windsurf/mcp_config.json`, `mcp_config.json` de Antigravity).
+- **Re-inyecta el protocolo** (`AGENTS.md` / `.cursorrules` / `.windsurfrules`) y refresca las skills (`.agents/skills/sv-memory/SKILL.md`, `SKILL.md` de OpenCode), asegurando que las instrucciones del agente coincidan con la versión actualizada.
+- Es **idempotente y no destructivo** — detecta los asistentes configurados y actualiza solo lo necesario.
 
-Después reinicia tu asistente para que recargue la configuración MCP y re-liste las tools
-(`tools/list`). `sv-memory init` y `sv-memory hooks install` **no** son necesarios de nuevo
-en un proyecto ya configurado: `setup <agente>` ya instala hooks e inyecta el protocolo, y
-`init` es solo para proyectos nuevos. Verifica con `sv-memory version` y `sv-memory setup`
-(tabla de estado de solo lectura).
+Luego reinicia tu asistente para que recargue la configuración MCP y las nuevas herramientas. Verifica con `sv-memory version` y `sv-memory setup` (tabla de estado de solo lectura).
 
 ## Detalles por agente
 

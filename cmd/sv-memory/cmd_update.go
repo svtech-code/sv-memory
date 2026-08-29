@@ -430,5 +430,9 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("\n✓ Updated to %s!\n", rel.TagName)
 	fmt.Println("Run 'sv-memory version' to confirm.")
+	fmt.Println()
+	fmt.Println("ℹ️  To update hooks, skills, and MCP tool permissions in your existing projects, simply run:")
+	fmt.Println("      sv-memory init")
+	fmt.Println("    in each project directory.")
 	return nil
 }

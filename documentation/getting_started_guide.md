@@ -20,15 +20,14 @@ When working with AI assistants in medium or large repositories, three recurring
 
 ---
 
-## 🚀 5-Step Startup Flow
+## 🚀 3-Step Startup Flow
 
 ```mermaid
 flowchart TD
-    P1[Step 1: Global Binary Installation] --> P2[Step 2: Configuring Editors and CLIs with 'sv-memory configure']
-    P2 --> P3[Step 3: Project Initialization with 'sv-memory init']
-    P3 --> P4[Step 4: Installing Hooks with 'sv-memory hooks install']
-    P4 --> P5[Step 5: Restarting the Agent and Verifying]
-    P5 --> D[Daily Workflow with AI & TUI]
+    P1[Step 1: Global Binary Installation] --> P2[Step 2: Global Configuration with 'sv-memory configure']
+    P2 --> P3[Step 3: All-in-One Project Setup with 'sv-memory init']
+    P3 --> P4[Step 4: Restart Agent & Start Coding]
+    P4 --> D[Daily Autonomous Workflow with AI & TUI]
 ```
 
 ---
@@ -79,16 +78,15 @@ The command looks for the latest release published on GitHub, compares it with y
 
 1. It shows you both versions and **asks for confirmation** before doing anything.
 2. It downloads the correct binary for your operating system and architecture.
-3. It **verifies its SHA-256 checksum** against the one published in the release (protection against corrupt or tampered downloads).
-4. It replaces the binary atomically (on Windows it tells you the manual command, because it cannot overwrite a running `.exe`).
-
-> Your memories (SQLite DB in `~/.config/sv-memory/`) and your editor configuration are not affected by the update only the binary is replaced.
+3. It **verifies its SHA-256 checksum** against the one published in the release.
+4. It replaces the binary atomically.
+5. After updating, run `sv-memory init` inside your existing projects to automatically refresh skills, hooks, and new MCP tool permissions.
 
 ---
 
-### Step 2: Interactive Configuration of Editors and CLIs (`sv-memory configure`)
+### Step 2: Global Configuration of Editors and CLIs (`sv-memory configure`)
 
-For your editor or terminal assistant (Cursor, Claude Code, Windsurf, Antigravity CLI, OpenCode, etc.) to recognize the `sv-memory` MCP server, run the interactive wizard:
+For your editor or terminal assistant (Cursor, Claude Code, Windsurf, Antigravity CLI, OpenCode, etc.) to recognize the `sv-memory` MCP server globally, run the interactive wizard once:
 
 ```bash
 sv-memory configure
@@ -96,68 +94,45 @@ sv-memory configure
 
 #### What does this command do?
 
-The wizard guides you through interactive phases in the terminal, navigable with the `↑/↓` arrows, multiple selection with `SPACE`, `Enter` to advance, `Esc` to go back, and `Ctrl+C` to exit:
+The wizard guides you through interactive phases in the terminal:
 
-1. **Phase 1 (GUI Editors):** Lets you select editors such as **Cursor**, **VS Code**, **Zed**, or **Windsurf**. It automatically registers the MCP server in their user configuration files (e.g. `claude_desktop_config.json` or Cursor settings).
-2. **Phase 2 (Terminal Assistants):** Lets you select CLI clients such as **Claude Code**, **Antigravity CLI (agy)**, or **OpenCode**.
-3. **Phase 3 (Confirmation and application):** Shows the summary of selected tools and applies the automatic or manual configurations.
-4. **Phase 4 (MCP Permissions):** Lists the **34 sv-memory MCP tools** for you to select which ones to authorize (press `a` to select all and `x` to select none). It grants the permissions on the configured platforms that use a static allow-list (Antigravity CLI, Claude Code).
-
-> **Why this step?**
-> It prevents you from having to manually edit complex JSON configuration files. With a couple of keystrokes in the terminal, all your editors get linked to the `sv-memory` MCP server and the tool permissions are granted with full transparency.
+1. **Phase 1 (GUI Editors):** Registers the MCP server in user configuration files for **Cursor**, **VS Code**, **Zed**, or **Windsurf**.
+2. **Phase 2 (Terminal Assistants):** Configures CLI clients such as **Claude Code**, **Antigravity CLI (agy)**, or **OpenCode**.
+3. **Phase 3 (Confirmation and application):** Shows the summary of selected tools and applies the configurations.
+4. **Phase 4 (MCP Permissions):** Authorizes the **34 sv-memory MCP tools** on platforms with static allow-lists.
 
 ---
 
-### Step 3: Initialization inside Your Project (`sv-memory init`)
+### Step 3: All-in-One Initialization inside Your Project (`sv-memory init`)
 
-Navigate to the root of the repository or code project where you want to start working and initialize `sv-memory`:
+Navigate to the root of any repository or code project where you want to work with AI and run:
 
 ```bash
 cd /path/to/your-project
 sv-memory init
 ```
 
-#### What happens internally when running `sv-memory init`?
+#### What happens automatically when running `sv-memory init`?
 
-1. **Calculates the Project ID:** Derives a unique identifier based on the Git repository hash.
-2. **SQLite Registration:** Registers the project in the local SQLite database (`~/.config/sv-memory/storage.db`).
-3. **Code Graph Scan:** Analyzes the file tree and builds the initial dependency graph (imports, god nodes, Leiden communities).
-4. **Git Sync:** Imports previous memories shared by your team if the `.sv-memory/chunks/` folder exists.
-5. **Protocol Rules Injection (`AGENTS.md`):** Creates or updates the `AGENTS.md` file at the project root. This file contains the instructions so any AI agent automatically knows **when to consult**, **when to save**, and **when to compact** information autonomously.
+`sv-memory init` handles the entire project setup in a single shot:
 
----
+1. **SQLite Database & Project Registration:** Initializes project storage (`~/.config/sv-memory/storage.db`).
+2. **Protocol Rules Injection (`AGENTS.md` / `.cursorrules`):** Injects the operating rules so AI agents know how to consult graph context and save decisions.
+3. **Automatic Assistant Integrations (Skills & Hooks):**
+   - **Antigravity CLI:** Installs `.agents/skills/sv-memory/SKILL.md` (progressive on-demand skill) and `.agents/hooks/`.
+   - **OpenCode:** Installs `.opencode/skills/sv-memory/SKILL.md` and native TypeScript plugin (`sv_memory_context`).
+   - **Claude Code:** Installs `.claude/hooks/` (`SessionStart`, `SessionEnd`, `PreCompact`, `PreToolUse`).
+   - **Cursor / Windsurf:** Writes `.cursor/mcp.json` / `.windsurf/mcp_config.json`.
+4. **Automatic MCP Tool Permissions:** Automatically grants permissions for the 34 MCP tools so the agent never asks for repetitive manual approvals.
+5. **Git Memory Synchronization:** Syncs shared team memories from `.sv-memory/memories.json` if present.
+6. **Code Dependency Graph:** Scans source files and builds the dependency graph (imports, god nodes, Leiden communities).
 
-### Step 4: Installing PreToolUse Hooks (`sv-memory hooks install`)
+> **Re-running in existing projects:** `sv-memory init` is fully idempotent. Running it in an existing project reconciles and updates all active skills, hooks, and new tool permissions without disturbing existing configurations.
 
-Run this step **inside your project root** (hooks are installed in the project's `.agents/`, not globally):
-
-```bash
-cd /path/to/your-project
-sv-memory hooks install --platform antigravity
-```
-
-#### What does this command do?
-
-It creates `.agents/hooks.json` and `.agents/hooks/sv-memory.sh` so the agent intercepts file reads (`view_file`, `grep_search`, `list_dir`) and queries the project memory before reading code blindly.
-
-There are two modes:
-
-| Mode               | Command                                                   | Behavior                                                                                                                  |
-| :----------------- | :-------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------ |
-| **Soft** (default) | `sv-memory hooks install --platform antigravity`          | Blocks nothing. The real "nudge" is done by the `AGENTS.md` injected in Step 3, which forces the agent to query memory.   |
-| **Strict**         | `sv-memory hooks install --platform antigravity --strict` | Blocks the **first** file read of each session, forcing the agent to run `sv_mem_search`/`sv_graph_query` before reading. |
-
-> You can switch modes by re-running the command with or without `--strict`.
-
-> **Degradation & fail-open:** the hook scripts never call the sv-memory server they only inspect local files and env vars. If sv-memory is not initialized (no `.sv-memory/`), the binary is missing from PATH, or `SV_MEMORY_STRICT_DISABLE=1` is set, strict mode **allows** the read instead of blocking, so a missing/unconfigured sv-memory never deadlocks the agent. Note that strict _blocking_ is only implemented on Antigravity CLI; on Claude Code strict mode is nudge-only (it never blocks).
-
-> **Silent context injection (opt-in, default off):** Claude Code hooks can auto-inject a compact graph+memory context pack (`sv-memory context <file>` output) as `additionalContext` on the first `Read` of each file. Enable it with `sv-memory hooks install --platform claude-code --context-injection`, which creates a `.sv-memory/context-injection-enabled` marker. Output is cached per file for the session and time-bounded (2s); the hook always exits 0, so a missing binary or `.sv-memory` never breaks a tool call. Disable with `sv-memory hooks uninstall --context-injection`. Antigravity, Codex, and OpenCode do not support `additionalContext` injection and keep the nudge/skill mechanism.
-
-> **Per project:** Repeat this command in every repository where you work with AI. The supported platforms are `claude-code`, `codex`, `antigravity`, and `opencode` (omit `--platform` to install it on all of them).
-
-#### One-shot integration: `sv-memory setup <agent>`
-
-For a fully wired agent (MCP config + hooks/skills/plugins + protocol injection +
+> **Optional flags:**
+> - `sv-memory init --strict`: installs strict hooks (blocks raw file reads until memory/graph is queried).
+> - `sv-memory init --agent antigravity`: explicitly targets a specific assistant.
+> - `sv-memory init --skip-setup`: initializes DB and graph without touching agent integrations.
 tool permissions) in one command, use `sv-memory setup`:
 
 ```bash
