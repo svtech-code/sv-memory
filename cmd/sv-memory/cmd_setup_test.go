@@ -149,6 +149,36 @@ func TestSetupOpenCodeWritesPlugin(t *testing.T) {
 	}
 }
 
+// TestSetupAntigravityWritesHooksAndSkill verifies that antigravity setup writes
+// the PreToolUse hook, hooks.json, and the native skill in .agents/skills/.
+func TestSetupAntigravityWritesHooksAndSkill(t *testing.T) {
+	tempDir := t.TempDir()
+
+	eng := hook.New(tempDir, hook.ModeSoft)
+	results := eng.Install([]hook.Platform{hook.PlatformAntigravity})
+	if len(results) != 1 || results[0].Err != nil {
+		t.Fatalf("antigravity install failed: %v", results)
+	}
+
+	if !fileExists(filepath.Join(tempDir, ".agents", "hooks.json")) {
+		t.Error("expected .agents/hooks.json")
+	}
+	if !fileExists(filepath.Join(tempDir, ".agents", "hooks", "sv-memory.sh")) {
+		t.Error("expected .agents/hooks/sv-memory.sh")
+	}
+	skillPath := filepath.Join(tempDir, ".agents", "skills", "sv-memory", "SKILL.md")
+	if !fileExists(skillPath) {
+		t.Error("expected .agents/skills/sv-memory/SKILL.md")
+	}
+	skillContent := readTestFile(t, skillPath)
+	if !strings.Contains(skillContent, "name: sv-memory") {
+		t.Error("expected frontmatter in antigravity skill")
+	}
+	if !statusAntigravity(tempDir) {
+		t.Error("expected antigravity status to be installed")
+	}
+}
+
 func fileExists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil

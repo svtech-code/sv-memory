@@ -478,6 +478,11 @@ func TestInstallAntigravity(t *testing.T) {
 		t.Fatalf("hook script not created at %s", scriptPath)
 	}
 
+	skillPath := filepath.Join(tempDir, ".agents", "skills", "sv-memory", "SKILL.md")
+	if _, err := os.Stat(skillPath); os.IsNotExist(err) {
+		t.Fatalf("skill file not created at %s", skillPath)
+	}
+
 	status := eng.Status([]Platform{PlatformAntigravity})
 	if !status[PlatformAntigravity] {
 		t.Error("expected antigravity status to be installed")
@@ -511,6 +516,24 @@ func TestUninstallAntigravity(t *testing.T) {
 	scriptPath := filepath.Join(tempDir, ".agents", "hooks", "sv-memory.sh")
 	if _, err := os.Stat(scriptPath); !os.IsNotExist(err) {
 		t.Error("hook script should have been removed")
+	}
+
+	skillPath := filepath.Join(tempDir, ".agents", "skills", "sv-memory", "SKILL.md")
+	if _, err := os.Stat(skillPath); !os.IsNotExist(err) {
+		t.Error("skill file should have been removed")
+	}
+}
+
+func TestAntigravitySkillContent(t *testing.T) {
+	content := antigravitySkillScript()
+	if !strings.Contains(content, "name: sv-memory") {
+		t.Error("antigravity skill should have YAML frontmatter name")
+	}
+	if !strings.Contains(content, "description:") {
+		t.Error("antigravity skill should have YAML frontmatter description")
+	}
+	if !strings.Contains(content, "sv_mem_context_pack") {
+		t.Error("antigravity skill should emphasize sv_mem_context_pack")
 	}
 }
 

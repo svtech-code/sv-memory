@@ -551,6 +551,14 @@ func (e *HookEngine) antigravityHookScriptPath() string {
 	return filepath.Join(e.projPath, ".agents", "hooks", "sv-memory.sh")
 }
 
+func (e *HookEngine) antigravitySkillDir() string {
+	return filepath.Join(e.projPath, ".agents", "skills", "sv-memory")
+}
+
+func (e *HookEngine) antigravitySkillPath() string {
+	return filepath.Join(e.antigravitySkillDir(), "SKILL.md")
+}
+
 func (e *HookEngine) installAntigravity() ([]string, error) {
 	var created []string
 
@@ -615,6 +623,21 @@ func (e *HookEngine) installAntigravity() ([]string, error) {
 	}
 	created = append(created, hooksPath)
 
+	// 3. Write Antigravity native skill (.agents/skills/sv-memory/SKILL.md)
+	skillDir := e.antigravitySkillDir()
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		return created, fmt.Errorf("failed to create .agents/skills/sv-memory dir: %w", err)
+	}
+	skillPath := e.antigravitySkillPath()
+	skillContent := antigravitySkillScript()
+	if skillContent == "" {
+		return created, fmt.Errorf("missing antigravity skill template")
+	}
+	if err := os.WriteFile(skillPath, []byte(skillContent), 0644); err != nil {
+		return created, fmt.Errorf("failed to write antigravity skill: %w", err)
+	}
+	created = append(created, skillPath)
+
 	return created, nil
 }
 
@@ -652,6 +675,16 @@ func (e *HookEngine) uninstallAntigravity() ([]string, error) {
 		}
 	}
 
+	// 3. Remove skill (.agents/skills/sv-memory/SKILL.md)
+	skillPath := e.antigravitySkillPath()
+	if err := os.Remove(skillPath); err != nil && !os.IsNotExist(err) {
+		return removed, fmt.Errorf("failed to remove agy skill: %w", err)
+	}
+	if _, err := os.Stat(skillPath); os.IsNotExist(err) {
+		removed = append(removed, skillPath)
+		_ = os.Remove(e.antigravitySkillDir())
+	}
+
 	return removed, nil
 }
 
@@ -662,6 +695,10 @@ func (e *HookEngine) antigravityInstalled() bool {
 	}
 	scriptPath := e.antigravityHookScriptPath()
 	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+		return false
+	}
+	skillPath := e.antigravitySkillPath()
+	if _, err := os.Stat(skillPath); os.IsNotExist(err) {
 		return false
 	}
 	existing, err := os.ReadFile(hooksPath)
