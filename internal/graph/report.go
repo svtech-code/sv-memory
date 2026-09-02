@@ -72,6 +72,7 @@ func GenerateGraphReport(db *sql.DB, projectID string, output string, opts Repor
 
 	var body strings.Builder
 	writeReportHeader(&body, opts, g, commLabels)
+	writeReportConfidence(&body, g)
 	writeReportGodNodes(&body, godNodes)
 	writeReportCommunities(&body, g, comms, commLabels, opts)
 	writeReportConnections(&body, conns, commLabels)
@@ -106,6 +107,75 @@ func writeReportHeader(b *strings.Builder, opts ReportOptions, g *InMemoryGraph,
 	fmt.Fprintf(b, "| Hub threshold (p99) | %d |\n", g.ComputeHubThreshold())
 	b.WriteString("\n")
 	b.WriteString("This report is a standing architectural overview: the most-connected hubs, the community structure, and the bridges between communities. Use it to decide what to explore or refactor next.\n\n")
+}
+
+// writeReportConfidence renders the Edge Confidence Breakdown section,
+// counting EXTRACTED/INFERRED/AMBIGUOUS edges and listing the top 5
+// lowest-confidence edges for review.
+func writeReportConfidence(b *strings.Builder, g *InMemoryGraph) {
+	var extracted, inferred, ambiguous int
+	type lowConfEdge struct {
+		src, tgt, rel, conf string
+	}
+	var lowConf []lowConfEdge
+
+	for _, edges := range g.EdgesBySource {
+		for _, e := range edges {
+			switch e.Confidence {
+			case "INFERRED":
+				inferred++
+				lowConf = append(lowConf, lowConfEdge{src: e.SourceID, tgt: e.TargetID, rel: e.RelationType, conf: e.Confidence})
+			case "AMBIGUOUS":
+				ambiguous++
+				lowConf = append(lowConf, lowConfEdge{src: e.SourceID, tgt: e.TargetID, rel: e.RelationType, conf: e.Confidence})
+			default:
+				extracted++
+			}
+		}
+	}
+
+	total := extracted + inferred + ambiguous
+	if total == 0 {
+		return
+	}
+
+	b.WriteString("## Edge Confidence Breakdown\n\n")
+	fmt.Fprintf(b, "| Level | Count | Percentage |\n|---|---|---|\n")
+	fmt.Fprintf(b, "| EXTRACTED | %d | %d%% |\n", extracted, extracted*100/total)
+	fmt.Fprintf(b, "| INFERRED | %d | %d%% |\n", inferred, inferred*100/total)
+	if ambiguous > 0 {
+		fmt.Fprintf(b, "| AMBIGUOUS | %d | %d%% |\n", ambiguous, ambiguous*100/total)
+	}
+	b.WriteString("\n")
+	b.WriteString("- **EXTRACTED:** explicit in source code (highest confidence).\n")
+	b.WriteString("- **INFERRED:** derived by the graph resolver (medium confidence).\n")
+	if ambiguous > 0 {
+		b.WriteString("- **AMBIGUOUS:** uncertain or conflicting signals (needs review).\n")
+	}
+	b.WriteString("\n")
+
+	if len(lowConf) > 0 {
+		// Show up to 5 lowest-confidence edges for review.
+		limit := 5
+		if len(lowConf) < limit {
+			limit = len(lowConf)
+		}
+		fmt.Fprintf(b, "**Top %d edges needing review** (INFERRED/AMBIGUOUS):\n\n", limit)
+		b.WriteString("| Source | Target | Relation | Confidence |\n|---|---|---|---|\n")
+		for _, e := range lowConf[:limit] {
+			src := e.src
+			if n, ok := g.Nodes[e.src]; ok {
+				src = n.Label
+			}
+			tgt := e.tgt
+			if n, ok := g.Nodes[e.tgt]; ok {
+				tgt = n.Label
+			}
+			fmt.Fprintf(b, "| `%s` | `%s` | `%s` | `%s` |\n", src, tgt, e.rel, e.conf)
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("---\n\n")
 }
 
 func writeReportGodNodes(b *strings.Builder, godNodes []DegreeNode) {

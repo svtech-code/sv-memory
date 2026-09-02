@@ -284,6 +284,7 @@ type SurprisingConnection struct {
 	TargetID      string  `json:"target_id"`
 	TargetLabel   string  `json:"target_label"`
 	EdgeType      string  `json:"edge_type"`
+	Confidence    string  `json:"confidence"`
 	SrcCommunity  int     `json:"src_community"`
 	DstCommunity  int     `json:"dst_community"`
 	SurpriseScore float64 `json:"surprise_score"`
@@ -348,6 +349,7 @@ func (g *InMemoryGraph) FindSurprisingConnections(communities map[string]int, ce
 					TargetID:      edge.TargetID,
 					TargetLabel:   dstLabel,
 					EdgeType:      edge.RelationType,
+					Confidence:    edge.Confidence,
 					SrcCommunity:  srcComm,
 					DstCommunity:  dstComm,
 					SurpriseScore: score,

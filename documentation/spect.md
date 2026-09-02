@@ -831,6 +831,7 @@ Queries structural relations using a Breadth-First Search (BFS). By default it r
   - `depth` (string, optional): Hop distance (default `1`).
   - `relation_type` (string, optional): Filter (e.g., `'imports'`, `'calls'`, `'depends_on'`).
   - `direction` (string, optional): Traversal direction: `'in'` | `'out'` | `'all'` (default `'out'`).
+  - `confidence` (string, optional): Filter by edge confidence level (`'EXTRACTED'`, `'INFERRED'`, `'AMBIGUOUS'`). Shows only edges matching this confidence; nodes remain for context.
   - `mermaid` (string, optional): Render the edges as a Mermaid diagram instead of the compact textual edge list (default `'false'`).
   - `token_budget` (string, optional): Max tokens for the response; the response is truncated with a notice when exceeded (default from config `max_response_tokens`, 4000; `'0'` = unlimited).
 
@@ -880,7 +881,7 @@ Identifies the most connected nodes in the graph based on betweenness centrality
 
 ### 26. `sv_graph_surprising_connections`
 
-Finds non-obvious or unexpected dependency paths in the graph. Highlights structural anomalies that may indicate architectural concerns.
+Finds non-obvious or unexpected dependency paths in the graph. Highlights structural anomalies that may indicate architectural concerns. Each bridge row includes the edge's confidence level (EXTRACTED/INFERRED/AMBIGUOUS).
 
 - **Parameters:**
   - `limit` (string, optional): Max connections to return (default `10`).

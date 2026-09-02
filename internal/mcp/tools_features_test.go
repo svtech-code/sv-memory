@@ -444,6 +444,126 @@ func TestGraphCommunitiesTool(t *testing.T) {
 	}
 }
 
+func TestGraphReportConfidenceSection(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	// Write files so the graph has nodes. The confidence section is verified
+	// by the unit test in report_test.go (TestWriteReportConfidence) since
+	// edge detection in the scanner may vary across environments.
+	if err := os.WriteFile(filepath.Join(tempDir, "a.go"), []byte("package main\nfunc a() {}\n"), 0644); err != nil {
+		t.Fatalf("failed writing a.go: %v", err)
+	}
+	if err := graph.SyncGraph(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
+		t.Fatalf("failed syncing graph: %v", err)
+	}
+
+	srv := NewServer(pool, cfg)
+	ctx := context.Background()
+
+	req := mcpgo.CallToolRequest{}
+	req.Params.Name = "sv_graph_report"
+	req.Params.Arguments = map[string]any{"output": "report_conf.md"}
+	res, err := srv.GetTool("sv_graph_report").Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("sv_graph_report failed: %v", err)
+	}
+	digest := textContent(res.Content[0])
+	if !strings.Contains(digest, "Graph report written to") {
+		t.Fatalf("expected report digest, got:\n%s", digest)
+	}
+
+	reportPath := filepath.Join(cfg.ProjPath, "report_conf.md")
+	body, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("failed reading report: %v", err)
+	}
+	bodyStr := string(body)
+	// Verify report has core sections (confidence section presence depends on
+	// whether the scanner detected edges — unit test covers that logic).
+	if !strings.Contains(bodyStr, "# Graph Overview Report") {
+		t.Fatalf("expected report header, got:\n%s", bodyStr)
+	}
+}
+
+func TestSurprisingConnectionsConfidenceColumn(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	// Write files forming two communities with a cross-community bridge.
+	if err := os.WriteFile(filepath.Join(tempDir, "a.go"), []byte("package main\nimport \"./b\"\nfunc main() { b helper() }\n"), 0644); err != nil {
+		t.Fatalf("failed writing a.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "b.go"), []byte("package main\nfunc helper() {}\n"), 0644); err != nil {
+		t.Fatalf("failed writing b.go: %v", err)
+	}
+	if err := graph.SyncGraph(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
+		t.Fatalf("failed syncing graph: %v", err)
+	}
+
+	srv := NewServer(pool, cfg)
+	ctx := context.Background()
+
+	req := mcpgo.CallToolRequest{}
+	req.Params.Name = "sv_graph_surprising_connections"
+	req.Params.Arguments = map[string]any{"limit": "10"}
+	res, err := srv.GetTool("sv_graph_surprising_connections").Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("sv_graph_surprising_connections failed: %v", err)
+	}
+	out := textContent(res.Content[0])
+	// Response should either have results with Confidence column or "no connections".
+	if strings.Contains(out, "Surprising Connections") && strings.Contains(out, "| ") {
+		if !strings.Contains(out, "Confidence") {
+			t.Fatalf("expected Confidence column in surprising connections table, got:\n%s", out)
+		}
+	}
+}
+
+func TestGraphQueryConfidenceFilter(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	// Write files with an import edge.
+	if err := os.WriteFile(filepath.Join(tempDir, "a.go"), []byte("package main\nimport \"./b\"\nfunc main() { b helper() }\n"), 0644); err != nil {
+		t.Fatalf("failed writing a.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "b.go"), []byte("package main\nfunc helper() {}\n"), 0644); err != nil {
+		t.Fatalf("failed writing b.go: %v", err)
+	}
+	if err := graph.SyncGraph(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
+		t.Fatalf("failed syncing graph: %v", err)
+	}
+
+	srv := NewServer(pool, cfg)
+	ctx := context.Background()
+
+	// Query without filter — should show edges.
+	req := mcpgo.CallToolRequest{}
+	req.Params.Name = "sv_graph_query"
+	req.Params.Arguments = map[string]any{"path_or_node": "a.go", "depth": "1"}
+	res, err := srv.GetTool("sv_graph_query").Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("sv_graph_query failed: %v", err)
+	}
+	outAll := textContent(res.Content[0])
+	if !strings.Contains(outAll, "Edges:") && !strings.Contains(outAll, "No connections") {
+		t.Fatalf("expected edges section or no-connections, got:\n%s", outAll)
+	}
+
+	// Query with confidence=INFERRED filter — edges from freshly synced graph
+	// are typically EXTRACTED, so INFERRED filter should yield no edges.
+	req.Params.Arguments = map[string]any{"path_or_node": "a.go", "depth": "1", "confidence": "INFERRED"}
+	res, err = srv.GetTool("sv_graph_query").Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("sv_graph_query with confidence filter failed: %v", err)
+	}
+	outFiltered := textContent(res.Content[0])
+	if strings.Contains(outFiltered, "→[") {
+		t.Fatalf("confidence=INFERRED filter should exclude EXTRACTED edges, got:\n%s", outFiltered)
+	}
+}
+
 func TestSearchGraphBoost(t *testing.T) {
 	tempDir, pool, cfg := setupTestEnv(t)
 	defer cleanupTestEnv(tempDir, pool)

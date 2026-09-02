@@ -830,6 +830,7 @@ Consulta relaciones estructurales mediante Búsqueda en Anchura (BFS). Por defec
   - `depth` (string, opcional): Distancia de salto (por defecto `1`).
   - `relation_type` (string, opcional): Filtro (p. ej., `'imports'`, `'calls'`, `'depends_on'`).
   - `direction` (string, opcional): Dirección del recorrido: `'in'` | `'out'` | `'all'` (por defecto `'out'`).
+  - `confidence` (string, opcional): Filtra por nivel de confianza del edge (`'EXTRACTED'`, `'INFERRED'`, `'AMBIGUOUS'`). Muestra solo los edges que coinciden; los nodos permanecen para contexto.
   - `mermaid` (string, opcional): Renderiza los edges como diagrama Mermaid en lugar de la lista textual compacta (por defecto `'false'`).
   - `token_budget` (string, opcional): Máximo de tokens para la respuesta; la respuesta se trunca con un aviso al superarse (por defecto desde config `max_response_tokens`, 4000; `'0'` = ilimitado).
 
@@ -879,7 +880,7 @@ Identifica los nodos más conectados del grafo según centralidad de intermediac
 
 ### 26. `sv_graph_surprising_connections`
 
-Encuentra rutas de dependencia no obvias o inesperadas en el grafo. Resalta anomalías estructurales que pueden indicar preocupaciones arquitectónicas.
+Encuentra rutas de dependencia no obvias o inesperadas en el grafo. Resalta anomalías estructurales que pueden indicar preocupaciones arquitectónicas. Cada fila incluye el nivel de confianza del edge (EXTRACTED/INFERRED/AMBIGUOUS).
 
 - **Parámetros:**
   - `limit` (string, opcional): Máximo de conexiones a devolver (por defecto `10`).

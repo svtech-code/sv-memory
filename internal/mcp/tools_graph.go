@@ -37,6 +37,7 @@ func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) 
 
 	relationType := req.GetString("relation_type", "")
 	direction := req.GetString("direction", "out")
+	confidenceFilter := req.GetString("confidence", "")
 	mermaidFlag := req.GetString("mermaid", "") == "true"
 
 	// Load or retrieve the in-memory graph cache.
@@ -55,6 +56,23 @@ func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) 
 	}
 
 	commLabels := computeCommLabels(g)
+
+	// Apply optional confidence filter: keep only edges matching the requested
+	// confidence level. Nodes remain in the subgraph for context, but only
+	// matching edges are rendered.
+	if confidenceFilter != "" {
+		var filtered []*graph.Edge
+		for _, e := range subGraph.Edges {
+			conf := e.Confidence
+			if conf == "" {
+				conf = "EXTRACTED"
+			}
+			if conf == confidenceFilter {
+				filtered = append(filtered, e)
+			}
+		}
+		subGraph.Edges = filtered
+	}
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "## Code Sub-Graph for '%s' (Depth: %d)\n\n", pathOrNode, depth)
@@ -624,17 +642,23 @@ func (s *Server) handleSurprisingConnections(ctx context.Context, req mcp.CallTo
 		src   string
 		tgt   string
 		etype string
+		conf  string
 		srcC  string
 		dstC  string
 	}
 	rowsFormatted := make([]scoredConn, 0, len(conns))
 	for i, c := range conns {
+		conf := c.Confidence
+		if conf == "" {
+			conf = "EXTRACTED"
+		}
 		rowsFormatted = append(rowsFormatted, scoredConn{
 			idx:   i + 1,
 			score: c.SurpriseScore,
 			src:   c.SourceLabel,
 			tgt:   c.TargetLabel,
 			etype: c.EdgeType,
+			conf:  conf,
 			srcC:  commLabelStr(c.SrcCommunity, commLabels),
 			dstC:  commLabelStr(c.DstCommunity, commLabels),
 		})
@@ -653,11 +677,11 @@ func (s *Server) handleSurprisingConnections(ctx context.Context, req mcp.CallTo
 		best.src, best.tgt, best.etype, best.score, best.srcC, best.dstC)
 	sb.WriteString("Drill down with `sv_graph_path(source=\"<node>\", target=\"<node>\")` to trace the full dependency chain.\n\n")
 
-	sb.WriteString("| Rank | Source | Target | Edge Type | Surprise Score | Communities |\n")
-	sb.WriteString("|------|--------|--------|-----------|----------------|-------------|\n")
+	sb.WriteString("| Rank | Source | Target | Edge Type | Confidence | Surprise Score | Communities |\n")
+	sb.WriteString("|------|--------|--------|-----------|------------|----------------|-------------|\n")
 	for _, r := range rowsFormatted {
-		fmt.Fprintf(&sb, "| %d | **%s** | **%s** | `%s` | %.2f | %s ↔ %s |\n",
-			r.idx, r.src, r.tgt, r.etype, r.score, r.srcC, r.dstC)
+		fmt.Fprintf(&sb, "| %d | **%s** | **%s** | `%s` | `%s` | %.2f | %s ↔ %s |\n",
+			r.idx, r.src, r.tgt, r.etype, r.conf, r.score, r.srcC, r.dstC)
 	}
 
 	sb.WriteString("\n*Higher surprise score means a more unexpected bridge between communities.*\n")

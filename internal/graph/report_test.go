@@ -126,3 +126,52 @@ func TestGenerateGraphReportEmptyProject(t *testing.T) {
 		t.Errorf("expected report file to be written: %v", err)
 	}
 }
+
+func TestWriteReportConfidence(t *testing.T) {
+	g := &InMemoryGraph{
+		Nodes: map[string]*Node{
+			"a.go": {ID: "a.go", Label: "a.go", Path: "a.go"},
+			"b.go": {ID: "b.go", Label: "b.go", Path: "b.go"},
+			"c.go": {ID: "c.go", Label: "c.go", Path: "c.go"},
+		},
+		EdgesBySource: map[string][]*Edge{
+			"a.go": {
+				{ID: "e1", SourceID: "a.go", TargetID: "b.go", RelationType: "imports", Confidence: "EXTRACTED"},
+				{ID: "e2", SourceID: "a.go", TargetID: "c.go", RelationType: "calls", Confidence: "INFERRED"},
+			},
+			"b.go": {
+				{ID: "e3", SourceID: "b.go", TargetID: "c.go", RelationType: "depends_on", Confidence: "AMBIGUOUS"},
+			},
+		},
+	}
+
+	var sb strings.Builder
+	writeReportConfidence(&sb, g)
+	out := sb.String()
+
+	if !strings.Contains(out, "## Edge Confidence Breakdown") {
+		t.Fatalf("expected Edge Confidence Breakdown section, got:\n%s", out)
+	}
+	if !strings.Contains(out, "EXTRACTED") || !strings.Contains(out, "INFERRED") || !strings.Contains(out, "AMBIGUOUS") {
+		t.Fatalf("expected all three confidence levels, got:\n%s", out)
+	}
+	if !strings.Contains(out, "33%") {
+		t.Fatalf("expected 33%% for each level (3 edges, 1 each), got:\n%s", out)
+	}
+	// Low-confidence edges should be listed.
+	if !strings.Contains(out, "needing review") {
+		t.Fatalf("expected 'needing review' section for INFERRED/AMBIGUOUS edges, got:\n%s", out)
+	}
+}
+
+func TestWriteReportConfidenceEmpty(t *testing.T) {
+	g := &InMemoryGraph{
+		Nodes:         map[string]*Node{},
+		EdgesBySource: map[string][]*Edge{},
+	}
+	var sb strings.Builder
+	writeReportConfidence(&sb, g)
+	if sb.Len() != 0 {
+		t.Fatalf("expected empty output for graph with no edges, got:\n%s", sb.String())
+	}
+}
