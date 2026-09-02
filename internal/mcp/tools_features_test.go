@@ -228,6 +228,41 @@ func TestContextPackTool(t *testing.T) {
 	}
 }
 
+func TestGraphExploreAliasTool(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	if err := os.WriteFile(filepath.Join(tempDir, "alpha.go"),
+		[]byte("package main\nfunc Alpha(){ Beta() }\nfunc Beta(){ Gamma() }\nfunc Gamma(){}\n"), 0644); err != nil {
+		t.Fatalf("failed writing alpha.go: %v", err)
+	}
+	if err := graph.SyncGraph(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
+		t.Fatalf("failed syncing graph: %v", err)
+	}
+
+	srv := NewServer(pool, cfg)
+	// The alias tool exists and routes to the context-pack handler.
+	if srv.GetTool("sv_graph_explore") == nil {
+		t.Fatal("expected sv_graph_explore alias tool to be registered")
+	}
+
+	// Multi-symbol explore returns a call path between Alpha and Gamma.
+	req := mcpgo.CallToolRequest{}
+	req.Params.Name = "sv_graph_explore"
+	req.Params.Arguments = map[string]any{"path": "Alpha, Gamma"}
+	res, err := srv.GetTool("sv_graph_explore").Handler(context.Background(), req)
+	if err != nil {
+		t.Fatalf("sv_graph_explore failed: %v", err)
+	}
+	out := textContent(res.Content[0])
+	if !strings.Contains(out, "### Call path") {
+		t.Fatalf("expected explore call path section, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Beta") {
+		t.Fatalf("expected Beta in the call path, got:\n%s", out)
+	}
+}
+
 func TestSearchGraphBoost(t *testing.T) {
 	tempDir, pool, cfg := setupTestEnv(t)
 	defer cleanupTestEnv(tempDir, pool)

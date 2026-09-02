@@ -69,19 +69,43 @@ type ContextCapability struct {
 	Requirements     []string
 }
 
+// ContextSnippet is a surgical source-code excerpt for a secondary symbol
+// surfaced by the unified explore call. It lets the agent see the bodies of
+// related symbols (callers/callees or a second queried symbol) without a
+// separate Read call, mirroring the "source is already read" contract.
+type ContextSnippet struct {
+	Label     string
+	Path      string
+	StartLine int
+	Text      string
+}
+
+// CallPathHop is one step in the shortest dependency path between two queried
+// symbols. Direction is always from source to target of a graph edge.
+type CallPathHop struct {
+	Label        string
+	RelationType string
+	Confidence   string
+}
+
 // ContextPack is the fused, token-efficient context for a code path: the
 // node's structural role, surgical source code snippet, transitive blast radius,
 // plus the memories that explain why the code is the way it is (decisions/standards/bugfixes linked to that path).
+// When the caller passes multiple comma-separated symbols, the pack also carries
+// surgical snippets for the secondary symbols and the shortest call path between
+// the two most significant ones, turning the pack into a unified "explore" call.
 type ContextPack struct {
-	Node         *ContextNode
-	Snippet      string
-	SnippetLine  int
-	BlastRadius  []graph.BlastRadiusNode
-	Memories     []ContextMemory
-	Dependents   []ContextNeighbor
-	Dependencies []ContextNeighbor
-	Changes      []ContextChange
-	Capabilities []ContextCapability
+	Node          *ContextNode
+	Snippet       string
+	SnippetLine   int
+	BlastRadius   []graph.BlastRadiusNode
+	Memories      []ContextMemory
+	Dependents    []ContextNeighbor
+	Dependencies  []ContextNeighbor
+	Changes       []ContextChange
+	Capabilities  []ContextCapability
+	ExtraSnippets []ContextSnippet
+	CallPath      []CallPathHop
 }
 
 // ResolveContextNode finds the graph node matching query, trying exact id,
@@ -146,6 +170,12 @@ func ResolveContextNode(db *sql.DB, projectID, query string) (*ContextNode, erro
 // so the agent sees in-flight proposals before touching the path. The graph may
 // be empty (never synced); in that case a pack with no node but path-scoped
 // memories is still returned so the call never hard-fails.
+//
+// The query may carry multiple comma-separated symbols ("A, B"). In that case
+// the resolved primary node receives the full single-symbol treatment below,
+// the secondary symbols receive surgical snippets into ExtraSnippets, and the
+// shortest dependency path between the two most significant symbols is stored
+// in CallPath. A single symbol keeps the exact previous behaviour and output.
 func GetContextPack(db *sql.DB, projectID, query string, maxMemories int, includeChanges bool) (*ContextPack, error) {
 	if maxMemories <= 0 {
 		maxMemories = 5
@@ -164,7 +194,12 @@ func GetContextPack(db *sql.DB, projectID, query string, maxMemories int, includ
 		_, _ = graph.SyncGraphIfHasChanges(db, projectID, projPath)
 	}
 
-	node, err := ResolveContextNode(db, projectID, query)
+	// 0b. Split the query into at most 3 symbols when commas are present so the
+	// pack turns into a unified explore call (multi-symbol + call path). A
+	// single symbol falls through to the exact existing single-node flow.
+	primary, extraSnippets, callPath := resolveExploreSymbols(db, projectID, projPath, query)
+
+	node, err := ResolveContextNode(db, projectID, primary)
 	if err != nil {
 		return nil, err
 	}
@@ -179,18 +214,21 @@ func GetContextPack(db *sql.DB, projectID, query string, maxMemories int, includ
 		pack.BlastRadius, _ = graph.CalculateBlastRadius(db, projectID, node.ID, 3, 10)
 	}
 
+	pack.ExtraSnippets = extraSnippets
+	pack.CallPath = callPath
+
 	seen := map[string]bool{}
 	var mems []ContextMemory
 
 	// 1. Memories whose where_path matches the query (path-scoped recall).
-	pattern := "%" + sanitizePathFilter(query) + "%"
+	pattern := "%" + sanitizePathFilter(primary) + "%"
 	pathRows, err := db.Query(`
 		SELECT id, category, what, COALESCE(why, ''), COALESCE(where_path, '')
 		FROM memories
 		WHERE project_id = ? AND deleted_at IS NULL
 		  AND (where_path LIKE ? ESCAPE '\' OR where_path = ?)
 		ORDER BY created_at DESC
-		LIMIT ?`, projectID, pattern, query, maxMemories)
+		LIMIT ?`, projectID, pattern, primary, maxMemories)
 	if err != nil {
 		return nil, fmt.Errorf("failed querying path memories: %w", err)
 	}
@@ -261,7 +299,7 @@ func GetContextPack(db *sql.DB, projectID, query string, maxMemories int, includ
 	pack.Memories = mems
 
 	if includeChanges {
-		changes, err := changesForPath(db, projectID, query)
+		changes, err := changesForPath(db, projectID, primary)
 		if err == nil {
 			pack.Changes = changes
 		}
@@ -560,18 +598,16 @@ func RenderContextPack(p *ContextPack, whyChars int) string {
 		fmt.Fprintf(&sb, "\n### Source Code Snippet (L%d):\n```%s\n%s\n```\n", p.SnippetLine, ext, p.Snippet)
 	}
 
+	if len(p.CallPath) > 0 {
+		renderCallPath(&sb, p.CallPath)
+	}
+
+	if len(p.ExtraSnippets) > 0 {
+		renderExtraSnippets(&sb, p.ExtraSnippets)
+	}
+
 	if len(p.Memories) > 0 {
-		sb.WriteString("\n### Linked memories (why this code is the way it is):\n")
-		for _, m := range p.Memories {
-			fmt.Fprintf(&sb, "- **[%s] %s** (ID: %s)\n", strings.ToUpper(m.Category), m.What, m.ID)
-			if m.Why != "" {
-				fmt.Fprintf(&sb, "  *Why:* %s\n", TruncateText(security.SanitizeText(m.Why), whyChars))
-			}
-			if m.Source == "rationale_for" {
-				sb.WriteString("  *linked via code graph (rationale_for)*\n")
-			}
-		}
-		sb.WriteString("\n*Drill down with `sv_mem_get(id=\"<id>\")` for full content.*\n")
+		renderMemories(&sb, p.Memories, whyChars)
 	}
 
 	if len(p.Dependents) > 0 {
@@ -598,15 +634,7 @@ func RenderContextPack(p *ContextPack, whyChars int) string {
 	}
 
 	if len(p.Changes) > 0 {
-		sb.WriteString("\n### Active changes affecting this path:\n")
-		for _, c := range p.Changes {
-			if c.TaskProgress != "" {
-				fmt.Fprintf(&sb, "- **[%s] %s** (`%s`, slug `%s`, tasks: %s)\n", strings.ToUpper(c.Status), c.Title, c.ID, c.Slug, c.TaskProgress)
-			} else {
-				fmt.Fprintf(&sb, "- **[%s] %s** (`%s`, slug `%s`)\n", strings.ToUpper(c.Status), c.Title, c.ID, c.Slug)
-			}
-		}
-		sb.WriteString("\n*Review with `sv_validate_decision(change_id=\"<id>\")` before modifying this code.*\n")
+		renderChanges(&sb, p.Changes)
 	}
 
 	if len(p.Capabilities) > 0 {
@@ -621,7 +649,7 @@ func RenderContextPack(p *ContextPack, whyChars int) string {
 		sb.WriteString("\n*Full spec: `.sv-memory/specs/capabilities/<cap>/spec.md` — drill down with `sv_mem_context_pack` or `sv_graph_query`.*\n")
 	}
 
-	if p.Node == nil && len(p.Memories) == 0 && len(p.Changes) == 0 && len(p.Capabilities) == 0 {
+	if p.Node == nil && len(p.Memories) == 0 && len(p.Changes) == 0 && len(p.Capabilities) == 0 && len(p.ExtraSnippets) == 0 {
 		return "No context found: no matching graph node and no path-scoped memories for the given path."
 	}
 	return strings.TrimSpace(sb.String())
@@ -632,4 +660,184 @@ func plural(n int) string {
 		return ""
 	}
 	return "s"
+}
+
+// splitContextQuery splits an explore query into at most 3 symbols. It splits
+// on commas (and trims whitespace), but returns a single-element slice when the
+// caller gave one symbol, preserving the legacy single-node code path.
+func splitContextQuery(query string) []string {
+	parts := strings.Split(query, ",")
+	var out []string
+	for _, p := range parts {
+		if s := strings.TrimSpace(p); s != "" {
+			out = append(out, s)
+			if len(out) >= 3 {
+				break
+			}
+		}
+	}
+	if len(out) == 0 {
+		return []string{strings.TrimSpace(query)}
+	}
+	return out
+}
+
+// resolveExploreSymbols is the multi-symbol branch of GetContextPack for a
+// unified explore call. It returns the primary symbol (first of the comma list,
+// or the query itself for a single symbol), the surgical snippets for secondary
+// symbols, and the shortest dependency path between the two most significant
+// symbols. A single symbol returns no extras and keeps the legacy single-node
+// behaviour.
+func resolveExploreSymbols(db *sql.DB, projectID, projPath, query string) (string, []ContextSnippet, []CallPathHop) {
+	symbols := splitContextQuery(query)
+	if len(symbols) <= 1 {
+		return query, nil, nil
+	}
+	primary := symbols[0]
+	var extra []ContextSnippet
+	for _, sym := range symbols[1:] {
+		extraNode, resErr := ResolveContextNode(db, projectID, strings.TrimSpace(sym))
+		if resErr != nil || extraNode == nil || extraNode.Path == "" || projPath == "" {
+			continue
+		}
+		text, startLine := extractSurgicalSnippet(projPath, extraNode, maxSnippetLines)
+		if text == "" {
+			continue
+		}
+		extra = append(extra, ContextSnippet{
+			Label:     extraNode.Label,
+			Path:      extraNode.Path,
+			StartLine: startLine,
+			Text:      text,
+		})
+	}
+
+	// Shortest dependency path between the two most significant symbols.
+	var callPath []CallPathHop
+	start, end := resolveChainEndpoints(db, projectID, symbols)
+	if start != "" && end != "" {
+		callPath = computeCallPath(db, projectID, start, end)
+	}
+	return primary, extra, callPath
+}
+
+// resolveChainEndpoints returns the resolved node IDs (best effort) for the
+// first two symbols that actually resolve, so computeCallPath has concrete
+// endpoints to join.
+func resolveChainEndpoints(db *sql.DB, projectID string, symbols []string) (string, string) {
+	var ids []string
+	for _, sym := range symbols {
+		if len(ids) >= 2 {
+			break
+		}
+		n, err := ResolveContextNode(db, projectID, strings.TrimSpace(sym))
+		if err != nil || n == nil {
+			continue
+		}
+		ids = append(ids, n.ID)
+	}
+	if len(ids) < 2 {
+		return "", ""
+	}
+	return ids[0], ids[1]
+}
+
+// computeCallPath loads the in-memory graph once and returns the shortest
+// dependency path between start and end (from source toward target). It returns
+// nil when the graph is empty, a node is missing, or no path exists within the
+// hop limit.
+func computeCallPath(db *sql.DB, projectID, startID, endID string) []CallPathHop {
+	g, err := graph.LoadFullGraph(db, projectID)
+	if err != nil || g == nil {
+		return nil
+	}
+	pathIDs := g.ShortestPath(startID, endID, maxCallPathHops)
+	if len(pathIDs) < 2 {
+		return nil
+	}
+	var out []CallPathHop
+	for i := 0; i < len(pathIDs); i++ {
+		label := pathIDs[i]
+		if n := g.Nodes[pathIDs[i]]; n != nil && n.Label != "" {
+			label = n.Label
+		}
+		hop := CallPathHop{Label: label}
+		if i+1 < len(pathIDs) {
+			for _, e := range g.EdgesBySource[pathIDs[i]] {
+				if e.TargetID == pathIDs[i+1] {
+					hop.RelationType = e.RelationType
+					hop.Confidence = e.Confidence
+					if hop.Confidence == "" {
+						hop.Confidence = "EXTRACTED"
+					}
+					break
+				}
+			}
+		}
+		out = append(out, hop)
+	}
+	return out
+}
+
+// maxCallPathHops bounds the explore call-path computation so the graph BFS
+// stays cheap even on large projects.
+const maxCallPathHops = 8
+
+// renderCallPath writes the "Call path" section: a compact chain of node labels
+// with per-hop relation type and confidence annotations.
+func renderCallPath(sb *strings.Builder, hops []CallPathHop) {
+	sb.WriteString("\n### Call path (shortest dependency chain):\n")
+	for i, hop := range hops {
+		if i > 0 {
+			arrow := " --> "
+			if hop.RelationType != "" {
+				arrow = fmt.Sprintf(" --[%s %s]--> ", hop.RelationType, strings.ToLower(hop.Confidence))
+			}
+			sb.WriteString(arrow)
+		}
+		fmt.Fprintf(sb, "`%s`", hop.Label)
+	}
+	sb.WriteString("\n")
+}
+
+// renderExtraSnippets writes the "Related symbols (source)" section for the
+// secondary symbols of a multi-symbol explore call.
+func renderExtraSnippets(sb *strings.Builder, snippets []ContextSnippet) {
+	sb.WriteString("\n### Related symbols (source):\n")
+	for _, s := range snippets {
+		ext := "text"
+		cleanExt := strings.TrimPrefix(filepath.Ext(s.Path), ".")
+		if cleanExt != "" {
+			ext = cleanExt
+		}
+		fmt.Fprintf(sb, "\n- **%s** (`%s`, L%d)\n```%s\n%s\n```\n", s.Label, s.Path, s.StartLine, ext, s.Text)
+	}
+}
+
+// renderMemories writes the "Linked memories" section with truncated why fields.
+func renderMemories(sb *strings.Builder, mems []ContextMemory, whyChars int) {
+	sb.WriteString("\n### Linked memories (why this code is the way it is):\n")
+	for _, m := range mems {
+		fmt.Fprintf(sb, "- **[%s] %s** (ID: %s)\n", strings.ToUpper(m.Category), m.What, m.ID)
+		if m.Why != "" {
+			fmt.Fprintf(sb, "  *Why:* %s\n", TruncateText(security.SanitizeText(m.Why), whyChars))
+		}
+		if m.Source == "rationale_for" {
+			sb.WriteString("  *linked via code graph (rationale_for)*\n")
+		}
+	}
+	sb.WriteString("\n*Drill down with `sv_mem_get(id=\"<id>\")` for full content.*\n")
+}
+
+// renderChanges writes the "Active changes" section with optional task progress.
+func renderChanges(sb *strings.Builder, changes []ContextChange) {
+	sb.WriteString("\n### Active changes affecting this path:\n")
+	for _, c := range changes {
+		if c.TaskProgress != "" {
+			fmt.Fprintf(sb, "- **[%s] %s** (`%s`, slug `%s`, tasks: %s)\n", strings.ToUpper(c.Status), c.Title, c.ID, c.Slug, c.TaskProgress)
+		} else {
+			fmt.Fprintf(sb, "- **[%s] %s** (`%s`, slug `%s`)\n", strings.ToUpper(c.Status), c.Title, c.ID, c.Slug)
+		}
+	}
+	sb.WriteString("\n*Review with `sv_validate_decision(change_id=\"<id>\")` before modifying this code.*\n")
 }

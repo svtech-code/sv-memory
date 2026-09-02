@@ -443,3 +443,138 @@ func TestContextPackSurfacesTasksProgress(t *testing.T) {
 		t.Errorf("expected rendered context pack to include 'tasks: 2/4 (50%%)', got:\n%s", rendered)
 	}
 }
+
+func TestContextPackExploreMultiSymbolSnippets(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := db.InitDB(filepath.Join(tempDir, "ctx_explore.db"))
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-ctx-explore"
+	if regErr := db.RegisterProject(database, projectID, "Explore Proj", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
+	}
+
+	// Graph: main.go imports utils.go; utils.go defines helper().
+	if err = os.WriteFile(filepath.Join(tempDir, "main.go"), []byte("package main\nimport \"proj/utils\"\nfunc main(){ helper() }\n"), 0644); err != nil {
+		t.Fatalf("failed writing main.go: %v", err)
+	}
+	if err = os.WriteFile(filepath.Join(tempDir, "utils.go"), []byte("package main\nfunc helper() {}\n"), 0644); err != nil {
+		t.Fatalf("failed writing utils.go: %v", err)
+	}
+	if err = graph.SyncGraph(database, projectID, tempDir); err != nil {
+		t.Fatalf("failed syncing graph: %v", err)
+	}
+
+	// Multi-symbol explore: resolve utils.go + main.go in one call.
+	pack, err := GetContextPack(database, projectID, "utils.go, main.go", 5, false)
+	if err != nil {
+		t.Fatalf("GetContextPack multi failed: %v", err)
+	}
+	if pack.Node == nil || !strings.Contains(pack.Node.Label, "utils.go") {
+		t.Fatalf("expected primary symbol utils.go, got %+v", pack.Node)
+	}
+
+	// Multi-symbol explore resolves the secondary symbol into its own snippet
+	// (the call path may be absent when the imported package symbol does not
+	// resolve to a concrete node, which is the correct resilient behaviour).
+	foundMain := false
+	for _, s := range pack.ExtraSnippets {
+		if strings.Contains(s.Label, "main.go") {
+			foundMain = true
+			if s.Text == "" {
+				t.Errorf("expected secondary snippet body for main.go, got empty")
+			}
+		}
+	}
+	if !foundMain {
+		t.Errorf("expected main.go among secondary snippets, got: %+v", pack.ExtraSnippets)
+	}
+
+	// Render must include the Related symbols section regardless of call path.
+	rendered := RenderContextPack(pack, 20)
+	if !strings.Contains(rendered, "### Related symbols (source):") {
+		t.Errorf("expected render to include Related symbols section, got:\n%s", rendered)
+	}
+}
+
+func TestContextPackExploreRendersCallPath(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := db.InitDB(filepath.Join(tempDir, "ctx_explore2.db"))
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-ctx-explore2"
+	if regErr := db.RegisterProject(database, projectID, "Explore2 Proj", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
+	}
+	if err = os.WriteFile(filepath.Join(tempDir, "alpha.go"), []byte("package main\nfunc Alpha(){ Beta() }\nfunc Beta(){ Gamma() }\nfunc Gamma(){}\n"), 0644); err != nil {
+		t.Fatalf("failed writing alpha.go: %v", err)
+	}
+	if err = graph.SyncGraph(database, projectID, tempDir); err != nil {
+		t.Fatalf("failed syncing graph: %v", err)
+	}
+
+	// In a single file, Alpha->Beta->Gamma are connected by 'calls' edges, so
+	// the shortest path between Alpha and Gamma is a real 3-node chain.
+	pack, err := GetContextPack(database, projectID, "Alpha, Gamma", 5, false)
+	if err != nil {
+		t.Fatalf("GetContextPack failed: %v", err)
+	}
+
+	if len(pack.CallPath) == 0 {
+		t.Fatalf("expected a call path between Alpha and Gamma, got none (nodes: %+v)", pack.Node)
+	}
+	labels := make([]string, 0, len(pack.CallPath))
+	for _, hop := range pack.CallPath {
+		labels = append(labels, hop.Label)
+	}
+	joined := strings.Join(labels, ">")
+	if !strings.Contains(joined, "Alpha") || !strings.Contains(joined, "Beta") || !strings.Contains(joined, "Gamma") {
+		t.Errorf("expected call path Alpha>Beta>Gamma, got %q", joined)
+	}
+
+	rendered := RenderContextPack(pack, 20)
+	if !strings.Contains(rendered, "### Call path") {
+		t.Errorf("expected render to include Call path section, got:\n%s", rendered)
+	}
+}
+
+func TestContextPackExploreCallPathEmptyWithoutTwoSymbols(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := db.InitDB(filepath.Join(tempDir, "ctx_explore1.db"))
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-ctx-explore1"
+	if regErr := db.RegisterProject(database, projectID, "Explore1 Proj", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
+	}
+	if err = os.WriteFile(filepath.Join(tempDir, "main.go"), []byte("package main\nfunc main() {}\n"), 0644); err != nil {
+		t.Fatalf("failed writing main.go: %v", err)
+	}
+	if err = graph.SyncGraph(database, projectID, tempDir); err != nil {
+		t.Fatalf("failed syncing graph: %v", err)
+	}
+
+	// Single symbol: no call path, no extra snippets — legacy contract preserved.
+	pack, err := GetContextPack(database, projectID, "main.go", 5, false)
+	if err != nil {
+		t.Fatalf("GetContextPack single failed: %v", err)
+	}
+	if len(pack.CallPath) != 0 {
+		t.Errorf("expected no call path for single symbol, got %+v", pack.CallPath)
+	}
+	if len(pack.ExtraSnippets) != 0 {
+		t.Errorf("expected no extra snippets for single symbol, got %+v", pack.ExtraSnippets)
+	}
+	if pack.Node == nil || !strings.Contains(pack.Node.Label, "main.go") {
+		t.Errorf("expected single-symbol resolve, got %+v", pack.Node)
+	}
+}

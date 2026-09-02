@@ -80,6 +80,7 @@ var AllTools = []Tool{
 	{Name: "sv_mem_capture_prompt", Description: "Capture the user's prompt as a local observation attached to a session, so future sessions can recover the user's intent after compaction (recoverable via sv_mem_context)."},
 	{Name: "sv_mem_merge_projects", Description: "Merge all memories, sessions, relations, and graph data from one project into another, then delete the source project (admin)."},
 	{Name: "sv_mem_context_pack", Description: "Build a compact context pack for a code path: graph role (fan-in/fan-out, community) plus linked memories (decisions/standards/bugfixes). One bounded call."},
+	{Name: "sv_graph_explore", Description: "Unified explore for code understanding in one call: pass one or more comma-separated symbols/paths to get each symbol's structural role, surgical source snippet, the shortest call path between them, blast radius, and linked memories (decisions/standards/bugfixes). Replaces chaining sv_graph_query + sv_graph_path + sv_graph_explain manually."},
 	{Name: "sv_mem_conflicts", Description: "List, scan, or ignore potential memory conflicts."},
 	{Name: "sv_propose_spec", Description: "Create a spec change (proposal) with its lifecycle state and run a pre-flight check against the project's rules and invariants."},
 	{Name: "sv_validate_decision", Description: "Re-check a change's proposal against rules and invariants (PASS/WARN/BLOCK); opt-in semantic re-ranking."},
@@ -428,6 +429,15 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
 	)
 	ms.AddTool(contextPackTool, s.handleContextPack)
+
+	// 18b2. Tool: sv_graph_explore (unified explore alias of sv_mem_context_pack)
+	graphExploreTool := mcp.NewTool("sv_graph_explore",
+		mcp.WithDescription("Understand code in ONE call (unified explore): pass one or more comma-separated symbols, file paths, or package names. Each resolved symbol gets its structural role in the dependency graph (type, fan-in/fan-out, community), a surgical source-code snippet, and the shortest call path between the two most significant symbols is rendered — plus blast radius and the memories (decisions/standards/bugfixes) linked to the primary symbol via where_path or rationale_for edges. Use this BEFORE reading/grepping files: the returned source counts as already read. Set include_changes='true' to also list active spec changes affecting the path."),
+		mcp.WithString("path", mcp.Required(), mcp.Description("Symbol(s), file path(s), or package name(s) to explore. Multiple symbols may be comma-separated (e.g. 'ResolveContextNode, extractSurgicalSnippet') to get their source + call path in one call.")),
+		mcp.WithString("include_changes", mcp.Description("When 'true', also list active spec changes (proposals) whose where_path matches the primary path. Default 'false'.")),
+		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
+	)
+	ms.AddTool(graphExploreTool, s.handleContextPack)
 
 	// 18c. Tool: sv_propose_spec
 	proposeSpecTool := mcp.NewTool("sv_propose_spec",
