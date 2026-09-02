@@ -22,7 +22,7 @@ func TestSubcommandsRegistered(t *testing.T) {
 	}
 
 	expected := []string{
-		"init", "mcp", "sync", "configure", "diagnose", "stats",
+		"init", "mcp", "sync", "configure", "diagnose", "stats", "compact",
 		"graph", "export", "import", "delete", "projects", "conflicts",
 		"obsidian-export", "hooks", "context",
 	}

@@ -9,6 +9,9 @@ import (
 	"time"
 )
 
+// DefaultCompactionThreshold is the default number of fragmented topic keys before auto-compaction triggers.
+const DefaultCompactionThreshold = 3
+
 // CompactionReport summarizes the results of a memory auto-compaction run.
 type CompactionReport struct {
 	ProjectID           string   `json:"project_id"`
@@ -16,6 +19,75 @@ type CompactionReport struct {
 	MemoriesCompacted   int      `json:"memories_compacted"`
 	NewSynthesesCreated int      `json:"new_syntheses_created"`
 	TopicKeys           []string `json:"topic_keys"`
+}
+
+// CompactionHealth represents the fragmentation status of topic keys in the project.
+type CompactionHealth struct {
+	ProjectID               string   `json:"project_id"`
+	FragmentedTopics        int      `json:"fragmented_topics"`
+	TotalFragmentedMemories int      `json:"total_fragmented_memories"`
+	Threshold               int      `json:"threshold"`
+	NeedsCompaction         bool     `json:"needs_compaction"`
+	CandidateTopicKeys      []string `json:"candidate_topic_keys"`
+}
+
+// CheckCompactionHealth inspects how many topic keys have multiple active rows
+// and determines if compaction is needed according to the given threshold.
+func CheckCompactionHealth(db *sql.DB, projectID string, threshold int) (*CompactionHealth, bool, error) {
+	if threshold <= 0 {
+		threshold = DefaultCompactionThreshold
+	}
+
+	rows, err := db.Query(`
+		SELECT topic_key, COUNT(*) as cnt
+		FROM memories
+		WHERE project_id = ? AND topic_key IS NOT NULL AND topic_key != '' AND deleted_at IS NULL
+		GROUP BY topic_key
+		HAVING cnt > 1
+		ORDER BY cnt DESC`, projectID)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to check compaction health: %w", err)
+	}
+	defer rows.Close()
+
+	health := &CompactionHealth{
+		ProjectID: projectID,
+		Threshold: threshold,
+	}
+
+	for rows.Next() {
+		var tk string
+		var cnt int
+		if err = rows.Scan(&tk, &cnt); err != nil {
+			return nil, false, fmt.Errorf("failed scanning compaction health row: %w", err)
+		}
+		health.FragmentedTopics++
+		health.TotalFragmentedMemories += cnt
+		health.CandidateTopicKeys = append(health.CandidateTopicKeys, tk)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, false, fmt.Errorf("error iterating compaction health rows: %w", err)
+	}
+
+	health.NeedsCompaction = health.FragmentedTopics >= threshold
+	return health, health.NeedsCompaction, nil
+}
+
+// MaybeAutoCompact checks compaction health against the threshold and, if needed,
+// executes incremental compaction atomically. Returns (report, ran, err).
+func MaybeAutoCompact(db *sql.DB, projectID string, threshold int) (*CompactionReport, bool, error) {
+	_, needed, err := CheckCompactionHealth(db, projectID, threshold)
+	if err != nil {
+		return nil, false, err
+	}
+	if !needed {
+		return nil, false, nil
+	}
+	report, err := CompactMemoriesIncremental(db, projectID)
+	if err != nil {
+		return nil, false, err
+	}
+	return report, true, nil
 }
 
 // CompactMemories consolidates multiple entries or high-revision histories under the same topic_key

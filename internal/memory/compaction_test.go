@@ -411,3 +411,91 @@ func TestCompactMemoriesIncrementalOnlyProcessesNewTopics(t *testing.T) {
 		t.Errorf("expected 1 new topic processed on third run, got %d", report.ProcessedTopics)
 	}
 }
+
+func TestCheckCompactionHealthAndMaybeAutoCompact(t *testing.T) {
+	tempDir := t.TempDir()
+
+	dbPath := filepath.Join(tempDir, "test.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-compaction-health"
+	err = db.RegisterProject(database, projectID, "Compaction Health Project", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// 1. Clean state: 0 fragmented topics
+	health, needed, err := CheckCompactionHealth(database, projectID, 2)
+	if err != nil {
+		t.Fatalf("CheckCompactionHealth failed: %v", err)
+	}
+	if needed || health.FragmentedTopics != 0 {
+		t.Errorf("expected 0 fragmented topics and needed=false, got %d (needed=%v)", health.FragmentedTopics, needed)
+	}
+
+	// 2. Seed 1 fragmented topic with 2 memories (below threshold of 2)
+	seed := func(id, topic string) {
+		_, execErr := database.Exec(`
+			INSERT INTO memories (id, project_id, category, what, why, learned, topic_key, revision_count, created_at)
+			VALUES (?, ?, 'architecture', 'What', 'Why', 'Learned', ?, 1, datetime('now'))
+		`, id, projectID, topic)
+		if execErr != nil {
+			t.Fatalf("seed failed for %s: %v", id, execErr)
+		}
+	}
+
+	seed("h-1", "standard/topic-1")
+	seed("h-2", "standard/topic-1")
+
+	health, needed, err = CheckCompactionHealth(database, projectID, 2)
+	if err != nil {
+		t.Fatalf("CheckCompactionHealth failed: %v", err)
+	}
+	if needed || health.FragmentedTopics != 1 || health.TotalFragmentedMemories != 2 {
+		t.Errorf("expected 1 fragmented topic, 2 memories, needed=false; got topics=%d, mems=%d, needed=%v",
+			health.FragmentedTopics, health.TotalFragmentedMemories, needed)
+	}
+
+	// MaybeAutoCompact below threshold should not run
+	report, ran, err := MaybeAutoCompact(database, projectID, 2)
+	if err != nil {
+		t.Fatalf("MaybeAutoCompact below threshold failed: %v", err)
+	}
+	if ran || report != nil {
+		t.Errorf("expected ran=false below threshold, got ran=%v report=%v", ran, report)
+	}
+
+	// 3. Seed second fragmented topic (reaches threshold of 2)
+	seed("h-3", "standard/topic-2")
+	seed("h-4", "standard/topic-2")
+
+	health, needed, err = CheckCompactionHealth(database, projectID, 2)
+	if err != nil {
+		t.Fatalf("CheckCompactionHealth failed: %v", err)
+	}
+	if !needed || health.FragmentedTopics != 2 {
+		t.Errorf("expected 2 fragmented topics, needed=true; got topics=%d, needed=%v", health.FragmentedTopics, needed)
+	}
+
+	// MaybeAutoCompact at/above threshold should run and compact both topics
+	report, ran, err = MaybeAutoCompact(database, projectID, 2)
+	if err != nil {
+		t.Fatalf("MaybeAutoCompact at threshold failed: %v", err)
+	}
+	if !ran || report == nil || report.ProcessedTopics != 2 {
+		t.Fatalf("expected ran=true, 2 processed topics; got ran=%v report=%v", ran, report)
+	}
+
+	// 4. After compaction, health should be clean
+	health, needed, err = CheckCompactionHealth(database, projectID, 2)
+	if err != nil {
+		t.Fatalf("CheckCompactionHealth post-compact failed: %v", err)
+	}
+	if needed || health.FragmentedTopics != 0 {
+		t.Errorf("expected 0 fragmented topics post-compact, got %d (needed=%v)", health.FragmentedTopics, needed)
+	}
+}

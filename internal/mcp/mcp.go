@@ -299,8 +299,11 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 7. Tool: sv_mem_compact
 	compactTool := mcp.NewTool("sv_mem_compact",
-		mcp.WithDescription("Trigger automatic memory compaction for the project. Consolidates historical topic key revisions and duplicates into clean, high-quality summary records to keep search fast and token usage minimal. Call periodically or after many topic-key upserts."),
+		mcp.WithDescription("Trigger memory compaction for the project. Consolidates historical topic key revisions and duplicates into clean, high-quality summary records to keep search fast and token usage minimal. Supports threshold-based auto-compaction and health check modes."),
 		mcp.WithDeferLoading(true),
+		mcp.WithString("auto", mcp.Description("Optional 'true' to only run compaction if fragmented topic keys meet or exceed the threshold")),
+		mcp.WithString("threshold", mcp.Description("Optional integer threshold of fragmented topic keys to trigger auto-compaction (default '3')")),
+		mcp.WithString("check_only", mcp.Description("Optional 'true' to perform a read-only fragmentation health check without modifying storage")),
 	)
 	ms.AddTool(compactTool, s.handleCompact)
 

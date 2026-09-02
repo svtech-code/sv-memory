@@ -804,3 +804,81 @@ func TestSessionEnd_IdempotenceAndNotFound(t *testing.T) {
 		t.Errorf("expected 'session not found' in bad session response, got: %s", badText)
 	}
 }
+
+func TestCompactTool_AutoAndCheckOnly(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	srv := NewServer(pool, cfg)
+	ctx := context.Background()
+
+	// 1. Check-only on clean project -> healthy
+	checkReq := mcpgo.CallToolRequest{}
+	checkReq.Params.Name = "sv_mem_compact"
+	checkReq.Params.Arguments = map[string]any{"check_only": "true"}
+	res, err := srv.GetTool("sv_mem_compact").Handler(ctx, checkReq)
+	if err != nil || res.IsError {
+		t.Fatalf("sv_mem_compact check_only failed: err=%v, res=%v", err, res)
+	}
+	text := textContent(res.Content[0])
+	if !strings.Contains(text, "healthy") {
+		t.Errorf("expected 'healthy' in check_only response, got: %s", text)
+	}
+
+	// 2. Seed 2 memories under same topic_key
+	seedReq := func(id, topic string) {
+		r := mcpgo.CallToolRequest{}
+		r.Params.Name = "sv_mem_save"
+		r.Params.Arguments = map[string]any{
+			"category":  "standard",
+			"what":      "Rule for " + id,
+			"why":       "Reason for " + id,
+			"learned":   "Learned " + id,
+			"topic_key": topic,
+		}
+		if _, saveErr := srv.GetTool("sv_mem_save").Handler(ctx, r); saveErr != nil {
+			t.Fatalf("seed failed: %v", saveErr)
+		}
+	}
+	seedReq("m1", "standard/naming")
+	// Insert second row with same topic_key directly to simulate multi-row fragmentation
+	_, err = pool.Writer.Exec(`
+		INSERT INTO memories (id, project_id, category, what, why, learned, topic_key, revision_count, created_at)
+		VALUES ('m2-dup', ?, 'standard', 'Updated naming rule', 'Better clarity', 'Clarity matters', 'standard/naming', 2, datetime('now'))
+	`, cfg.ProjectID)
+	if err != nil {
+		t.Fatalf("direct insert failed: %v", err)
+	}
+
+	// 3. Auto mode with threshold=2 (only 1 fragmented topic -> below threshold, should not compact)
+	autoReq := mcpgo.CallToolRequest{}
+	autoReq.Params.Name = "sv_mem_compact"
+	autoReq.Params.Arguments = map[string]any{
+		"auto":      "true",
+		"threshold": "2",
+	}
+	res, err = srv.GetTool("sv_mem_compact").Handler(ctx, autoReq)
+	if err != nil || res.IsError {
+		t.Fatalf("auto compact below threshold failed: err=%v, res=%v", err, res)
+	}
+	text = textContent(res.Content[0])
+	if !strings.Contains(text, "below threshold") {
+		t.Errorf("expected 'below threshold' in auto compact, got: %s", text)
+	}
+
+	// 4. Auto mode with threshold=1 -> triggers auto-compaction
+	autoReq1 := mcpgo.CallToolRequest{}
+	autoReq1.Params.Name = "sv_mem_compact"
+	autoReq1.Params.Arguments = map[string]any{
+		"auto":      "true",
+		"threshold": "1",
+	}
+	res, err = srv.GetTool("sv_mem_compact").Handler(ctx, autoReq1)
+	if err != nil || res.IsError {
+		t.Fatalf("auto compact at threshold failed: err=%v, res=%v", err, res)
+	}
+	text = textContent(res.Content[0])
+	if !strings.Contains(text, "Auto-compaction complete") {
+		t.Errorf("expected 'Auto-compaction complete', got: %s", text)
+	}
+}

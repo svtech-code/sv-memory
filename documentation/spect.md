@@ -658,9 +658,12 @@ Recover context from the last completed session.
 
 ### 8. `sv_mem_compact`
 
-Trigger automatic memory compaction: consolidates historical topic-key revisions and duplicates into clean summary records.
+Trigger memory compaction: consolidates historical topic-key revisions and duplicates into clean summary records to keep search fast and token usage minimal.
 
-- **Parameters:** None.
+- **Parameters:**
+  - `auto` (string, optional): When `'true'`, only executes compaction if the count of fragmented topic keys meets or exceeds the threshold.
+  - `threshold` (string, optional): Number of fragmented topic keys required to trigger auto-compaction (default `'3'`).
+  - `check_only` (string, optional): When `'true'`, returns a read-only compaction health report without modifying storage.
 
 ### 9. `sv_mem_search` (Layer 1 Progressive Disclosure)
 

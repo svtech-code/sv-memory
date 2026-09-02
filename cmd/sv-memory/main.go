@@ -80,6 +80,7 @@ func init() {
 	rootCmd.AddCommand(tuiCmd)
 	rootCmd.AddCommand(diagnoseCmd)
 	rootCmd.AddCommand(statsCmd)
+	rootCmd.AddCommand(compactCmd)
 	rootCmd.AddCommand(exportCmd)
 	rootCmd.AddCommand(importCmd)
 	rootCmd.AddCommand(deleteCmd)

@@ -11,14 +11,16 @@ import (
 
 // Stats holds aggregate statistics about project memories.
 type Stats struct {
-	TotalMemories   int            `json:"total_memories"`
-	DeletedMemories int            `json:"deleted_memories"`
-	ByCategory      map[string]int `json:"by_category"`
-	TotalSessions   int            `json:"total_sessions"`
-	ActiveSessions  int            `json:"active_sessions"`
-	TotalRelations  int            `json:"total_relations"`
-	TotalPrompts    int            `json:"total_prompts"`
-	Recent24h       int            `json:"recent_24h"`
+	TotalMemories    int            `json:"total_memories"`
+	DeletedMemories  int            `json:"deleted_memories"`
+	ByCategory       map[string]int `json:"by_category"`
+	TotalSessions    int            `json:"total_sessions"`
+	ActiveSessions   int            `json:"active_sessions"`
+	TotalRelations   int            `json:"total_relations"`
+	TotalPrompts     int            `json:"total_prompts"`
+	Recent24h        int            `json:"recent_24h"`
+	FragmentedTopics int            `json:"fragmented_topics"`
+	CompactionNeeded bool           `json:"compaction_needed"`
 }
 
 // DiagnosticsResult holds a single diagnostic check outcome.
@@ -87,6 +89,11 @@ func GetStats(db *sql.DB, projectID string) (*Stats, error) {
 	cutoff := time.Now().Add(-24 * time.Hour)
 	if err := db.QueryRow("SELECT COUNT(*) FROM memories WHERE project_id = ? AND deleted_at IS NULL AND created_at > ?", projectID, cutoff).Scan(&stats.Recent24h); err != nil {
 		return nil, fmt.Errorf("failed to count recent memories: %w", err)
+	}
+
+	if health, needed, chkErr := CheckCompactionHealth(db, projectID, DefaultCompactionThreshold); chkErr == nil && health != nil {
+		stats.FragmentedTopics = health.FragmentedTopics
+		stats.CompactionNeeded = needed
 	}
 
 	return stats, nil
@@ -301,6 +308,14 @@ func RunDiagnostics(db *sql.DB, projectID, projPath, dbPath string) []Diagnostic
 		add("fts5_healthy", "fail", fmt.Sprintf("FTS5 query failed: %v", err))
 	} else {
 		add("fts5_healthy", "pass", fmt.Sprintf("FTS5 is healthy (%d indexed rows)", ftsCount))
+	}
+
+	if health, _, chkErr := CheckCompactionHealth(db, projectID, DefaultCompactionThreshold); chkErr != nil {
+		add("compaction_health", "warn", fmt.Sprintf("Error checking compaction health: %v", chkErr))
+	} else if health.NeedsCompaction {
+		add("compaction_health", "warn", fmt.Sprintf("%d fragmented topic keys detected (%d candidate memories) — run 'sv-memory compact' or 'sv_mem_compact'", health.FragmentedTopics, health.TotalFragmentedMemories))
+	} else {
+		add("compaction_health", "pass", fmt.Sprintf("Memory compaction health is good (%d fragmented topics, threshold %d)", health.FragmentedTopics, health.Threshold))
 	}
 
 	return results

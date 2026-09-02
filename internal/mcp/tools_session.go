@@ -103,6 +103,10 @@ func (s *Server) handleSessionEnd(ctx context.Context, req mcp.CallToolRequest) 
 		}
 		return mcp.NewToolResultError(fmt.Sprintf("failed to end session: %v", err)), nil
 	}
+
+	// Trigger opportunistic auto-compaction if topic fragmentation exceeds default threshold.
+	_, _, _ = memory.MaybeAutoCompact(s.pool.Writer, s.cfg.ProjectID, memory.DefaultCompactionThreshold)
+
 	return mcp.NewToolResultText(fmt.Sprintf("Session %s ended successfully.", sessionID)), nil
 }
 
@@ -138,6 +142,49 @@ func (s *Server) handleContext(ctx context.Context, req mcp.CallToolRequest) (*m
 }
 
 func (s *Server) handleCompact(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	threshold := memory.DefaultCompactionThreshold
+	if thStr := req.GetString("threshold", ""); thStr != "" {
+		if th, pErr := strconv.Atoi(thStr); pErr == nil && th > 0 {
+			threshold = th
+		}
+	}
+
+	if req.GetString("check_only", "") == "true" {
+		health, needed, err := memory.CheckCompactionHealth(s.pool.Reader, s.cfg.ProjectID, threshold)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to check compaction health: %v", err)), nil
+		}
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "## Compaction Health Report\n\n")
+		fmt.Fprintf(&sb, "- **Fragmented Topic Keys:** %d\n", health.FragmentedTopics)
+		fmt.Fprintf(&sb, "- **Candidate Memories:** %d\n", health.TotalFragmentedMemories)
+		fmt.Fprintf(&sb, "- **Trigger Threshold:** %d\n", health.Threshold)
+		if needed {
+			sb.WriteString("- **Status:** `compaction recommended` (run `sv_mem_compact`)\n")
+		} else {
+			sb.WriteString("- **Status:** `healthy` (no compaction required)\n")
+		}
+		if len(health.CandidateTopicKeys) > 0 {
+			sb.WriteString("\n**Candidate Topics:**\n")
+			for _, tk := range health.CandidateTopicKeys {
+				fmt.Fprintf(&sb, "- `%s`\n", tk)
+			}
+		}
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+
+	if req.GetString("auto", "") == "true" {
+		report, ran, err := memory.MaybeAutoCompact(s.pool.Writer, s.cfg.ProjectID, threshold)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed auto-compaction: %v", err)), nil
+		}
+		if !ran {
+			return mcp.NewToolResultText(fmt.Sprintf("Memory health OK (fragmented topics below threshold %d). No compaction needed.", threshold)), nil
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("Auto-compaction complete!\n- Processed Topics: %d\n- Memories Compacted: %d\n- New Syntheses Created: %d\n- Topic Keys: %s",
+			report.ProcessedTopics, report.MemoriesCompacted, report.NewSynthesesCreated, strings.Join(report.TopicKeys, ", "))), nil
+	}
+
 	// Route through the incremental path so the manual trigger and the
 	// background worker share the same last_compaction_at watermark: after the
 	// first full pass, a manual call only re-processes topic keys with new
@@ -179,6 +226,14 @@ func (s *Server) handleStats(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	fmt.Fprintf(&sb, "**Active sessions:** %d\n", stats.ActiveSessions)
 	fmt.Fprintf(&sb, "**Total relations:** %d\n", stats.TotalRelations)
 	fmt.Fprintf(&sb, "**Total user prompts:** %d\n", stats.TotalPrompts)
+	if stats.FragmentedTopics > 0 {
+		fmt.Fprintf(&sb, "**Fragmented topic keys:** %d", stats.FragmentedTopics)
+		if stats.CompactionNeeded {
+			sb.WriteString(" _(compaction recommended: run `sv_mem_compact`)_\n")
+		} else {
+			sb.WriteString("\n")
+		}
+	}
 
 	// Session token ledger (Phase D): report how many estimated tokens the
 	// Auto-Boot bundle + bulk-returning read tools have injected since the last

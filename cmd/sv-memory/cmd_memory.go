@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -200,6 +201,70 @@ var captureCmd = &cobra.Command{
 	},
 }
 
+var (
+	compactAutoFlag      bool
+	compactThresholdFlag int
+	compactCheckFlag     bool
+)
+
+var compactCmd = &cobra.Command{
+	Use:   "compact",
+	Short: "Consolidate historical topic key revisions and optimize memory storage",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return withProject(func(cfg *config.Config, database *sql.DB) error {
+			if compactCheckFlag {
+				health, needed, err := memory.CheckCompactionHealth(database, cfg.ProjectID, compactThresholdFlag)
+				if err != nil {
+					return fmt.Errorf("compaction health check failed: %w", err)
+				}
+				fmt.Printf("=== Compaction Health for %s ===\n\n", cfg.ProjName)
+				fmt.Printf("Fragmented topic keys: %d (threshold: %d)\n", health.FragmentedTopics, health.Threshold)
+				fmt.Printf("Total candidate memories: %d\n", health.TotalFragmentedMemories)
+				if len(health.CandidateTopicKeys) > 0 {
+					fmt.Printf("Candidate topics: %s\n", strings.Join(health.CandidateTopicKeys, ", "))
+				}
+				if needed {
+					fmt.Println("\nStatus: Compaction RECOMMENDED (run 'sv-memory compact')")
+				} else {
+					fmt.Println("\nStatus: Healthy (no compaction required)")
+				}
+				return nil
+			}
+
+			if compactAutoFlag {
+				report, ran, err := memory.MaybeAutoCompact(database, cfg.ProjectID, compactThresholdFlag)
+				if err != nil {
+					return fmt.Errorf("auto-compaction failed: %w", err)
+				}
+				if !ran {
+					fmt.Printf("Memory health OK (fragmented topics below threshold %d). No compaction needed.\n", compactThresholdFlag)
+					return nil
+				}
+				fmt.Printf("Auto-compaction completed successfully!\n")
+				fmt.Printf("- Topics processed: %d\n- Memories compacted: %d\n- Syntheses created: %d\n",
+					report.ProcessedTopics, report.MemoriesCompacted, report.NewSynthesesCreated)
+				return nil
+			}
+
+			report, err := memory.CompactMemoriesIncremental(database, cfg.ProjectID)
+			if err != nil {
+				return fmt.Errorf("compaction failed: %w", err)
+			}
+			if report.ProcessedTopics == 0 {
+				fmt.Println("No duplicate or multi-revision topic keys required compaction.")
+				return nil
+			}
+			fmt.Printf("Compaction completed successfully!\n")
+			fmt.Printf("- Topics processed: %d\n- Memories compacted: %d\n- Syntheses created: %d\n",
+				report.ProcessedTopics, report.MemoriesCompacted, report.NewSynthesesCreated)
+			if len(report.TopicKeys) > 0 {
+				fmt.Printf("- Compacted topics: %s\n", strings.Join(report.TopicKeys, ", "))
+			}
+			return nil
+		})
+	},
+}
+
 func init() {
 	captureCmd.Flags().String("commit", "", "Git commit hash")
 	captureCmd.Flags().String("message", "", "Git commit message")
@@ -208,4 +273,8 @@ func init() {
 	captureCmd.Flags().String("paths", "", "Affected paths/files")
 	captureCmd.Flags().String("what", "", "Observation summary (overrides --message)")
 	captureCmd.Flags().String("why", "", "Observation rationale")
+
+	compactCmd.Flags().BoolVar(&compactAutoFlag, "auto", false, "Only compact if fragmented topics exceed threshold")
+	compactCmd.Flags().IntVar(&compactThresholdFlag, "threshold", memory.DefaultCompactionThreshold, "Fragmentation threshold for auto-compaction")
+	compactCmd.Flags().BoolVar(&compactCheckFlag, "check", false, "Read-only check of topic key fragmentation health")
 }

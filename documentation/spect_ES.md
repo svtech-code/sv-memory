@@ -657,9 +657,12 @@ Recupera el contexto de la última sesión completada.
 
 ### 8. `sv_mem_compact`
 
-Activa la compactación automática de memoria: consolida revisiones históricas de topic keys y duplicados en registros de síntesis limpios.
+Activa la compactación de memoria: consolida revisiones históricas de topic keys y duplicados en registros de síntesis limpios para mantener búsquedas rápidas y ahorro de tokens.
 
-- **Parámetros:** Ninguno.
+- **Parámetros:**
+  - `auto` (string, opcional): Cuando es `'true'`, solo ejecuta la compactación si la cantidad de topic keys fragmentados iguala o supera el umbral.
+  - `threshold` (string, opcional): Número de topic keys fragmentados requeridos para disparar la auto-compactación (por defecto `'3'`).
+  - `check_only` (string, opcional): Cuando es `'true'`, devuelve un informe de salud de fragmentación de sólo lectura sin modificar el almacenamiento.
 
 ### 9. `sv_mem_search` (Capa 1 Divulgación Progresiva)
 
