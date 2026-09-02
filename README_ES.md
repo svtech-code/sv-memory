@@ -227,14 +227,14 @@ sv-memory tui
 | `sv-memory conflicts`              | **Memoria**       | Detecta superposiciones semánticas y conflictos entre memorias del proyecto.                          |
 | `sv-memory capture`                | **Memoria**       | Captura pasivamente commits de Git u observaciones en memoria persistente.                            |
 | `sv-memory hooks install`          | **Hooks**         | Instala hooks PreToolUse y Git post-commit para Claude Code, Antigravity, OpenCode y Git.             |
-| `sv-memory permissions list`       | **Permisos**      | Lista las 34 herramientas MCP de sv-memory con descripciones.                                         |
+| `sv-memory permissions list`       | **Permisos**      | Lista todas las herramientas MCP de sv-memory con descripciones.                                      |
 | `sv-memory permissions status`     | **Permisos**      | Muestra permisos MCP otorgados/faltantes por plataforma.                                              |
 | `sv-memory permissions grant`      | **Permisos**      | Escribe allow-lists de herramientas MCP (`--all`/`--tool`, `--dry-run`) para Antigravity/Claude Code. |
 | `sv-memory permissions revoke`     | **Permisos**      | Elimina entradas de sv-memory de la allow-list conservando permisos no relacionados.                  |
 
 ---
 
-## 🧩 Herramientas MCP (34 Herramientas)
+## 🧩 Herramientas Model Context Protocol (MCP)
 
 ### 🧠 Herramientas de Memoria
 
@@ -256,11 +256,12 @@ sv-memory tui
 - **`sv_mem_merge_projects`**: Fusiona variantes de proyecto en un proyecto canónico (admin) — mueve todas las memorias, sesiones, relaciones y datos del grafo de `from` a `to`, y luego borra el origen. Refleja `sv-memory projects consolidate`.
 - **`sv_mem_context_pack`**: Fusiona el rol del grafo + memorias vinculadas + las capabilities implementadas en una ruta en una sola llamada acotada; pasa `include_changes='true'` para listar también los spec changes activos que afectan la ruta (el puente grafo→memoria para contexto eficiente en tokens).
 - **`sv_mem_conflicts`**: Muestra conflictos de memoria con análisis de superposición semántica; `action=scan semantic=true` juzga los pares candidatos con LLM vía el CLI del agente (claude/opencode).
-- **`sv_mem_compact`**: Consolida revisiones históricas de topic keys en registros de síntesis unificados.
+- **`sv_mem_compact`**: Consolida revisiones históricas de topic keys en registros de síntesis unificados con monitoreo de salud y auto-compactación.
 
-### ⚖️ Herramientas del Motor de Decisiones (Spec-Driven)
+### ⚖️ Herramientas del Motor de Decisiones (Spec-Driven / OpenSpec)
 
 - **`sv_propose_spec`**: Registra un spec change (propuesta) y ejecuta un pre-flight check contra reglas e invariantes — una regla pinned que solapa devuelve **BLOCK**, un solapamiento ordinario **WARN**, y si no hay solapamiento **PASS**. Costo LLM cero por defecto. Acepta delta `requirements` estilo OpenSpec (ADDED/MODIFIED/REMOVED/RENAMED, RFC 2119, escenarios GIVEN/WHEN/THEN) apuntando a un único `capability_path`.
+- **`sv_update_spec`**: Actualiza una propuesta activa durante la fase de implementación: actualiza checkboxes de checklist (`- [x]`), refina diseño técnico, justificación, objetivo, ruta afectada, capability path o requerimientos delta con sincronización automática del espejo.
 - **`sv_validate_decision`**: Re-verifica una propuesta tras ediciones (PASS/WARN/BLOCK) y valida sus delta requirements contra el estado actual de la capability (presencia RFC 2119, escenarios eliminados en MODIFIED); `semantic='true'` opta por un re-ranking batch con agente (falla abierto al veredicto determinístico).
 - **`sv_commit_spec`**: Promueve un change validado a una memoria `decision`/`standard` duradera (topic_key `decision/<slug>`), cablea la arista rationale, registra relaciones `conflicts_with`, fusiona los delta requirements en el estado de la capability (`.sv-memory/specs/capabilities/` + nodos spec del grafo), y lo marca como aplicado. Un BLOCK o un conflicto de merge rechaza el commit salvo que `force='true'` lo sobreescriba.
 
@@ -273,12 +274,17 @@ sv-memory tui
 
 ### 🕸️ Herramientas de Grafo
 
+- **`sv_graph_explore`**: Exploración unificada para entender código en una llamada acotada: pasa uno o varios símbolos/rutas separados por coma para obtener roles estructurales, fragmentos verbatim de código con números de línea, la ruta más corta de llamadas, blast radius y memorias vinculadas.
+- **`sv_graph_diff`**: Compara diferencias estructurales de código (símbolos, llamadas, dependencias importadas, blast radius) entre una referencia base de Git y el árbol de trabajo actual.
 - **`sv_graph_query`**: Consulta BFS de dependencias con caché LRU sub-milisegundo. Devuelve diagrama Mermaid.
 - **`sv_graph_path`**: Ruta de dependencia más corta entre dos nodos.
 - **`sv_graph_sync`**: Sincronización incremental del grafo desde cambios de archivos.
 - **`sv_graph_explain`**: Información detallada de un nodo con métricas fan-in/fan-out y sugerencias accionables de refactor.
 - **`sv_graph_god_nodes`**: Identifica nodos centralizados / altamente conectados.
 - **`sv_graph_surprising_connections`**: Encuentra dependencias inesperadas o no obvias con resaltado de bridge score.
+- **`sv_graph_communities`**: Lista las comunidades Leiden principales o detalla miembros de una comunidad específica.
+- **`sv_graph_search`**: Descubre nodos del grafo que coincidan con patrones de texto en ID, etiqueta y rutas.
+- **`sv_graph_report`**: Genera un reporte resumen arquitectónico completo (`GRAPH_REPORT.md`).
 - **`sv_graph_viz`**: Genera visualización HTML interactiva (`vis.js`).
 - **`sv_graph_merge`**: Union-merge de dos grafos de proyecto por ID de nodo en un snapshot JSON.
 

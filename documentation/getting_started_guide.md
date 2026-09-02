@@ -188,10 +188,11 @@ When you open your editor (Cursor, Windsurf, Claude Code, etc.) and send any mes
 For anything beyond a trivial fix, the agent runs the native **propose → validate → commit** cycle before writing code, optionally carrying OpenSpec-style delta requirements:
 
 - **Consult:** `sv_mem_context_pack(path="<file|pkg>", include_changes="true")` returns the node's role, linked decisions/standards, active changes, and the **capabilities implemented at that path** (bounded requirement summary) in one call.
-- **Propose:** `sv_propose_spec(slug="...", title=..., what=..., where_path=..., requirements=..., capability_path=...)` registers the change, runs a pre-flight check (a pinned overlapping rule → **BLOCK**, an ordinary overlap → **WARN**, otherwise **PASS**), and stores the delta requirements targeting a single capability (defaults to the slug).
+- **Propose:** `sv_propose_spec(slug="...", title=..., what=..., where_path=..., requirements=..., tasks=..., capability_path=...)` registers the change, runs a pre-flight check (a pinned overlapping rule → **BLOCK**, an ordinary overlap → **WARN**, otherwise **PASS**), and stores the delta requirements targeting a single capability (defaults to the slug).
+- **Apply & Update Tasks:** As implementation proceeds, `sv_update_spec(change_id=..., tasks=...)` marks completed checklist items (`- [x]`) and refines design or requirements in real-time.
 - **Validate:** `sv_validate_decision(change_id=...)` re-checks the proposal (PASS/WARN/BLOCK) and validates the deltas — RFC 2119 keyword presence and MODIFIED scenario drops vs the current capability state.
 - **Commit:** `sv_commit_spec(change_id=...)` saves the durable `decision`/`standard` memory, merges the deltas into the capability state (`.sv-memory/specs/capabilities/` + graph `spec` nodes), and stamps the change `applied`. A BLOCK or a merge conflict rejects the commit.
-- **Mirror:** every change and capability is projected to `.sv-memory/specs/` (git-synced). Humans can edit the Markdown; `sv-memory specs import <slug>` reconciles the edits back into the authoritative store. `sv-memory specs capabilities` lists the current requirement state.
+- **Mirror:** every change and capability is projected to `.sv-memory/specs/` and `openspec/` (git-synced). Humans can edit the Markdown; `sv-memory specs import <slug>` reconciles the edits back into the authoritative store. `sv-memory specs capabilities` lists the current requirement state.
 
 **Delta requirements format (OpenSpec):**
 

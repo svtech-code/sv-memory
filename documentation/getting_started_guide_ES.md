@@ -220,10 +220,11 @@ Al abrir tu editor (Cursor, Windsurf, Claude Code, etc.) y enviar cualquier mens
 Para cualquier cosa que vaya más allá de un arreglo trivial, el agente ejecuta el ciclo nativo **propose → validate → commit** antes de escribir código, llevando opcionalmente delta requirements estilo OpenSpec:
 
 - **Consultar:** `sv_mem_context_pack(path="<file|pkg>", include_changes="true")` devuelve el rol del nodo, decisiones/estándares vinculados, cambios activos y las **capabilities implementadas en esa ruta** (resumen acotado de requirements) en una sola llamada.
-- **Proponer:** `sv_propose_spec(slug="...", title=..., what=..., where_path=..., requirements=..., capability_path=...)` registra el cambio, ejecuta el pre-flight (una regla pinned que solapa → **BLOCK**, un solapamiento ordinario → **WARN**, si no → **PASS**) y guarda los delta requirements apuntando a una sola capability (por defecto el slug).
+- **Proponer:** `sv_propose_spec(slug="...", title=..., what=..., where_path=..., requirements=..., tasks=..., capability_path=...)` registra el cambio, ejecuta el pre-flight (una regla pinned que solapa → **BLOCK**, un solapamiento ordinario → **WARN**, si no → **PASS**) y guarda los delta requirements apuntando a una sola capability (por defecto el slug).
+- **Aplicar y Actualizar Tareas:** A medida que avanza la implementación, `sv_update_spec(change_id=..., tasks=...)` marca tareas completadas (`- [x]`) y refina el diseño técnico o requerimientos en tiempo real.
 - **Validar:** `sv_validate_decision(change_id=...)` re-verifica la propuesta (PASS/WARN/BLOCK) y valida los deltas — presencia de keywords RFC 2119 y escenarios eliminados en MODIFIED contra el estado actual de la capability.
 - **Commit:** `sv_commit_spec(change_id=...)` guarda la memoria `decision`/`standard` duradera, fusiona los deltas en el estado de la capability (`.sv-memory/specs/capabilities/` + nodos `spec` del grafo) y marca el cambio `applied`. Un BLOCK o un conflicto de merge rechazan el commit.
-- **Mirror:** cada cambio y capability se proyecta a `.sv-memory/specs/` (sincronizado con Git). Los humanos pueden editar el Markdown; `sv-memory specs import <slug>` reconcilia las ediciones de vuelta al store autoritativo. `sv-memory specs capabilities` lista el estado actual de requirements.
+- **Mirror:** cada cambio y capability se proyecta a `.sv-memory/specs/` y `openspec/` (sincronizado con Git). Los humanos pueden editar el Markdown; `sv-memory specs import <slug>` reconcilia las ediciones de vuelta al store autoritativo. `sv-memory specs capabilities` lista el estado actual de requirements.
 
 **Formato de delta requirements (OpenSpec):**
 

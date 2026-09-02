@@ -201,12 +201,16 @@ El ciclo propose → validate → commit lleva delta requirements estilo OpenSpe
 que se fusionan en un estado durable por capability y se conectan al grafo.
 
 ```text
-sv_propose_spec(slug, title, what, where_path, requirements, capability_path)
+sv_propose_spec(slug, title, what, where_path, requirements, tasks, capability_path)
    │  internal/mcp/tools_spec.go  handleProposeSpec
    │  CreateChange (changes) + opcional SetChangeCapabilityPath (default=slug)
    │  ParseSpecDeltas → ReplaceChangeRequirements (spec_requirements)
    │  PreflightCheck (FTS5+Jaccard vs standard/decision/architecture)
    │  graph.EnsureSpecCapabilityEdges (nodo spec:<cap> + arista implements)
+   ▼
+sv_update_spec(change_id, tasks, design, what, goal, requirements)
+   │  internal/mcp/tools_spec.go  handleUpdateSpec
+   │  UpdateChange (changes) + métricas FormatTaskProgress + sync de espejo
    ▼
 sv_validate_decision(change_id)   ValidateChangeRequirements
    │  warn de presencia RFC 2119 · warn de escenario eliminado en MODIFIED vs spec_capabilities

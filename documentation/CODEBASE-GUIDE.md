@@ -200,12 +200,16 @@ requirements that are merged into a durable per-capability state and wired
 into the graph.
 
 ```text
-sv_propose_spec(slug, title, what, where_path, requirements, capability_path)
+sv_propose_spec(slug, title, what, where_path, requirements, tasks, capability_path)
    │  internal/mcp/tools_spec.go  handleProposeSpec
    │  CreateChange (changes) + optional SetChangeCapabilityPath (default=slug)
    │  ParseSpecDeltas → ReplaceChangeRequirements (spec_requirements)
    │  PreflightCheck (FTS5+Jaccard vs standard/decision/architecture)
    │  graph.EnsureSpecCapabilityEdges (spec:<cap> node + implements edge)
+   ▼
+sv_update_spec(change_id, tasks, design, what, goal, requirements)
+   │  internal/mcp/tools_spec.go  handleUpdateSpec
+   │  UpdateChange (changes) + FormatTaskProgress metrics + mirror sync
    ▼
 sv_validate_decision(change_id)   ValidateChangeRequirements
    │  RFC 2119 presence warn · MODIFIED scenario-drop warn vs spec_capabilities

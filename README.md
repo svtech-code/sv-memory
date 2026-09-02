@@ -227,14 +227,14 @@ sv-memory tui
 | `sv-memory conflicts`              | **Memory**      | Detects semantic overlap and memory conflicts across the project.                        |
 | `sv-memory capture`                | **Memory**      | Passively captures git commits or journal observations into persistent memory.           |
 | `sv-memory hooks install`          | **Hooks**       | Installs PreToolUse and Git post-commit hooks for Claude Code, Antigravity, OpenCode, and Git. |
-| `sv-memory permissions list`       | **Permissions** | Lists the 34 sv-memory MCP tools with descriptions.                                      |
+| `sv-memory permissions list`       | **Permissions** | Lists all sv-memory MCP tools with descriptions.                                         |
 | `sv-memory permissions status`     | **Permissions** | Shows granted/missing MCP permissions per platform.                                      |
 | `sv-memory permissions grant`      | **Permissions** | Writes MCP tool allow-lists (`--all`/`--tool`, `--dry-run`) for Antigravity/Claude Code. |
 | `sv-memory permissions revoke`     | **Permissions** | Removes sv-memory allow-list entries, preserving unrelated permissions.                  |
 
 ---
 
-## 🧩 Model Context Protocol (MCP) 34 Tools
+## 🧩 Model Context Protocol (MCP) Tools
 
 ### 🧠 Memory Tools
 
@@ -256,11 +256,12 @@ sv-memory tui
 - **`sv_mem_merge_projects`**: Merges project variants into a canonical project (admin) — moves all memories, sessions, relations, and graph data from `from` into `to`, then deletes the source. Mirrors `sv-memory projects consolidate`.
 - **`sv_mem_context_pack`**: Fuses graph role + linked memories + the capabilities implemented at a path for one bounded call; pass `include_changes='true'` to also list active spec changes affecting the path (the graph→memory bridge for token-efficient context).
 - **`sv_mem_conflicts`**: Surfaces memory conflicts with semantic overlap analysis; `action=scan semantic=true` LLM-judges candidate pairs via the agent CLI (claude/opencode).
-- **`sv_mem_compact`**: Consolidates historical topic key revisions into unified summary records.
+- **`sv_mem_compact`**: Consolidates historical topic key revisions into unified summary records with health checks and auto-compaction.
 
-### ⚖️ Decision Engine Tools (Spec-Driven)
+### ⚖️ Decision Engine Tools (Spec-Driven / OpenSpec)
 
 - **`sv_propose_spec`**: Registers a spec change (proposal) and runs a pre-flight check against rules/invariants — a pinned overlapping rule returns **BLOCK**, an ordinary overlap **WARN**, otherwise **PASS**. Zero LLM cost by default. Accepts OpenSpec-style delta `requirements` (ADDED/MODIFIED/REMOVED/RENAMED, RFC 2119, GIVEN/WHEN/THEN scenarios) targeting a single `capability_path`.
+- **`sv_update_spec`**: Updates an active spec change proposal during implementation: updates task checklist progress (`- [x]`), refines technical design, proposal rationale, goal, affected path, capability path, or delta requirements with automatic mirror sync.
 - **`sv_validate_decision`**: Re-checks a proposal after edits (PASS/WARN/BLOCK) and validates its delta requirements against the current capability state (RFC 2119 presence, MODIFIED scenario drops); `semantic='true'` opts into a batched agent re-ranking (fails open to the deterministic verdict).
 - **`sv_commit_spec`**: Promotes a validated change into a durable `decision`/`standard` memory (topic_key `decision/<slug>`), wires the rationale edge, records `conflicts_with` relations, merges the delta requirements into the capability state (`.sv-memory/specs/capabilities/` + graph spec nodes), and stamps it applied. A BLOCK or a requirements merge conflict rejects the commit unless `force='true'` overrides it.
 
@@ -273,12 +274,17 @@ sv-memory tui
 
 ### 🕸️ Graph Tools
 
+- **`sv_graph_explore`**: Unified explore for code understanding in one bounded call: pass one or more comma-separated symbols/paths to get structural roles, surgical line-numbered source snippets, shortest call path between them, blast radius, and linked memories.
+- **`sv_graph_diff`**: Compares structural code elements (symbols, calls, imports, blast radius impact) between a Git base reference and the working tree.
 - **`sv_graph_query`**: BFS dependency query with sub-millisecond LRU cache. Returns Mermaid diagram.
 - **`sv_graph_path`**: Shortest dependency path between two nodes.
 - **`sv_graph_sync`**: Incrementally syncs dependency graph from file changes.
 - **`sv_graph_explain`**: Detailed node information with fan-in/fan-out metrics and actionable refactor suggestions.
 - **`sv_graph_god_nodes`**: Identifies highly-connected hub nodes.
 - **`sv_graph_surprising_connections`**: Finds unexpected or non-obvious dependencies with bridge-score highlights.
+- **`sv_graph_communities`**: Lists top Leiden communities or details specific community members.
+- **`sv_graph_search`**: Discovers graph nodes matching text patterns across ID, label, and file paths.
+- **`sv_graph_report`**: Generates a comprehensive architectural summary digest (`GRAPH_REPORT.md`).
 - **`sv_graph_viz`**: Generates interactive HTML visualization (`vis.js`).
 - **`sv_graph_merge`**: Union-merges two project graphs by node ID into a JSON snapshot.
 
