@@ -307,6 +307,143 @@ func TestGraphReportTool(t *testing.T) {
 	}
 }
 
+func TestGraphSearchTool(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	// Write a few Go files with shared substring "auth" to exercise multi-match.
+	files := map[string]string{
+		"auth.go":     "package main\nfunc auth() {}\n",
+		"oauth.go":    "package main\nfunc oauth() {}\n",
+		"handlers.go": "package main\nfunc handleAuth() {}\n",
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(tempDir, name), []byte(body), 0644); err != nil {
+			t.Fatalf("failed writing %s: %v", name, err)
+		}
+	}
+	if err := graph.SyncGraph(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
+		t.Fatalf("failed syncing graph: %v", err)
+	}
+
+	srv := NewServer(pool, cfg)
+	if srv.GetTool("sv_graph_search") == nil {
+		t.Fatal("expected sv_graph_search tool to be registered")
+	}
+	if srv.GetTool("sv_graph_communities") == nil {
+		t.Fatal("expected sv_graph_communities tool to be registered")
+	}
+
+	ctx := context.Background()
+
+	// Basic multi-match search.
+	req := mcpgo.CallToolRequest{}
+	req.Params.Name = "sv_graph_search"
+	req.Params.Arguments = map[string]any{"query": "auth"}
+	res, err := srv.GetTool("sv_graph_search").Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("sv_graph_search failed: %v", err)
+	}
+	out := textContent(res.Content[0])
+	if !strings.Contains(out, "## Graph Search Results") {
+		t.Fatalf("expected results header, got:\n%s", out)
+	}
+	// Must list multiple matches (auth.go + handlers.go + oauth.go).
+	if strings.Count(out, "| ") < 3 {
+		t.Fatalf("expected at least 3 table rows, got:\n%s", out)
+	}
+
+	// No-match case includes fallback suggestion.
+	req.Params.Arguments = map[string]any{"query": "zzz_nonexistent_xyz"}
+	res, err = srv.GetTool("sv_graph_search").Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("sv_graph_search failed: %v", err)
+	}
+	out = textContent(res.Content[0])
+	if strings.Contains(out, "## Graph Search Results") {
+		t.Fatalf("no-match should not produce results header, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Try a shorter term") {
+		t.Fatalf("no-match should include fallback suggestions, got:\n%s", out)
+	}
+}
+
+func TestGraphSearchFallbackInQueryTool(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	if err := os.WriteFile(filepath.Join(tempDir, "a.go"), []byte("package main\nfunc a() {}\n"), 0644); err != nil {
+		t.Fatalf("failed writing a.go: %v", err)
+	}
+	if err := graph.SyncGraph(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
+		t.Fatalf("failed syncing graph: %v", err)
+	}
+
+	srv := NewServer(pool, cfg)
+	ctx := context.Background()
+
+	// sv_graph_query on a non-existent node must suggest sv_graph_search.
+	req := mcpgo.CallToolRequest{}
+	req.Params.Name = "sv_graph_query"
+	req.Params.Arguments = map[string]any{"path_or_node": "zzz_no_match"}
+	res, err := srv.GetTool("sv_graph_query").Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("sv_graph_query failed: %v", err)
+	}
+	out := textContent(res.Content[0])
+	if !strings.Contains(out, "sv_graph_search(query=\"zzz_no_match\")") {
+		t.Fatalf("expected sv_graph_search fallback suggestion in query response, got:\n%s", out)
+	}
+
+	// Same for sv_graph_explain.
+	req.Params.Name = "sv_graph_explain"
+	req.Params.Arguments = map[string]any{"node": "zzz_no_match"}
+	res, err = srv.GetTool("sv_graph_explain").Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("sv_graph_explain failed: %v", err)
+	}
+	out = textContent(res.Content[0])
+	if !strings.Contains(out, "sv_graph_search(query=\"zzz_no_match\")") {
+		t.Fatalf("expected sv_graph_search fallback suggestion in explain response, got:\n%s", out)
+	}
+}
+
+func TestGraphCommunitiesTool(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	// Write two files with an import edge so they form a community.
+	if err := os.WriteFile(filepath.Join(tempDir, "main.go"), []byte("package main\nimport \"./utils\"\nfunc main() { helper() }\n"), 0644); err != nil {
+		t.Fatalf("failed writing main.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "utils.go"), []byte("package main\nfunc helper() {}\n"), 0644); err != nil {
+		t.Fatalf("failed writing utils.go: %v", err)
+	}
+	if err := graph.SyncGraph(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
+		t.Fatalf("failed syncing graph: %v", err)
+	}
+
+	srv := NewServer(pool, cfg)
+	ctx := context.Background()
+
+	// List top communities.
+	req := mcpgo.CallToolRequest{}
+	req.Params.Name = "sv_graph_communities"
+	req.Params.Arguments = map[string]any{}
+	res, err := srv.GetTool("sv_graph_communities").Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("sv_graph_communities failed: %v", err)
+	}
+	out := textContent(res.Content[0])
+	if !strings.Contains(out, "## Top") || !strings.Contains(out, "Community") {
+		t.Fatalf("expected communities table header, got:\n%s", out)
+	}
+	// Table must contain at least one community row.
+	if strings.Count(out, "| ") < 3 {
+		t.Fatalf("expected at least one community row, got:\n%s", out)
+	}
+}
+
 func TestSearchGraphBoost(t *testing.T) {
 	tempDir, pool, cfg := setupTestEnv(t)
 	defer cleanupTestEnv(tempDir, pool)

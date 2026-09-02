@@ -33,5 +33,5 @@ For structural or architectural changes:
 - **Memory Save:** `sv_mem_save(category=..., what=..., why=..., learned=...)`
 - **Memory Search & Detail:** `sv_mem_search(query=...)`, `sv_mem_get(id=...)`
 - **Session:** `sv_mem_session_start(goal=...)`, `sv_mem_session_end(accomplished=...)`, `sv_mem_context()`
-- **Graph:** `sv_graph_explore` (multi-symbol explore + call path, source counts as read), `sv_graph_query(path_or_node=...)`, `sv_graph_explain(node=...)`, `sv_graph_report` (aggregate GRAPH_REPORT.md overview), `sv_graph_sync()`
+- **Graph:** `sv_graph_explore` (multi-symbol explore + call path, source counts as read), `sv_graph_query(path_or_node=...)`, `sv_graph_explain(node=...)`, `sv_graph_search(query=...)` (discover nodes by text pattern, optional node_type/limit), `sv_graph_communities(top_n=..., community_id=...)` (list communities or detail members), `sv_graph_report` (aggregate GRAPH_REPORT.md overview), `sv_graph_sync()`
 - **Spec Engine:** `sv_propose_spec`, `sv_validate_decision`, `sv_commit_spec`

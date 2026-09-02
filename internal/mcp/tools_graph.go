@@ -51,7 +51,7 @@ func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) 
 	debugLog("graph_query path=%q depth=%d hubThresh=%d returned %d nodes / %d edges in %s", pathOrNode, depth, hubThreshold, len(subGraph.Nodes), len(subGraph.Edges), time.Since(startQuery))
 
 	if len(subGraph.Nodes) == 0 {
-		return mcp.NewToolResultText(fmt.Sprintf("No nodes found matching '%s' in the project graph.", pathOrNode)), nil
+		return mcp.NewToolResultText(fmt.Sprintf("No nodes found matching '%s' in the project graph.\nDid you mean to discover matches? Call sv_graph_search(query=\"%s\").", pathOrNode, pathOrNode)), nil
 	}
 
 	commLabels := computeCommLabels(g)
@@ -266,7 +266,7 @@ func (s *Server) handleGraphExplain(ctx context.Context, req mcp.CallToolRequest
 
 	nID := g.FindNode(nodeName)
 	if nID == "" {
-		return mcp.NewToolResultText(fmt.Sprintf("Could not find node matching '%s' in the graph.", nodeName)), nil
+		return mcp.NewToolResultText(fmt.Sprintf("Could not find node matching '%s' in the graph.\nDid you mean to discover matches? Call sv_graph_search(query=\"%s\").", nodeName, nodeName)), nil
 	}
 
 	node := g.Nodes[nID]
@@ -774,6 +774,197 @@ func (s *Server) handleGraphMerge(ctx context.Context, req mcp.CallToolRequest) 
 
 	return mcp.NewToolResultText(fmt.Sprintf("Merged graph: %d nodes, %d edges\n\n```json\n%s\n```",
 		len(merged.Nodes), len(merged.EdgesBySource), jsonStr)), nil
+}
+
+func (s *Server) handleGraphSearch(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	query, err := req.RequireString("query")
+	if err != nil {
+		return mcp.NewToolResultError("missing required field: query"), nil
+	}
+
+	g, err := s.getOrLoadGraph()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
+	}
+
+	// Lazily compute and reload communities/centrality when missing, mirroring
+	// the other graph tools, so a freshly-synced graph still reports the
+	// community of each match.
+	if !graphHasCentrality(g) {
+		s.computeCentralityIfMissing()
+		if g, err = s.getOrLoadGraph(); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
+		}
+	}
+
+	limit := positiveInt(req.GetString("limit", "10"), 10)
+	nodeType := req.GetString("node_type", "")
+
+	results := g.SearchNodes(query, nodeType, limit)
+
+	var sb strings.Builder
+	if len(results) == 0 {
+		fmt.Fprintf(&sb, "No nodes match '%s'%s in the project graph.\n", query, typeSuffix(nodeType))
+		sb.WriteString("Try a shorter term, `sv_graph_god_nodes`, or `sv_graph_report` for an overview.\n")
+		return s.respond(req, sb.String()), nil
+	}
+
+	commLabels := computeCommLabels(g)
+
+	fmt.Fprintf(&sb, "## Graph Search Results for '%s'\n\n", query)
+	fmt.Fprintf(&sb, "%d node(s) match (showing up to %d). Ranked by match precision, then degree.\n\n", len(results), limit)
+	sb.WriteString("| # | Node | Type | Path | Degree | Fan-In | Fan-Out | Community |\n")
+	sb.WriteString("|---|------|------|------|--------|--------|---------|-----------|\n")
+	for i, r := range results {
+		commStr := commLabelStr(r.Community, commLabels)
+		fmt.Fprintf(&sb, "| %d | `%s` | %s | `%s` | %d | %d | %d | %s |\n",
+			i+1, r.ID, codeOrPlain(r.Type), r.Path, r.Degree, r.FanIn, r.FanOut, commStr)
+	}
+	sb.WriteString("\n*Drill down with `sv_graph_explain(node=\"<node>\")` or `sv_graph_query(path_or_node=\"<node>\")`.*\n")
+
+	var allNodes []*graph.Node
+	for _, r := range results {
+		if n, ok := g.Nodes[r.ID]; ok {
+			allNodes = append(allNodes, n)
+		}
+	}
+	benchmark := tokenBenchmark(allNodes, sb.Len()/4)
+	if benchmark != "" {
+		sb.WriteString("\n" + benchmark + "\n")
+	}
+
+	return s.respond(req, sb.String()), nil
+}
+
+func (s *Server) handleGraphCommunities(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	g, err := s.getOrLoadGraph()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
+	}
+
+	// Lazily compute and reload communities/centrality when missing, so a
+	// freshly-synced graph (no persisted community_id) still works here.
+	if !graphHasCentrality(g) {
+		s.computeCentralityIfMissing()
+		if g, err = s.getOrLoadGraph(); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
+		}
+	}
+
+	communities := g.ExtractCommunities()
+	if len(communities) == 0 {
+		return mcp.NewToolResultText("No communities found in the project graph."), nil
+	}
+
+	topN := positiveInt(req.GetString("top_n", "10"), 10)
+	commIDStr := req.GetString("community_id", "")
+
+	// Group members by community id.
+	members := make(map[int][]string)
+	for id, cid := range communities {
+		members[cid] = append(members[cid], id)
+	}
+	// Sort each member list for deterministic output.
+	for cid := range members {
+		sort.Strings(members[cid])
+	}
+
+	commLabels := computeCommLabels(g)
+
+	var sb strings.Builder
+
+	if commIDStr != "" {
+		commID, convErr := strconv.Atoi(commIDStr)
+		if convErr != nil || commID <= 0 {
+			return mcp.NewToolResultError(fmt.Sprintf("invalid community_id: %s", commIDStr)), nil
+		}
+		if _, ok := members[commID]; !ok {
+			return mcp.NewToolResultText(fmt.Sprintf("Community %d not found in the project graph.", commID)), nil
+		}
+		label := commLabelStr(commID, commLabels)
+		fmt.Fprintf(&sb, "## Community %s\n\n", label)
+		fmt.Fprintf(&sb, "**%d member(s).**\n\n", len(members[commID]))
+		sb.WriteString("| # | Node | Type | Degree | Fan-In | Fan-Out |\n")
+		sb.WriteString("|---|------|------|--------|--------|---------|\n")
+		for i, id := range members[commID] {
+			n, ok := g.Nodes[id]
+			if !ok {
+				continue
+			}
+			deg := g.FanIn[id] + g.FanOut[id]
+			fmt.Fprintf(&sb, "| %d | `%s` | %s | %d | %d | %d |\n",
+				i+1, id, codeOrPlain(n.Type), deg, g.FanIn[id], g.FanOut[id])
+		}
+		sb.WriteString("\n*Explore any member with `sv_graph_explain(node=\"<node>\")`.*\n")
+		return s.respond(req, sb.String()), nil
+	}
+
+	// Rank communities by size.
+	type commInfo struct {
+		id    int
+		count int
+	}
+	sorted := make([]commInfo, 0, len(members))
+	for cid, ids := range members {
+		sorted = append(sorted, commInfo{id: cid, count: len(ids)})
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].count != sorted[j].count {
+			return sorted[i].count > sorted[j].count
+		}
+		return sorted[i].id < sorted[j].id
+	})
+	if topN > len(sorted) {
+		topN = len(sorted)
+	}
+	sorted = sorted[:topN]
+
+	fmt.Fprintf(&sb, "## Top %d Graph Communities\n\n", topN)
+	sb.WriteString("Ranked by member count. Communities group code that changes together.\n\n")
+	sb.WriteString("| # | Community | Label | Size |\n")
+	sb.WriteString("|---|-----------|-------|------|\n")
+	for i, c := range sorted {
+		fmt.Fprintf(&sb, "| %d | %d | %s | %d |\n", i+1, c.id, commLabelStr(c.id, commLabels), c.count)
+	}
+
+	var sampleNodes []*graph.Node
+	for i, c := range sorted {
+		if i >= 5 {
+			break
+		}
+		if len(members[c.id]) > 0 {
+			if n, ok := g.Nodes[members[c.id][0]]; ok {
+				sampleNodes = append(sampleNodes, n)
+			}
+		}
+	}
+	benchmark := tokenBenchmark(sampleNodes, sb.Len()/4)
+	if benchmark != "" {
+		sb.WriteString("\n" + benchmark + "\n")
+	}
+
+	sb.WriteString(`To inspect a community's members, call `)
+	sb.WriteString("`sv_graph_communities(community_id=\"<id>\")`.\n")
+
+	return s.respond(req, sb.String()), nil
+}
+
+// typeSuffix renders the optional node_type filter suffix for the no-match
+// message ("of type 'file'") or empty when no filter was given.
+func typeSuffix(nodeType string) string {
+	if nodeType == "" {
+		return ""
+	}
+	return fmt.Sprintf(" of type '%s'", nodeType)
+}
+
+// codeOrPlain wraps a value in backticks unless it is empty, to keep table
+// cells readable.
+func codeOrPlain(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return "`" + s + "`"
 }
 
 func escapeMermaid(s string) string {

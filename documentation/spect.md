@@ -186,7 +186,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **Context Pack:** sv_mem_context_pack (one bounded call: graph role + linked memories + active changes for a file/package/symbol)
 - **Decision Engine:** sv_propose_spec, sv_validate_decision, sv_commit_spec (propose → validate → commit cycle with pre-flight checks)
 - **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive (human-readable Markdown projection of changes under .sv-memory/specs/)
-- **Graph:** sv_graph_explore, sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_report, sv_graph_viz, sv_graph_merge
+- **Graph:** sv_graph_explore, sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_report, sv_graph_viz, sv_graph_merge, sv_graph_search, sv_graph_communities
 
 ## Repository Restrictions & Commit Standards:
 
@@ -913,6 +913,29 @@ Merges two project graphs into one (union-merge by node ID), upserting nodes and
 
 ---
 
+### 30. `sv_graph_search`
+
+Discovers graph nodes matching a text pattern across id/label/path. Unlike `sv_graph_explain` and `sv_graph_query` which resolve a single exact node (via `FindNode`), this is the discovery path: agents that do not know the exact symbol can list all matching code nodes with their network metrics. Results are ranked deterministically (exact path > exact label > substring; ties broken by degree, then shortest id, then alphabetical). The optional `node_type` filter restricts matches to a specific node type (file, function, class, package, etc).
+
+- **Parameters:**
+  - `query` (string, required): Text pattern to match against node id, label, and path.
+  - `limit` (string, optional): Maximum results (default `10`, max `50`).
+  - `node_type` (string, optional): Node type filter (file, function, class, package, etc).
+- **Output:** Markdown table with columns: `#`, `Node`, `Type`, `Path`, `Degree`, `Fan-In`, `Fan-Out`, `Community`. Token benchmark vs reading raw files.
+- **Behavior:** Returns nil when no nodes match (with fallback suggestions including `sv_graph_god_nodes` and `sv_graph_report`).
+
+---
+
+### 31. `sv_graph_communities`
+
+Lists the top communities in the dependency graph with auto-labels and member counts. Optionally details a specific community's member nodes. This is the MCP parity for the `sv-memory graph communities` CLI command (which uses `LeidenDetectCommunities` + `DetectCommunityLabels`).
+
+- **Parameters:**
+  - `top_n` (string, optional): Number of top communities to list (default `10`, max `50`).
+  - `community_id` (string, optional): Community id to detail its member nodes (type, degree, fan-in/fan-out).
+- **Without `community_id`:** Markdown table with columns: `#`, `Community`, `Label`, `Size`. Ranked by member count.
+- **With `community_id`:** Markdown table of members with columns: `#`, `Node`, `Type`, `Degree`, `Fan-In`, `Fan-Out`. Sorted alphabetically by node id.
+
 ## 7. Memory Save Strategies (Detail)
 
 ### Topic Key Upsert (Evolving Topics)
@@ -1073,7 +1096,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **Context Pack:** sv_mem_context_pack (one bounded call: graph role + linked memories + active changes + capabilities for a file/package/symbol)
 - **Decision Engine:** sv_propose_spec, sv_validate_decision, sv_commit_spec (propose → validate → commit cycle with pre-flight checks and delta requirements)
 - **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive | capabilities (human-readable Markdown projection of changes and capability state under .sv-memory/specs/)
-- **Graph:** sv_graph_explore, sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_report, sv_graph_viz, sv_graph_merge
+- **Graph:** sv_graph_explore, sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_report, sv_graph_viz, sv_graph_merge, sv_graph_search, sv_graph_communities
 
 ## Repository Restrictions & Commit Standards:
 

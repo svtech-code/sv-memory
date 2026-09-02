@@ -349,3 +349,84 @@ func (g *InMemoryGraph) FindNode(start string) string {
 	}
 	return bestID
 }
+
+// SearchResult describes a node matched by SearchNodes.
+type SearchResult struct {
+	ID        string
+	Label     string
+	Type      string
+	Path      string
+	FanIn     int
+	FanOut    int
+	Degree    int
+	Community int
+	Rank      int
+}
+
+// SearchNodes returns every node whose id, label, or path contains the query,
+// ranked deterministically (exact path > exact label > substring; ties broken
+// by shortest id then alphabetical) and bounded by limit. Unlike FindNode,
+// which returns a single best match for navigation, SearchNodes is the
+// discovery path: agents that do not know the exact symbol can list all
+// matching code nodes with their network metrics. The optional nodeType filter
+// restricts matches (file/function/class/etc).
+func (g *InMemoryGraph) SearchNodes(query, nodeType string, limit int) []SearchResult {
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 50 {
+		limit = 50
+	}
+	if query == "" {
+		return nil
+	}
+
+	var out []SearchResult
+	for id, n := range g.Nodes {
+		if nodeType != "" && n.Type != nodeType {
+			continue
+		}
+		var rank int
+		switch {
+		case n.Path == query:
+			rank = 4
+		case n.Label == query:
+			rank = 3
+		case strings.Contains(id, query) || strings.Contains(n.Label, query) || strings.Contains(n.Path, query):
+			rank = 2
+		}
+		if rank == 0 {
+			continue
+		}
+		degree := g.FanIn[id] + g.FanOut[id]
+		out = append(out, SearchResult{
+			ID:        id,
+			Label:     n.Label,
+			Type:      n.Type,
+			Path:      n.Path,
+			FanIn:     g.FanIn[id],
+			FanOut:    g.FanOut[id],
+			Degree:    degree,
+			Community: NodeCommunityID(n),
+			Rank:      rank,
+		})
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Rank != out[j].Rank {
+			return out[i].Rank > out[j].Rank
+		}
+		if out[i].Degree != out[j].Degree {
+			return out[i].Degree > out[j].Degree
+		}
+		if len(out[i].ID) != len(out[j].ID) {
+			return len(out[i].ID) < len(out[j].ID)
+		}
+		return out[i].ID < out[j].ID
+	})
+
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}

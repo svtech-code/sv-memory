@@ -94,6 +94,8 @@ var AllTools = []Tool{
 	{Name: "sv_graph_report", Description: "Generate GRAPH_REPORT.md with god nodes, top communities, surprising cross-community bridges, and suggested questions."},
 	{Name: "sv_graph_viz", Description: "Generate an interactive HTML visualization of the dependency graph."},
 	{Name: "sv_graph_merge", Description: "Merge two project graphs into one (union-merge by node ID)."},
+	{Name: "sv_graph_search", Description: "Discover graph nodes matching a text pattern: returns every matching node id/label/path with type, path, degree, fan-in/fan-out, and community. Unlike sv_graph_explain/sv_graph_query, which resolve a single exact node, this is the discovery path when the exact symbol is unknown. Optional 'node_type' filter and 'limit' (default 10, max 50)."},
+	{Name: "sv_graph_communities", Description: "List the top communities in the dependency graph with auto-labels and sizes, or (with 'community_id') detail a specific community's member nodes with their degree/fan-in/fan-out. MCP parity for the 'sv-memory graph communities' CLI."},
 }
 
 // global shutdown state: the latest server instance's cleanup hook, invoked on
@@ -568,6 +570,25 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		mcp.WithString("output", mcp.Description("Output JSON file path")),
 	)
 	ms.AddTool(mergeTool, s.handleGraphMerge)
+
+	// 29. Tool: sv_graph_search
+	graphSearchTool := mcp.NewTool("sv_graph_search",
+		mcp.WithDescription("Discover graph nodes matching a text pattern across id/label/path. Returns every match with type, path, degree, fan-in/fan-out, and community — the discovery path when the exact symbol name is unknown (sv_graph_explain/sv_graph_query only resolve a single node)."),
+		mcp.WithDeferLoading(true),
+		mcp.WithString("query", mcp.Required(), mcp.Description("Text pattern to match against node id, label, and path (required)")),
+		mcp.WithString("limit", mcp.Description("Maximum number of results (default '10', max 50)")),
+		mcp.WithString("node_type", mcp.Description("Optional node type filter (file, function, class, package, etc.)")),
+	)
+	ms.AddTool(graphSearchTool, s.handleGraphSearch)
+
+	// 30. Tool: sv_graph_communities
+	graphCommunitiesTool := mcp.NewTool("sv_graph_communities",
+		mcp.WithDescription("List the top communities in the dependency graph with auto-labels and member counts, or detail a specific community's members (top_n / community_id). MCP parity for 'sv-memory graph communities'."),
+		mcp.WithDeferLoading(true),
+		mcp.WithString("top_n", mcp.Description("Number of top communities to list (default '10', max 50)")),
+		mcp.WithString("community_id", mcp.Description("Optional community id to detail its member nodes (type, degree, fan-in/fan-out)")),
+	)
+	ms.AddTool(graphCommunitiesTool, s.handleGraphCommunities)
 
 	return ms
 }

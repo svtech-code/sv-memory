@@ -44,6 +44,106 @@ func TestFindNodeDeterministic(t *testing.T) {
 	}
 }
 
+func TestSearchNodes(t *testing.T) {
+	g := &InMemoryGraph{
+		Nodes: map[string]*Node{
+			"auth.go":                {ID: "auth.go", Label: "auth.go", Path: "auth.go", Type: "file"},
+			"src/auth/middleware.go": {ID: "src/auth/middleware.go", Label: "auth_middleware", Path: "src/auth/middleware.go", Type: "file"},
+			"src/auth/handler.go":    {ID: "src/auth/handler.go", Label: "auth_handler", Path: "src/auth/handler.go", Type: "file"},
+			"AuthorizeUser":          {ID: "AuthorizeUser", Label: "AuthorizeUser", Path: "src/auth/service.go", Type: "function"},
+			"src/auth/service.go":    {ID: "src/auth/service.go", Label: "service", Path: "src/auth/service.go", Type: "file"},
+			"oauth.go":               {ID: "oauth.go", Label: "oauth", Path: "oauth.go", Type: "file"},
+		},
+		FanIn:  map[string]int{"auth.go": 3, "src/auth/middleware.go": 1, "src/auth/handler.go": 2, "AuthorizeUser": 1, "src/auth/service.go": 2, "oauth.go": 1},
+		FanOut: map[string]int{"auth.go": 2, "src/auth/middleware.go": 3, "src/auth/handler.go": 1, "AuthorizeUser": 4, "src/auth/service.go": 1, "oauth.go": 5},
+	}
+
+	t.Run("multi-match deterministic across id/label/path", func(t *testing.T) {
+		// "auth" matches auth.go (id+path), middleware.go (path), handler.go
+		// (path), AuthorizeUser (label), service.go (path), and oauth.go
+		// ("auth" ⊆ "oauth", label+id substring). No node has a path exactly
+		// equal to "auth", so all are rank 2 and ordering falls back to degree
+		// descending — oauth.go (degree 6) leads.
+		results := g.SearchNodes("auth", "", 10)
+		if len(results) != 6 {
+			t.Fatalf("SearchNodes(\"auth\") got %d results, want 6: %+v", len(results), results)
+		}
+		if results[0].ID != "oauth.go" {
+			t.Errorf("top result = %q, want %q (highest degree across ties)", results[0].ID, "oauth.go")
+		}
+		seen := map[string]bool{}
+		for _, r := range results {
+			seen[r.ID] = true
+			if r.FanIn == 0 && r.FanOut == 0 {
+				t.Errorf("result %q missing degree metrics", r.ID)
+			}
+		}
+		for _, want := range []string{"auth.go", "src/auth/middleware.go", "src/auth/handler.go", "AuthorizeUser", "src/auth/service.go", "oauth.go"} {
+			if !seen[want] {
+				t.Errorf("missing expected match %q", want)
+			}
+		}
+		// Deterministic across calls (map iteration order differs).
+		for i := 0; i < 20; i++ {
+			again := g.SearchNodes("auth", "", 10)
+			if len(again) != len(results) || again[0].ID != results[0].ID {
+				t.Fatalf("SearchNodes(\"auth\") unstable on iteration %d", i)
+			}
+		}
+	})
+
+	t.Run("exact path match leads", func(t *testing.T) {
+		// When a node's path equals the query exactly (rank 4), it must lead
+		// over substring matches regardless of degree.
+		gg := &InMemoryGraph{
+			Nodes: map[string]*Node{
+				"src/auth.go": {ID: "src/auth.go", Label: "auth_handler", Path: "src/auth.go", Type: "file"},
+				"oauth.go":    {ID: "oauth.go", Label: "oauth", Path: "oauth.go", Type: "file"},
+				"auth.go":     {ID: "auth.go", Label: "auth.go", Path: "auth.go", Type: "file"},
+			},
+			FanIn:  map[string]int{"src/auth.go": 9, "oauth.go": 1, "auth.go": 1},
+			FanOut: map[string]int{"src/auth.go": 9, "oauth.go": 1, "auth.go": 1},
+		}
+		results := gg.SearchNodes("auth.go", "", 10)
+		if len(results) != 3 {
+			t.Fatalf("got %d results, want 3: %+v", len(results), results)
+		}
+		if results[0].ID != "auth.go" {
+			t.Errorf("top result = %q, want %q (exact path outranks higher degree)", results[0].ID, "auth.go")
+		}
+	})
+
+	t.Run("node_type filter", func(t *testing.T) {
+		results := g.SearchNodes("auth", "function", 10)
+		if len(results) != 1 {
+			t.Fatalf("SearchNodes(\"auth\", \"function\") got %d results, want 1: %+v", len(results), results)
+		}
+		if results[0].ID != "AuthorizeUser" {
+			t.Errorf("function-filtered result = %q, want %q", results[0].ID, "AuthorizeUser")
+		}
+	})
+
+	t.Run("limit bounds", func(t *testing.T) {
+		results := g.SearchNodes("auth", "", 2)
+		if len(results) > 2 {
+			t.Errorf("limit=2 returned %d results, want <=2", len(results))
+		}
+		// limit above max is clamped to 50, never an error.
+		if r := g.SearchNodes("auth", "", 500); len(r) > 50 {
+			t.Errorf("limit>50 returned %d results, want clamped to 50", len(r))
+		}
+	})
+
+	t.Run("no match", func(t *testing.T) {
+		if r := g.SearchNodes("nonexistent_xyz", "", 10); r != nil {
+			t.Errorf("SearchNodes(\"nonexistent_xyz\") = %+v, want nil", r)
+		}
+		if r := g.SearchNodes("auth", "class", 10); r != nil {
+			t.Errorf("SearchNodes type-filter no match = %+v, want nil", r)
+		}
+	})
+}
+
 func TestTopDegreeNodesExcludesPackages(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test_hubs.db")
