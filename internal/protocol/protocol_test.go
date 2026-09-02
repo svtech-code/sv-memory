@@ -120,6 +120,7 @@ func TestProtocolTemplateGuidesGraphFirst(t *testing.T) {
 		"Don't grep or read first",
 		"Don't hand-reconstruct a flow",
 		"sv_graph_explore, sv_graph_query",
+		"sv_graph_report",
 	}
 	for _, s := range required {
 		if !strings.Contains(protocolTemplate, s) {

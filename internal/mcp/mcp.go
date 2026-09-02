@@ -91,6 +91,7 @@ var AllTools = []Tool{
 	{Name: "sv_graph_explain", Description: "Explain a node's role, community, centrality, neighbors, and suggested questions. Use before refactoring or deleting a file."},
 	{Name: "sv_graph_god_nodes", Description: "List the most-connected hub nodes in the dependency graph."},
 	{Name: "sv_graph_surprising_connections", Description: "Find unexpected cross-community connections in the codebase."},
+	{Name: "sv_graph_report", Description: "Generate GRAPH_REPORT.md with god nodes, top communities, surprising cross-community bridges, and suggested questions."},
 	{Name: "sv_graph_viz", Description: "Generate an interactive HTML visualization of the dependency graph."},
 	{Name: "sv_graph_merge", Description: "Merge two project graphs into one (union-merge by node ID)."},
 }
@@ -539,7 +540,18 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	)
 	ms.AddTool(surprisingTool, s.handleSurprisingConnections)
 
-	// 26. Tool: sv_graph_viz
+	// 26. Tool: sv_graph_report
+	reportTool := mcp.NewTool("sv_graph_report",
+		mcp.WithDescription("Generate a GRAPH_REPORT.md overview (god nodes, top communities, surprising cross-community bridges, suggested questions), returning the path, byte size, and a bounded summary digest"),
+		mcp.WithDeferLoading(true),
+		mcp.WithString("output", mcp.Description("Output markdown file path (default GRAPH_REPORT.md)")),
+		mcp.WithString("god_nodes", mcp.Description("Number of top god nodes (default 10)")),
+		mcp.WithString("communities", mcp.Description("Number of top communities (default 10)")),
+		mcp.WithString("connections", mcp.Description("Number of surprising connections (default 10)")),
+	)
+	ms.AddTool(reportTool, s.handleGraphReport)
+
+	// 27. Tool: sv_graph_viz
 	vizTool := mcp.NewTool("sv_graph_viz",
 		mcp.WithDescription("Generate an interactive HTML visualization (graph.html) of the project dependency graph"),
 		mcp.WithDeferLoading(true),
@@ -547,7 +559,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	)
 	ms.AddTool(vizTool, s.handleGraphViz)
 
-	// 27. Tool: sv_graph_merge
+	// 28. Tool: sv_graph_merge
 	mergeTool := mcp.NewTool("sv_graph_merge",
 		mcp.WithDescription("Merge two project graphs into one (union-merge by node ID)"),
 		mcp.WithDeferLoading(true),

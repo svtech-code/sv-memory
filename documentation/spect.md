@@ -186,7 +186,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **Context Pack:** sv_mem_context_pack (one bounded call: graph role + linked memories + active changes for a file/package/symbol)
 - **Decision Engine:** sv_propose_spec, sv_validate_decision, sv_commit_spec (propose → validate → commit cycle with pre-flight checks)
 - **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive (human-readable Markdown projection of changes under .sv-memory/specs/)
-- **Graph:** sv_graph_explore, sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_viz, sv_graph_merge
+- **Graph:** sv_graph_explore, sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_report, sv_graph_viz, sv_graph_merge
 
 ## Repository Restrictions & Commit Standards:
 
@@ -335,9 +335,13 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 
 - Loads two project graphs and produces a union-merge by node ID, upserting nodes and edges into a JSON snapshot (default output: `merged-<a>-<b>.json`).
 
+#### 28. `sv-memory graph report [--output file] [--god-nodes N] [--communities N] [--connections N]`
+
+- Generates a standalone `GRAPH_REPORT.md` aggregate overview of the dependency graph: god nodes (highest-degree hubs via `TopDegreeNodes`), top communities with auto-labels, surprising cross-community connections (via `FindSurprisingConnections`), hub threshold, and a deterministic suggested-questions section. Default output: `GRAPH_REPORT.md`. Command-line mirror of the `sv_graph_report` MCP tool.
+
 ### Conflict Management
 
-#### 28. `sv-memory conflicts`
+#### 29. `sv-memory conflicts`
 
 - `list [--status pending|judged|ignored] [--project P]`: displays conflicting memories and detected semantic overlaps.
 - `stats`: summarizes conflict relation counts by status.
@@ -345,11 +349,11 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - `scan --semantic [--agent claude|opencode|CMD] [--max-semantic N] [--concurrency N]`: after surfacing candidate pairs, LLM-judges them with the configured agent CLI. The agent compares full memory content and returns a verdict (`supersedes`, `conflicts_with`, `relates_to`, or `none`); verdicts are persisted with `judged_by='llm'` when `--apply`, and failed judgments stay pending for retry. Default agent: `$SV_MEMORY_SEMANTIC_AGENT` or `claude`.
 - `ignore <relation-id>`: marks a detected conflict as ignored.
 
-#### 29. `sv-memory context <path>`
+#### 30. `sv-memory context <path>`
 
 - Prints a **compact context pack** for a file, package, or symbol: the node's structural role (type, fan-in/fan-out, community, hub flag) plus the memories linked to that path (`where_path` or `rationale_for` edges), each as title + truncated `why`. Flags: `--max-memories N` (default 5), `--why-chars N` (default 300), `--include-changes` (also list active spec changes affecting the path). Fast and bounded — this is the entry point the optional PreToolUse context-injection hook calls on first file read.
 
-#### 30. `sv-memory specs`
+#### 31. `sv-memory specs`
 
 Spec-driven change mirror management. The SQLite store is authoritative; the mirror is a git-versioned, human-readable Markdown projection under `.sv-memory/specs/`.
 
@@ -888,7 +892,17 @@ Generates an interactive HTML visualization of the graph using vis.js with commu
 - **Parameters:**
   - `output` (string, optional): Output file path (default `graph.html`).
 
-### 28. `sv_graph_merge`
+### 28. `sv_graph_report`
+
+Generates a standalone `GRAPH_REPORT.md` overview of the dependency graph: god nodes (highest-degree hubs), top communities with auto-labels, surprising cross-community connections, hub threshold, and a suggested-questions section. The file is a standing architectural reference an agent can consult instead of running multiple graph queries.
+
+- **Parameters:**
+  - `output` (string, optional): Output markdown file path (default `GRAPH_REPORT.md`).
+  - `god_nodes` (string, optional): Number of top god nodes (default `10`).
+  - `communities` (string, optional): Number of top communities (default `10`).
+  - `connections` (string, optional): Number of surprising connections (default `10`).
+
+### 29. `sv_graph_merge`
 
 Merges two project graphs into one (union-merge by node ID), upserting nodes and edges.
 
@@ -1059,7 +1073,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **Context Pack:** sv_mem_context_pack (one bounded call: graph role + linked memories + active changes + capabilities for a file/package/symbol)
 - **Decision Engine:** sv_propose_spec, sv_validate_decision, sv_commit_spec (propose → validate → commit cycle with pre-flight checks and delta requirements)
 - **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive | capabilities (human-readable Markdown projection of changes and capability state under .sv-memory/specs/)
-- **Graph:** sv_graph_explore, sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_viz, sv_graph_merge
+- **Graph:** sv_graph_explore, sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_report, sv_graph_viz, sv_graph_merge
 
 ## Repository Restrictions & Commit Standards:
 

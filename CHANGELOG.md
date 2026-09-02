@@ -5,6 +5,10 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+### Added
+
+- **Aggregate Graph Report (`sv_graph_report` / `sv-memory graph report`)**: a new `GenerateGraphReport` in `internal/graph/report.go` builds a standalone `GRAPH_REPORT.md` overview from computed metrics — god nodes (via `TopDegreeNodes`, SQL aggregate excluding document/package nodes), top communities with auto-labels (via `LeidenDetectCommunities` + `DetectCommunityLabels`), surprising cross-community connections (via `FindSurprisingConnections`, bounded), hub threshold, and a deterministic suggested-questions section. Both the new MCP tool `sv_graph_report` and the CLI subcommand `sv-memory graph report` share it; the tool returns a bounded digest (path, bytes, counts). Output path is validated via `security.ValidateWritePath` and defaults to `GRAPH_REPORT.md`.
+
 ### Changed
 
 - **Unified Graph Explore (`sv_graph_explore`)**: `sv_mem_context_pack` now accepts up to three comma-separated symbols — secondary symbols surface as surgical line-numbered source snippets and the shortest dependency path between the two most significant symbols is rendered as a call path (via `graph.ShortestPath`, bounded to 8 hops). A new `sv_graph_explore` MCP tool aliases `handleContextPack` with exploration-oriented wording. Single-symbol queries preserve the exact previous behaviour and output. `GetContextPack`/`RenderContextPack` were split into `resolveExploreSymbols`, `renderCallPath`, `renderExtraSnippets`, `renderMemories` and `renderChanges` helpers to keep cyclomatic complexity under the lint gate.

@@ -377,6 +377,52 @@ var graphMergeCmd = &cobra.Command{
 	},
 }
 
+var graphReportCmd = &cobra.Command{
+	Use:   "report",
+	Short: "Generate GRAPH_REPORT.md with god nodes, communities, bridges, and suggested questions",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		cfg, err := config.LoadConfig(cwd)
+		if err != nil {
+			return err
+		}
+		database, err := db.InitDB(cfg.DBPath)
+		if err != nil {
+			return err
+		}
+		defer database.Close()
+
+		output, _ := cmd.Flags().GetString("output")
+		if output == "" {
+			output = "GRAPH_REPORT.md"
+		}
+		output, err = security.ValidateWritePath(cfg.ProjPath, output)
+		if err != nil {
+			return fmt.Errorf("invalid output path: %w", err)
+		}
+
+		topN, _ := cmd.Flags().GetInt("god-nodes")
+		commN, _ := cmd.Flags().GetInt("communities")
+		connN, _ := cmd.Flags().GetInt("connections")
+
+		summary, err := graph.GenerateGraphReport(database, cfg.ProjectID, output, graph.ReportOptions{
+			ProjName:    cfg.ProjName,
+			GodNodes:    topN,
+			Communities: commN,
+			Connections: connN,
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Graph report written to %s (%d bytes: %d nodes, %d edges, %d communities, %d god nodes, %d bridges)\n",
+			output, summary.Bytes, summary.Nodes, summary.Edges, summary.Communities, summary.GodNodes, summary.Connections)
+		return nil
+	},
+}
+
 var graphVizCmd = &cobra.Command{
 	Use:   "viz",
 	Short: "Export an interactive HTML visualization of the dependency graph",

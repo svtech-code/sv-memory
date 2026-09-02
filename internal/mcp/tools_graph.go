@@ -664,6 +664,44 @@ func (s *Server) handleSurprisingConnections(ctx context.Context, req mcp.CallTo
 	return s.respond(req, sb.String()), nil
 }
 
+func (s *Server) handleGraphReport(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	startLoad := time.Now()
+	g, err := s.getOrLoadGraph()
+	debugLog("graph_load took %s", time.Since(startLoad))
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
+	}
+
+	// Lazy-compute and persist centrality when missing, mirroring the other
+	// graph tools, so the report renders from up-to-date computed metrics.
+	// GenerateGraphReport loads the graph from the DB itself, so g is only
+	// consulted as the freshness signal here.
+	if !graphHasCentrality(g) {
+		s.computeCentralityIfMissing()
+	}
+
+	var opts graph.ReportOptions
+	opts.GodNodes = positiveInt(req.GetString("god_nodes", "10"), 10)
+	opts.Communities = positiveInt(req.GetString("communities", "10"), 10)
+	opts.Connections = positiveInt(req.GetString("connections", "10"), 10)
+
+	output := req.GetString("output", "GRAPH_REPORT.md")
+	output, err = security.ValidateWritePath(s.cfg.ProjPath, output)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("invalid output path: %v", err)), nil
+	}
+
+	summary, err := graph.GenerateGraphReport(s.pool.Reader, s.cfg.ProjectID, output, opts)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to generate graph report: %v", err)), nil
+	}
+
+	digest := fmt.Sprintf(
+		"Graph report written to `%s` (%d bytes).\n\n- **Nodes:** %d\n- **Edges:** %d\n- **Communities:** %d (hub threshold p99 = %d)\n- **God nodes:** %d\n- **Surprising connections:** %d\n\nCoverage drill-down: `sv_graph_god_nodes`, `sv_graph_surprising_connections`, `sv_graph_explain(node=...)`.",
+		output, summary.Bytes, summary.Nodes, summary.Edges, summary.Communities, summary.HubThreshold, summary.GodNodes, summary.Connections)
+	return s.respond(req, digest), nil
+}
+
 func (s *Server) handleGraphViz(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	g, err := s.getOrLoadGraph()
 	if err != nil {
@@ -791,6 +829,15 @@ func tokenBenchmark(nodes []*graph.Node, responseTokens int) string {
 	savings := float64(rawTokens) / float64(responseTokens)
 	return fmt.Sprintf("*Token savings: ~%.0fx vs reading raw files (%d tokens vs %d tokens)*",
 		savings, rawTokens, responseTokens)
+}
+
+// positiveInt parses a request string into a positive integer, falling back to
+// def when empty, invalid, or non-positive.
+func positiveInt(raw string, def int) int {
+	if d, err := strconv.Atoi(raw); err == nil && d > 0 {
+		return d
+	}
+	return def
 }
 
 // commLabelStr returns a formatted community string: "Label (ID N)" or "none".

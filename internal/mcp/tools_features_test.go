@@ -263,6 +263,50 @@ func TestGraphExploreAliasTool(t *testing.T) {
 	}
 }
 
+func TestGraphReportTool(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	if err := os.WriteFile(filepath.Join(tempDir, "a.go"), []byte("package main\nfunc a() {}\n"), 0644); err != nil {
+		t.Fatalf("failed writing a.go: %v", err)
+	}
+	if err := graph.SyncGraph(pool.Writer, cfg.ProjectID, cfg.ProjPath); err != nil {
+		t.Fatalf("failed syncing graph: %v", err)
+	}
+
+	srv := NewServer(pool, cfg)
+	if srv.GetTool("sv_graph_report") == nil {
+		t.Fatal("expected sv_graph_report tool to be registered")
+	}
+
+	reportName := "report.md"
+	req := mcpgo.CallToolRequest{}
+	req.Params.Name = "sv_graph_report"
+	req.Params.Arguments = map[string]any{"output": reportName}
+	res, err := srv.GetTool("sv_graph_report").Handler(context.Background(), req)
+	if err != nil {
+		t.Fatalf("sv_graph_report failed: %v", err)
+	}
+	out := textContent(res.Content[0])
+	if !strings.Contains(out, "Graph report written to") {
+		t.Fatalf("expected report digest, got:\n%s", out)
+	}
+	reportPath := filepath.Join(cfg.ProjPath, reportName)
+	if _, err = os.Stat(reportPath); err != nil {
+		t.Fatalf("expected report.md to be written: %v", err)
+	}
+	body, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("failed reading report: %v", err)
+	}
+	if !strings.Contains(string(body), "## God Nodes (top hubs)") {
+		t.Fatalf("expected god-nodes section in written report, got:\n%s", body)
+	}
+	if !strings.Contains(string(body), "## Suggested Questions") {
+		t.Fatalf("expected suggested-questions section in written report, got:\n%s", body)
+	}
+}
+
 func TestSearchGraphBoost(t *testing.T) {
 	tempDir, pool, cfg := setupTestEnv(t)
 	defer cleanupTestEnv(tempDir, pool)

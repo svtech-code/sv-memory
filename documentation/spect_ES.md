@@ -186,7 +186,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **Context Pack:** sv_mem_context_pack (one bounded call: graph role + linked memories + active changes for a file/package/symbol)
 - **Decision Engine:** sv_propose_spec, sv_validate_decision, sv_commit_spec (propose → validate → commit cycle with pre-flight checks)
 - **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive (human-readable Markdown projection of changes under .sv-memory/specs/)
-- **Graph:** sv_graph_explore, sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_viz, sv_graph_merge
+- **Graph:** sv_graph_explore, sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_report, sv_graph_viz, sv_graph_merge
 
 ## Repository Restrictions & Commit Standards:
 
@@ -335,9 +335,13 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 
 - Carga dos grafos de proyecto y produce un union-merge por ID de nodo, actualizando nodos y aristas en un snapshot JSON (salida por defecto: `merged-<a>-<b>.json`).
 
+#### 28. `sv-memory graph report [--output file] [--god-nodes N] [--communities N] [--connections N]`
+
+- Genera un archivo independiente `GRAPH_REPORT.md` con una visión general agregada del grafo de dependencias: nodos dios (hubs de mayor grado vía `TopDegreeNodes`), las principales comunidades con auto-etiquetas, conexiones sorprendentes entre comunidades (vía `FindSurprisingConnections`), umbral de hub y una sección determinista de preguntas sugeridas. Salida por defecto: `GRAPH_REPORT.md`. Espejo CLI del tool MCP `sv_graph_report`.
+
 ### Gestión de Conflictos
 
-#### 28. `sv-memory conflicts`
+#### 29. `sv-memory conflicts`
 
 - `list [--status pending|judged|ignored] [--project P]`: muestra memorias conflictivas y superposiciones semánticas detectadas.
 - `stats`: resume los conteos de relaciones de conflicto por estado.
@@ -345,11 +349,11 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - `scan --semantic [--agent claude|opencode|CMD] [--max-semantic N] [--concurrency N]`: tras exponer los pares candidatos, los juzga con el CLI del agente configurado. El agente compara el contenido completo de las memorias y devuelve un veredicto (`supersedes`, `conflicts_with`, `relates_to` o `none`); los veredictos se persisten con `judged_by='llm'` al usar `--apply`, y los juicios fallidos quedan pendientes para reintentar. Agente por defecto: `$SV_MEMORY_SEMANTIC_AGENT` o `claude`.
 - `ignore <relation-id>`: marca un conflicto detectado como ignorado.
 
-#### 29. `sv-memory context <path>`
+#### 30. `sv-memory context <path>`
 
 - Imprime un **context pack compacto** para un archivo, paquete o símbolo: el rol estructural del nodo (tipo, fan-in/fan-out, comunidad, flag de hub) más las memorias vinculadas a esa ruta (`where_path` o aristas `rationale_for`), cada una como título + `why` truncado. Flags: `--max-memories N` (default 5), `--why-chars N` (default 300), `--include-changes` (lista también los spec changes activos que afectan la ruta). Rápido y acotado — es el punto de entrada que llama el hook opcional de inyección de contexto en la primera lectura de archivo.
 
-#### 30. `sv-memory specs`
+#### 31. `sv-memory specs`
 
 Gestión del mirror de spec changes. El store SQLite es la fuente de verdad; el mirror es una proyección Markdown legible por humanos y versionada con git bajo `.sv-memory/specs/`.
 
@@ -887,7 +891,17 @@ Genera una visualización HTML interactiva del grafo usando vis.js con colores p
 - **Parámetros:**
   - `output` (string, opcional): Ruta del archivo de salida (por defecto `graph.html`).
 
-### 28. `sv_graph_merge`
+### 28. `sv_graph_report`
+
+Genera un archivo independiente `GRAPH_REPORT.md` con una visión general del grafo de dependencias: nodos dios (hubs de mayor grado), las principales comunidades con auto-etiquetas, conexiones sorprendentes entre comunidades, umbral de hub y una sección de preguntas sugeridas. El archivo es una referencia arquitectónica estable que un agente puede consultar en lugar de ejecutar varias consultas al grafo.
+
+- **Parámetros:**
+  - `output` (string, opcional): Ruta del archivo markdown de salida (por defecto `GRAPH_REPORT.md`).
+  - `god_nodes` (string, opcional): Número de nodos dios (por defecto `10`).
+  - `communities` (string, opcional): Número de comunidades principales (por defecto `10`).
+  - `connections` (string, opcional): Número de conexiones sorprendentes (por defecto `10`).
+
+### 29. `sv_graph_merge`
 
 Fusiona dos grafos de proyecto en uno (union-merge por ID de nodo), actualizando nodos y aristas.
 
@@ -1058,7 +1072,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **Context Pack:** sv_mem_context_pack (one bounded call: graph role + linked memories + active changes + capabilities for a file/package/symbol)
 - **Decision Engine:** sv_propose_spec, sv_validate_decision, sv_commit_spec (propose → validate → commit cycle with pre-flight checks and delta requirements)
 - **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive | capabilities (human-readable Markdown projection of changes and capability state under .sv-memory/specs/)
-- **Graph:** sv_graph_explore, sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_viz, sv_graph_merge
+- **Graph:** sv_graph_explore, sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_report, sv_graph_viz, sv_graph_merge
 
 ## Repository Restrictions & Commit Standards:
 
