@@ -104,3 +104,26 @@ func TestProtocolTemplateContainsSpecDriven(t *testing.T) {
 		}
 	}
 }
+
+// TestProtocolTemplateGuidesGraphFirst guards the injected template against
+// losing the graph-exploration guidance: the graph is the agent's substitute
+// for grep/read on indexed code, so the template must lead with explore-first
+// (read-equivalent) wording and keep the concrete anti-patterns that prevent
+// agents from redundantly re-fetching source the graph already returned.
+func TestProtocolTemplateGuidesGraphFirst(t *testing.T) {
+	required := []string{
+		"## Graph — use it instead of grep/read on synced code:",
+		"'sv_graph_explore' BEFORE reading or grepping",
+		"treat it as already read",
+		"### Anti-patterns (don't):",
+		"Don't re-verify graph results with grep",
+		"Don't grep or read first",
+		"Don't hand-reconstruct a flow",
+		"sv_graph_explore, sv_graph_query",
+	}
+	for _, s := range required {
+		if !strings.Contains(protocolTemplate, s) {
+			t.Errorf("protocolTemplate is missing the graph-first marker %q — re-sync the injected template", s)
+		}
+	}
+}

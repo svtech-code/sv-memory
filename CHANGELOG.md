@@ -3,6 +3,13 @@
 All notable changes follow [Conventional Commits](https://www.conventionalcommits.org/).
 Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automatically.
 
+## [Unreleased]
+
+### Changed
+
+- **Unified Graph Explore (`sv_graph_explore`)**: `sv_mem_context_pack` now accepts up to three comma-separated symbols — secondary symbols surface as surgical line-numbered source snippets and the shortest dependency path between the two most significant symbols is rendered as a call path (via `graph.ShortestPath`, bounded to 8 hops). A new `sv_graph_explore` MCP tool aliases `handleContextPack` with exploration-oriented wording. Single-symbol queries preserve the exact previous behaviour and output. `GetContextPack`/`RenderContextPack` were split into `resolveExploreSymbols`, `renderCallPath`, `renderExtraSnippets`, `renderMemories` and `renderChanges` helpers to keep cyclomatic complexity under the lint gate.
+- **Graph as Grep/Read Substitute in the Injected Protocol**: the "Graph Inspection" block of the injected protocol template is now "Graph — use it instead of grep/read on synced code", leading agents to call `sv_graph_explore`/`sv_mem_context_pack` first (returned source counts as already read) and listing concrete anti-patterns (don't re-verify graph results with grep, don't grep/read first on indexed code, don't hand-reconstruct a flow). Quick Reference now lists `sv_graph_explore`. Synced to `AGENTS.md`, `documentation/spect.md`, `documentation/spect_ES.md`, the sv-memory `SKILL.md`, and guarded by a new `TestProtocolTemplateGuidesGraphFirst` test.
+
 ## [v0.17.1] - 2026-08-29
 
 ### Added
