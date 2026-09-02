@@ -83,6 +83,7 @@ var AllTools = []Tool{
 	{Name: "sv_graph_explore", Description: "Unified explore for code understanding in one call: pass one or more comma-separated symbols/paths to get each symbol's structural role, surgical source snippet, the shortest call path between them, blast radius, and linked memories (decisions/standards/bugfixes). Replaces chaining sv_graph_query + sv_graph_path + sv_graph_explain manually."},
 	{Name: "sv_mem_conflicts", Description: "List, scan, or ignore potential memory conflicts."},
 	{Name: "sv_propose_spec", Description: "Create a spec change (proposal) with its lifecycle state and run a pre-flight check against the project's rules and invariants."},
+	{Name: "sv_update_spec", Description: "Update an existing spec change proposal: update task progress checkboxes, refine technical design, proposal body, goal, or delta requirements."},
 	{Name: "sv_validate_decision", Description: "Re-check a change's proposal against rules and invariants (PASS/WARN/BLOCK); opt-in semantic re-ranking."},
 	{Name: "sv_commit_spec", Description: "Promote a validated change into a durable decision/standard memory, wire rationale_for edges, and stamp it applied."},
 	{Name: "sv_graph_query", Description: "Query the dependency graph for a module, file, or package (returns Mermaid)."},
@@ -461,6 +462,22 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
 	)
 	ms.AddTool(proposeSpecTool, s.handleProposeSpec)
+
+	// 18c2. Tool: sv_update_spec
+	updateSpecTool := mcp.NewTool("sv_update_spec",
+		mcp.WithDescription("Update an existing spec change proposal: update task progress checkboxes (- [ ] to - [x]), refine technical design, proposal body, goal, where_path, capability_path, or delta requirements during the Apply phase. Automatically synchronizes the spec mirror."),
+		mcp.WithString("change_id", mcp.Required(), mcp.Description("The change ID or slug to update")),
+		mcp.WithString("tasks", mcp.Description("Optional updated implementation checklist with completed task checkboxes (- [x])")),
+		mcp.WithString("design", mcp.Description("Optional updated technical approach")),
+		mcp.WithString("what", mcp.Description("Optional updated proposal body / rationale")),
+		mcp.WithString("goal", mcp.Description("Optional updated goal")),
+		mcp.WithString("where_path", mcp.Description("Optional updated affected code path")),
+		mcp.WithString("capability_path", mcp.Description("Optional updated capability path")),
+		mcp.WithString("requirements", mcp.Description("Optional updated delta requirements (Markdown format)")),
+		mcp.WithString("title", mcp.Description("Optional updated title")),
+		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
+	)
+	ms.AddTool(updateSpecTool, s.handleUpdateSpec)
 
 	// 18d. Tool: sv_validate_decision
 	validateDecisionTool := mcp.NewTool("sv_validate_decision",

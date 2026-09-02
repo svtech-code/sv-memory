@@ -813,6 +813,22 @@ Registra un **spec change** (propuesta) en el motor de decisiones spec-driven: c
 - **Ciclo de vida:** `draft` → `proposed` → `validated` → `applied` (→ `archived`) | `rejected`. La memoria de decisión confirmada recibe `topic_key` `decision/<slug>`.
 - **Config:** `conflict_threshold` (default `0.45`) es la similitud Jaccard a partir de la cual una regla existente se considera en conflicto.
 
+### 19e2. `sv_update_spec`
+
+Actualiza una **propuesta de change** existente durante la implementación: permite actualizar checkboxes de progreso de tareas (`- [ ]` a `- [x]`), refinar el diseño técnico, cuerpo de propuesta, objetivo, ruta afectada, capability path o requerimientos delta. Re-sincroniza automáticamente el espejo markdown (`.sv-memory/specs/` y `openspec/`).
+
+- **Parámetros:**
+  - `change_id` (string, requerido): El ID o slug del change a actualizar.
+  - `tasks` (string, opcional): Checklist de implementación actualizado con checkboxes de tareas completadas (`- [x]`).
+  - `design` (string, opcional): Enfoque técnico actualizado.
+  - `what` (string, opcional): Cuerpo de propuesta / justificación actualizada.
+  - `goal` (string, opcional): Objetivo actualizado.
+  - `where_path` (string, opcional): Ruta de código afectada actualizada.
+  - `capability_path` (string, opcional): Ruta de capability actualizada.
+  - `requirements` (string, opcional): Requerimientos delta OpenSpec actualizados.
+  - `title` (string, opcional): Título actualizado.
+  - `token_budget` (string, opcional): Máximo de tokens para la respuesta.
+
 ### 19f. `sv_validate_decision`
 
 Re-verifica la propuesta de un change existente contra las reglas e invariantes del proyecto, devolviendo un veredicto **PASS/WARN/BLOCK**. Determinístico por defecto (SQLite FTS5 + Jaccard, costo LLM cero); `semantic='true'` opta por un re-ranking por significado con una sola llamada batch al agente (falla abierto al veredicto determinístico cuando el agente no está disponible).

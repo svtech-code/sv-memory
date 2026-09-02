@@ -86,6 +86,9 @@ func ParseChangeMarkdown(content string) (*Change, error) {
 		case strings.HasPrefix(trimmed, "- **Capability:**"):
 			c.CapabilityPath = strings.TrimSpace(strings.TrimPrefix(trimmed, "- **Capability:**"))
 			c.CapabilityPath = strings.Trim(c.CapabilityPath, "` ")
+		case strings.HasPrefix(trimmed, "- **Goal:**"):
+			c.Goal = strings.TrimSpace(strings.TrimPrefix(trimmed, "- **Goal:**"))
+			c.Goal = strings.Trim(c.Goal, "` ")
 		case trimmed == "## Proposal":
 			if v, ok := sectionContent(lines, i+1, "## "); ok {
 				c.What = v
@@ -164,6 +167,29 @@ func WriteSpecMirror(db *sql.DB, projectID, projPath string) error {
 		}
 	}
 
+	// If openspec/changes exists, also synchronize modular OpenSpec files
+	openSpecChangesDir := filepath.Join(projPath, "openspec", "changes")
+	if fi, sErr := os.Stat(openSpecChangesDir); sErr == nil && fi.IsDir() {
+		for _, c := range all {
+			if c.Status == ChangeStatusArchived || c.Status == ChangeStatusRejected {
+				continue
+			}
+			modDir := filepath.Join(openSpecChangesDir, c.Slug)
+			if mErr := os.MkdirAll(modDir, 0755); mErr == nil {
+				_ = writeMirrorFile(filepath.Join(modDir, "proposal.md"), ChangeToMarkdown(c))
+				if c.Design != "" {
+					_ = writeMirrorFile(filepath.Join(modDir, "design.md"), c.Design)
+				}
+				if c.Tasks != "" {
+					_ = writeMirrorFile(filepath.Join(modDir, "tasks.md"), c.Tasks)
+				}
+				if deltas, dErr := LoadChangeDeltas(db, projectID, c.ID); dErr == nil && len(deltas) > 0 {
+					_ = writeMirrorFile(filepath.Join(modDir, "specs.md"), DeltasToMarkdown(deltas))
+				}
+			}
+		}
+	}
+
 	// Remove mirrors of changes that no longer exist (soft-deleted projects /
 	// cleaned stores) so the mirror never lags behind the authoritative DB.
 	entries, err := os.ReadDir(changesDir)
@@ -193,37 +219,76 @@ func writeMirrorFile(path, body string) error {
 	return nil
 }
 
-// ImportChangeFromMarkdown reads a change's Markdown mirror, parses the
-// human-editable content, and reconciles it back into the authoritative DB.
-// Only fields the mirror actually contains are updated; identity fields (ID,
-// slug) are never changed. Returns the updated change, or nil when the mirror
-// file does not exist. A mirror edit never creates a new change — the slug must
-// already exist in the store.
+// ListSpecMirrors returns the sorted list of active change slugs present in the
+// mirror directories (.sv-memory/specs/ and openspec/), used by the CLI.
+func ListSpecMirrors(projPath string) ([]string, error) {
+	slugSet := make(map[string]bool)
+	dirsToCheck := []string{
+		specChangesDir(projPath),
+		filepath.Join(projPath, "openspec", "changes"),
+	}
+
+	for _, dir := range dirsToCheck {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				slugSet[e.Name()] = true
+			} else if strings.HasSuffix(e.Name(), ".md") {
+				slugSet[strings.TrimSuffix(e.Name(), ".md")] = true
+			}
+		}
+	}
+
+	var slugs []string
+	for s := range slugSet {
+		slugs = append(slugs, s)
+	}
+	sort.Strings(slugs)
+	return slugs, nil
+}
+
+// FormatTaskProgress parses standard markdown task checkboxes (- [ ] and - [x])
+// and returns the completed count, total count, ratio, and human-readable summary.
+func FormatTaskProgress(tasks string) (completed, total int, ratio float64, summary string) {
+	lines := strings.Split(tasks, "\n")
+	for _, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if strings.HasPrefix(trimmed, "- [x]") || strings.HasPrefix(trimmed, "- [X]") ||
+			strings.HasPrefix(trimmed, "* [x]") || strings.HasPrefix(trimmed, "* [X]") {
+			completed++
+			total++
+		} else if strings.HasPrefix(trimmed, "- [ ]") || strings.HasPrefix(trimmed, "* [ ]") {
+			total++
+		}
+	}
+	if total == 0 {
+		return 0, 0, 0, "no checklist tasks defined"
+	}
+	ratio = float64(completed) / float64(total)
+	pct := int(ratio * 100)
+	summary = fmt.Sprintf("%d/%d tasks completed (%d%%)", completed, total, pct)
+	return completed, total, ratio, summary
+}
+
+// ImportChangeFromMarkdown reads a change's Markdown mirror (single-file or
+// modular OpenSpec directory layout with proposal.md, design.md, tasks.md,
+// specs.md), parses the human-editable content, and reconciles it back into
+// the authoritative DB.
 func ImportChangeFromMarkdown(db *sql.DB, projectID, projPath, slug string) (*Change, error) {
-	// Reject traversal slugs the same way CreateChange does: the slug names the
-	// mirror file, so it must not escape .sv-memory/specs/changes/.
 	if _, err := validateCapabilityPath(slug); err != nil {
 		return nil, fmt.Errorf("invalid change slug: %w", err)
 	}
-	path := filepath.Join(specChangesDir(projPath), slug+".md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("failed to read spec mirror %s: %w", path, err)
-	}
-	content := string(data)
 
-	// Delta sections are stripped before change-field parsing so ParseChangeMarkdown
-	// never absorbs "## ADDED Requirements" content into the Tasks/Design sections.
-	deltas := ParseSpecDeltas(content)
-	changePart := stripDeltaSections(content)
-	parsed, err := ParseChangeMarkdown(changePart)
+	parsed, deltas, found, err := loadSpecChangeFromMirror(projPath, slug)
 	if err != nil {
 		return nil, err
 	}
-	parsed.Slug = slug
+	if !found {
+		return nil, nil
+	}
 
 	existing, err := GetChangeBySlug(db, projectID, slug)
 	if err != nil {
@@ -233,7 +298,110 @@ func ImportChangeFromMarkdown(db *sql.DB, projectID, projPath, slug string) (*Ch
 		return nil, fmt.Errorf("no change with slug %q exists in the store — create it with sv_propose_spec before importing", slug)
 	}
 
-	// Build the reconciled update. Only non-empty parsed fields overwrite.
+	upd, changed := buildChangeUpdate(existing, parsed)
+	if changed {
+		if existing, err = UpdateChange(db, projectID, existing.ID, upd); err != nil {
+			return nil, err
+		}
+	}
+
+	if err = ReplaceChangeRequirements(db, projectID, existing.ID, existing.CapabilityPath, deltas); err != nil {
+		return nil, err
+	}
+	return existing, nil
+}
+
+func loadSpecChangeFromMirror(projPath, slug string) (*Change, []Delta, bool, error) {
+	if parsed, deltas, found := readModularOpenSpecChange(projPath, slug); found {
+		return parsed, deltas, true, nil
+	}
+	return readSingleFileSpecChange(projPath, slug)
+}
+
+func readModularOpenSpecChange(projPath, slug string) (*Change, []Delta, bool) {
+	modDirs := []string{
+		filepath.Join(projPath, "openspec", "changes", slug),
+		filepath.Join(specChangesDir(projPath), slug),
+	}
+
+	var foundModDir string
+	for _, md := range modDirs {
+		if fi, err := os.Stat(md); err == nil && fi.IsDir() {
+			foundModDir = md
+			break
+		}
+	}
+	if foundModDir == "" {
+		return nil, nil, false
+	}
+
+	parsed := &Change{Slug: slug}
+	if pData, err := os.ReadFile(filepath.Join(foundModDir, "proposal.md")); err == nil {
+		pChange, pErr := ParseChangeMarkdown(string(pData))
+		if pErr == nil {
+			parsed.Title = pChange.Title
+			parsed.What = pChange.What
+			parsed.Goal = pChange.Goal
+			parsed.WherePath = pChange.WherePath
+			parsed.CapabilityPath = pChange.CapabilityPath
+			if parsed.What == "" {
+				parsed.What = strings.TrimSpace(string(pData))
+			}
+		}
+	}
+	if dData, err := os.ReadFile(filepath.Join(foundModDir, "design.md")); err == nil {
+		parsed.Design = strings.TrimSpace(string(dData))
+	}
+	if tData, err := os.ReadFile(filepath.Join(foundModDir, "tasks.md")); err == nil {
+		parsed.Tasks = strings.TrimSpace(string(tData))
+	}
+
+	var deltas []Delta
+	specsPaths := []string{
+		filepath.Join(foundModDir, "specs.md"),
+		filepath.Join(foundModDir, "spec.md"),
+	}
+	for _, sp := range specsPaths {
+		if sData, err := os.ReadFile(sp); err == nil {
+			deltas = ParseSpecDeltas(string(sData))
+			if len(deltas) > 0 {
+				break
+			}
+		}
+	}
+	return parsed, deltas, true
+}
+
+func readSingleFileSpecChange(projPath, slug string) (*Change, []Delta, bool, error) {
+	singlePaths := []string{
+		filepath.Join(specChangesDir(projPath), slug+".md"),
+		filepath.Join(projPath, "openspec", "changes", slug+".md"),
+	}
+	var data []byte
+	var foundPath string
+	for _, sp := range singlePaths {
+		if d, err := os.ReadFile(sp); err == nil {
+			foundPath = sp
+			data = d
+			break
+		}
+	}
+	if foundPath == "" {
+		return nil, nil, false, nil
+	}
+
+	content := string(data)
+	deltas := ParseSpecDeltas(content)
+	changePart := stripDeltaSections(content)
+	parsed, err := ParseChangeMarkdown(changePart)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	parsed.Slug = slug
+	return parsed, deltas, true, nil
+}
+
+func buildChangeUpdate(existing, parsed *Change) (ChangeUpdate, bool) {
 	upd := ChangeUpdate{}
 	if parsed.Title != "" && parsed.Title != existing.Title {
 		upd.Title = &parsed.Title
@@ -259,20 +427,7 @@ func ImportChangeFromMarkdown(db *sql.DB, projectID, projPath, slug string) (*Ch
 
 	changed := upd.Title != nil || upd.What != nil || upd.Goal != nil ||
 		upd.WherePath != nil || upd.CapabilityPath != nil || upd.Design != nil || upd.Tasks != nil
-	if changed {
-		if existing, err = UpdateChange(db, projectID, existing.ID, upd); err != nil {
-			return nil, err
-		}
-	}
-
-	// Reconcile the delta requirements. The capability defaults to the change's
-	// (updated) value so a human-edited Capability line moves the requirements.
-	// Reconcile even with zero deltas: a human removing every delta section
-	// clears the change's stored requirements.
-	if err = ReplaceChangeRequirements(db, projectID, existing.ID, existing.CapabilityPath, deltas); err != nil {
-		return nil, err
-	}
-	return existing, nil
+	return upd, changed
 }
 
 // stripDeltaSections removes everything from the first delta section header
@@ -352,25 +507,4 @@ func UpdateChange(db *sql.DB, projectID, id string, upd ChangeUpdate) (*Change, 
 		return nil, fmt.Errorf("failed to update change: %w", err)
 	}
 	return GetChange(db, projectID, id)
-}
-
-// ListSpecMirrors returns the sorted list of active change slugs present in the
-// mirror directory, used by the CLI to show what can be imported.
-func ListSpecMirrors(projPath string) ([]string, error) {
-	entries, err := os.ReadDir(specChangesDir(projPath))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var slugs []string
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-			continue
-		}
-		slugs = append(slugs, strings.TrimSuffix(e.Name(), ".md"))
-	}
-	sort.Strings(slugs)
-	return slugs, nil
 }

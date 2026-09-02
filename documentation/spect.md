@@ -814,6 +814,22 @@ Registers a **spec change** (proposal) for the spec-driven decision engine: crea
 - **Lifecycle:** `draft` → `proposed` → `validated` → `applied` (→ `archived`) | `rejected`. The committed decision memory gets `topic_key` `decision/<slug>`.
 - **Config:** `conflict_threshold` (default `0.45`) is the Jaccard similarity at or above which an existing rule is considered in conflict.
 
+### 19e2. `sv_update_spec`
+
+Updates an existing **spec change proposal** during implementation: allows updating task progress checkboxes (`- [ ]` to `- [x]`), refining technical design, proposal body, goal, affected path, capability path, or delta requirements. Automatically re-synchronizes the markdown spec mirror (`.sv-memory/specs/` and `openspec/`).
+
+- **Parameters:**
+  - `change_id` (string, required): The change ID or slug to update.
+  - `tasks` (string, optional): Updated implementation checklist with completed task checkboxes (`- [x]`).
+  - `design` (string, optional): Updated technical approach.
+  - `what` (string, optional): Updated proposal body / rationale.
+  - `goal` (string, optional): Updated goal.
+  - `where_path` (string, optional): Updated affected code path.
+  - `capability_path` (string, optional): Updated capability path.
+  - `requirements` (string, optional): Updated OpenSpec delta requirements.
+  - `title` (string, optional): Updated title.
+  - `token_budget` (string, optional): Max tokens for the response.
+
 ### 19f. `sv_validate_decision`
 
 Re-checks an existing change's proposal against the project's rules and invariants, returning a **PASS/WARN/BLOCK** verdict. Deterministic by default (SQLite FTS5 + Jaccard, zero LLM cost); `semantic='true'` opts into a single batched agent re-ranking by meaning (fails open to the deterministic verdict when the agent is unavailable).

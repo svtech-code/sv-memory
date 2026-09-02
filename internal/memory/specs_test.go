@@ -281,3 +281,108 @@ func TestListSpecMirrors(t *testing.T) {
 		t.Errorf("expected sorted [aaa bbb], got %v", slugs)
 	}
 }
+
+func TestFormatTaskProgress(t *testing.T) {
+	comp, tot, ratio, summary := FormatTaskProgress("")
+	if tot != 0 || summary != "no checklist tasks defined" {
+		t.Errorf("expected empty progress, got comp=%d tot=%d ratio=%f summary=%q", comp, tot, ratio, summary)
+	}
+
+	tasks := `- [x] 1.1 First task
+- [X] 1.2 Second task
+- [ ] 1.3 Third task
+* [x] 1.4 Fourth task
+* [ ] 1.5 Fifth task`
+
+	comp, tot, ratio, summary = FormatTaskProgress(tasks)
+	if comp != 3 || tot != 5 || ratio != 0.6 {
+		t.Errorf("expected 3/5 (60%%), got comp=%d tot=%d ratio=%f summary=%q", comp, tot, ratio, summary)
+	}
+	if !strings.Contains(summary, "3/5 tasks completed (60%)") {
+		t.Errorf("expected summary with percentage, got %q", summary)
+	}
+}
+
+func TestImportModularOpenSpecDirectory(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-openspec"
+	err = db.RegisterProject(database, projectID, "OpenSpec Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// 1. Create initial change via domain layer
+	slug := "auth-session"
+	c, err := CreateChange(database, projectID, slug, "Old Title", "Old What", "Old Goal", "pkg/auth", "Old Design", "- [ ] Task 1")
+	if err != nil {
+		t.Fatalf("failed to create change: %v", err)
+	}
+
+	// 2. Create modular OpenSpec directory: openspec/changes/auth-session/
+	modDir := filepath.Join(tempDir, "openspec", "changes", slug)
+	err = os.MkdirAll(modDir, 0755)
+	if err != nil {
+		t.Fatalf("failed to create openspec modDir: %v", err)
+	}
+
+	err = os.WriteFile(filepath.Join(modDir, "proposal.md"), []byte("# Modular Title\n\n- **Where:** `internal/auth/`\n- **Goal:** `Enhanced security`\n\n## Proposal\n\nNew proposal body"), 0644)
+	if err != nil {
+		t.Fatalf("failed writing proposal.md: %v", err)
+	}
+	err = os.WriteFile(filepath.Join(modDir, "design.md"), []byte("Token-based session auth design"), 0644)
+	if err != nil {
+		t.Fatalf("failed writing design.md: %v", err)
+	}
+	err = os.WriteFile(filepath.Join(modDir, "tasks.md"), []byte("- [x] 1. Implement token generator\n- [ ] 2. Add test suite"), 0644)
+	if err != nil {
+		t.Fatalf("failed writing tasks.md: %v", err)
+	}
+	err = os.WriteFile(filepath.Join(modDir, "specs.md"), []byte("## ADDED Requirements\n\n### Requirement: Token Rotation\nThe system SHALL rotate session tokens every hour.\n\n#### Scenario: Expired token\nGIVEN an expired token\nWHEN request arrives\nTHEN reject with 401\n"), 0644)
+	if err != nil {
+		t.Fatalf("failed writing specs.md: %v", err)
+	}
+
+	// 3. Import from modular OpenSpec layout
+	imported, err := ImportChangeFromMarkdown(database, projectID, tempDir, slug)
+	if err != nil {
+		t.Fatalf("ImportChangeFromMarkdown failed on modular dir: %v", err)
+	}
+	if imported == nil {
+		t.Fatal("expected imported change, got nil")
+	}
+
+	if imported.Title != "Modular Title" {
+		t.Errorf("expected Title %q, got %q", "Modular Title", imported.Title)
+	}
+	if imported.WherePath != "internal/auth/" {
+		t.Errorf("expected WherePath %q, got %q", "internal/auth/", imported.WherePath)
+	}
+	if imported.Goal != "Enhanced security" {
+		t.Errorf("expected Goal %q, got %q", "Enhanced security", imported.Goal)
+	}
+	if imported.Design != "Token-based session auth design" {
+		t.Errorf("expected Design %q, got %q", "Token-based session auth design", imported.Design)
+	}
+	if !strings.Contains(imported.Tasks, "- [x] 1. Implement token generator") {
+		t.Errorf("expected updated tasks, got %q", imported.Tasks)
+	}
+
+	// Check delta requirements stored
+	deltas, err := LoadChangeDeltas(database, projectID, c.ID)
+	if err != nil {
+		t.Fatalf("failed loading deltas: %v", err)
+	}
+	if len(deltas) != 1 || len(deltas[0].Requirements) != 1 {
+		t.Fatalf("expected 1 delta with 1 requirement, got: %+v", deltas)
+	}
+	if deltas[0].Requirements[0].Name != "Token Rotation" {
+		t.Errorf("expected Requirement 'Token Rotation', got %q", deltas[0].Requirements[0].Name)
+	}
+}

@@ -733,3 +733,63 @@ func TestCommitSpecAtomicOnMergeFailure(t *testing.T) {
 		t.Fatalf("expected change still proposed, got %d (err=%v)", len(proposed), err)
 	}
 }
+
+func TestUpdateSpecHandler(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	server := NewServer(pool, cfg)
+	propose := server.GetTool("sv_propose_spec")
+	update := server.GetTool("sv_update_spec")
+	if propose == nil || update == nil {
+		t.Fatal("sv_propose_spec or sv_update_spec tool not registered")
+	}
+
+	ctx := context.Background()
+
+	// 1. Propose change
+	propReq := mcpgo.CallToolRequest{}
+	propReq.Params.Name = "sv_propose_spec"
+	propReq.Params.Arguments = map[string]any{
+		"slug":  "add-oauth-flow",
+		"title": "Add OAuth Flow",
+		"what":  "Implement OAuth2 login",
+		"tasks": "- [ ] 1. Setup client\n- [ ] 2. Add callback handler",
+	}
+	res, err := propose.Handler(ctx, propReq)
+	if err != nil || res.IsError {
+		t.Fatalf("propose failed: err=%v, res=%v", err, res)
+	}
+
+	// 2. Update tasks (mark task 1 completed) by slug
+	updReq := mcpgo.CallToolRequest{}
+	updReq.Params.Name = "sv_update_spec"
+	updReq.Params.Arguments = map[string]any{
+		"change_id": "add-oauth-flow",
+		"tasks":     "- [x] 1. Setup client\n- [ ] 2. Add callback handler",
+		"design":    "Use standard oauth2 library with PKCE",
+	}
+	updRes, err := update.Handler(ctx, updReq)
+	if err != nil || updRes.IsError {
+		t.Fatalf("update failed: err=%v, res=%v", err, updRes)
+	}
+	text := textContent(updRes.Content[0])
+	if !strings.Contains(text, "Change updated") {
+		t.Errorf("expected 'Change updated' in response, got: %s", text)
+	}
+	if !strings.Contains(text, "1/2 (50%)") {
+		t.Errorf("expected task progress summary '1/2 (50%%)', got: %s", text)
+	}
+
+	// Verify database state
+	c, err := memory.GetChangeBySlug(pool.Reader, cfg.ProjectID, "add-oauth-flow")
+	if err != nil || c == nil {
+		t.Fatalf("failed to retrieve updated change: %v", err)
+	}
+	if c.Design != "Use standard oauth2 library with PKCE" {
+		t.Errorf("expected updated design, got: %q", c.Design)
+	}
+	if !strings.Contains(c.Tasks, "- [x] 1. Setup client") {
+		t.Errorf("expected updated tasks in DB, got: %q", c.Tasks)
+	}
+}

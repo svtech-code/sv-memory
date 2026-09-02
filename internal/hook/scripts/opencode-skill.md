@@ -77,9 +77,10 @@ The top search result is already expanded inline — only drill further when nec
 ### Before proposing or changing behavior (Spec-Driven Decision Cycle)
 
 1. Call `sv_mem_context_pack(path=..., include_changes="true")` to surface the node role, linked decisions/standards, active changes, and the capabilities implemented at the path.
-2. Call `sv_propose_spec(slug=..., title=..., what=..., where_path=..., requirements=..., capability_path=...)` to register the change and run the pre-flight check (BLOCK/WARN/PASS against pinned rules and invariants). The optional `requirements` carries OpenSpec-style delta requirements (ADDED/MODIFIED/REMOVED/RENAMED, RFC 2119, GIVEN/WHEN/THEN scenarios) targeting a single capability.
-3. After edits, call `sv_validate_decision(change_id=...)` to re-check (deterministic by default; `semantic="true"` opts into agent re-ranking) and validate the deltas (RFC 2119 presence, MODIFIED scenario drops).
-4. After implementing, call `sv_commit_spec(change_id=...)` to promote the change into a durable decision/standard memory, merge the deltas into the capability state, and stamp it applied.
+2. Call `sv_propose_spec(slug=..., title=..., what=..., where_path=..., requirements=..., tasks=..., capability_path=...)` to register the change and run the pre-flight check (BLOCK/WARN/PASS against pinned rules and invariants). The optional `requirements` carries OpenSpec-style delta requirements (ADDED/MODIFIED/REMOVED/RENAMED, RFC 2119, GIVEN/WHEN/THEN scenarios) targeting a single capability.
+3. During implementation (Apply phase), call `sv_update_spec(change_id=..., tasks=...)` to mark completed task checkboxes (`- [x]`) and refine technical design or requirements in real-time.
+4. After edits, call `sv_validate_decision(change_id=...)` to re-check (deterministic by default; `semantic="true"` opts into agent re-ranking) and validate the deltas (RFC 2119 presence, MODIFIED scenario drops).
+5. After implementing, call `sv_commit_spec(change_id=...)` to promote the change into a durable decision/standard memory, merge the deltas into the capability state, and stamp it applied.
 
 ### After adding new files or packages
 
@@ -101,6 +102,6 @@ The top search result is already expanded inline — only drill further when nec
 - **User intent:** `sv_mem_capture_prompt` (record what the user asked, recoverable via `sv_mem_context`)
 - **Project admin:** `sv_mem_merge_projects` (merge project variants into a canonical project)
 - **Context Pack:** `sv_mem_context_pack` (one bounded call: graph role + linked memories + active changes for a file/package/symbol)
-- **Decision Engine:** `sv_propose_spec`, `sv_validate_decision`, `sv_commit_spec` (propose → validate → commit cycle with pre-flight checks and OpenSpec-style delta requirements)
-- **Spec Mirror (CLI):** `sv-memory specs export | import <slug> | list | archive | capabilities` (human-readable Markdown projection of changes and capability state under `.sv-memory/specs/`)
-- **Graph:** `sv_graph_query`, `sv_graph_explain`, `sv_graph_god_nodes`, `sv_graph_path`, `sv_graph_sync`, `sv_graph_surprising_connections`, `sv_graph_viz`, `sv_graph_merge`
+- **Decision Engine (OpenSpec):** `sv_propose_spec`, `sv_update_spec`, `sv_validate_decision`, `sv_commit_spec` (propose → update tasks/design → validate → commit cycle with pre-flight checks and OpenSpec-style delta requirements)
+- **Spec Mirror (CLI):** `sv-memory specs export | import <slug> | list | archive | capabilities` (human-readable Markdown projection of changes and capability state under `.sv-memory/specs/` and `openspec/`)
+- **Graph:** `sv_graph_explore`, `sv_graph_diff`, `sv_graph_query`, `sv_graph_explain`, `sv_graph_god_nodes`, `sv_graph_path`, `sv_graph_sync`, `sv_graph_surprising_connections`, `sv_graph_report`

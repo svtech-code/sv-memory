@@ -123,6 +123,95 @@ func (s *Server) handleProposeSpec(ctx context.Context, req mcp.CallToolRequest)
 	return s.respond(req, sb.String()), nil
 }
 
+// handleUpdateSpec updates an existing change proposal (tasks, design, what,
+// goal, where_path, capability_path, requirements). It allows AI agents to
+// update checklist progress (- [x]), refine design/tasks during the Apply phase,
+// and keep the spec mirror synchronized.
+func (s *Server) handleUpdateSpec(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	changeID, err := req.RequireString("change_id")
+	if err != nil {
+		return mcp.NewToolResultError("missing required field: change_id"), nil
+	}
+
+	c, err := memory.GetChange(s.pool.Reader, s.cfg.ProjectID, changeID)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to get change: %v", err)), nil
+	}
+	if c == nil {
+		// Try resolving by slug if ID lookup returned nil
+		c, err = memory.GetChangeBySlug(s.pool.Reader, s.cfg.ProjectID, changeID)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to resolve change: %v", err)), nil
+		}
+		if c == nil {
+			return mcp.NewToolResultError(fmt.Sprintf("change %q not found", changeID)), nil
+		}
+	}
+
+	upd := memory.ChangeUpdate{}
+	var updatedFields []string
+
+	if title := req.GetString("title", ""); title != "" {
+		upd.Title = &title
+		updatedFields = append(updatedFields, "title")
+	}
+	if what := req.GetString("what", ""); what != "" {
+		upd.What = &what
+		updatedFields = append(updatedFields, "what")
+	}
+	if goal := req.GetString("goal", ""); goal != "" {
+		upd.Goal = &goal
+		updatedFields = append(updatedFields, "goal")
+	}
+	if wherePath := req.GetString("where_path", ""); wherePath != "" {
+		upd.WherePath = &wherePath
+		updatedFields = append(updatedFields, "where_path")
+	}
+	if capabilityPath := req.GetString("capability_path", ""); capabilityPath != "" {
+		upd.CapabilityPath = &capabilityPath
+		updatedFields = append(updatedFields, "capability_path")
+	}
+	if design := req.GetString("design", ""); design != "" {
+		upd.Design = &design
+		updatedFields = append(updatedFields, "design")
+	}
+	if tasks := req.GetString("tasks", ""); tasks != "" {
+		upd.Tasks = &tasks
+		updatedFields = append(updatedFields, "tasks")
+	}
+
+	if len(updatedFields) > 0 {
+		c, err = memory.UpdateChange(s.pool.Writer, s.cfg.ProjectID, c.ID, upd)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to update change: %v", err)), nil
+		}
+	}
+
+	// Update delta requirements if provided
+	if reqs := req.GetString("requirements", ""); reqs != "" {
+		deltas := memory.ParseSpecDeltas(reqs)
+		if err = memory.ReplaceChangeRequirements(s.pool.Writer, s.cfg.ProjectID, c.ID, c.CapabilityPath, deltas); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to update requirements: %v", err)), nil
+		}
+		updatedFields = append(updatedFields, "requirements")
+	}
+
+	s.scheduleSync()
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "## Change updated: `%s`\n\n", c.Slug)
+	fmt.Fprintf(&sb, "- **ID:** `%s`\n- **Status:** `%s`\n", c.ID, c.Status)
+	if len(updatedFields) > 0 {
+		fmt.Fprintf(&sb, "- **Updated Fields:** %s\n", strings.Join(updatedFields, ", "))
+	}
+	if c.Tasks != "" {
+		if prog := memory.ParseTaskProgress(c.Tasks); prog.Total > 0 {
+			fmt.Fprintf(&sb, "- **Task Progress:** %s\n", prog.Summary)
+		}
+	}
+	return s.respond(req, sb.String()), nil
+}
+
 // handleValidateDecision re-checks a change's proposal against the project's
 // rules and invariants after edits. Semantic validation is opt-in: with
 // semantic=true a single batched agent call re-ranks the deterministic

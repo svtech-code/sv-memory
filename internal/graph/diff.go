@@ -110,56 +110,18 @@ func ComputeGraphDiff(db *sql.DB, projectID, projPath, baseRef string, includeBl
 		return nil, fmt.Errorf("git revision %q not found: %w", baseRef, err)
 	}
 
-	// 2. Query changed files between baseRef and working tree
-	out, err := runGitCommand(projPath, "diff", "--name-status", baseRef)
+	// 2. Query changed files
+	codeChangedFiles, allChangedFiles, err := collectGitChangedFiles(projPath, baseRef)
 	if err != nil {
-		return nil, fmt.Errorf("failed running git diff: %w", err)
+		return nil, err
 	}
 
 	report := &GraphDiffReport{
-		ProjectID: projectID,
-		BaseRef:   baseRef,
+		ProjectID:         projectID,
+		BaseRef:           baseRef,
+		ChangedFiles:      codeChangedFiles,
+		ChangedFilesCount: len(codeChangedFiles),
 	}
-
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	var changedFiles []FileDiffStatus
-	seenFiles := make(map[string]bool)
-
-	for _, l := range lines {
-		parts := strings.Fields(l)
-		if len(parts) < 2 {
-			continue
-		}
-		status := parts[0]
-		path := parts[1]
-		if len(parts) >= 3 && (status[0] == 'R' || status[0] == 'C') {
-			path = parts[2] // for renames: old new -> take new
-		}
-		changedFiles = append(changedFiles, FileDiffStatus{Path: path, Status: status})
-		seenFiles[path] = true
-	}
-
-	// 2b. Also query untracked new files created in the working tree
-	if untrackedOut, uErr := runGitCommand(projPath, "ls-files", "--others", "--exclude-standard"); uErr == nil {
-		untrackedLines := strings.Split(strings.TrimSpace(string(untrackedOut)), "\n")
-		for _, uPath := range untrackedLines {
-			uPath = strings.TrimSpace(uPath)
-			if uPath != "" && !seenFiles[uPath] {
-				changedFiles = append(changedFiles, FileDiffStatus{Path: uPath, Status: "A"})
-				seenFiles[uPath] = true
-			}
-		}
-	}
-	// Filter to code and structural files supported by the graph extractor
-	var codeChangedFiles []FileDiffStatus
-	for _, f := range changedFiles {
-		ext := filepath.Ext(f.Path)
-		if _, supported := languageFromExt[ext]; supported {
-			codeChangedFiles = append(codeChangedFiles, f)
-		}
-	}
-	report.ChangedFiles = codeChangedFiles
-	report.ChangedFilesCount = len(codeChangedFiles)
 
 	// 3. For each changed file, parse symbols and dependencies
 	for _, f := range codeChangedFiles {
@@ -171,173 +133,230 @@ func ComputeGraphDiff(db *sql.DB, projectID, projPath, baseRef string, includeBl
 
 		switch status {
 		case "A":
-			content, rErr := os.ReadFile(filepath.Join(projPath, f.Path))
-			if rErr == nil {
-				syms, imps, _ := currentExtractor.Extract(content, f.Path, ext)
-				for _, s := range syms {
-					if isSignificantSymbol(s) {
-						report.AddedSymbols = append(report.AddedSymbols, SymbolDiffItem{
-							File:     f.Path,
-							Name:     s.Name,
-							Type:     s.Type,
-							Line:     s.Line,
-							Exported: s.Exported,
-						})
-					}
-				}
-				for _, imp := range imps {
-					report.AddedDependencies = append(report.AddedDependencies, DependencyDiff{
-						Source:     f.Path,
-						Target:     imp,
-						Type:       "imports",
-						Confidence: "EXTRACTED",
-					})
-				}
-			}
-
+			diffAddedFile(projPath, f, ext, report)
 		case "D":
-			oldData, gErr := runGitCommand(projPath, "show", fmt.Sprintf("%s:%s", baseRef, f.Path))
-			if gErr == nil {
-				syms, imps, _ := currentExtractor.Extract(oldData, f.Path, ext)
-				for _, s := range syms {
-					if isSignificantSymbol(s) {
-						report.RemovedSymbols = append(report.RemovedSymbols, SymbolDiffItem{
-							File:     f.Path,
-							Name:     s.Name,
-							Type:     s.Type,
-							Line:     s.Line,
-							Exported: s.Exported,
-						})
-					}
-				}
-				for _, imp := range imps {
-					report.RemovedDependencies = append(report.RemovedDependencies, DependencyDiff{
-						Source:     f.Path,
-						Target:     imp,
-						Type:       "imports",
-						Confidence: "EXTRACTED",
-					})
-				}
-			}
-
+			diffDeletedFile(projPath, baseRef, f, ext, report)
 		case "M":
-			currContent, _ := os.ReadFile(filepath.Join(projPath, f.Path))
-			oldData, _ := runGitCommand(projPath, "show", fmt.Sprintf("%s:%s", baseRef, f.Path))
-
-			currSyms, currImps, _ := currentExtractor.Extract(currContent, f.Path, ext)
-			oldSyms, oldImps, _ := currentExtractor.Extract(oldData, f.Path, ext)
-
-			currMap := make(map[string]extractor.Symbol)
-			for _, s := range currSyms {
-				if isSignificantSymbol(s) {
-					currMap[s.Name] = s
-				}
-			}
-
-			oldMap := make(map[string]extractor.Symbol)
-			for _, s := range oldSyms {
-				if isSignificantSymbol(s) {
-					oldMap[s.Name] = s
-				}
-			}
-
-			for name, cs := range currMap {
-				if os, exists := oldMap[name]; !exists {
-					report.AddedSymbols = append(report.AddedSymbols, SymbolDiffItem{
-						File:     f.Path,
-						Name:     cs.Name,
-						Type:     cs.Type,
-						Line:     cs.Line,
-						Exported: cs.Exported,
-					})
-				} else if cs.Line != os.Line || cs.Exported != os.Exported {
-					report.ModifiedSymbols = append(report.ModifiedSymbols, SymbolDiffItem{
-						File:     f.Path,
-						Name:     cs.Name,
-						Type:     cs.Type,
-						Line:     cs.Line,
-						Exported: cs.Exported,
-					})
-				}
-			}
-
-			for name, os := range oldMap {
-				if _, exists := currMap[name]; !exists {
-					report.RemovedSymbols = append(report.RemovedSymbols, SymbolDiffItem{
-						File:     f.Path,
-						Name:     os.Name,
-						Type:     os.Type,
-						Line:     os.Line,
-						Exported: os.Exported,
-					})
-				}
-			}
-
-			// Dependencies diff
-			currImpMap := make(map[string]bool)
-			for _, imp := range currImps {
-				currImpMap[imp] = true
-			}
-			oldImpMap := make(map[string]bool)
-			for _, imp := range oldImps {
-				oldImpMap[imp] = true
-			}
-
-			for imp := range currImpMap {
-				if !oldImpMap[imp] {
-					report.AddedDependencies = append(report.AddedDependencies, DependencyDiff{
-						Source:     f.Path,
-						Target:     imp,
-						Type:       "imports",
-						Confidence: "EXTRACTED",
-					})
-				}
-			}
-			for imp := range oldImpMap {
-				if !currImpMap[imp] {
-					report.RemovedDependencies = append(report.RemovedDependencies, DependencyDiff{
-						Source:     f.Path,
-						Target:     imp,
-						Type:       "imports",
-						Confidence: "EXTRACTED",
-					})
-				}
-			}
+			diffModifiedFile(projPath, baseRef, f, ext, report)
 		}
 	}
 
 	// 4. Calculate blast radius impact for affected files/symbols if requested
 	if includeBlastRadius && db != nil && projectID != "" {
-		seenNodes := make(map[string]bool)
-		for _, f := range changedFiles {
-			if seenNodes[f.Path] {
-				continue
-			}
-			seenNodes[f.Path] = true
-			nodes, bErr := CalculateBlastRadius(db, projectID, f.Path, 3, 10)
-			if bErr == nil && len(nodes) > 0 {
-				risk := "LOW"
-				if len(nodes) >= 5 {
-					risk = "HIGH"
-				} else if len(nodes) >= 2 {
-					risk = "MEDIUM"
-				}
-				report.HighImpactNodes = append(report.HighImpactNodes, ImpactRiskNode{
-					NodeID:           f.Path,
-					Label:            filepath.Base(f.Path),
-					Path:             f.Path,
-					BlastRadiusCount: len(nodes),
-					RiskLevel:        risk,
-				})
-			}
-		}
-		// Sort high impact nodes descending by blast radius
-		sort.Slice(report.HighImpactNodes, func(i, j int) bool {
-			return report.HighImpactNodes[i].BlastRadiusCount > report.HighImpactNodes[j].BlastRadiusCount
-		})
+		calculateBlastRadiusForDiff(db, projectID, allChangedFiles, report)
 	}
 
 	return report, nil
+}
+
+func collectGitChangedFiles(projPath, baseRef string) (codeChanged []FileDiffStatus, allChanged []FileDiffStatus, err error) {
+	out, err := runGitCommand(projPath, "diff", "--name-status", baseRef)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed running git diff: %w", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	seenFiles := make(map[string]bool)
+
+	for _, l := range lines {
+		parts := strings.Fields(l)
+		if len(parts) < 2 {
+			continue
+		}
+		status := parts[0]
+		path := parts[1]
+		if len(parts) >= 3 && (status[0] == 'R' || status[0] == 'C') {
+			path = parts[2]
+		}
+		allChanged = append(allChanged, FileDiffStatus{Path: path, Status: status})
+		seenFiles[path] = true
+	}
+
+	if untrackedOut, uErr := runGitCommand(projPath, "ls-files", "--others", "--exclude-standard"); uErr == nil {
+		untrackedLines := strings.Split(strings.TrimSpace(string(untrackedOut)), "\n")
+		for _, uPath := range untrackedLines {
+			uPath = strings.TrimSpace(uPath)
+			if uPath != "" && !seenFiles[uPath] {
+				allChanged = append(allChanged, FileDiffStatus{Path: uPath, Status: "A"})
+				seenFiles[uPath] = true
+			}
+		}
+	}
+
+	for _, f := range allChanged {
+		ext := filepath.Ext(f.Path)
+		if _, supported := languageFromExt[ext]; supported {
+			codeChanged = append(codeChanged, f)
+		}
+	}
+	return codeChanged, allChanged, nil
+}
+
+func diffAddedFile(projPath string, f FileDiffStatus, ext string, report *GraphDiffReport) {
+	content, err := os.ReadFile(filepath.Join(projPath, f.Path))
+	if err != nil {
+		return
+	}
+	syms, imps, _ := currentExtractor.Extract(content, f.Path, ext)
+	for _, s := range syms {
+		if isSignificantSymbol(s) {
+			report.AddedSymbols = append(report.AddedSymbols, SymbolDiffItem{
+				File:     f.Path,
+				Name:     s.Name,
+				Type:     s.Type,
+				Line:     s.Line,
+				Exported: s.Exported,
+			})
+		}
+	}
+	for _, imp := range imps {
+		report.AddedDependencies = append(report.AddedDependencies, DependencyDiff{
+			Source:     f.Path,
+			Target:     imp,
+			Type:       "imports",
+			Confidence: "EXTRACTED",
+		})
+	}
+}
+
+func diffDeletedFile(projPath, baseRef string, f FileDiffStatus, ext string, report *GraphDiffReport) {
+	oldData, err := runGitCommand(projPath, "show", fmt.Sprintf("%s:%s", baseRef, f.Path))
+	if err != nil {
+		return
+	}
+	syms, imps, _ := currentExtractor.Extract(oldData, f.Path, ext)
+	for _, s := range syms {
+		if isSignificantSymbol(s) {
+			report.RemovedSymbols = append(report.RemovedSymbols, SymbolDiffItem{
+				File:     f.Path,
+				Name:     s.Name,
+				Type:     s.Type,
+				Line:     s.Line,
+				Exported: s.Exported,
+			})
+		}
+	}
+	for _, imp := range imps {
+		report.RemovedDependencies = append(report.RemovedDependencies, DependencyDiff{
+			Source:     f.Path,
+			Target:     imp,
+			Type:       "imports",
+			Confidence: "EXTRACTED",
+		})
+	}
+}
+
+func diffModifiedFile(projPath, baseRef string, f FileDiffStatus, ext string, report *GraphDiffReport) {
+	currContent, _ := os.ReadFile(filepath.Join(projPath, f.Path))
+	oldData, _ := runGitCommand(projPath, "show", fmt.Sprintf("%s:%s", baseRef, f.Path))
+
+	currSyms, currImps, _ := currentExtractor.Extract(currContent, f.Path, ext)
+	oldSyms, oldImps, _ := currentExtractor.Extract(oldData, f.Path, ext)
+
+	currMap := make(map[string]extractor.Symbol)
+	for _, s := range currSyms {
+		if isSignificantSymbol(s) {
+			currMap[s.Name] = s
+		}
+	}
+
+	oldMap := make(map[string]extractor.Symbol)
+	for _, s := range oldSyms {
+		if isSignificantSymbol(s) {
+			oldMap[s.Name] = s
+		}
+	}
+
+	for name, cs := range currMap {
+		if os, exists := oldMap[name]; !exists {
+			report.AddedSymbols = append(report.AddedSymbols, SymbolDiffItem{
+				File:     f.Path,
+				Name:     cs.Name,
+				Type:     cs.Type,
+				Line:     cs.Line,
+				Exported: cs.Exported,
+			})
+		} else if cs.Line != os.Line || cs.Exported != os.Exported {
+			report.ModifiedSymbols = append(report.ModifiedSymbols, SymbolDiffItem{
+				File:     f.Path,
+				Name:     cs.Name,
+				Type:     cs.Type,
+				Line:     cs.Line,
+				Exported: cs.Exported,
+			})
+		}
+	}
+
+	for name, os := range oldMap {
+		if _, exists := currMap[name]; !exists {
+			report.RemovedSymbols = append(report.RemovedSymbols, SymbolDiffItem{
+				File:     f.Path,
+				Name:     os.Name,
+				Type:     os.Type,
+				Line:     os.Line,
+				Exported: os.Exported,
+			})
+		}
+	}
+
+	currImpMap := make(map[string]bool)
+	for _, imp := range currImps {
+		currImpMap[imp] = true
+	}
+	oldImpMap := make(map[string]bool)
+	for _, imp := range oldImps {
+		oldImpMap[imp] = true
+	}
+
+	for imp := range currImpMap {
+		if !oldImpMap[imp] {
+			report.AddedDependencies = append(report.AddedDependencies, DependencyDiff{
+				Source:     f.Path,
+				Target:     imp,
+				Type:       "imports",
+				Confidence: "EXTRACTED",
+			})
+		}
+	}
+	for imp := range oldImpMap {
+		if !currImpMap[imp] {
+			report.RemovedDependencies = append(report.RemovedDependencies, DependencyDiff{
+				Source:     f.Path,
+				Target:     imp,
+				Type:       "imports",
+				Confidence: "EXTRACTED",
+			})
+		}
+	}
+}
+
+func calculateBlastRadiusForDiff(db *sql.DB, projectID string, files []FileDiffStatus, report *GraphDiffReport) {
+	seenNodes := make(map[string]bool)
+	for _, f := range files {
+		if seenNodes[f.Path] {
+			continue
+		}
+		seenNodes[f.Path] = true
+		nodes, bErr := CalculateBlastRadius(db, projectID, f.Path, 3, 10)
+		if bErr == nil && len(nodes) > 0 {
+			risk := "LOW"
+			if len(nodes) >= 5 {
+				risk = "HIGH"
+			} else if len(nodes) >= 2 {
+				risk = "MEDIUM"
+			}
+			report.HighImpactNodes = append(report.HighImpactNodes, ImpactRiskNode{
+				NodeID:           f.Path,
+				Label:            filepath.Base(f.Path),
+				Path:             f.Path,
+				BlastRadiusCount: len(nodes),
+				RiskLevel:        risk,
+			})
+		}
+	}
+	sort.Slice(report.HighImpactNodes, func(i, j int) bool {
+		return report.HighImpactNodes[i].BlastRadiusCount > report.HighImpactNodes[j].BlastRadiusCount
+	})
 }
 
 func isSignificantSymbol(s extractor.Symbol) bool {
