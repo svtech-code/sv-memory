@@ -624,11 +624,16 @@ Registra una nueva sesión de codificación. Devuelve el Auto-Boot Context Bundl
 
 ### 5. `sv_mem_session_end`
 
-Cierra una sesión activa.
+Cierra una sesión activa o maneja de forma segura una sesión ya completada (idempotente). Si se omite `session_id`, se auto-detecta la sesión activa. Soporta parámetros opcionales de resumen en línea (`accomplished`, `goal`, `discoveries`, `next_steps`, `files`, `summary`) para registrar logros y cerrar en una sola llamada. Llamar sobre una sesión ya completada devuelve un mensaje informativo de éxito preservando los resúmenes existentes sin disparar errores de cliente.
 
 - **Parámetros:**
-  - `session_id` (string, requerido): ID de la sesión.
-  - `summary` (string, opcional): Logros.
+  - `session_id` (string, opcional): ID de la sesión (auto-detectado si se omite).
+  - `summary` (string, opcional): Texto de logros.
+  - `accomplished` (string, opcional): Tareas completadas.
+  - `goal` (string, opcional): Objetivo de la sesión.
+  - `discoveries` (string, opcional): Hallazgos clave.
+  - `next_steps` (string, opcional): Tareas pendientes/siguientes.
+  - `files` (string, opcional): Lista de archivos modificados.
 
 ### 6. `sv_mem_session_summary`
 

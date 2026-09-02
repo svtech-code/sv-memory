@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -97,6 +98,9 @@ func (s *Server) handleSessionEnd(ctx context.Context, req mcp.CallToolRequest) 
 	}
 
 	if err := memory.EndSession(s.pool.Writer, sessionID, summary); err != nil {
+		if errors.Is(err, memory.ErrSessionAlreadyCompleted) {
+			return mcp.NewToolResultText(fmt.Sprintf("Session %s is already completed; summary preserved.", sessionID)), nil
+		}
 		return mcp.NewToolResultError(fmt.Sprintf("failed to end session: %v", err)), nil
 	}
 	return mcp.NewToolResultText(fmt.Sprintf("Session %s ended successfully.", sessionID)), nil

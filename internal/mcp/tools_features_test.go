@@ -726,3 +726,81 @@ func TestGraphQueryPathAccrueTokenLedger(t *testing.T) {
 		t.Errorf("expected graph query/path to accrue tokens in the ledger, got %d", n)
 	}
 }
+
+func TestSessionEnd_IdempotenceAndNotFound(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	srv := NewServer(pool, cfg)
+	ctx := context.Background()
+
+	// 1. Start session
+	startReq := mcpgo.CallToolRequest{}
+	startReq.Params.Name = "sv_mem_session_start"
+	startReq.Params.Arguments = map[string]any{"goal": "Test session idempotence"}
+	res, err := srv.GetTool("sv_mem_session_start").Handler(ctx, startReq)
+	if err != nil || res.IsError {
+		t.Fatalf("sv_mem_session_start failed: err=%v, res=%v", err, res)
+	}
+	startText := textContent(res.Content[0])
+	parts := strings.Split(startText, "ID: ")
+	if len(parts) < 2 {
+		t.Fatalf("could not extract session ID: %s", startText)
+	}
+	sessionID := strings.Split(parts[1], ")")[0]
+
+	// 2. First session end on active session -> success
+	endReq := mcpgo.CallToolRequest{}
+	endReq.Params.Name = "sv_mem_session_end"
+	endReq.Params.Arguments = map[string]any{
+		"session_id":   sessionID,
+		"accomplished": "Finished task A",
+	}
+	res, err = srv.GetTool("sv_mem_session_end").Handler(ctx, endReq)
+	if err != nil {
+		t.Fatalf("sv_mem_session_end first call returned error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("sv_mem_session_end first call flagged isError: %v", textContent(res.Content[0]))
+	}
+	endText := textContent(res.Content[0])
+	if !strings.Contains(endText, "ended successfully") {
+		t.Errorf("expected 'ended successfully' in response, got: %s", endText)
+	}
+
+	// 3. Second session end on already completed session -> success (idempotent, isError=false)
+	endReq2 := mcpgo.CallToolRequest{}
+	endReq2.Params.Name = "sv_mem_session_end"
+	endReq2.Params.Arguments = map[string]any{
+		"session_id": sessionID,
+	}
+	res, err = srv.GetTool("sv_mem_session_end").Handler(ctx, endReq2)
+	if err != nil {
+		t.Fatalf("sv_mem_session_end 2nd call returned error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("sv_mem_session_end 2nd call flagged isError: %v", textContent(res.Content[0]))
+	}
+	endText2 := textContent(res.Content[0])
+	if !strings.Contains(endText2, "already completed") {
+		t.Errorf("expected 'already completed' in idempotent response, got: %s", endText2)
+	}
+
+	// 4. Session end on non-existent session ID -> error (isError=true)
+	endReqBad := mcpgo.CallToolRequest{}
+	endReqBad.Params.Name = "sv_mem_session_end"
+	endReqBad.Params.Arguments = map[string]any{
+		"session_id": "non-existent-session-id",
+	}
+	res, err = srv.GetTool("sv_mem_session_end").Handler(ctx, endReqBad)
+	if err != nil {
+		t.Fatalf("sv_mem_session_end bad ID returned transport error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected isError=true for non-existent session ID, got success: %v", textContent(res.Content[0]))
+	}
+	badText := textContent(res.Content[0])
+	if !strings.Contains(badText, "session not found") {
+		t.Errorf("expected 'session not found' in bad session response, got: %s", badText)
+	}
+}

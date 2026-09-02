@@ -625,11 +625,16 @@ Register a new coding session. Returns the Auto-Boot Context Bundle (previous se
 
 ### 5. `sv_mem_session_end`
 
-Close an active session.
+Close an active session or safely handle an already completed session (idempotent). If `session_id` is omitted, the active session is auto-detected. Supports optional inline summary parameters (`accomplished`, `goal`, `discoveries`, `next_steps`, `files`, `summary`) to record accomplishments and close in a single call. Calling on an already completed session returns an informative success message preserving existing summaries without triggering client errors.
 
 - **Parameters:**
-  - `session_id` (string, required): Session ID.
-  - `summary` (string, optional): Accomplishments.
+  - `session_id` (string, optional): Session ID (auto-detected if omitted).
+  - `summary` (string, optional): Accomplishments text.
+  - `accomplished` (string, optional): Completed tasks.
+  - `goal` (string, optional): Session goal.
+  - `discoveries` (string, optional): Key findings.
+  - `next_steps` (string, optional): Remaining/upcoming tasks.
+  - `files` (string, optional): Modified files list.
 
 ### 6. `sv_mem_session_summary`
 

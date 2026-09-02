@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -2570,5 +2571,76 @@ func TestDeleteMemoryHard(t *testing.T) {
 	// Deleting a nonexistent id reports an error.
 	if err = DeleteMemory(database, projectID, "no-such", true); err == nil {
 		t.Error("expected error deleting unknown id, got nil")
+	}
+}
+
+func TestEndSession_IdempotentAndNotFound(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-memory-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "test-session-idempotent"
+	err = db.RegisterProject(database, projectID, "Test Session Proj", tempDir)
+	if err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+	sess, err := StartSession(database, projectID, "Test session idempotence", tempDir)
+	if err != nil {
+		t.Fatalf("failed to start session: %v", err)
+	}
+
+	// 1. Ending an active session should succeed.
+	if err = EndSession(database, sess.ID, "Initial completion summary"); err != nil {
+		t.Fatalf("EndSession on active session failed: %v", err)
+	}
+
+	// Verify session status and summary
+	var status, summary string
+	err = database.QueryRow("SELECT status, summary FROM sessions WHERE id = ?", sess.ID).Scan(&status, &summary)
+	if err != nil {
+		t.Fatalf("failed to query session: %v", err)
+	}
+	if status != "completed" {
+		t.Errorf("expected status 'completed', got %q", status)
+	}
+	if summary != "Initial completion summary" {
+		t.Errorf("expected summary 'Initial completion summary', got %q", summary)
+	}
+
+	// 2. Ending an already completed session should return ErrSessionAlreadyCompleted
+	// and preserve the existing summary without overwriting.
+	err = EndSession(database, sess.ID, "New summary that should not overwrite")
+	if err == nil {
+		t.Fatal("expected error ending already completed session, got nil")
+	}
+	if !errors.Is(err, ErrSessionAlreadyCompleted) {
+		t.Errorf("expected ErrSessionAlreadyCompleted, got: %v", err)
+	}
+
+	// Verify summary was preserved
+	err = database.QueryRow("SELECT summary FROM sessions WHERE id = ?", sess.ID).Scan(&summary)
+	if err != nil {
+		t.Fatalf("failed to query session after 2nd end: %v", err)
+	}
+	if summary != "Initial completion summary" {
+		t.Errorf("expected summary preserved as 'Initial completion summary', got %q", summary)
+	}
+
+	// 3. Ending a non-existent session should return ErrSessionNotFound.
+	err = EndSession(database, "non-existent-session-id", "Some summary")
+	if err == nil {
+		t.Fatal("expected error ending non-existent session, got nil")
+	}
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Errorf("expected ErrSessionNotFound, got: %v", err)
 	}
 }

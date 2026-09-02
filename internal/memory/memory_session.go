@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -32,6 +33,12 @@ func StartSession(db *sql.DB, projectID, goal, directory string) (*Session, erro
 	}, nil
 }
 
+// Sentinel errors for session operations.
+var (
+	ErrSessionNotFound         = errors.New("session not found")
+	ErrSessionAlreadyCompleted = errors.New("session already completed")
+)
+
 func EndSession(db *sql.DB, id, summary string) error {
 	// Redact secrets the same way SaveSessionSummary does, so a session summary
 	// never persists raw credentials that later surface via session context.
@@ -44,7 +51,18 @@ func EndSession(db *sql.DB, id, summary string) error {
 	}
 	n, _ := result.RowsAffected()
 	if n == 0 {
-		return fmt.Errorf("session %s not found or already completed", id)
+		var status string
+		err = db.QueryRow("SELECT status FROM sessions WHERE id = ?", id).Scan(&status)
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("%w: %s", ErrSessionNotFound, id)
+		}
+		if err != nil {
+			return fmt.Errorf("failed to check session status: %w", err)
+		}
+		if status == "completed" {
+			return fmt.Errorf("%w: %s", ErrSessionAlreadyCompleted, id)
+		}
+		return fmt.Errorf("session %s has unexpected status %q", id, status)
 	}
 	return nil
 }
