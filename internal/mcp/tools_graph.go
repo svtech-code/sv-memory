@@ -1065,3 +1065,16 @@ func commLabelStr(commID int, labels map[int]string) string {
 	}
 	return fmt.Sprintf("community_%d", commID)
 }
+
+func (s *Server) handleGraphDiff(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	baseRef := req.GetString("base_ref", "")
+	blastRadius := req.GetString("blast_radius", "true") != "false"
+
+	report, err := graph.ComputeGraphDiff(s.pool.Reader, s.cfg.ProjectID, s.cfg.ProjPath, baseRef, blastRadius)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to compute graph diff: %v", err)), nil
+	}
+
+	rendered := graph.RenderGraphDiffReport(report)
+	return s.respond(req, rendered), nil
+}

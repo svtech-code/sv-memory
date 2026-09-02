@@ -45,7 +45,7 @@ func TestGraphSubcommandsRegistered(t *testing.T) {
 		cmdNames[cmd.Name()] = true
 	}
 
-	expected := []string{"rebuild", "path", "explain", "communities", "wiki", "viz", "merge"}
+	expected := []string{"rebuild", "path", "explain", "communities", "wiki", "viz", "merge", "diff"}
 	for _, name := range expected {
 		if !cmdNames[name] {
 			t.Errorf("expected graph subcommand %q to be registered", name)

@@ -492,3 +492,24 @@ var graphVizCmd = &cobra.Command{
 		return nil
 	},
 }
+
+var graphDiffCmd = &cobra.Command{
+	Use:   "diff [base_ref]",
+	Short: "Show structural code and dependency changes compared to a Git reference",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return withProject(func(cfg *config.Config, database *sql.DB) error {
+			baseRef := ""
+			if len(args) > 0 {
+				baseRef = args[0]
+			}
+			blastRadius, _ := cmd.Flags().GetBool("blast-radius")
+			report, err := graph.ComputeGraphDiff(database, cfg.ProjectID, cfg.ProjPath, baseRef, blastRadius)
+			if err != nil {
+				return err
+			}
+			fmt.Print(graph.RenderGraphDiffReport(report))
+			return nil
+		})
+	},
+}

@@ -186,7 +186,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **Context Pack:** sv_mem_context_pack (one bounded call: graph role + linked memories + active changes for a file/package/symbol)
 - **Decision Engine:** sv_propose_spec, sv_validate_decision, sv_commit_spec (propose → validate → commit cycle with pre-flight checks)
 - **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive (human-readable Markdown projection of changes under .sv-memory/specs/)
-- **Graph:** sv_graph_explore, sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_report, sv_graph_viz, sv_graph_merge, sv_graph_search, sv_graph_communities
+- **Graph:** sv_graph_explore, sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_report, sv_graph_viz, sv_graph_merge, sv_graph_search, sv_graph_communities, sv_graph_diff
 
 ## Repository Restrictions & Commit Standards:
 
@@ -338,6 +338,10 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 #### 28. `sv-memory graph report [--output file] [--god-nodes N] [--communities N] [--connections N]`
 
 - Generates a standalone `GRAPH_REPORT.md` aggregate overview of the dependency graph: god nodes (highest-degree hubs via `TopDegreeNodes`), top communities with auto-labels, surprising cross-community connections (via `FindSurprisingConnections`), hub threshold, and a deterministic suggested-questions section. Default output: `GRAPH_REPORT.md`. Command-line mirror of the `sv_graph_report` MCP tool.
+
+#### 29. `sv-memory graph diff [base_ref] [--blast-radius]`
+
+- Compares structural code and dependency differences between the working tree and a Git reference (defaults to `origin/HEAD`, `main`, `master`, or `HEAD~1`). Identifies added, removed, and modified symbols, new dependency imports, and calculates upstream blast radius risk for changed components.
 
 ### Conflict Management
 
@@ -944,6 +948,15 @@ Lists the top communities in the dependency graph with auto-labels and member co
   - `community_id` (string, optional): Community id to detail its member nodes (type, degree, fan-in/fan-out).
 - **Without `community_id`:** Markdown table with columns: `#`, `Community`, `Label`, `Size`. Ranked by member count.
 - **With `community_id`:** Markdown table of members with columns: `#`, `Node`, `Type`, `Degree`, `Fan-In`, `Fan-Out`. Sorted alphabetically by node id.
+
+### 32. `sv_graph_diff`
+
+Compares structural code elements (symbols, calls, imports, and blast radius impact) between a Git base reference (e.g. `'main'`, `'master'`, `'HEAD~1'`) and the working directory. Helps coding agents and reviewers inspect architectural modifications, new dependencies, removed entities, and blast radius risks before committing or opening pull requests.
+
+- **Parameters:**
+  - `base_ref` (string, optional): Git reference to compare against (defaults to `origin/HEAD`, `main`, `master`, or `HEAD~1`).
+  - `blast_radius` (string, optional): When `'true'` (default), runs upstream BFS blast radius calculation on changed files/nodes.
+  - `token_budget` (string, optional): Max tokens for the response; truncated with a notice when exceeded.
 
 ## 7. Memory Save Strategies (Detail)
 

@@ -2,6 +2,9 @@ package mcp
 
 import (
 	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -231,4 +234,56 @@ func TestTokenBenchmark(t *testing.T) {
 			t.Errorf("expected empty benchmark for zero response tokens, got: %q", got)
 		}
 	})
+}
+
+func TestGraphDiffHandler(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	// Initialize git repo in tempDir
+	cmd := exec.Command("git", "init")
+	cmd.Dir = tempDir
+	_ = cmd.Run()
+	cmd = exec.Command("git", "config", "user.name", "Tester")
+	cmd.Dir = tempDir
+	_ = cmd.Run()
+	cmd = exec.Command("git", "config", "user.email", "tester@example.com")
+	cmd.Dir = tempDir
+	_ = cmd.Run()
+
+	file1 := filepath.Join(tempDir, "core.go")
+	_ = os.WriteFile(file1, []byte("package main\n\nfunc OldFeature() {}\n"), 0644)
+	cmd = exec.Command("git", "add", "core.go")
+	cmd.Dir = tempDir
+	_ = cmd.Run()
+	cmd = exec.Command("git", "commit", "-m", "init")
+	cmd.Dir = tempDir
+	_ = cmd.Run()
+
+	// Add new function in working tree
+	_ = os.WriteFile(file1, []byte("package main\n\nfunc OldFeature() {}\nfunc NewFeature() {}\n"), 0644)
+
+	server := NewServer(pool, cfg)
+	diffTool := server.GetTool("sv_graph_diff")
+	if diffTool == nil {
+		t.Fatal("sv_graph_diff tool not registered")
+	}
+
+	ctx := context.Background()
+	req := mcpgo.CallToolRequest{}
+	req.Params.Name = "sv_graph_diff"
+	req.Params.Arguments = map[string]any{"base_ref": "HEAD"}
+
+	res, err := diffTool.Handler(ctx, req)
+	if err != nil || res.IsError {
+		t.Fatalf("sv_graph_diff failed: err=%v, res=%v", err, res)
+	}
+
+	text := textContent(res.Content[0])
+	if !strings.Contains(text, "Structural Graph Diff vs `HEAD`") {
+		t.Errorf("expected header, got: %s", text)
+	}
+	if !strings.Contains(text, "NewFeature") {
+		t.Errorf("expected NewFeature in diff, got: %s", text)
+	}
 }

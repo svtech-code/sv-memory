@@ -96,6 +96,7 @@ var AllTools = []Tool{
 	{Name: "sv_graph_merge", Description: "Merge two project graphs into one (union-merge by node ID)."},
 	{Name: "sv_graph_search", Description: "Discover graph nodes matching a text pattern: returns every matching node id/label/path with type, path, degree, fan-in/fan-out, and community. Unlike sv_graph_explain/sv_graph_query, which resolve a single exact node, this is the discovery path when the exact symbol is unknown. Optional 'node_type' filter and 'limit' (default 10, max 50)."},
 	{Name: "sv_graph_communities", Description: "List the top communities in the dependency graph with auto-labels and sizes, or (with 'community_id') detail a specific community's member nodes with their degree/fan-in/fan-out. MCP parity for the 'sv-memory graph communities' CLI."},
+	{Name: "sv_graph_diff", Description: "Compare structural code elements (symbols, calls, imports, blast radius impact) between a Git base reference and the working tree. Use to review architectural impact before committing or opening a PR."},
 }
 
 // global shutdown state: the latest server instance's cleanup hook, invoked on
@@ -593,6 +594,16 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		mcp.WithString("community_id", mcp.Description("Optional community id to detail its member nodes (type, degree, fan-in/fan-out)")),
 	)
 	ms.AddTool(graphCommunitiesTool, s.handleGraphCommunities)
+
+	// 31. Tool: sv_graph_diff
+	graphDiffTool := mcp.NewTool("sv_graph_diff",
+		mcp.WithDescription("Compare structural code elements (symbols, calls, imports, blast radius impact) between a Git base reference (e.g. 'main', 'HEAD~1') and the working tree. Helps agents and developers review architectural diffs and blast radius risks before committing."),
+		mcp.WithDeferLoading(true),
+		mcp.WithString("base_ref", mcp.Description("Optional Git reference to compare against (defaults to origin/HEAD, main, master, or HEAD~1)")),
+		mcp.WithString("blast_radius", mcp.Description("Optional 'true' (default) to include blast radius impact analysis for affected files")),
+		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
+	)
+	ms.AddTool(graphDiffTool, s.handleGraphDiff)
 
 	return ms
 }

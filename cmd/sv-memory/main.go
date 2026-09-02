@@ -72,6 +72,8 @@ func init() {
 	graphCmd.AddCommand(graphVizCmd)
 	graphVizCmd.Flags().StringP("output", "o", "graph.html", "Output HTML file path")
 	graphVizCmd.Flags().Bool("open", true, "Open the visualization in the default browser automatically")
+	graphDiffCmd.Flags().Bool("blast-radius", true, "Include blast radius risk analysis for changed files")
+	graphCmd.AddCommand(graphDiffCmd)
 
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(versionCmd)

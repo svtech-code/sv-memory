@@ -186,7 +186,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **Context Pack:** sv_mem_context_pack (one bounded call: graph role + linked memories + active changes for a file/package/symbol)
 - **Decision Engine:** sv_propose_spec, sv_validate_decision, sv_commit_spec (propose → validate → commit cycle with pre-flight checks)
 - **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive (human-readable Markdown projection of changes under .sv-memory/specs/)
-- **Graph:** sv_graph_explore, sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_report, sv_graph_viz, sv_graph_merge, sv_graph_search, sv_graph_communities
+- **Graph:** sv_graph_explore, sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_report, sv_graph_viz, sv_graph_merge, sv_graph_search, sv_graph_communities, sv_graph_diff
 
 ## Repository Restrictions & Commit Standards:
 
@@ -338,6 +338,10 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 #### 28. `sv-memory graph report [--output file] [--god-nodes N] [--communities N] [--connections N]`
 
 - Genera un archivo independiente `GRAPH_REPORT.md` con una visión general agregada del grafo de dependencias: nodos dios (hubs de mayor grado vía `TopDegreeNodes`), las principales comunidades con auto-etiquetas, conexiones sorprendentes entre comunidades (vía `FindSurprisingConnections`), umbral de hub y una sección determinista de preguntas sugeridas. Salida por defecto: `GRAPH_REPORT.md`. Espejo CLI del tool MCP `sv_graph_report`.
+
+#### 29. `sv-memory graph diff [base_ref] [--blast-radius]`
+
+- Compara diferencias de código estructural y dependencias entre el directorio de trabajo y una referencia Git (por defecto `origin/HEAD`, `main`, `master` o `HEAD~1`). Identifica símbolos agregados, eliminados y modificados, nuevos imports y calcula el riesgo de radio de impacto (blast radius) de los componentes alterados.
 
 ### Gestión de Conflictos
 
@@ -943,6 +947,15 @@ Lista las principales comunidades del grafo de dependencias con auto-etiquetas y
   - `community_id` (string, opcional): ID de la comunidad a detallar (miembros con tipo, degree, fan-in/fan-out).
 - **Sin `community_id`:** Tabla Markdown con columnas: `#`, `Community`, `Label`, `Size`. Ordenado por número de miembros.
 - **Con `community_id`:** Tabla Markdown de miembros con columnas: `#`, `Node`, `Type`, `Degree`, `Fan-In`, `Fan-Out`. Ordenado alfabéticamente por id de nodo.
+
+### 32. `sv_graph_diff`
+
+Compara elementos estructurales de código (símbolos, llamadas, imports y radio de impacto) entre una referencia base de Git (e.g. `'main'`, `'master'`, `'HEAD~1'`) y el directorio de trabajo actual. Ayuda a los agentes y revisores a inspeccionar modificaciones arquitectónicas, nuevas dependencias, entidades eliminadas y riesgos de impacto antes de commitear o abrir un pull request.
+
+- **Parámetros:**
+  - `base_ref` (string, opcional): Referencia Git con la cual comparar (por defecto `origin/HEAD`, `main`, `master` o `HEAD~1`).
+  - `blast_radius` (string, opcional): Cuando es `'true'` (por defecto), calcula el análisis de impacto upstream BFS para archivos y componentes alterados.
+  - `token_budget` (string, opcional): Máximo de tokens para la respuesta; se trunca con un aviso al superarse.
 
 ## 7. Estrategias de Guardado de Memoria (Detalle)
 
