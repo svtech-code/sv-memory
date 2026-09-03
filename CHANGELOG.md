@@ -5,6 +5,8 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+## [v0.18.0] - 2026-09-02
+
 ### Added
 
 - **Edge Confidence Breakdown in `sv_graph_report`**: a new `writeReportConfidence` function in `internal/graph/report.go` counts EXTRACTED/INFERRED/AMBIGUOUS edges across the full graph, renders a percentage breakdown table, and lists the top 5 lowest-confidence edges (INFERRED/AMBIGUOUS) for review. Inserted after the header in `GenerateGraphReport`. Fills the gap that the aggregate report had no confidence metrics (architecture memory 523b1bf4 P4).
@@ -502,4 +504,9 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 [v0.13.0]: https://github.com/svtech-code/sv-memory/compare/v0.12.0...v0.13.0
 [v0.13.1]: https://github.com/svtech-code/sv-memory/compare/v0.13.0...v0.13.1
 [v0.14.0]: https://github.com/svtech-code/sv-memory/compare/v0.13.1...v0.14.0
-[Unreleased]: https://github.com/svtech-code/sv-memory/compare/v0.14.0...main
+[v0.15.0]: https://github.com/svtech-code/sv-memory/compare/v0.14.0...v0.15.0
+[v0.16.0]: https://github.com/svtech-code/sv-memory/compare/v0.15.0...v0.16.0
+[v0.17.0]: https://github.com/svtech-code/sv-memory/compare/v0.16.0...v0.17.0
+[v0.17.1]: https://github.com/svtech-code/sv-memory/compare/v0.17.0...v0.17.1
+[v0.18.0]: https://github.com/svtech-code/sv-memory/compare/v0.17.1...v0.18.0
+[Unreleased]: https://github.com/svtech-code/sv-memory/compare/v0.18.0...main
