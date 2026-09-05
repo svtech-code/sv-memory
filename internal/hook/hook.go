@@ -205,7 +205,7 @@ var claudeLifecycleEvents = []struct {
 	Dir     string
 	Matcher string
 }{
-	{Event: "PreToolUse", Dir: "pre_tool_use", Matcher: "Read|Glob|Grep"},
+	{Event: "PreToolUse", Dir: "pre_tool_use", Matcher: "Read|Glob|Grep|Write|Edit"},
 	{Event: "SessionStart", Dir: "session_start"},
 	{Event: "SessionEnd", Dir: "session_end"},
 	{Event: "PreCompact", Dir: "precompact"},

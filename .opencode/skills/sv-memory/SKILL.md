@@ -6,9 +6,9 @@ Persistent architectural memory and dependency graph for AI coding agents.
 
 sv-memory provides two complementary capabilities:
 - **sv_mem_search / sv_mem_get / sv_mem_timeline**: Retrieve past architectural decisions, bug fixes, standards, discussions, and progress journals from persistent memory.
-- **sv_graph_query / sv_graph_explain / sv_graph_god_nodes / sv_graph_path / sv_graph_sync**: Query the project's code dependency graph to understand module structure, relationships, and community clusters.
+- **sv_graph_explore / sv_graph_search / sv_graph_query / sv_graph_explain / sv_graph_sync**: Query the project's code dependency graph to understand module structure, relationships, and community clusters.
 
-Using these tools **before** reading source files directly saves tokens and provides richer architectural awareness.
+**Use graph tools before reading source files** to save tokens and get richer architectural awareness in fewer round-trips.
 
 ## Session Lifecycle
 
@@ -56,11 +56,10 @@ The top search result is already expanded inline — only drill further when nec
 
 ### Before reading source files
 
-1. Call `sv_graph_god_nodes` to see the most-connected hub nodes (architectural hotspots).
-2. Call `sv_graph_explain` on the module/file you are about to read to understand its role, centrality, and neighbors.
+1. **ONE call to understand code:** Call `sv_graph_explore(path="file,symbol1,symbol2")` — resolves multiple symbols in one call, returns each symbol's structural role, surgical line-numbered source snippets, the call path between them, blast radius, and linked memories. This replaces manual `god_nodes` + `explain` + `query` + `path` chaining.
+2. **If you don't know the exact name:** Call `sv_graph_search(query="keyword")` to discover matching nodes across id/label/path. Then explore the results with `sv_graph_explore` or `sv_graph_explain`.
 3. Call `sv_mem_search` with keywords related to the task to check if a past decision, discussion, or bug fix already exists.
-4. If you find relevant context, call `sv_mem_get` to retrieve the full content.
-5. Only read the raw source file after the graph and memory context has been exhausted.
+4. Only read the raw source file after the graph and memory context has been exhausted.
 
 ### When fixing bugs
 
@@ -76,10 +75,13 @@ The top search result is already expanded inline — only drill further when nec
 
 ### Before proposing or changing behavior (Spec-Driven Decision Cycle)
 
-1. Call `sv_mem_context_pack(path=..., include_changes="true")` to surface the node role, linked decisions/standards, active changes, and the capabilities implemented at the path.
-2. Call `sv_propose_spec(slug=..., title=..., what=..., where_path=..., requirements=..., capability_path=...)` to register the change and run the pre-flight check (BLOCK/WARN/PASS against pinned rules and invariants). The optional `requirements` carries OpenSpec-style delta requirements (ADDED/MODIFIED/REMOVED/RENAMED, RFC 2119, GIVEN/WHEN/THEN scenarios) targeting a single capability.
-3. After edits, call `sv_validate_decision(change_id=...)` to re-check (deterministic by default; `semantic="true"` opts into agent re-ranking) and validate the deltas (RFC 2119 presence, MODIFIED scenario drops).
-4. After implementing, call `sv_commit_spec(change_id=...)` to promote the change into a durable decision/standard memory, merge the deltas into the capability state, and stamp it applied.
+If the change touches behavior, contracts, APIs, or architecture, use this loop. Config/docs-only changes are exempt.
+
+1. **List pending:** `sv_spec_list()` shows active changes with status and task progress.
+2. **Context + Propose:** `sv_mem_context_pack(path=..., include_changes="true")` for context, then `sv_propose_spec(slug=..., title=..., what=..., where_path=..., requirements=..., tasks=..., capability_path=...)` with pre-flight check (BLOCK/WARN/PASS). The `requirements` carries OpenSpec-style deltas (ADDED/MODIFIED/REMOVED/RENAMED, RFC 2119, GIVEN/WHEN/THEN scenarios).
+3. **Get + Apply:** `sv_spec_get(change_id="<slug>")` retrieves proposal/design/tasks. Implement code, then `sv_update_spec(change_id=..., tasks=...)` marks completed checkboxes.
+4. **Validate:** `sv_validate_decision(change_id=...)` re-checks after edits (PASS/WARN/BLOCK); validate delta requirements (RFC 2119 presence, MODIFIED scenario drops).
+5. **Commit:** `sv_commit_spec(change_id=...)` promotes to durable decision memory, merges deltas into capability state, stamps applied.
 
 ### After adding new files or packages
 
@@ -101,6 +103,6 @@ The top search result is already expanded inline — only drill further when nec
 - **User intent:** `sv_mem_capture_prompt` (record what the user asked, recoverable via `sv_mem_context`)
 - **Project admin:** `sv_mem_merge_projects` (merge project variants into a canonical project)
 - **Context Pack:** `sv_mem_context_pack` (one bounded call: graph role + linked memories + active changes for a file/package/symbol)
-- **Decision Engine:** `sv_propose_spec`, `sv_validate_decision`, `sv_commit_spec` (propose → validate → commit cycle with pre-flight checks and OpenSpec-style delta requirements)
-- **Spec Mirror (CLI):** `sv-memory specs export | import <slug> | list | archive | capabilities` (human-readable Markdown projection of changes and capability state under `.sv-memory/specs/`)
-- **Graph:** `sv_graph_query`, `sv_graph_explain`, `sv_graph_god_nodes`, `sv_graph_path`, `sv_graph_sync`, `sv_graph_surprising_connections`, `sv_graph_viz`, `sv_graph_merge`
+- **Spec Flow:** `sv_spec_list`, `sv_spec_get`, `sv_propose_spec`, `sv_update_spec`, `sv_validate_decision`, `sv_commit_spec` (list → get → propose → update → validate → commit cycle)
+- **Spec Mirror (CLI):** `sv-memory specs export | import <slug> | list | archive | capabilities` (human-readable Markdown projection of changes and capability state under `.sv-memory/specs/` and `openspec/`)
+- **Graph:** `sv_graph_explore` (ONE-call explore: multi-symbol + source + call path), `sv_graph_search` (discover nodes by pattern when name is unknown), `sv_graph_communities` (list top communities), `sv_graph_diff`, `sv_graph_query`, `sv_graph_explain`, `sv_graph_god_nodes`, `sv_graph_path`, `sv_graph_sync`, `sv_graph_report`

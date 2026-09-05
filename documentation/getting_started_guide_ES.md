@@ -125,7 +125,7 @@ sv-memory init
    - **Cursor / Windsurf:** Escribe `.cursor/mcp.json` / `.windsurf/mcp_config.json`.
 4. **Permisos MCP Automáticos:** Concede permisos para las 34 herramientas MCP sin necesidad de confirmaciones manuales repetitivas.
 5. **Sincronización Git:** Importa memorias compartidas desde `.sv-memory/memories.json` si existe.
-6. **Grafo de Dependencias:** Escanea el árbol de código y construye el grafo estructural (imports, nodos god, comunidades Leiden).
+6. **Grafo de Dependencias:** Escanea el árbol de código y construye el grafo estructural (imports, nodos god, comunidades Leiden). Un observador de archivos en segundo plano (fsnotify, habilitado por defecto con `graph_watcher_enabled`) mantiene el grafo sincronizado al detectar cambios en el código fuente, con rebote configurable (`graph_watch_debounce_ms`).
 
 > **Re-ejecución en proyectos existentes:** `sv-memory init` es totalmente idempotente. Ejecutarlo en un proyecto existente reconcilia y actualiza todos los skills activos, hooks y nuevos permisos MCP sin alterar configuraciones previas.
 
@@ -150,7 +150,7 @@ Existen dos modos:
 | Modo                   | Comando                                                   | Comportamiento                                                                                                                          |
 | :--------------------- | :-------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------- |
 | **Soft** (por defecto) | `sv-memory hooks install --platform antigravity`          | No bloquea nada. El "nudge" real lo hace el `AGENTS.md` inyectado en el Paso 3, que obliga al agente a consultar memoria.               |
-| **Strict**             | `sv-memory hooks install --platform antigravity --strict` | Bloquea la **primera** lectura de archivo de cada sesión, forzando al agente a ejecutar `sv_mem_search`/`sv_graph_query` antes de leer. |
+| **Strict**             | `sv-memory hooks install --platform antigravity --strict` | Bloquea la **primera** lectura de archivo de cada sesión, forzando al agente a ejecutar `sv_mem_search`/`sv_graph_query` antes de leer. En Claude Code y Antigravity, el modo strict también nudges en el primer Write/Edit para capturar conocimiento antes de modificar código. |
 
 > Puedes cambiar de modo re-ejecutando el comando con o sin `--strict`.
 
@@ -209,8 +209,8 @@ Al abrir tu editor (Cursor, Windsurf, Claude Code, etc.) y enviar cualquier mens
 
 - **Arranque de Sesión (Auto-Boot Context Bundle):** El agente ejecuta de forma transparente `sv_mem_session_start`, recibiendo de inmediato las metas de la sesión anterior, los 3 principales hubs de código y los últimos postmortems / Q&A.
 - **Búsqueda Inteligente (FTS5 BM25 + Path Scoping + Graph Boost):** Cuando le haces una pregunta sobre un módulo o bug, la IA llama a `sv_mem_search` con filtrado por ruta para encontrar decisiones pasadas sin gastar miles de tokens. Con `graph_boost` (default activado), una búsqueda de módulo se expande a toda la comunidad del grafo en una sola llamada, anotando las filas de comunidad con un marcador `[graph]`.
-- **Consulta de Grafo (<1ms):** Si la IA necesita saber qué archivos importan a un módulo antes de refactorizar, consulta `sv_graph_query`, recibiendo una respuesta instantánea gracias al caché LRU en RAM.
-- **Context Pack (Grafo + Memoria en una llamada):** Antes de tocar un archivo, la IA llama a `sv_mem_context_pack` (o al CLI `sv-memory context <path>`) para obtener el rol estructural del nodo (fan-in/fan-out, comunidad) más las decisiones, estándares y bugfixes vinculados a esa ruta — una llamada acotada en lugar de varias búsquedas, con cada `why` truncado.
+- **Consulta de Grafo (<1ms):** Si la IA necesita saber qué archivos importan a un módulo antes de refactorizar, consulta `sv_graph_query`, recibiendo una respuesta instantánea gracias al caché LRU en RAM. Un observador de archivos en segundo plano (fsnotify, habilitado por defecto) sincroniza automáticamente el grafo al cambiar archivos fuente, manteniendo los datos de dependencia siempre frescos sin llamadas manuales a `sv_graph_sync`.
+- **Context Pack (Grafo + Memoria en una llamada):** Antes de tocar un archivo, la IA llama a `sv_mem_context_pack` (o al CLI `sv-memory context <path>`) para obtener el rol estructural del nodo (fan-in/fan-out, comunidad) más las decisiones, estándares y bugfixes vinculados a esa ruta — una llamada acotada en lugar de varias búsquedas, con cada `why` truncado. En modo estricto (por defecto), los hooks de Claude Code y Antigravity también nudges al agente en el primer Write/Edit para capturar conocimiento antes de modificar código.
 - **Inyección Silenciosa de Contexto (opt-in):** Con hooks de Claude Code + `--context-injection`, la primera `Read` de cada archivo inyecta automáticamente su context pack como `additionalContext` — contexto relevante en el momento exacto, sin round-trip de búsqueda.
 - **Guardado Automático:** Al resolver un problema o definir un estándar, la IA ejecuta `sv_mem_save` registrando el aprendizaje en SQLite y sincronizándolo en `.sv-memory/chunks/` para tu control de versiones en Git.
 - **Ledger de Tokens:** `sv_mem_stats` reporta los tokens estimados inyectados en la sesión desde `sv_mem_session_start` junto con el presupuesto `max_response_tokens`, para que el agente sepa cuándo compactar.

@@ -58,6 +58,20 @@ case "$TOOL_NAME" in
       echo "💡 sv-memory: Consider using sv_graph_query or sv_mem_search before file reads for token-efficient context."
     fi
     ;;
+  Write|Edit)
+    # Once-per-session write nudge: reminds the agent to propose before modifying behavior.
+    SESSION_KEY=$(echo "$PWD" | sv_mem_hash)
+    if [ -z "$SESSION_KEY" ]; then
+      SESSION_KEY="$PWD"
+    fi
+    WRITE_FLAG="/tmp/.sv-memory-write-${SESSION_KEY}"
+    if [ ! -f "$WRITE_FLAG" ]; then
+      touch "$WRITE_FLAG"
+      echo "📝 sv-memory: First file write this session."
+      echo "If this modifies behavior, contracts, APIs, or architecture, run sv_propose_spec first (MANDATORY per AGENTS.md Spec-Driven Decision Cycle)."
+      echo "Use sv_spec_list to check active changes, sv_propose_spec to register, sv_update_spec to mark tasks."
+    fi
+    ;;
 esac
 
 # --- Optional silent context injection (opt-in) ---

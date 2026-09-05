@@ -60,6 +60,20 @@ BLOCKMSG
     echo '{"decision":"allow"}'
     exit 0
     ;;
+  write_file|edit_file|replace_in_file)
+    # Write nudge: once per session, remind to propose before modifying behavior.
+    WRITE_FLAG="/tmp/.sv-memory-agy-write-${SESSION_KEY}"
+    if [ ! -f "$WRITE_FLAG" ]; then
+      touch "$WRITE_FLAG"
+      cat <<'WRITENUDGE' >&2
+sv-memory: First file write this session. If this modifies behavior,
+contracts, APIs, or architecture, run sv_propose_spec first (MANDATORY
+per AGENTS.md Spec-Driven Decision Cycle).
+WRITENUDGE
+    fi
+    echo '{"decision":"allow"}'
+    exit 0
+    ;;
 esac
 
 echo '{"decision":"allow"}'

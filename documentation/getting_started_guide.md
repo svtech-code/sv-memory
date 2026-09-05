@@ -125,7 +125,7 @@ sv-memory init
    - **Cursor / Windsurf:** Writes `.cursor/mcp.json` / `.windsurf/mcp_config.json`.
 4. **Automatic MCP Tool Permissions:** Automatically grants permissions for the 34 MCP tools so the agent never asks for repetitive manual approvals.
 5. **Git Memory Synchronization:** Syncs shared team memories from `.sv-memory/memories.json` if present.
-6. **Code Dependency Graph:** Scans source files and builds the dependency graph (imports, god nodes, Leiden communities).
+6. **Code Dependency Graph:** Scans source files and builds the dependency graph (imports, god nodes, Leiden communities). A background file watcher (fsnotify, enabled by default via `graph_watcher_enabled`) keeps the graph fresh by syncing on source changes, with configurable debounce (`graph_watch_debounce_ms`).
 
 > **Re-running in existing projects:** `sv-memory init` is fully idempotent. Running it in an existing project reconciles and updates all active skills, hooks, and new tool permissions without disturbing existing configurations.
 
@@ -177,8 +177,8 @@ When you open your editor (Cursor, Windsurf, Claude Code, etc.) and send any mes
 
 - **Session Startup (Auto-Boot Context Bundle):** The agent transparently runs `sv_mem_session_start`, immediately receiving the previous session's goals, the top 3 code hubs, and the latest postmortems / Q&A.
 - **Smart Search (FTS5 BM25 + Path Scoping + Graph Boost):** When you ask it about a module or bug, the AI calls `sv_mem_search` with path filtering to find past decisions without spending thousands of tokens. With `graph_boost` (default on), a module search expands to the whole graph community in one call, annotating community rows with a `[graph]` marker.
-- **Graph Query (<1ms):** If the AI needs to know which files import a module before refactoring, it queries `sv_graph_query`, getting an instant answer thanks to the in-RAM LRU cache.
-- **Context Pack (Graph + Memory in one call):** Before touching a file, the AI calls `sv_mem_context_pack` (or the `sv-memory context <path>` CLI) to get the node's structural role (fan-in/fan-out, community) plus the decisions, standards, and bugfixes linked to that path — one bounded call instead of several searches, with each `why` truncated.
+- **Graph Query (<1ms):** If the AI needs to know which files import a module before refactoring, it queries `sv_graph_query`, getting an instant answer thanks to the in-RAM LRU cache. A background file watcher (fsnotify, enabled by default) automatically syncs the graph when source files change, so the dependency data is always fresh without manual `sv_graph_sync` calls.
+- **Context Pack (Graph + Memory in one call):** Before touching a file, the AI calls `sv_mem_context_pack` (or the `sv-memory context <path>` CLI) to get the node's structural role (fan-in/fan-out, community) plus the decisions, standards, and bugfixes linked to that path — one bounded call instead of several searches, with each `why` truncated. In strict mode (default), Claude Code and Antigravity hooks also nudge the agent on the first Write/Edit to capture knowledge before modifying code.
 - **Silent Context Injection (opt-in):** With Claude Code hooks + `--context-injection`, the first Read of each file automatically injects its context pack as `additionalContext` — relevant context at the exact moment, with no search round-trip.
 - **Automatic Saving:** When solving a problem or defining a standard, the AI runs `sv_mem_save`, recording the learning in SQLite and syncing it to `.sv-memory/chunks/` for your Git version control.
 - **Token Ledger:** `sv_mem_stats` reports the estimated tokens injected into the session since `sv_mem_session_start` alongside the `max_response_tokens` budget, so the agent knows when to compact.

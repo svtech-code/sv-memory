@@ -5,6 +5,31 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+### Added
+
+- **`sv_spec_list` MCP tool**: lists active spec changes with status, title, task progress, and capability. Mirrors `openspec list` — agents can discover what proposals are pending before starting work.
+- **`sv_spec_get` MCP tool**: returns a full change record (proposal, goal, design, tasks with checkbox progress, rendered delta requirements) by ID or slug. Mirrors `openspec show`.
+- **Actionable Auto-Boot bundle**: `sv_mem_session_start` now lists active changes with slug, status, and task progress (e.g. `- auth-improvements [proposed] Implement auth — 2/5 tasks completed (40%)`) instead of just a count. Agents see what is pending at session start.
+- **Graph-first mode as default**: hook mode flipped from soft (nudge-only) to strict (graph-first redirect). `--soft` flag added to `init`/`setup`/`hooks install` for opt-out. `SV_MEMORY_STRICT_DISABLE=1` env var now works on all platforms (Claude Code, Antigravity, OpenCode).
+- **OpenCode strict plugin**: new `opencode-plugin-strict.ts` with `tool.execute.before` hook that redirects the first Read per session to `sv-memory context <file>` (fail-open). Installed by default via `sv-memory setup opencode` (or `init`/`hooks install`).
+- **Write nudge in strict hooks**: Claude Code and Antigravity strict hooks now emit a once-per-session nudge on the first Write/Edit call reminding the agent to run `sv_propose_spec` before modifying behavior (MANDATORY per AGENTS.md). OpenCode's write nudge is protocol-driven (API limitation).
+- **Background file watcher (fsnotify)**: new `internal/graph/watcher.go` watches the project directory for file changes with debounce (default 2s). When active, `getOrLoadGraph` skips the O(n) `DetectStaleFiles` walk per query — graph freshness comes from background sync, query path is O(1). Config keys: `graph_watcher_enabled` (default true), `graph_watch_debounce_ms` (default 2000). Disable via `sv-memory configure set graph_watcher_enabled false`.
+- **`sv_graph_search` and `sv_graph_communities` removed from deferred loading**: these discovery tools are now visible at session start so agents can find them without reading AGENTS.md first.
+- **`sv_graph_search` and `sv_graph_communities` documented in protocol**: added to AGENTS.md Quick Reference and protocol template graph section.
+
+### Changed
+
+- **Protocol Spec-Driven Decision Cycle rewritten as MANDATORY gate**: AGENTS.md now explicitly states the 5-tool loop (list → get → propose → update → validate → commit) is mandatory before behavior/architecture changes. Config/docs-only changes are exempt.
+- **Improved `sv_graph_query` description**: now states "Use BEFORE reading files to understand a module's dependency sub-graph in one call" instead of generic "Retrieve project code structure".
+- **Improved `sv_graph_path` description**: now states "Use to trace how two modules connect without manually reconstructing the call chain" instead of generic "Find the shortest path".
+- **OpenCode skill synced**: `.opencode/skills/sv-memory/SKILL.md` updated with explore-first workflow, `sv_graph_search` for discovery, and the complete spec cycle.
+- **Antigravity skill synced**: `.agents/skills/sv-memory/SKILL.md` updated with `sv_graph_explore`, `sv_graph_search`, `sv_graph_communities` in Graph section.
+
+### Fixed
+
+- **OpenCode skill desynchronization**: `.opencode/skills/sv-memory/SKILL.md` was still using `sv_graph_god_nodes` + `sv_graph_explain` (2-call pattern) instead of `sv_graph_explore` (1-call unified). Now synced with antigravity skill pattern.
+- **Protocol test updated**: `TestProtocolTemplateContainsSpecDriven` updated to check for `MANDATORY` gate, `sv_spec_list`/`sv_spec_get`, and `Spec Flow` in Quick Reference.
+
 ## [v0.18.0] - 2026-09-02
 
 ### Added

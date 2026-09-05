@@ -30,13 +30,15 @@ Use the 3-layer pattern instead of dumping full memory content:
 2. **Timeline:** `sv_mem_timeline(observation_id=...)` shows chronological context around a memory.
 3. **Get:** `sv_mem_get(id=...)` retrieves full content on demand.
 
-## Spec-Driven Decision Cycle (OpenSpec Workflow):
-For structural, architectural, or multi-step behavior changes:
-1. **Explore Context:** `sv_mem_context_pack(path=..., include_changes="true")` to surface role, linked decisions, active changes, and capability state.
-2. **Propose:** `sv_propose_spec(slug="...", title="...", what="...", where_path="...", requirements="...", tasks="...")` registers the change and runs the pre-flight check (`BLOCK`/`WARN`/`PASS` against invariants). The `requirements` parameter supports OpenSpec delta requirements (`## ADDED/MODIFIED/REMOVED Requirements`, `### Requirement:`, `#### Scenario:` with `GIVEN/WHEN/THEN/AND`).
-3. **Apply & Track Tasks:** As you implement each task, call `sv_update_spec(change_id="...", tasks="...")` to update progress checkboxes (`- [x]`) and refine design/requirements in real-time.
-4. **Validate:** `sv_validate_decision(change_id="...")` re-checks invariants and validates delta requirements (RFC 2119 keyword presence and scenario consistency).
-5. **Commit:** `sv_commit_spec(change_id="...")` promotes the change into a durable decision memory, merges delta requirements into capability state (`.sv-memory/specs/capabilities/` and `openspec/`), and marks it applied.
+## Spec-Driven Decision Cycle (MANDATORY before behavior/architecture changes):
+
+If the change touches behavior, contracts, APIs, or architecture, use this loop. Config/docs-only changes are exempt.
+
+1. **List pending:** `sv_spec_list()` shows active changes with status and task progress.
+2. **Context + Propose:** `sv_mem_context_pack(path=..., include_changes="true")` for context, then `sv_propose_spec(slug=..., title=..., what=..., where_path=..., requirements=..., tasks=..., capability_path=...)` with pre-flight check (`BLOCK`/`WARN`/`PASS`). The `requirements` parameter supports OpenSpec delta requirements (`## ADDED/MODIFIED/REMOVED Requirements`, `### Requirement:`, `#### Scenario:` with `GIVEN/WHEN/THEN/AND`).
+3. **Get + Apply:** `sv_spec_get(change_id="<slug>")` retrieves proposal/design/tasks. Implement code, then `sv_update_spec(change_id=..., tasks=...)` marks completed checkboxes.
+4. **Validate:** `sv_validate_decision(change_id=...)` re-checks after edits (PASS/WARN/BLOCK); validate delta requirements (RFC 2119, scenario consistency).
+5. **Commit:** `sv_commit_spec(change_id=...)` promotes to durable decision memory, merges deltas into capability state (`.sv-memory/specs/capabilities/` and `openspec/`), stamps applied.
 
 ## Graph — Structural Exploration:
 - `sv_graph_explore`: Multi-symbol structural role, call paths, and blast radius.
@@ -50,5 +52,5 @@ For structural, architectural, or multi-step behavior changes:
 - **Memory CRUD:** `sv_mem_save`, `sv_mem_update`, `sv_mem_get`, `sv_mem_delete`, `sv_mem_search`, `sv_mem_timeline`
 - **Quality & Health:** `sv_mem_compact`, `sv_mem_stats`, `sv_mem_diagnose`, `sv_mem_conflicts`, `sv_mem_judge`
 - **Context Pack:** `sv_mem_context_pack(path=...)`, `sv_graph_explore`
-- **Spec Engine (OpenSpec):** `sv_propose_spec`, `sv_update_spec`, `sv_validate_decision`, `sv_commit_spec`
+- **Spec Flow:** `sv_spec_list`, `sv_spec_get`, `sv_propose_spec`, `sv_update_spec`, `sv_validate_decision`, `sv_commit_spec`
 - **Graph:** `sv_graph_explore`, `sv_graph_diff`, `sv_graph_query`, `sv_graph_explain`, `sv_graph_god_nodes`, `sv_graph_path`, `sv_graph_sync`, `sv_graph_report`

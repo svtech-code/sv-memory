@@ -451,6 +451,19 @@ func TestHookScriptContentClaudeCodeStrictIsNudgeOnly(t *testing.T) {
 	}
 }
 
+func TestClaudeCodeStrictHasWriteNudge(t *testing.T) {
+	content := mustHookScript(t, PlatformClaudeCode, ModeStrict)
+	if !strings.Contains(content, "Write|Edit") {
+		t.Error("claude-code strict script should match Write|Edit tools")
+	}
+	if !strings.Contains(content, "sv_propose_spec") {
+		t.Error("claude-code strict script should nudge toward sv_propose_spec on first write")
+	}
+	if !strings.Contains(content, "WRITE_FLAG") {
+		t.Error("claude-code strict script should track write nudge per session")
+	}
+}
+
 func TestInstallAntigravity(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-hook-agy-test")
 	if err != nil {

@@ -27,6 +27,12 @@ const execFileAsync = promisify(execFile)
  *    is left untouched and the read proceeds normally.
  *
  *    Opt-out: set SV_MEMORY_STRICT_DISABLE=1 to disable the redirect entirely.
+ *
+ * Write nudge: OpenCode's plugin API cannot inject text into write/edit
+ * operations (it can only mutate args). The write nudge ("consider
+ * sv_propose_spec before modifying behavior") is protocol-driven via
+ * AGENTS.md, which the agent sees at session start. On Claude Code,
+ * the PreToolUse hook emits this nudge as visible text.
  */
 export const SvMemoryPlugin: Plugin = async ({ $ }) => {
   // Track which sessions have already had their first-read redirect.
