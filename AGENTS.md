@@ -62,10 +62,12 @@ Always persist design knowledge as structured memories with a topic_key, not jus
 The sv-memory graph is a pre-computed structural index of the project (source, call paths, blast radius you would otherwise re-derive by reading). For any symbol or path the graph has synced, prefer graph tools over a raw grep/read loop: one call returns line-numbered source, structure, and consequences in far fewer tokens and round-trips.
 
 - **Explore first (read-equivalent):** Call 'sv_graph_explore' BEFORE reading or grepping a file. Pass one or more comma-separated symbols/paths; it returns each symbol's structural role, a surgical line-numbered source snippet (treat it as already read), the shortest call path between them, blast radius, and linked memories. 'sv_mem_context_pack(path="<file|pkg>")' is the same contract for a single path plus active changes and capabilities.
+- **Discover by pattern:** Call 'sv_graph_search(query="keyword")' to find nodes matching a text pattern across id/label/path when the exact symbol name is unknown. Then explore results with 'sv_graph_explore' or 'sv_graph_explain'.
 - **Orient before touching code:** Call 'sv_graph_god_nodes' to see the most-connected hub nodes — these are the architectural hotspots any change may ripple through.
 - **Understand a module:** Call 'sv_graph_explain(node=...)' before refactoring, deleting, or restructuring a file/module. It reports the node's role, community, centrality, fan-in/fan-out, neighbors, and suggested questions.
 - **Inspect dependencies:** Call 'sv_graph_query(path_or_node=...)' to see a module's dependency sub-graph (imports/calls/depends_on) with depth, direction, and relation-type filters.
 - **Trace a connection:** Call 'sv_graph_path(source=..., target=...)' to find the shortest dependency path between two nodes.
+- **Community structure:** Call 'sv_graph_communities()' to list top communities with auto-labels and member counts, or 'sv_graph_communities(community_id=N)' for per-member detail.
 
 ### Anti-patterns (don't):
 
@@ -107,7 +109,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **Context Pack:** sv_mem_context_pack (one bounded call: graph role + linked memories + active changes + capabilities for a file/package/symbol)
 - **Decision Engine:** sv_propose_spec, sv_update_spec, sv_validate_decision, sv_commit_spec (propose → update tasks/design → validate → commit cycle with pre-flight checks and delta requirements)
 - **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive | capabilities (human-readable Markdown projection of changes and capability state under .sv-memory/specs/ and openspec/)
-- **Graph:** sv_graph_explore, sv_graph_query, sv_graph_diff, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_report, sv_graph_viz, sv_graph_merge
+- **Graph:** sv_graph_explore, sv_graph_search, sv_graph_communities, sv_graph_query, sv_graph_diff, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_report, sv_graph_viz, sv_graph_merge
 
 ## Repository Restrictions & Commit Standards:
 

@@ -6,9 +6,9 @@ Persistent architectural memory and dependency graph for AI coding agents.
 
 sv-memory provides two complementary capabilities:
 - **sv_mem_search / sv_mem_get / sv_mem_timeline**: Retrieve past architectural decisions, bug fixes, standards, discussions, and progress journals from persistent memory.
-- **sv_graph_query / sv_graph_explain / sv_graph_god_nodes / sv_graph_path / sv_graph_sync**: Query the project's code dependency graph to understand module structure, relationships, and community clusters.
+- **sv_graph_explore / sv_graph_search / sv_graph_query / sv_graph_explain / sv_graph_sync**: Query the project's code dependency graph to understand module structure, relationships, and community clusters.
 
-Using these tools **before** reading source files directly saves tokens and provides richer architectural awareness.
+**Use graph tools before reading source files** to save tokens and get richer architectural awareness in fewer round-trips.
 
 ## Session Lifecycle
 
@@ -56,11 +56,10 @@ The top search result is already expanded inline — only drill further when nec
 
 ### Before reading source files
 
-1. Call `sv_graph_god_nodes` to see the most-connected hub nodes (architectural hotspots).
-2. Call `sv_graph_explain` on the module/file you are about to read to understand its role, centrality, and neighbors.
+1. **ONE call to understand code:** Call `sv_graph_explore(path="file,symbol1,symbol2")` — resolves multiple symbols in one call, returns each symbol's structural role, surgical line-numbered source snippets, the call path between them, blast radius, and linked memories. This replaces manual `god_nodes` + `explain` + `query` + `path` chaining.
+2. **If you don't know the exact name:** Call `sv_graph_search(query="keyword")` to discover matching nodes across id/label/path. Then explore the results with `sv_graph_explore` or `sv_graph_explain`.
 3. Call `sv_mem_search` with keywords related to the task to check if a past decision, discussion, or bug fix already exists.
-4. If you find relevant context, call `sv_mem_get` to retrieve the full content.
-5. Only read the raw source file after the graph and memory context has been exhausted.
+4. Only read the raw source file after the graph and memory context has been exhausted.
 
 ### When fixing bugs
 
@@ -104,4 +103,4 @@ The top search result is already expanded inline — only drill further when nec
 - **Context Pack:** `sv_mem_context_pack` (one bounded call: graph role + linked memories + active changes for a file/package/symbol)
 - **Decision Engine (OpenSpec):** `sv_propose_spec`, `sv_update_spec`, `sv_validate_decision`, `sv_commit_spec` (propose → update tasks/design → validate → commit cycle with pre-flight checks and OpenSpec-style delta requirements)
 - **Spec Mirror (CLI):** `sv-memory specs export | import <slug> | list | archive | capabilities` (human-readable Markdown projection of changes and capability state under `.sv-memory/specs/` and `openspec/`)
-- **Graph:** `sv_graph_explore`, `sv_graph_diff`, `sv_graph_query`, `sv_graph_explain`, `sv_graph_god_nodes`, `sv_graph_path`, `sv_graph_sync`, `sv_graph_surprising_connections`, `sv_graph_report`
+- **Graph:** `sv_graph_explore` (ONE-call explore: multi-symbol + source + call path), `sv_graph_search` (discover nodes by pattern when name is unknown), `sv_graph_communities` (list top communities), `sv_graph_diff`, `sv_graph_query`, `sv_graph_explain`, `sv_graph_god_nodes`, `sv_graph_path`, `sv_graph_sync`, `sv_graph_report`

@@ -501,7 +501,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 19. Tool: sv_graph_query
 	graphQueryTool := mcp.NewTool("sv_graph_query",
-		mcp.WithDescription("Retrieve project code structure, connections, imports, and dependencies for a given module, file, or package."),
+		mcp.WithDescription("Retrieve a module's dependency sub-graph (imports/calls/depends_on) in one call. Use BEFORE reading files to understand a module's connections without grepping multiple sources."),
 		mcp.WithString("path_or_node", mcp.Required(), mcp.Description("The file path, package name, or module to inspect")),
 		mcp.WithString("depth", mcp.Description("Hop distance depth in the dependency graph (default is '1')")),
 		mcp.WithString("relation_type", mcp.Description("Filter by relation type ('imports', 'calls', 'depends_on')")),
@@ -514,7 +514,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 20. Tool: sv_graph_path
 	graphPathTool := mcp.NewTool("sv_graph_path",
-		mcp.WithDescription("Find the shortest path between two nodes in the dependency graph."),
+		mcp.WithDescription("Find the shortest dependency path between two nodes in the graph. Use to trace how two modules connect without manually reconstructing the call chain."),
 		mcp.WithString("source", mcp.Required(), mcp.Description("The starting node ID (file path, package name, etc.)")),
 		mcp.WithString("target", mcp.Required(), mcp.Description("The target node ID to reach")),
 		mcp.WithString("max_hops", mcp.Description("Maximum hop distance (default '10')")),
@@ -595,8 +595,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 29. Tool: sv_graph_search
 	graphSearchTool := mcp.NewTool("sv_graph_search",
-		mcp.WithDescription("Discover graph nodes matching a text pattern across id/label/path. Returns every match with type, path, degree, fan-in/fan-out, and community — the discovery path when the exact symbol name is unknown (sv_graph_explain/sv_graph_query only resolve a single node)."),
-		mcp.WithDeferLoading(true),
+		mcp.WithDescription("Discover graph nodes matching a text pattern across id/label/path. Returns every match with type, path, degree, fan-in/fan-out, and community — use this when the exact symbol name is unknown (sv_graph_explain/sv_graph_query only resolve a single node)."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Text pattern to match against node id, label, and path (required)")),
 		mcp.WithString("limit", mcp.Description("Maximum number of results (default '10', max 50)")),
 		mcp.WithString("node_type", mcp.Description("Optional node type filter (file, function, class, package, etc.)")),
@@ -606,7 +605,6 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	// 30. Tool: sv_graph_communities
 	graphCommunitiesTool := mcp.NewTool("sv_graph_communities",
 		mcp.WithDescription("List the top communities in the dependency graph with auto-labels and member counts, or detail a specific community's members (top_n / community_id). MCP parity for 'sv-memory graph communities'."),
-		mcp.WithDeferLoading(true),
 		mcp.WithString("top_n", mcp.Description("Number of top communities to list (default '10', max 50)")),
 		mcp.WithString("community_id", mcp.Description("Optional community id to detail its member nodes (type, degree, fan-in/fan-out)")),
 	)
