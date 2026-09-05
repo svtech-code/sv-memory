@@ -17,6 +17,7 @@ import (
 
 	"github.com/svtech-code/sv-memory/internal/config"
 	"github.com/svtech-code/sv-memory/internal/db"
+	"github.com/svtech-code/sv-memory/internal/graph"
 	"github.com/svtech-code/sv-memory/internal/memory"
 )
 
@@ -107,6 +108,10 @@ var AllTools = []Tool{
 var (
 	shutdownCleanup func()
 	cleanupMu       sync.Mutex
+
+	// globalFileWatcher is the background file watcher for the active project.
+	// Package-level so getOrLoadGraph can check IsDirty() without a Server ref.
+	globalFileWatcher *graph.FileWatcher
 )
 
 // Server holds the long-lived state shared by every MCP tool handler: the
@@ -181,6 +186,16 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 
 	if viper.GetBool("auto_compaction_enabled") {
 		memory.StartAutoCompaction(ctx, pool.Writer, cfg.ProjectID, viper.GetInt("compaction_interval_minutes"))
+	}
+
+	// Start the background file watcher to keep the graph fresh without
+	// requiring DetectStaleFiles per query. Default enabled; disable via
+	// `sv-memory configure set graph_watcher_enabled false`.
+	if viper.GetBool("graph_watcher_enabled") {
+		debounceMs := viper.GetInt("graph_watch_debounce_ms")
+		debounce := time.Duration(debounceMs) * time.Millisecond
+		globalFileWatcher = graph.StartWatcher(ctx, pool.Writer, cfg.ProjectID, cfg.ProjPath,
+			graph.WatcherConfig{Debounce: debounce})
 	}
 
 	go func() {

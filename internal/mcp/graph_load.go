@@ -20,10 +20,22 @@ func (s *Server) computeCentralityIfMissing() {
 }
 
 // getOrLoadGraph returns the in-memory graph for the active project, refreshing
-// it lazily only when files changed on disk. This keeps the graph current
-// across edits without a filesystem watcher, and without re-scanning on every
-// query when nothing changed.
+// it lazily only when files changed on disk. When the file watcher is active and
+// no changes have been detected (dirty == false), the O(n) DetectStaleFiles walk
+// is skipped entirely — the watcher keeps the graph synced in background so the
+// cache is already fresh. Falls back to the lazy DetectStaleFiles path when the
+// watcher is disabled or reports pending changes.
 func (s *Server) getOrLoadGraph() (*graph.InMemoryGraph, error) {
+	// When the file watcher is active and reports no pending changes, the
+	// background sync has already kept the graph and cache up to date. Skip
+	// the O(n) DetectStaleFiles walk entirely.
+	if globalFileWatcher != nil && !globalFileWatcher.IsDirty() {
+		if cached, ok := graph.GlobalGraphCache.Get(s.pool.Reader, s.cfg.ProjectID); ok {
+			return cached, nil
+		}
+	}
+
+	// Watcher disabled, or dirty — fall back to the lazy sync path.
 	startStale := time.Now()
 	if synced, err := graph.SyncGraphIfStale(s.pool.Writer, s.cfg.ProjectID, s.cfg.ProjPath); err != nil {
 		return nil, err
