@@ -30,6 +30,11 @@ sv_mem_hash() {
   { md5sum 2>/dev/null || md5 -q 2>/dev/null || shasum -a 256 2>/dev/null; } | cut -d' ' -f1
 }
 
+# --- Explicit opt-out: never nudge or block. ---
+if [ -n "${SV_MEMORY_STRICT_DISABLE:-}" ]; then
+  exit 0
+fi
+
 TOOL_NAME="${CLAUDE_TOOL_CALL_NAME:-}"
 
 case "$TOOL_NAME" in

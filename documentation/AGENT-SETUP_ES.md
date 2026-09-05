@@ -41,7 +41,7 @@ MCP y los hooks.
 - `--agents <a,b,c>`: lista separada por comas de asistentes a configurar durante init.
 - `--all`: configura todos los asistentes soportados sin menú interactivo.
 - `--skip-setup`: inicializa base de datos, reglas y hook de Git, omitiendo la configuración de asistentes.
-- `--strict`: instala hooks estrictos (bloquea la primera lectura cruda en Antigravity).
+- `--soft`: desactivar el modo graph-first (estricto) por defecto y usar solo-nudge (`--strict` se acepta por compatibilidad pero es redundante ya que graph-first ahora es el defecto en todas las plataformas).
 
 ## Actualizar sv-memory (post-actualización)
 

@@ -23,10 +23,10 @@ var hooksInstallCmd = &cobra.Command{
 			return err
 		}
 
-		strict, _ := cmd.Flags().GetBool("strict")
-		mode := hook.ModeSoft
-		if strict {
-			mode = hook.ModeStrict
+		soft, _ := cmd.Flags().GetBool("soft")
+		mode := hook.ModeStrict
+		if soft {
+			mode = hook.ModeSoft
 		}
 
 		platformFilter, _ := cmd.Flags().GetString("platform")
@@ -62,9 +62,9 @@ var hooksInstallCmd = &cobra.Command{
 		}
 
 		if success > 0 {
-			modeLabel := "soft (nudge)"
-			if strict {
-				modeLabel = "strict (blocks first raw read on Antigravity; nudge-only elsewhere)"
+			modeLabel := "graph-first (redirects first read to context)"
+			if mode == hook.ModeSoft {
+				modeLabel = "soft (nudge-only)"
 			}
 			fmt.Printf("\nHooks/skills installed successfully (%s mode).\n", modeLabel)
 			fmt.Println("Restart your AI assistant to activate.")

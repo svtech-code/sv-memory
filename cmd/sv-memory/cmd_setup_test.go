@@ -194,7 +194,7 @@ func TestAutoWireProjectAgentsFreshAndExisting(t *testing.T) {
 	}
 
 	// 1. Fresh project: wire explicit agent first
-	if err := autoWireProjectAgents(tempDir, false, "antigravity"); err != nil {
+	if err := autoWireProjectAgents(tempDir, hook.ModeSoft, "antigravity"); err != nil {
 		t.Fatalf("autoWireProjectAgents explicit failed: %v", err)
 	}
 	if !statusAntigravity(tempDir) {
@@ -202,7 +202,7 @@ func TestAutoWireProjectAgentsFreshAndExisting(t *testing.T) {
 	}
 
 	// 2. Existing project with only Antigravity installed: auto-wire without arg reconciles Antigravity
-	if err := autoWireProjectAgents(tempDir, false, ""); err != nil {
+	if err := autoWireProjectAgents(tempDir, hook.ModeSoft, ""); err != nil {
 		t.Fatalf("autoWireProjectAgents reconcile failed: %v", err)
 	}
 	if !statusAntigravity(tempDir) {
@@ -224,8 +224,8 @@ func TestConfigureTargetAgents(t *testing.T) {
 	}
 
 	// Target only cursor
-	if err := configureTargetAgents(tempDir, false, []string{"cursor"}); err != nil {
-		t.Fatalf("configureTargetAgents failed: %v", err)
+	if err := configureTargetAgentsMode(tempDir, hook.ModeSoft, []string{"cursor"}); err != nil {
+		t.Fatalf("configureTargetAgentsMode failed: %v", err)
 	}
 	if !statusCursor(tempDir) {
 		t.Error("expected cursor to be installed")

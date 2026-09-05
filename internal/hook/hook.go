@@ -772,7 +772,7 @@ func (e *HookEngine) installOpenCodeSkill() ([]string, error) {
 	if err := os.MkdirAll(filepath.Dir(pluginPath), 0755); err != nil {
 		return created, fmt.Errorf("failed to create .opencode/plugin dir: %w", err)
 	}
-	pluginContent := opencodePluginScript()
+	pluginContent := opencodePluginScript(e.mode)
 	if pluginContent == "" {
 		return created, fmt.Errorf("missing opencode plugin template")
 	}

@@ -130,7 +130,7 @@ sv-memory init
 > **Re-running in existing projects:** `sv-memory init` is fully idempotent. Running it in an existing project reconciles and updates all active skills, hooks, and new tool permissions without disturbing existing configurations.
 
 > **Optional flags:**
-> - `sv-memory init --strict`: installs strict hooks (blocks raw file reads until memory/graph is queried).
+> - Graph-first (strict) mode is now the **default** on all platforms. The `--strict` flag is accepted for backward compatibility but is redundant. Use `--soft` to opt out and get nudge-only mode instead.
 > - `sv-memory init --agent antigravity`: explicitly targets a specific assistant.
 > - `sv-memory init --skip-setup`: initializes DB and graph without touching agent integrations.
 tool permissions) in one command, use `sv-memory setup`:

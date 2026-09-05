@@ -130,7 +130,7 @@ sv-memory init
 > **Re-ejecución en proyectos existentes:** `sv-memory init` es totalmente idempotente. Ejecutarlo en un proyecto existente reconcilia y actualiza todos los skills activos, hooks y nuevos permisos MCP sin alterar configuraciones previas.
 
 > **Flags opcionales:**
-> - `sv-memory init --strict`: instala hooks en modo estricto (bloquea lecturas crudas de archivos hasta consultar memoria/grafo).
+> - El modo graph-first (estricto) ahora es el **valor por defecto** en todas las plataformas. El flag `--strict` se acepta por compatibilidad pero es redundante. Usa `--soft` para desactivarlo y usar modo solo-nudge.
 > - `sv-memory init --agent antigravity`: inicializa o reconcilia un asistente específico.
 > - `sv-memory init --skip-setup`: inicializa solo BD y grafo sin tocar integraciones de agentes.
 

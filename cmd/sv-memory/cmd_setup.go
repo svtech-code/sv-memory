@@ -22,39 +22,13 @@ var setupAgents = []string{"claude-code", "opencode", "cursor", "windsurf", "ant
 
 // setupAgentWiring wires a single agent end-to-end: MCP config, hooks/skills +
 // native plugin files, protocol injection, and MCP tool permissions.
+// Deprecated: use setupAgentWiringMode for new code.
 func setupAgentWiring(agent string, strict bool) error {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-
-	execPath, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	execPath = filepath.Clean(execPath)
-
 	mode := hook.ModeSoft
 	if strict {
 		mode = hook.ModeStrict
 	}
-
-	switch agent {
-	case "claude-code":
-		return setupClaudeCode(cwd, execPath, mode)
-	case "opencode":
-		return setupOpenCode(cwd, mode)
-	case "cursor":
-		return setupCursor(cwd, execPath)
-	case "windsurf":
-		return setupWindsurf(cwd, execPath)
-	case "antigravity":
-		return setupAntigravity(cwd, mode)
-	case "codex":
-		return setupCodex(cwd, mode)
-	default:
-		return fmt.Errorf("unsupported agent %q (supported: %v)", agent, setupAgents)
-	}
+	return setupAgentWiringMode(agent, mode)
 }
 
 // installedAgents detects which supported agents are already configured in cwd.
@@ -82,7 +56,63 @@ func installedAgents(cwd string) []string {
 }
 
 // configureTargetAgents wires the specified agents in cwd.
+// Deprecated: use configureTargetAgentsMode for new code.
 func configureTargetAgents(cwd string, strict bool, agents []string) error {
+	mode := hook.ModeSoft
+	if strict {
+		mode = hook.ModeStrict
+	}
+	return configureTargetAgentsMode(cwd, mode, agents)
+}
+
+// autoWireProjectAgents reconciles agents already configured in the given directory,
+// or sets up the explicitly requested agent.
+func autoWireProjectAgents(cwd string, mode hook.Mode, requestedAgent string) error {
+	if requestedAgent != "" {
+		return setupAgentWiringMode(requestedAgent, mode)
+	}
+
+	installed := installedAgents(cwd)
+	if len(installed) == 0 {
+		return nil
+	}
+
+	return configureTargetAgentsMode(cwd, mode, installed)
+}
+
+// setupAgentWiringMode wires a single agent end-to-end with explicit mode.
+func setupAgentWiringMode(agent string, mode hook.Mode) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
+	execPath, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	execPath = filepath.Clean(execPath)
+
+	switch agent {
+	case "claude-code":
+		return setupClaudeCode(cwd, execPath, mode)
+	case "opencode":
+		return setupOpenCode(cwd, mode)
+	case "cursor":
+		return setupCursor(cwd, execPath)
+	case "windsurf":
+		return setupWindsurf(cwd, execPath)
+	case "antigravity":
+		return setupAntigravity(cwd, mode)
+	case "codex":
+		return setupCodex(cwd, mode)
+	default:
+		return fmt.Errorf("unsupported agent %q (supported: %v)", agent, setupAgents)
+	}
+}
+
+// configureTargetAgentsMode wires the specified agents with explicit mode.
+func configureTargetAgentsMode(cwd string, mode hook.Mode, agents []string) error {
 	anyErr := false
 	for _, a := range agents {
 		found := false
@@ -98,7 +128,7 @@ func configureTargetAgents(cwd string, strict bool, agents []string) error {
 			continue
 		}
 
-		if err := setupAgentWiring(a, strict); err != nil {
+		if err := setupAgentWiringMode(a, mode); err != nil {
 			fmt.Printf("⚠️  Warning: agent setup for %s encountered an issue: %v\n", a, err)
 			anyErr = true
 		}
@@ -107,22 +137,6 @@ func configureTargetAgents(cwd string, strict bool, agents []string) error {
 		return fmt.Errorf("one or more agent setups failed during initialization")
 	}
 	return nil
-}
-
-// autoWireProjectAgents reconciles agents already configured in the given directory,
-// or sets up the explicitly requested agent. It does not blindly install all agents
-// on an unconfigured directory.
-func autoWireProjectAgents(cwd string, strict bool, requestedAgent string) error {
-	if requestedAgent != "" {
-		return setupAgentWiring(requestedAgent, strict)
-	}
-
-	installed := installedAgents(cwd)
-	if len(installed) == 0 {
-		return nil
-	}
-
-	return configureTargetAgents(cwd, strict, installed)
 }
 
 func setupClaudeCode(cwd, execPath string, mode hook.Mode) error {
@@ -332,7 +346,7 @@ setup status for every supported agent. Use 'setup <agent>' to install a single
 agent or 'setup --all' for every agent.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		strict, _ := cmd.Flags().GetBool("strict")
+		soft, _ := cmd.Flags().GetBool("soft")
 		all, _ := cmd.Flags().GetBool("all")
 
 		if len(args) == 0 && !all {
@@ -344,9 +358,14 @@ agent or 'setup --all' for every agent.`,
 			agents = []string{args[0]}
 		}
 
+		mode := hook.ModeStrict
+		if soft {
+			mode = hook.ModeSoft
+		}
+
 		anyErr := false
 		for _, a := range agents {
-			if err := setupAgentWiring(a, strict); err != nil {
+			if err := setupAgentWiringMode(a, mode); err != nil {
 				fmt.Printf("❌ %s: %v\n", a, err)
 				anyErr = true
 				continue
@@ -360,7 +379,8 @@ agent or 'setup --all' for every agent.`,
 }
 
 func init() {
-	setupCmd.Flags().Bool("strict", false, "Install strict hooks (block first raw read on Antigravity)")
+	setupCmd.Flags().Bool("strict", false, "accepted for backward compatibility (strict is now the default)")
+	setupCmd.Flags().Bool("soft", false, "Install soft hooks (nudge-only, no graph-first redirect)")
 	setupCmd.Flags().Bool("all", false, "Install for every supported agent")
 }
 

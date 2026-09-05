@@ -41,7 +41,7 @@ MCP config and hooks.
 - `--agents <a,b,c>`: comma-separated list of agents to configure during init.
 - `--all`: configure all supported assistants without interactive prompt.
 - `--skip-setup`: initialize database, rules, and git hook, skipping assistant wiring.
-- `--strict`: install strict hooks (blocks first raw file read on Antigravity).
+- `--soft`: opt out of the default graph-first (strict) mode and use nudge-only mode instead (`--strict` is accepted for backward compatibility but redundant since graph-first is now the default on all platforms).
 
 ## Updating sv-memory (post-update)
 

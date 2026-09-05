@@ -104,10 +104,15 @@ var initCmd = &cobra.Command{
 		// 7. Auto-wire / reconcile AI coding assistants (skills, hooks, MCP permissions)
 		skipSetup, _ := cmd.Flags().GetBool("skip-setup")
 		if !skipSetup {
-			strict, _ := cmd.Flags().GetBool("strict")
+			soft, _ := cmd.Flags().GetBool("soft")
 			agentFlag, _ := cmd.Flags().GetString("agent")
 			agentsFlag, _ := cmd.Flags().GetString("agents")
 			allFlag, _ := cmd.Flags().GetBool("all")
+
+			mode := hook.ModeStrict
+			if soft {
+				mode = hook.ModeSoft
+			}
 
 			var targetAgents []string
 			if agentFlag != "" {
@@ -153,7 +158,7 @@ var initCmd = &cobra.Command{
 
 			if len(targetAgents) > 0 {
 				fmt.Println("Configurando y reconciliando integraciones de asistentes IA...")
-				if err := configureTargetAgents(cfg.ProjPath, strict, targetAgents); err != nil {
+				if err := configureTargetAgentsMode(cfg.ProjPath, mode, targetAgents); err != nil {
 					fmt.Printf("Warning: failed to configure assistant integrations: %v\n", err)
 				}
 			}
@@ -196,8 +201,9 @@ func promptSelectAgents(preselected []string) ([]string, error) {
 }
 
 func init() {
-	initCmd.Flags().Bool("strict", false, "Install strict hooks during agent setup (block first raw read on Antigravity)")
-	initCmd.Flags().String("agent", "", "Explicitly target a single agent during init (e.g. claude-code, antigravity)")
+		initCmd.Flags().Bool("strict", false, "accepted for backward compatibility (strict is now the default)")
+		initCmd.Flags().Bool("soft", false, "Install soft hooks (nudge-only, no graph-first redirect)")
+		initCmd.Flags().String("agent", "", "Explicitly target a single agent during init (e.g. claude-code, antigravity)")
 	initCmd.Flags().String("agents", "", "Comma-separated list of agents to target during init (e.g. claude-code,antigravity)")
 	initCmd.Flags().Bool("all", false, "Configure all supported AI assistant integrations during init")
 	initCmd.Flags().Bool("skip-setup", false, "Skip agent hook/skill/mcp setup during initialization")

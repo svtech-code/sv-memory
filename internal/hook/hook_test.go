@@ -544,6 +544,89 @@ func TestHookScriptContentOpenCode(t *testing.T) {
 	}
 }
 
+func TestHookScriptContentOpenCodeStrict(t *testing.T) {
+	content := mustHookScript(t, PlatformOpenCode, ModeStrict)
+	if !strings.Contains(content, "sv_mem_search") {
+		t.Error("opencode strict skill should contain sv_mem_search instructions")
+	}
+}
+
+func TestOpenCodePluginStrictHasToolExecuteBefore(t *testing.T) {
+	data, err := hookScriptsFS.ReadFile("scripts/opencode-plugin-strict.ts")
+	if err != nil {
+		t.Fatalf("failed to read strict plugin: %v", err)
+	}
+	plugin := string(data)
+	if !strings.Contains(plugin, "tool.execute.before") {
+		t.Error("strict plugin should contain tool.execute.before hook")
+	}
+	if !strings.Contains(plugin, "SV_MEMORY_STRICT_DISABLE") {
+		t.Error("strict plugin should respect SV_MEMORY_STRICT_DISABLE opt-out")
+	}
+	if !strings.Contains(plugin, "sv_memory_context") {
+		t.Error("strict plugin should still register sv_memory_context tool")
+	}
+}
+
+func TestInstallOpenCodeStrictPlugin(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-hook-oc-strict")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	eng := New(tempDir, ModeStrict)
+	results := eng.Install([]Platform{PlatformOpenCode})
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Err != nil {
+		t.Fatalf("install failed: %v", results[0].Err)
+	}
+
+	pluginPath := filepath.Join(tempDir, ".opencode", "plugin", "sv-memory.ts")
+	data, err := os.ReadFile(pluginPath)
+	if err != nil {
+		t.Fatalf("failed to read installed plugin: %v", err)
+	}
+	plugin := string(data)
+	if !strings.Contains(plugin, "tool.execute.before") {
+		t.Error("installed strict plugin should contain tool.execute.before")
+	}
+	if !strings.Contains(plugin, "redirected") {
+		t.Error("installed strict plugin should track redirected sessions")
+	}
+}
+
+func TestInstallOpenCodeSoftPluginNoRedirect(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-hook-oc-soft")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	eng := New(tempDir, ModeSoft)
+	results := eng.Install([]Platform{PlatformOpenCode})
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Err != nil {
+		t.Fatalf("install failed: %v", results[0].Err)
+	}
+
+	pluginPath := filepath.Join(tempDir, ".opencode", "plugin", "sv-memory.ts")
+	data, err := os.ReadFile(pluginPath)
+	if err != nil {
+		t.Fatalf("failed to read installed plugin: %v", err)
+	}
+	plugin := string(data)
+	if strings.Contains(plugin, "tool.execute.before") {
+		t.Error("soft plugin should NOT contain tool.execute.before")
+	}
+}
+
 func TestInstallOpenCodeSkill(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-hook-oc-test")
 	if err != nil {
