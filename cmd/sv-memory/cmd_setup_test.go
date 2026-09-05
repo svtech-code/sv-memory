@@ -210,7 +210,7 @@ func TestAutoWireProjectAgentsFreshAndExisting(t *testing.T) {
 	}
 }
 
-// TestConfigureTargetAgents verifies configureTargetAgents sets up only the targeted agents.
+// TestConfigureTargetAgents verifies configureTargetAgentsMode sets up only the targeted agents.
 func TestConfigureTargetAgents(t *testing.T) {
 	tempDir := t.TempDir()
 

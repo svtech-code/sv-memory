@@ -1523,6 +1523,53 @@ func TestAutoBootBundleSurfacesPendingConflicts(t *testing.T) {
 	}
 }
 
+func TestAutoBootBundleSurfacesActiveChanges(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := db.InitDB(filepath.Join(tempDir, "bundle_changes.db"))
+	if err != nil {
+		t.Fatalf("InitDB error: %v", err)
+	}
+	defer database.Close()
+
+	const projectID = "proj-bundle-changes"
+	if err = db.RegisterProject(database, projectID, "Bundle Changes", tempDir); err != nil {
+		t.Fatalf("RegisterProject error: %v", err)
+	}
+
+	// Without changes, bundle should not mention active changes.
+	clean, err := GetAutoBootBundle(context.Background(), database, projectID, AutoBootOptions{})
+	if err != nil {
+		t.Fatalf("GetAutoBootBundle clean: %v", err)
+	}
+	if strings.Contains(clean, "Active changes") {
+		t.Errorf("expected no active changes when none exist, got:\n%s", clean)
+	}
+
+	// Create a change with task progress.
+	c, err := CreateChange(database, projectID, "add-auth", "Add Authentication", "Implement login flow", "", "internal/auth/", "",
+		"- [x] 1.1 Setup context\n- [ ] 1.2 Create login form\n- [ ] 1.3 Add session storage")
+	if err != nil {
+		t.Fatalf("CreateChange: %v", err)
+	}
+	if _, err = UpdateChangeStatus(database, projectID, c.ID, ChangeStatusProposed); err != nil {
+		t.Fatalf("UpdateChangeStatus: %v", err)
+	}
+
+	bundle, err := GetAutoBootBundle(context.Background(), database, projectID, AutoBootOptions{})
+	if err != nil {
+		t.Fatalf("GetAutoBootBundle with changes: %v", err)
+	}
+	if !strings.Contains(bundle, "Active changes") {
+		t.Errorf("expected 'Active changes' section, got:\n%s", bundle)
+	}
+	if !strings.Contains(bundle, "add-auth") {
+		t.Errorf("expected change slug in bundle, got:\n%s", bundle)
+	}
+	if !strings.Contains(bundle, "1/3") || !strings.Contains(bundle, "33%") {
+		t.Errorf("expected task progress 1/3 (33%%), got:\n%s", bundle)
+	}
+}
+
 func TestAutoBootBundleSurfacesPostmortemAndQA(t *testing.T) {
 	tempDir := t.TempDir()
 	database, err := db.InitDB(filepath.Join(tempDir, "bundle_pm_qa.db"))

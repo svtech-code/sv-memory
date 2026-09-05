@@ -862,13 +862,13 @@ func TestSpecGetHandler(t *testing.T) {
 	propReq := mcpgo.CallToolRequest{}
 	propReq.Params.Name = "sv_propose_spec"
 	propReq.Params.Arguments = map[string]any{
-		"slug":       "get-test-change",
-		"title":      "Get Test Change",
-		"what":       "Verify sv_spec_get returns full change record",
-		"goal":       "Ensure completeness",
-		"where_path": "internal/test/",
-		"tasks":      "- [ ] 1. First task\n- [ ] 2. Second task",
-		"design":     "Simple test design",
+		"slug":         "get-test-change",
+		"title":        "Get Test Change",
+		"what":         "Verify sv_spec_get returns full change record",
+		"goal":         "Ensure completeness",
+		"where_path":   "internal/test/",
+		"tasks":        "- [ ] 1. First task\n- [ ] 2. Second task",
+		"design":       "Simple test design",
 		"requirements": "## ADDED Requirements\n\n### Requirement: Test\nThe system SHALL verify spec_get works.\n\n#### Scenario: Get change\n- WHEN sv_spec_get is called\n- THEN full record is returned\n",
 	}
 	_, propErr := server.GetTool("sv_propose_spec").Handler(ctx, propReq)

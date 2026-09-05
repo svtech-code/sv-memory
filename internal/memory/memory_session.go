@@ -271,31 +271,45 @@ func GetAutoBootBundle(ctx context.Context, db *sql.DB, projectID string, opts A
 	var sb strings.Builder
 	sb.WriteString("### 🚀 Auto-Boot Context Bundle\n\n")
 
-	// Collect IDs already shown in the previous-session section (and the pinned
-	// memories surfaced there) so the per-category sections below don't repeat
-	// them (dedup).
+	shown := collectShownAndSession(db, projectID, &sb)
+	bySection, combined := collectAutoBootCandidates(db, projectID, opts, shown)
+	selected, reasons := selectAutoBootCandidates(ctx, db, projectID, opts, bySection, combined)
+	renderAutoBootSections(&sb, selected, reasons)
+	renderConflictSection(&sb, db, projectID)
+	renderActiveChangesSection(&sb, db, projectID)
+
+	return strings.TrimSpace(sb.String()), nil
+}
+
+// collectShownAndSession writes the previous-session context to sb and returns
+// a set of memory IDs to deduplicate against in the per-category sections.
+func collectShownAndSession(db *sql.DB, projectID string, sb *strings.Builder) map[string]bool {
 	shown := map[string]bool{}
 	sessCtx, err := GetSessionContext(db, projectID, 0)
-	if err == nil && sessCtx != "" && !strings.HasPrefix(sessCtx, "No previous session") {
-		sb.WriteString(sessCtx)
-		sb.WriteString("\n\n")
-		if last, lErr := GetLastSession(db, projectID); lErr == nil && last != nil {
-			if mems, mErr := SearchMemoriesBySessionCompact(db, projectID, last.ID, 10); mErr == nil {
-				for _, m := range mems {
-					shown[m.ID] = true
-				}
-			}
-		}
-		if pinned, pErr := SearchPinnedMemories(db, projectID, 20); pErr == nil {
-			for _, m := range pinned {
+	if err != nil || sessCtx == "" || strings.HasPrefix(sessCtx, "No previous session") {
+		return shown
+	}
+	sb.WriteString(sessCtx)
+	sb.WriteString("\n\n")
+	if last, lErr := GetLastSession(db, projectID); lErr == nil && last != nil {
+		if mems, mErr := SearchMemoriesBySessionCompact(db, projectID, last.ID, 10); mErr == nil {
+			for _, m := range mems {
 				shown[m.ID] = true
 			}
 		}
 	}
+	if pinned, pErr := SearchPinnedMemories(db, projectID, 20); pErr == nil {
+		for _, m := range pinned {
+			shown[m.ID] = true
+		}
+	}
+	return shown
+}
 
-	// Fetch the candidate pool per section. With a goal the pool is widened so
-	// the relevance ranking has material; without a goal it stays at the section
-	// cap (pure recency, unchanged behavior).
+// collectAutoBootCandidates queries the candidate pool per section. With a goal
+// the pool is widened so the relevance ranking has material; without a goal it
+// stays at the section cap (pure recency).
+func collectAutoBootCandidates(db *sql.DB, projectID string, opts AutoBootOptions, shown map[string]bool) ([][]bundleCandidate, []bundleCandidate) {
 	bySection := make([][]bundleCandidate, len(autoBootSections))
 	var combined []bundleCandidate
 	for si, sec := range autoBootSections {
@@ -338,22 +352,28 @@ func GetAutoBootBundle(ctx context.Context, db *sql.DB, projectID string, opts A
 		}
 		rows.Close()
 	}
+	return bySection, combined
+}
 
-	// Select which candidates to show per section.
-	var selected [][]bundleCandidate
-	var reasons map[string]string
+// selectAutoBootCandidates selects which candidates to show per section based
+// on whether a goal is provided and whether semantic ranking is enabled.
+func selectAutoBootCandidates(ctx context.Context, db *sql.DB, projectID string, opts AutoBootOptions, bySection [][]bundleCandidate, combined []bundleCandidate) ([][]bundleCandidate, map[string]string) {
 	switch {
 	case opts.Goal == "":
-		selected = perSectionCaps(bySection, autoBootSections, false, "")
+		return perSectionCaps(bySection, autoBootSections, false, ""), nil
 	case opts.Semantic:
-		selected, reasons = semanticSelect(ctx, db, projectID, opts.Goal, combined, ResolveSemanticAgent(opts.Agent), autoBootSections)
-		if selected == nil {
-			selected = perSectionCaps(bySection, autoBootSections, true, opts.Goal) // fail-open → deterministic
+		selected, reasons := semanticSelect(ctx, db, projectID, opts.Goal, combined, ResolveSemanticAgent(opts.Agent), autoBootSections)
+		if selected != nil {
+			return selected, reasons
 		}
+		return perSectionCaps(bySection, autoBootSections, true, opts.Goal), nil // fail-open
 	default:
-		selected = perSectionCaps(bySection, autoBootSections, true, opts.Goal)
+		return perSectionCaps(bySection, autoBootSections, true, opts.Goal), nil
 	}
+}
 
+// renderAutoBootSections writes the per-category section headings and items.
+func renderAutoBootSections(sb *strings.Builder, selected [][]bundleCandidate, reasons map[string]string) {
 	for si, sec := range autoBootSections {
 		items := renderBundleCandidates(selected[si], sec.withWhy, reasons)
 		if len(items) > 0 {
@@ -362,40 +382,41 @@ func GetAutoBootBundle(ctx context.Context, db *sql.DB, projectID string, opts A
 			sb.WriteString("\n\n")
 		}
 	}
+}
 
-	// Surface unresolved decision conflicts as context: the agent should know
-	// when two memories contradict each other before relying on either. Only
-	// emitted when conflicts exist, so the token cost is zero when healthy.
+// renderConflictSection surfaces unresolved decision conflicts.
+func renderConflictSection(sb *strings.Builder, db *sql.DB, projectID string) {
 	if stats, err := ConflictStats(db, projectID); err == nil {
 		if pending := stats["pending"]; pending > 0 {
-			fmt.Fprintf(&sb, "\n**⚠ Pending memory conflicts:** %d — run `sv_mem_conflicts action=scan` to review.\n", pending)
+			fmt.Fprintf(sb, "\n**⚠ Pending memory conflicts:** %d — run `sv_mem_conflicts action=scan` to review.\n", pending)
 		}
 	}
+}
 
-	// Surface in-flight spec changes: proposals the agent is (or should be)
-	// working on. Only emitted when a non-terminal change exists, keeping the
-	// token cost zero when the store has no active work.
-	if stats, err := ChangeStats(db, projectID); err == nil {
-		total := stats[ChangeStatusDraft] + stats[ChangeStatusProposed] + stats[ChangeStatusValidated] + stats[ChangeStatusApplied]
-		if total > 0 {
-			changes, cErr := ListChangesByStatus(db, projectID, "")
-			if cErr == nil && len(changes) > 0 {
-				sb.WriteString("\n**📋 Active changes:**\n")
-				for _, c := range changes {
-					tasksLine := ""
-					if prog := ParseTaskProgress(c.Tasks); prog.Total > 0 {
-						tasksLine = " — " + prog.Summary
-					}
-					fmt.Fprintf(&sb, "- `%s` [%s] %s%s\n", c.Slug, c.Status, TruncateText(c.Title, 50), tasksLine)
-				}
-				sb.WriteString("\nUse `sv_spec_list` to see all changes, `sv_spec_get(change_id=\"<slug>\")` to inspect one.\n")
-			} else {
-				fmt.Fprintf(&sb, "\n**📋 Active changes:** %d\n", total)
-			}
-		}
+// renderActiveChangesSection surfaces in-flight spec changes with task progress.
+func renderActiveChangesSection(sb *strings.Builder, db *sql.DB, projectID string) {
+	stats, err := ChangeStats(db, projectID)
+	if err != nil {
+		return
 	}
-
-	return strings.TrimSpace(sb.String()), nil
+	total := stats[ChangeStatusDraft] + stats[ChangeStatusProposed] + stats[ChangeStatusValidated] + stats[ChangeStatusApplied]
+	if total == 0 {
+		return
+	}
+	changes, cErr := ListChangesByStatus(db, projectID, "")
+	if cErr != nil || len(changes) == 0 {
+		fmt.Fprintf(sb, "\n**📋 Active changes:** %d\n", total)
+		return
+	}
+	sb.WriteString("\n**📋 Active changes:**\n")
+	for _, c := range changes {
+		tasksLine := ""
+		if prog := ParseTaskProgress(c.Tasks); prog.Total > 0 {
+			tasksLine = " — " + prog.Summary
+		}
+		fmt.Fprintf(sb, "- `%s` [%s] %s%s\n", c.Slug, c.Status, TruncateText(c.Title, 50), tasksLine)
+	}
+	sb.WriteString("\nUse `sv_spec_list` to see all changes, `sv_spec_get(change_id=\"<slug>\")` to inspect one.\n")
 }
 
 // bundleWhyChars caps the rationale shown per memory in the Auto-Boot bundle

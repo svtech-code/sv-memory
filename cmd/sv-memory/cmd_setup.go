@@ -20,17 +20,6 @@ import (
 // Engram's `engram setup <agent>` integration surface.
 var setupAgents = []string{"claude-code", "opencode", "cursor", "windsurf", "antigravity", "codex"}
 
-// setupAgentWiring wires a single agent end-to-end: MCP config, hooks/skills +
-// native plugin files, protocol injection, and MCP tool permissions.
-// Deprecated: use setupAgentWiringMode for new code.
-func setupAgentWiring(agent string, strict bool) error {
-	mode := hook.ModeSoft
-	if strict {
-		mode = hook.ModeStrict
-	}
-	return setupAgentWiringMode(agent, mode)
-}
-
 // installedAgents detects which supported agents are already configured in cwd.
 func installedAgents(cwd string) []string {
 	installed := make([]string, 0)
@@ -53,16 +42,6 @@ func installedAgents(cwd string) []string {
 		installed = append(installed, "codex")
 	}
 	return installed
-}
-
-// configureTargetAgents wires the specified agents in cwd.
-// Deprecated: use configureTargetAgentsMode for new code.
-func configureTargetAgents(cwd string, strict bool, agents []string) error {
-	mode := hook.ModeSoft
-	if strict {
-		mode = hook.ModeStrict
-	}
-	return configureTargetAgentsMode(cwd, mode, agents)
 }
 
 // autoWireProjectAgents reconciles agents already configured in the given directory,

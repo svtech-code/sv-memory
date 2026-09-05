@@ -201,9 +201,9 @@ func promptSelectAgents(preselected []string) ([]string, error) {
 }
 
 func init() {
-		initCmd.Flags().Bool("strict", false, "accepted for backward compatibility (strict is now the default)")
-		initCmd.Flags().Bool("soft", false, "Install soft hooks (nudge-only, no graph-first redirect)")
-		initCmd.Flags().String("agent", "", "Explicitly target a single agent during init (e.g. claude-code, antigravity)")
+	initCmd.Flags().Bool("strict", false, "accepted for backward compatibility (strict is now the default)")
+	initCmd.Flags().Bool("soft", false, "Install soft hooks (nudge-only, no graph-first redirect)")
+	initCmd.Flags().String("agent", "", "Explicitly target a single agent during init (e.g. claude-code, antigravity)")
 	initCmd.Flags().String("agents", "", "Comma-separated list of agents to target during init (e.g. claude-code,antigravity)")
 	initCmd.Flags().Bool("all", false, "Configure all supported AI assistant integrations during init")
 	initCmd.Flags().Bool("skip-setup", false, "Skip agent hook/skill/mcp setup during initialization")

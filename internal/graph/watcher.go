@@ -33,10 +33,10 @@ type FileWatcher struct {
 	projPath  string
 	debounce  time.Duration
 
-	watcher    *fsnotify.Watcher
-	dirty      bool
-	dirtyMu    sync.Mutex
-	syncTimer  *time.Timer
+	watcher     *fsnotify.Watcher
+	dirty       bool
+	dirtyMu     sync.Mutex
+	syncTimer   *time.Timer
 	syncTimerMu sync.Mutex
 
 	cancel context.CancelFunc
@@ -93,7 +93,7 @@ func (fw *FileWatcher) Stop() {
 // --- internal ---
 
 func (fw *FileWatcher) loop(ctx context.Context) {
-	defer fw.watcher.Close()
+	defer func() { _ = fw.watcher.Close() }()
 	defer fw.stopTimer()
 
 	for {
