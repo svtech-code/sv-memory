@@ -86,15 +86,19 @@ The sv-memory graph is a pre-computed structural index of the project (source, c
 - **Don't hand-reconstruct a flow** — name both endpoints in one 'sv_graph_explore' call and it surfaces the path between them.
 - **Trust auto-freshness after editing:** context packs re-check the disk and auto-sync when files changed, so snippets stay current; re-run 'sv_graph_explore'/'sv_mem_context_pack' after your edit to see ripple effects instead of re-reading files.
 
-## Spec-Driven Decision Cycle (before proposing or changing behavior):
+## Spec-Driven Decision Cycle (MANDATORY before behavior/architecture changes):
 
-Proposals go through a lifecycle before code is written. Use it for any behavior/architecture change, not just large features:
-- **Consult context:** 'sv_mem_context_pack(path="<file|pkg>", include_changes="true")' surfaces the node role, linked decisions/standards, active changes, and the capabilities implemented at that path (with their requirements) in one call.
-- **Propose:** 'sv_propose_spec(slug="<kebab-case>", title=..., what=..., where_path=..., requirements=..., tasks=..., capability_path=...)' registers the change and runs a pre-flight check against rules/invariants (standards, decisions, architecture memories). A pinned rule that overlaps the proposal returns a BLOCK verdict. The optional 'requirements' param carries OpenSpec-style delta requirements (## ADDED/MODIFIED/REMOVED/RENAMED Requirements, ### Requirement:, #### Scenario: with GIVEN/WHEN/THEN/AND steps) targeting a single capability (defaults to the slug).
-- **Apply & Update Tasks:** As implementation proceeds, call 'sv_update_spec(change_id=..., tasks=...)' to update completed task checkboxes ('- [x]') and refine design/requirements in real-time.
-- **Validate:** 'sv_validate_decision(change_id=...)' re-checks a proposal after edits (PASS/WARN/BLOCK) and validates the delta requirements (RFC 2119 keyword presence, MODIFIED scenario drops vs the current capability state). Deterministic by default; pass semantic="true" to opt into agent re-ranking.
-- **Commit:** 'sv_commit_spec(change_id=...)' promotes the change into a durable decision/standard memory, links it to the change_id, wires the rationale_for edge, merges the delta requirements into the capability's current state (.sv-memory/specs/capabilities/ + graph spec nodes), and stamps it applied. A pre-flight BLOCK or a requirements merge conflict rejects the commit unless force="true" explicitly overrides the invariant. Call after implementation, before 'sv_mem_session_end'.
-- Lifecycle states: 'draft' → 'proposed' → 'validated' → 'applied' (→ 'archived') | 'rejected'. Committed decisions get topic_key 'decision/<slug>'.
+If the change touches behavior, contracts, APIs, or architecture — you MUST use this flow. Config/docs-only changes are exempt.
+
+**The loop (5 tools, one cycle):**
+
+1. **List pending work:** 'sv_spec_list()' shows active changes with status and task progress.
+2. **Consult context + Propose:** 'sv_mem_context_pack(path="<file>", include_changes="true")' for context, then 'sv_propose_spec(slug=..., title=..., what=..., where_path=..., requirements=..., tasks=..., capability_path=...)' registers the change with pre-flight check (BLOCK/WARN/PASS). The 'requirements' param carries OpenSpec-style deltas (## ADDED/MODIFIED/REMOVED/RENAMED Requirements, ### Requirement:, #### Scenario: with GIVEN/WHEN/THEN/AND steps).
+3. **Get + Apply:** 'sv_spec_get(change_id="<slug>")' retrieves proposal/design/tasks. Implement code, then 'sv_update_spec(change_id=..., tasks=...)' marks completed checkboxes.
+4. **Validate:** 'sv_validate_decision(change_id=...)' re-checks after edits (PASS/WARN/BLOCK); validate delta requirements (RFC 2119, scenario consistency). 'semantic="true"' opts into agent re-ranking.
+5. **Commit:** 'sv_commit_spec(change_id=...)' promotes to durable decision memory, merges deltas into capability state (.sv-memory/specs/capabilities/ + graph spec nodes), stamps applied.
+
+- Lifecycle: 'draft' → 'proposed' → 'validated' → 'applied' (→ 'archived') | 'rejected'. Committed decisions get topic_key 'decision/<slug>'.
 - **Human-visible mirror:** every change is auto-projected to '.sv-memory/specs/changes/<slug>.md' and 'openspec/changes/<slug>/' (git-synced) including its delta requirements; the merged current state lives under '.sv-memory/specs/capabilities/<cap>/spec.md'. Humans can edit those files; 'sv-memory specs import <slug>' reconciles the edits back into the store (the SQLite DB stays authoritative). 'sv-memory specs export/list/archive/capabilities' manage the mirror.
 
 ## Graph Refresh:
@@ -117,7 +121,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **User intent:** sv_mem_capture_prompt (record what the user asked, recoverable via sv_mem_context)
 - **Project admin:** sv_mem_merge_projects (merge project variants into a canonical project)
 - **Context Pack:** sv_mem_context_pack (one bounded call: graph role + linked memories + active changes + capabilities for a file/package/symbol)
-- **Decision Engine:** sv_propose_spec, sv_update_spec, sv_validate_decision, sv_commit_spec (propose → update tasks/design → validate → commit cycle with pre-flight checks and delta requirements)
+- **Spec Flow:** sv_spec_list, sv_spec_get, sv_propose_spec, sv_update_spec, sv_validate_decision, sv_commit_spec (list → get → propose → update → validate → commit cycle)
 - **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive | capabilities (human-readable Markdown projection of changes and capability state under .sv-memory/specs/ and openspec/)
 - **Graph:** sv_graph_explore, sv_graph_search, sv_graph_communities, sv_graph_query, sv_graph_diff, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_report, sv_graph_viz, sv_graph_merge
 

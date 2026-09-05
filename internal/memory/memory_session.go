@@ -378,7 +378,20 @@ func GetAutoBootBundle(ctx context.Context, db *sql.DB, projectID string, opts A
 	if stats, err := ChangeStats(db, projectID); err == nil {
 		total := stats[ChangeStatusDraft] + stats[ChangeStatusProposed] + stats[ChangeStatusValidated] + stats[ChangeStatusApplied]
 		if total > 0 {
-			fmt.Fprintf(&sb, "\n**📋 Active changes:** %d — run `sv_mem_context_pack include_changes=\"true\"` to inspect, or `sv_validate_decision` to check a proposal.\n", total)
+			changes, cErr := ListChangesByStatus(db, projectID, "")
+			if cErr == nil && len(changes) > 0 {
+				sb.WriteString("\n**📋 Active changes:**\n")
+				for _, c := range changes {
+					tasksLine := ""
+					if prog := ParseTaskProgress(c.Tasks); prog.Total > 0 {
+						tasksLine = " — " + prog.Summary
+					}
+					fmt.Fprintf(&sb, "- `%s` [%s] %s%s\n", c.Slug, c.Status, TruncateText(c.Title, 50), tasksLine)
+				}
+				sb.WriteString("\nUse `sv_spec_list` to see all changes, `sv_spec_get(change_id=\"<slug>\")` to inspect one.\n")
+			} else {
+				fmt.Fprintf(&sb, "\n**📋 Active changes:** %d\n", total)
+			}
 		}
 	}
 

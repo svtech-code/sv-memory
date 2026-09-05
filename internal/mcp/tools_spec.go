@@ -287,6 +287,94 @@ func (s *Server) handleValidateDecision(ctx context.Context, req mcp.CallToolReq
 	return s.respond(req, sb.String()), nil
 }
 
+// handleSpecList lists active spec changes with their status, title, task
+// progress, and capability. Mirrors `openspec list` for MCP consumers — the
+// primary way agents discover what is pending without a raw CLI call.
+func (s *Server) handleSpecList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	status := req.GetString("status", "")
+
+	changes, err := memory.ListChangesByStatus(s.pool.Reader, s.cfg.ProjectID, status)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to list changes: %v", err)), nil
+	}
+	if len(changes) == 0 {
+		return mcp.NewToolResultText("No active changes in this project. Create one with `sv_propose_spec`."), nil
+	}
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "## Active spec changes (%d)\n\n", len(changes))
+	fmt.Fprintf(&sb, "%-12s %-24s %-14s %s\n", "STATUS", "SLUG", "TASKS", "TITLE")
+
+	for _, c := range changes {
+		tasksSummary := "-"
+		if prog := memory.ParseTaskProgress(c.Tasks); prog.Total > 0 {
+			tasksSummary = prog.Summary
+		}
+		fmt.Fprintf(&sb, "%-12s %-24s %-14s %s\n",
+			c.Status, c.Slug, tasksSummary, memory.TruncateText(c.Title, 50))
+	}
+	sb.WriteString("\nUse `sv_spec_get(change_id=\"<slug>\")` to inspect a specific change.")
+	return s.respond(req, sb.String()), nil
+}
+
+// handleSpecGet returns a full change record: proposal, goal, design, tasks
+// (with checkbox progress), and rendered delta requirements. Mirrors
+// `openspec show` for MCP consumers.
+func (s *Server) handleSpecGet(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	changeID, err := req.RequireString("change_id")
+	if err != nil {
+		return mcp.NewToolResultError("missing required field: change_id"), nil
+	}
+
+	c, err := memory.GetChange(s.pool.Reader, s.cfg.ProjectID, changeID)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to get change: %v", err)), nil
+	}
+	if c == nil {
+		c, err = memory.GetChangeBySlug(s.pool.Reader, s.cfg.ProjectID, changeID)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to resolve change: %v", err)), nil
+		}
+		if c == nil {
+			return mcp.NewToolResultError(fmt.Sprintf("change %q not found", changeID)), nil
+		}
+	}
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "## `%s` — %s\n\n", c.Slug, c.Title)
+	fmt.Fprintf(&sb, "- **ID:** `%s`\n- **Status:** `%s`\n", c.ID, c.Status)
+	if c.WherePath != "" {
+		fmt.Fprintf(&sb, "- **Affects:** `%s`\n", c.WherePath)
+	}
+	if c.CapabilityPath != "" {
+		fmt.Fprintf(&sb, "- **Capability:** `%s`\n", c.CapabilityPath)
+	}
+	if prog := memory.ParseTaskProgress(c.Tasks); prog.Total > 0 {
+		fmt.Fprintf(&sb, "- **Tasks:** %s\n", prog.Summary)
+	}
+
+	if c.What != "" {
+		fmt.Fprintf(&sb, "\n### Proposal\n\n%s\n", c.What)
+	}
+	if c.Goal != "" {
+		fmt.Fprintf(&sb, "\n### Goal\n\n%s\n", c.Goal)
+	}
+	if c.Design != "" {
+		fmt.Fprintf(&sb, "\n### Design\n\n%s\n", c.Design)
+	}
+	if c.Tasks != "" {
+		fmt.Fprintf(&sb, "\n### Tasks\n\n%s\n", c.Tasks)
+	}
+
+	deltas, dErr := memory.LoadChangeDeltas(s.pool.Reader, s.cfg.ProjectID, c.ID)
+	if dErr == nil && len(deltas) > 0 {
+		sb.WriteString("\n### Delta requirements\n\n")
+		sb.WriteString(memory.DeltasToMarkdown(deltas))
+		sb.WriteString("\n")
+	}
+	return s.respond(req, sb.String()), nil
+}
+
 // handleCommitSpec promotes a validated change into a durable decision/standard
 // memory, wires its rationale_for edge to the affected code path, and stamps
 // the change as applied. A BLOCK verdict is honored: the commit is rejected

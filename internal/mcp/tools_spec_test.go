@@ -793,3 +793,128 @@ func TestUpdateSpecHandler(t *testing.T) {
 		t.Errorf("expected updated tasks in DB, got: %q", c.Tasks)
 	}
 }
+
+func TestSpecListHandler(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	server := NewServer(pool, cfg)
+	tool := server.GetTool("sv_spec_list")
+	if tool == nil {
+		t.Fatal("sv_spec_list tool not registered")
+	}
+
+	ctx := context.Background()
+
+	// Empty state
+	req := mcpgo.CallToolRequest{}
+	req.Params.Name = "sv_spec_list"
+	res, err := tool.Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("sv_spec_list failed: %v", err)
+	}
+	text := textContent(res.Content[0])
+	if !strings.Contains(text, "No active changes") {
+		t.Errorf("expected 'No active changes', got: %s", text)
+	}
+
+	// Create a change with tasks
+	propReq := mcpgo.CallToolRequest{}
+	propReq.Params.Name = "sv_propose_spec"
+	propReq.Params.Arguments = map[string]any{
+		"slug":  "test-list",
+		"title": "Test List Feature",
+		"what":  "Verify sv_spec_list returns changes with task progress",
+		"tasks": "- [x] 1. Done\n- [ ] 2. Pending",
+	}
+	_, propErr := server.GetTool("sv_propose_spec").Handler(ctx, propReq)
+	if propErr != nil {
+		t.Fatalf("propose failed: %v", propErr)
+	}
+
+	// List should now show the change
+	res, err = tool.Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("sv_spec_list failed: %v", err)
+	}
+	text = textContent(res.Content[0])
+	if !strings.Contains(text, "test-list") {
+		t.Errorf("expected slug in list, got: %s", text)
+	}
+	if !strings.Contains(text, "1/2") {
+		t.Errorf("expected task progress 1/2, got: %s", text)
+	}
+}
+
+func TestSpecGetHandler(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	server := NewServer(pool, cfg)
+	tool := server.GetTool("sv_spec_get")
+	if tool == nil {
+		t.Fatal("sv_spec_get tool not registered")
+	}
+
+	ctx := context.Background()
+
+	// Create a change with full content
+	propReq := mcpgo.CallToolRequest{}
+	propReq.Params.Name = "sv_propose_spec"
+	propReq.Params.Arguments = map[string]any{
+		"slug":       "get-test-change",
+		"title":      "Get Test Change",
+		"what":       "Verify sv_spec_get returns full change record",
+		"goal":       "Ensure completeness",
+		"where_path": "internal/test/",
+		"tasks":      "- [ ] 1. First task\n- [ ] 2. Second task",
+		"design":     "Simple test design",
+		"requirements": "## ADDED Requirements\n\n### Requirement: Test\nThe system SHALL verify spec_get works.\n\n#### Scenario: Get change\n- WHEN sv_spec_get is called\n- THEN full record is returned\n",
+	}
+	_, propErr := server.GetTool("sv_propose_spec").Handler(ctx, propReq)
+	if propErr != nil {
+		t.Fatalf("propose failed: %v", propErr)
+	}
+
+	// Get by slug
+	req := mcpgo.CallToolRequest{}
+	req.Params.Name = "sv_spec_get"
+	req.Params.Arguments = map[string]any{"change_id": "get-test-change"}
+	res, err := tool.Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("sv_spec_get failed: %v", err)
+	}
+	text := textContent(res.Content[0])
+
+	if !strings.Contains(text, "get-test-change") {
+		t.Errorf("expected slug in response, got: %s", text)
+	}
+	if !strings.Contains(text, "Verify sv_spec_get returns full change record") {
+		t.Errorf("expected 'what' (proposal) in response, got: %s", text)
+	}
+	if !strings.Contains(text, "Ensure completeness") {
+		t.Errorf("expected goal in response, got: %s", text)
+	}
+	if !strings.Contains(text, "Simple test design") {
+		t.Errorf("expected design in response, got: %s", text)
+	}
+	if !strings.Contains(text, "0/2") {
+		t.Errorf("expected task progress 0/2, got: %s", text)
+	}
+	if !strings.Contains(text, "ADDED Requirements") {
+		t.Errorf("expected delta requirements in response, got: %s", text)
+	}
+	if !strings.Contains(text, "The system SHALL verify spec_get works") {
+		t.Errorf("expected requirement body in response, got: %s", text)
+	}
+
+	// Not found
+	req.Params.Arguments = map[string]any{"change_id": "nonexistent"}
+	res, err = tool.Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("sv_spec_get failed: %v", err)
+	}
+	if !res.IsError {
+		t.Error("expected error for nonexistent change")
+	}
+}

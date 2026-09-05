@@ -88,12 +88,14 @@ func TestInjectProtocol_UpdateExisting(t *testing.T) {
 // sv_validate_decision / sv_commit_spec from the agent's operating rules.
 func TestProtocolTemplateContainsSpecDriven(t *testing.T) {
 	required := []string{
-		"## Spec-Driven Decision Cycle (before proposing or changing behavior):",
+		"## Spec-Driven Decision Cycle (MANDATORY before behavior/architecture changes):",
+		"sv_spec_list",
+		"sv_spec_get",
 		"sv_propose_spec",
 		"sv_validate_decision",
 		"sv_commit_spec",
-		"sv_mem_context_pack(path=\"<file|pkg>\", include_changes=\"true\")",
-		"**Decision Engine:**",
+		"sv_mem_context_pack(path=\"<file>\", include_changes=\"true\")",
+		"**Spec Flow:**",
 		"**Spec Mirror (CLI):**",
 		"sv-memory specs export",
 		"'draft' → 'proposed' → 'validated' → 'applied' (→ 'archived') | 'rejected'",

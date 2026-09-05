@@ -86,6 +86,8 @@ var AllTools = []Tool{
 	{Name: "sv_update_spec", Description: "Update an existing spec change proposal: update task progress checkboxes, refine technical design, proposal body, goal, or delta requirements."},
 	{Name: "sv_validate_decision", Description: "Re-check a change's proposal against rules and invariants (PASS/WARN/BLOCK); opt-in semantic re-ranking."},
 	{Name: "sv_commit_spec", Description: "Promote a validated change into a durable decision/standard memory, wire rationale_for edges, and stamp it applied."},
+	{Name: "sv_spec_list", Description: "List active spec changes with status, title, task progress, and capability. Mirrors `openspec list`."},
+	{Name: "sv_spec_get", Description: "Return a full change record: proposal, goal, design, tasks, and rendered delta requirements. Mirrors `openspec show`."},
 	{Name: "sv_graph_query", Description: "Query the dependency graph for a module, file, or package (returns Mermaid)."},
 	{Name: "sv_graph_path", Description: "Find the shortest dependency path between two nodes."},
 	{Name: "sv_graph_sync", Description: "Incrementally re-scan the codebase and rebuild the dependency graph. Call after adding major files or restructuring packages."},
@@ -498,6 +500,20 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
 	)
 	ms.AddTool(commitSpecTool, s.handleCommitSpec)
+
+	// 18f. Tool: sv_spec_list
+	specListTool := mcp.NewTool("sv_spec_list",
+		mcp.WithDescription("List active spec changes with status, title, task progress, and capability. Mirrors `openspec list` — use this to see what proposals are pending before starting work."),
+		mcp.WithString("status", mcp.Description("Optional lifecycle status filter (draft, proposed, validated, applied). Omit to list all active changes.")),
+	)
+	ms.AddTool(specListTool, s.handleSpecList)
+
+	// 18f2. Tool: sv_spec_get
+	specGetTool := mcp.NewTool("sv_spec_get",
+		mcp.WithDescription("Return a full change record: proposal, goal, design, tasks (with checkbox progress), and rendered delta requirements. Mirrors `openspec show` — use after sv_spec_list to inspect the next change to implement."),
+		mcp.WithString("change_id", mcp.Required(), mcp.Description("The change ID or slug to retrieve")),
+	)
+	ms.AddTool(specGetTool, s.handleSpecGet)
 
 	// 19. Tool: sv_graph_query
 	graphQueryTool := mcp.NewTool("sv_graph_query",
