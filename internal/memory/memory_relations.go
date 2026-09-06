@@ -129,7 +129,7 @@ func CompareMemories(db *sql.DB, projectID, id1, id2 string) (string, error) {
 	rels, _ := GetRelations(db, projectID, id1)
 	for _, r := range rels {
 		if (r.SourceID == id1 && r.TargetID == id2) || (r.SourceID == id2 && r.TargetID == id1) {
-			fmt.Fprintf(&sb, "\n**Existing relation:** `%s` — %s\n", r.RelationType, r.Reason)
+			fmt.Fprintf(&sb, "\n**Existing relation:** `%s` — %s\n", r.RelationType, truncateReason(r.Reason))
 			break
 		}
 	}

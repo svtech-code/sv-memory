@@ -2691,3 +2691,48 @@ func TestEndSession_IdempotentAndNotFound(t *testing.T) {
 		t.Errorf("expected ErrSessionNotFound, got: %v", err)
 	}
 }
+
+func TestCompareMemoriesTruncatesReason(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-compare-reason")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_storage.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "test-project"
+	if err = db.RegisterProject(database, projectID, "test-proj", "/tmp"); err != nil {
+		t.Fatalf("RegisterProject error: %v", err)
+	}
+
+	m1, err := SaveMemory(database, &Memory{ProjectID: projectID, Category: "decision", What: "A", Why: "x", Learned: "l"})
+	if err != nil {
+		t.Fatalf("SaveMemory error: %v", err)
+	}
+	m2, err := SaveMemory(database, &Memory{ProjectID: projectID, Category: "decision", What: "B", Why: "y", Learned: "l"})
+	if err != nil {
+		t.Fatalf("SaveMemory error: %v", err)
+	}
+
+	longReason := strings.Repeat("b", 300)
+	if _, err = database.Exec(
+		"INSERT INTO memory_relations (id, project_id, source_id, target_id, relation_type, reason, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"rel-1", projectID, m1.ID, m2.ID, "relates_to", longReason, "judged",
+	); err != nil {
+		t.Fatalf("insert relation: %v", err)
+	}
+
+	out, err := CompareMemories(database, projectID, m1.ID, m2.ID)
+	if err != nil {
+		t.Fatalf("CompareMemories: %v", err)
+	}
+	if strings.Contains(out, longReason) {
+		t.Fatalf("expected reason to be truncated in CompareMemories output, but full reason was present")
+	}
+}

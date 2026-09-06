@@ -266,7 +266,7 @@ func ApplySemanticVerdict(db *sql.DB, projectID string, v *SemanticVerdict) erro
 	if v == nil || v.Error != "" {
 		return nil
 	}
-	reason := security.SanitizeText(v.Reason)
+	reason := security.SanitizeText(truncateReason(v.Reason))
 	if _, err := db.Exec(
 		"DELETE FROM memory_relations WHERE project_id=? AND source_id=? AND target_id=? AND relation_type='conflicts_with' AND status='pending'",
 		projectID, v.SourceID, v.TargetID,
@@ -324,6 +324,20 @@ const semanticRecallFieldChars = 300
 
 // semanticRecallReasonChars caps the stored relevance reason shown to the agent.
 const semanticRecallReasonChars = 120
+
+// maxReasonChars caps the Reason field in MemoryRelation and SemanticVerdict
+// to keep token usage bounded when the agent inspects relations.
+const maxReasonChars = 200
+
+// truncateReason silently truncates a reason string to maxReasonChars without
+// appending a suffix, keeping stored and displayed reasons token-efficient.
+func truncateReason(s string) string {
+	runes := []rune(s)
+	if len(runes) <= maxReasonChars {
+		return s
+	}
+	return string(runes[:maxReasonChars])
+}
 
 // semanticRecallPrompt builds the strict-JSON ranking prompt. The agent must
 // return an entry for every candidate id, flagged relevant or not and ordered

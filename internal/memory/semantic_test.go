@@ -245,6 +245,40 @@ func TestApplySemanticVerdict(t *testing.T) {
 	}
 }
 
+func TestApplySemanticVerdictTruncatesReason(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := db.InitDB(filepath.Join(tempDir, "trunc_reason.db"))
+	if err != nil {
+		t.Fatalf("InitDB error: %v", err)
+	}
+	defer database.Close()
+
+	const projectID = "trunc-reason-proj"
+	if err := db.RegisterProject(database, projectID, "Trunc Reason", tempDir); err != nil {
+		t.Fatalf("RegisterProject error: %v", err)
+	}
+
+	a, _ := SaveMemory(database, &Memory{ProjectID: projectID, Category: "decision", What: "A", Why: "x", Learned: "l"})
+	b, _ := SaveMemory(database, &Memory{ProjectID: projectID, Category: "decision", What: "B", Why: "y", Learned: "l"})
+
+	longReason := strings.Repeat("a", 300)
+	if err := ApplySemanticVerdict(database, projectID, &SemanticVerdict{
+		SourceID: a.ID, TargetID: b.ID, Relation: SemanticSupersedes, Reason: longReason, Score: 0.6,
+	}); err != nil {
+		t.Fatalf("ApplySemanticVerdict: %v", err)
+	}
+	var got string
+	if err := database.QueryRow(
+		"SELECT reason FROM memory_relations WHERE project_id=? AND source_id=? AND target_id=?",
+		projectID, a.ID, b.ID,
+	).Scan(&got); err != nil {
+		t.Fatalf("query reason: %v", err)
+	}
+	if len(got) > maxReasonChars {
+		t.Fatalf("expected reason capped at %d chars, got %d chars: %q", maxReasonChars, len(got), got)
+	}
+}
+
 func TestSemanticRecallPromptBounded(t *testing.T) {
 	items := []recallItem{
 		{ID: "a", Category: "decision", What: "w", Why: "y", Learned: "l", Where: "x"},
