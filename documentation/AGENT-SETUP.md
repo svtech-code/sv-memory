@@ -9,11 +9,11 @@ style of Engram's `engram setup`.
 
 | Agent          | Command                  | What gets installed                                                                 |
 | :------------- | :----------------------- | :---------------------------------------------------------------------------------- |
-| Claude Code    | `sv-memory setup claude-code` | MCP server config, `PreToolUse` + lifecycle hooks (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`), `AGENTS.md` protocol, 34-tool permission allow-list |
+| Claude Code    | `sv-memory setup claude-code` | MCP server config, `PreToolUse` + lifecycle hooks (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`), `AGENTS.md` protocol, 42-tool permission allow-list |
 | OpenCode       | `sv-memory setup opencode`    | MCP server config, `SKILL.md` skill, native TypeScript plugin (`sv_memory_context` tool), `AGENTS.md` protocol |
 | Cursor         | `sv-memory setup cursor`      | `.cursor/mcp.json` MCP config, `.cursorrules` protocol injection |
 | Windsurf       | `sv-memory setup windsurf`    | `.windsurf/mcp_config.json` MCP config, `.windsurfrules` protocol injection |
-| Antigravity CLI | `sv-memory setup antigravity` | MCP config, native skill (`.agents/skills/sv-memory/SKILL.md`), `PreToolUse` hooks (soft/strict), `AGENTS.md` protocol, 34-tool permission allow-list |
+| Antigravity CLI | `sv-memory setup antigravity` | MCP config, native skill (`.agents/skills/sv-memory/SKILL.md`), `PreToolUse` hooks (soft/strict), `AGENTS.md` protocol, 42-tool permission allow-list |
 | Codex          | `sv-memory setup codex`       | MCP config in `~/.codex/config.toml`, hooks, `AGENTS.md` protocol |
 | Git            | `sv-memory hooks install --platform git` | `.git/hooks/post-commit` hook for automated passive commit capture |
 
@@ -78,7 +78,7 @@ Then restart your assistant so it reloads the MCP config and new tools. Verify w
   - `PreCompact` — fires right before context compaction and tells the agent to save a
     session summary first (context recovery).
   - `SubagentStop` — reminds the agent to persist durable findings from subagents.
-- **Permissions:** the 34 sv-memory tools are added to the `~/.claude/settings.json`
+- **Permissions:** the 42 sv-memory tools are added to the `~/.claude/settings.json`
   allow-list (`mcp__sv-memory__<tool>`) so the agent calls them without prompting.
 
 ### OpenCode
@@ -91,6 +91,7 @@ Then restart your assistant so it reloads the MCP config and new tools. Verify w
   — a first-class way to fetch a context pack for a file/package/symbol by shelling out to
   `sv-memory context <path>`, without needing MCP approval.
 - **Protocol:** sv-memory rules are injected into `AGENTS.md`.
+- **Curated tool surface:** the MCP server registers **42 tools total, 35 core by default**. The 7 maintenance/admin tools (`sv_mem_diagnose`, `sv_mem_compare`, `sv_mem_merge_projects`, `sv_graph_report`, `sv_graph_viz`, `sv_graph_merge`, `sv_graph_surprising_connections`) are omitted by default to keep the per-request tool list small (token economy); set `SV_MEMORY_FULL_TOOLS=1` in the server environment to enable them.
 
 ### Cursor
 
@@ -112,7 +113,7 @@ Then restart your assistant so it reloads the MCP config and new tools. Verify w
   the read and nudges via `AGENTS.md`; `--strict` blocks the first raw file read of each
   session. Strict is fail-open: it never deadlocks when sv-memory is missing or
   `SV_MEMORY_STRICT_DISABLE=1` is set.
-- **Permissions:** the 34 sv-memory tools are added to the Antigravity settings allow-list
+- **Permissions:** the 42 sv-memory tools are added to the Antigravity settings allow-list
   (`mcp(sv-memory/<tool>)`).
 
 ### Codex

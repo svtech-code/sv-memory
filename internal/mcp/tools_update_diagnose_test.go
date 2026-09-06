@@ -245,6 +245,7 @@ func TestReviewMarkReviewedHandler(t *testing.T) {
 }
 
 func TestDiagnoseHandler(t *testing.T) {
+	t.Setenv("SV_MEMORY_FULL_TOOLS", "1")
 	tempDir, pool, cfg := setupTestEnv(t)
 	defer cleanupTestEnv(tempDir, pool)
 

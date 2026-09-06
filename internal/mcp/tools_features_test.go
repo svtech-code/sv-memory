@@ -264,6 +264,7 @@ func TestGraphExploreAliasTool(t *testing.T) {
 }
 
 func TestGraphReportTool(t *testing.T) {
+	t.Setenv("SV_MEMORY_FULL_TOOLS", "1")
 	tempDir, pool, cfg := setupTestEnv(t)
 	defer cleanupTestEnv(tempDir, pool)
 
@@ -445,6 +446,7 @@ func TestGraphCommunitiesTool(t *testing.T) {
 }
 
 func TestGraphReportConfidenceSection(t *testing.T) {
+	t.Setenv("SV_MEMORY_FULL_TOOLS", "1")
 	tempDir, pool, cfg := setupTestEnv(t)
 	defer cleanupTestEnv(tempDir, pool)
 
@@ -487,6 +489,7 @@ func TestGraphReportConfidenceSection(t *testing.T) {
 }
 
 func TestSurprisingConnectionsConfidenceColumn(t *testing.T) {
+	t.Setenv("SV_MEMORY_FULL_TOOLS", "1")
 	tempDir, pool, cfg := setupTestEnv(t)
 	defer cleanupTestEnv(tempDir, pool)
 

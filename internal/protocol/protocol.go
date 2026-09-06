@@ -29,6 +29,7 @@ The sv-memory tools (session, memory, graph, diagnostics) may be called in ANY o
 ## Context Initialization (Search-Before-Work):
 
 Memory must be consulted before proposing or executing changes:
+- **Graph-first (read-equivalent):** For code comprehension, prefer 'sv_graph_explore(path="<file|symbol>")' or 'sv_mem_context_pack(path="<file|pkg>")' over reading raw source — the returned surgical snippets count as already read and carry blast radius + linked memories (see Graph below).
 - **Single-Call Context Pack (Recommended):** Call 'sv_mem_context_pack(path="<file|pkg>")' before reading or editing code. It surfaces the node role, linked decisions/standards, active changes, and capability state in one call.
 - **Orientation:** On a new project, call 'sv_mem_stats' first — it is the cheapest overview of memory distribution (categories, counts, sessions).
 - **Targeted search:** Call 'sv_mem_search' with the topic keywords of your task (feature, component, style, module). Filter by category when relevant ('journal', 'postmortem', 'discussion', 'idea', 'qa', 'architecture', 'decision'). Avoid repeating redundant searches — the Auto-Boot Bundle already carries the previous session context.
@@ -114,16 +115,16 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 
 ## Tool Quick Reference:
 
+- **Graph:** sv_graph_explore, sv_graph_search, sv_graph_communities, sv_graph_query, sv_graph_diff, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync (sv_graph_explore = ONE-call explore: source + call path + blast radius)
+- **Spec Flow:** sv_spec_list, sv_spec_get, sv_propose_spec, sv_update_spec, sv_validate_decision, sv_commit_spec (list → get → propose → update → validate → commit cycle)
+- **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive | capabilities (human-readable Markdown projection of changes and capability state under .sv-memory/specs/ and openspec/)
+- **Context Pack:** sv_mem_context_pack (one bounded call: graph role + linked memories + active changes + capabilities for a file/package/symbol)
 - **Session:** sv_mem_session_start, sv_mem_session_summary, sv_mem_session_end, sv_mem_context
 - **Memory CRUD:** sv_mem_save, sv_mem_update, sv_mem_get, sv_mem_delete, sv_mem_search, sv_mem_timeline
 - **Pin / Priority:** sv_mem_pin (action='unpin' to clear)
-- **Knowledge quality:** sv_mem_suggest_topic_key, sv_mem_judge, sv_mem_compare, sv_mem_compact, sv_mem_review, sv_mem_capture_passive, sv_mem_conflicts, sv_mem_stats, sv_mem_diagnose
+- **Knowledge quality:** sv_mem_suggest_topic_key, sv_mem_judge, sv_mem_compact, sv_mem_review, sv_mem_capture_passive, sv_mem_conflicts, sv_mem_stats
 - **User intent:** sv_mem_capture_prompt (record what the user asked, recoverable via sv_mem_context)
-- **Project admin:** sv_mem_merge_projects (merge project variants into a canonical project)
-- **Context Pack:** sv_mem_context_pack (one bounded call: graph role + linked memories + active changes + capabilities for a file/package/symbol)
-- **Spec Flow:** sv_spec_list, sv_spec_get, sv_propose_spec, sv_update_spec, sv_validate_decision, sv_commit_spec (list → get → propose → update → validate → commit cycle)
-- **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive | capabilities (human-readable Markdown projection of changes and capability state under .sv-memory/specs/ and openspec/)
-- **Graph:** sv_graph_explore, sv_graph_search, sv_graph_communities, sv_graph_query, sv_graph_diff, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_report, sv_graph_viz, sv_graph_merge
+- **Maintenance/admin (opt-in):** sv_mem_diagnose, sv_mem_compare, sv_mem_merge_projects, sv_graph_report, sv_graph_viz, sv_graph_merge, sv_graph_surprising_connections — registered only when SV_MEMORY_FULL_TOOLS=1
 
 ## Repository Restrictions & Commit Standards:
 

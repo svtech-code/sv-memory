@@ -1,22 +1,43 @@
 import { tool, type Plugin } from "@opencode-ai/plugin"
+import { mkdtemp, writeFile, readFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
+
+const execFileAsync = promisify(execFile)
 
 /**
- * sv-memory native OpenCode plugin.
+ * sv-memory native OpenCode plugin — graph-first mode (strict).
  *
- * Bridges sv-memory into OpenCode without requiring the agent to discover the
- * MCP tools manually:
+ * Two capabilities:
  *
- *  - `sv_memory_context` — fetch a compact context pack (structural graph role
- *    + linked memories) for a file/package/symbol in one call, shelling out to
- *    the `sv-memory context <path>` CLI. Mirrors the sv_mem_context_pack MCP
- *    tool; bounded output saves tokens before reading source files.
+ * 1. `sv_memory_context` — compact context pack for a path (same as soft).
  *
- * The session lifecycle (sv_mem_session_start / sv_mem_session_end) and the
- * full 29-tool surface are provided by the sv-memory MCP server, configured by
- * `sv-memory setup opencode`. Fail-open: the tool returns errors as output so
- * a missing binary or uninitialized project never crashes the agent.
+ * 2. `tool.execute.before` hook — on the FIRST Read/Grep/Bash(grep) call
+ *    per session, intercepts the call and redirects the agent to the
+ *    sv-memory graph context instead of reading the raw file.
+ *
+ *    Mechanism: runs `sv-memory context <file>`, writes the output to a
+ *    temp file, and rewrites `output.args.filePath` to point at it — so
+ *    the agent reads graph context first. Subsequent calls proceed normally.
+ *
+ *    Fail-open: if the sv-memory binary is missing, the project is
+ *    uninitialized, or context generation fails, the original filePath
+ *    is left untouched and the read proceeds normally.
+ *
+ *    Opt-out: set SV_MEMORY_STRICT_DISABLE=1 to disable the redirect entirely.
+ *
+ * Write nudge: OpenCode's plugin API cannot inject text into write/edit
+ * operations (it can only mutate args). The write nudge ("consider
+ * sv_propose_spec before modifying behavior") is protocol-driven via
+ * AGENTS.md, which the agent sees at session start. On Claude Code,
+ * the PreToolUse hook emits this nudge as visible text.
  */
 export const SvMemoryPlugin: Plugin = async ({ $ }) => {
+  // Track which sessions have already had their first-read redirect.
+  const redirected = new Set<string>()
+
   return {
     tool: {
       sv_memory_context: tool({
@@ -49,6 +70,48 @@ export const SvMemoryPlugin: Plugin = async ({ $ }) => {
           }
         },
       }),
+    },
+
+    hooks: {
+      "tool.execute.before": async (input, output) => {
+        // Opt-out: SV_MEMORY_STRICT_DISABLE disables redirect entirely.
+        if (process.env.SV_MEMORY_STRICT_DISABLE) return
+
+        // Only intercept the first read/search call per session.
+        if (redirected.has(input.sessionID)) return
+
+        const toolName = input.tool
+        const isReadTool =
+          toolName === "read" || toolName === "grep" || toolName === "bash"
+
+        if (!isReadTool) return
+
+        // For read tool, extract the file path from args.
+        // For grep/bash, skip the redirect (too complex to rewrite).
+        if (toolName !== "read") return
+
+        const filePath = output.args?.filePath as string | undefined
+        if (!filePath || filePath.startsWith(".sv-memory/")) return
+
+        redirected.add(input.sessionID)
+
+        try {
+          const out = await execFileAsync(
+            "sv-memory",
+            ["context", filePath, "--max-memories", "5"],
+            { timeout: 5000 },
+          )
+          if (out.stdout && out.stdout.trim().length > 0) {
+            // Write context to a temp file and redirect the read.
+            const tmpDir = await mkdtemp(join(tmpdir(), "sv-nudge-"))
+            const nudgePath = join(tmpDir, "context.md")
+            await writeFile(nudgePath, out.stdout, "utf-8")
+            output.args.filePath = nudgePath
+          }
+        } catch {
+          // Fail-open: sv-memory unavailable or timed out — leave args untouched.
+        }
+      },
     },
   }
 }

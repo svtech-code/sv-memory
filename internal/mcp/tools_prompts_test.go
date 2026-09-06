@@ -76,6 +76,7 @@ func TestCapturePromptHandlerRequiresContent(t *testing.T) {
 }
 
 func TestMergeProjectsHandler(t *testing.T) {
+	t.Setenv("SV_MEMORY_FULL_TOOLS", "1")
 	tempDir, pool, cfg := setupTestEnv(t)
 	defer cleanupTestEnv(tempDir, pool)
 
@@ -146,6 +147,7 @@ func TestMergeProjectsHandler(t *testing.T) {
 }
 
 func TestMergeProjectsHandlerRejectsSameProject(t *testing.T) {
+	t.Setenv("SV_MEMORY_FULL_TOOLS", "1")
 	tempDir, pool, cfg := setupTestEnv(t)
 	defer cleanupTestEnv(tempDir, pool)
 

@@ -7,6 +7,9 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ### Added
 
+- **Curated MCP tool surface (token economy)**: the MCP server now registers **35 core tools by default** and only 42 total. The 7 maintenance/admin tools (`sv_mem_diagnose`, `sv_mem_compare`, `sv_mem_merge_projects`, `sv_graph_report`, `sv_graph_viz`, `sv_graph_merge`, `sv_graph_surprising_connections`) are omitted unless `SV_MEMORY_FULL_TOOLS=1` is set, shrinking the per-request tool list advertised to agents. The permission allow-lists still grant all 42 so full mode works without re-running setup.
+- **Concise LLM-visible tool descriptions**: trimmed the longest `mcp.WithDescription` strings (spec-flow, `sv_graph_explore`, `sv_mem_context_pack`, session/review/save) from ~10,576 to ~9,176 chars total, cutting per-request token cost. A new `TestToolDescriptionBudget` guards the budget (< 9500 chars).
+- **Protocol promotes graph + spec tools**: `AGENTS.md` (protocol template) and the OpenCode skill now lead the Tool Quick Reference with the Graph and Spec Flow tools, add a graph-first bullet to Context Initialization, and note the `SV_MEMORY_FULL_TOOLS=1` opt-in for maintenance/admin tools.
 - **`sv_spec_list` MCP tool**: lists active spec changes with status, title, task progress, and capability. Mirrors `openspec list` — agents can discover what proposals are pending before starting work.
 - **`sv_spec_get` MCP tool**: returns a full change record (proposal, goal, design, tasks with checkbox progress, rendered delta requirements) by ID or slug. Mirrors `openspec show`.
 - **Actionable Auto-Boot bundle**: `sv_mem_session_start` now lists active changes with slug, status, and task progress (e.g. `- auth-improvements [proposed] Implement auth — 2/5 tasks completed (40%)`) instead of just a count. Agents see what is pending at session start.

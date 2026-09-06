@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -554,6 +555,7 @@ func TestDebounceTimerRace(t *testing.T) {
 }
 
 func TestSessionLifecycleAndJudges(t *testing.T) {
+	t.Setenv("SV_MEMORY_FULL_TOOLS", "1")
 	tempDir, pool, cfg := setupTestEnv(t)
 	defer cleanupTestEnv(tempDir, pool)
 
@@ -992,5 +994,58 @@ func TestAllToolsMatchesRegisteredTools(t *testing.T) {
 		if !registered[name] {
 			t.Errorf("AllTools entry %s is not registered in NewServer — remove it or register it", name)
 		}
+	}
+}
+
+// TestDefaultServerExposesOnlyCoreTools guards the token-economy tool surface:
+// the default server (no SV_MEMORY_FULL_TOOLS) must register every Core tool
+// and skip the non-core maintenance/admin tools, keeping the per-request tool
+// surface advertised to agents small.
+func TestDefaultServerExposesOnlyCoreTools(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	srv := NewServer(pool, cfg)
+	for _, tool := range AllTools {
+		got := srv.GetTool(tool.Name) != nil
+		if !tool.Hidden && !got {
+			t.Errorf("core tool %s not registered on default server", tool.Name)
+		}
+		if tool.Hidden && got {
+			t.Errorf("hidden tool %s should not be registered on default server (set SV_MEMORY_FULL_TOOLS to enable)", tool.Name)
+		}
+	}
+}
+
+// TestFullToolsModeRegistersAllTools verifies the opt-in escape hatch: with
+// SV_MEMORY_FULL_TOOLS=1 every tool in AllTools is registered.
+func TestFullToolsModeRegistersAllTools(t *testing.T) {
+	t.Setenv("SV_MEMORY_FULL_TOOLS", "1")
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	srv := NewServer(pool, cfg)
+	for _, tool := range AllTools {
+		if srv.GetTool(tool.Name) == nil {
+			t.Errorf("tool %s not registered in full mode", tool.Name)
+		}
+	}
+}
+
+// TestToolDescriptionBudget guards the per-request token surface: the combined
+// length of LLM-visible tool descriptions must stay under 9500 chars so the
+// tool list does not crowd out model context on every request.
+func TestToolDescriptionBudget(t *testing.T) {
+	src, err := os.ReadFile("mcp.go")
+	if err != nil {
+		t.Fatalf("failed to read mcp.go: %v", err)
+	}
+	re := regexp.MustCompile(`mcp\.WithDescription\("((?:[^"\\]|\\.)*)"\)`)
+	total := 0
+	for _, m := range re.FindAllStringSubmatch(string(src), -1) {
+		total += len(m[1])
+	}
+	if total >= 9500 {
+		t.Errorf("tool description budget exceeded: %d chars (max 9500) — trim verbose descriptions", total)
 	}
 }

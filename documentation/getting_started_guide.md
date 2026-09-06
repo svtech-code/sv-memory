@@ -16,7 +16,7 @@ When working with AI assistants in medium or large repositories, three recurring
 2. **Token Waste:** The AI needs to read dozens of source files over and over to understand the code structure.
 3. **Lack of Continuity:** Technical decisions stay trapped in individual chats instead of being shared with the team.
 
-**sv-memory** solves this by combining **persistent memories indexed with SQLite FTS5 BM25** and a **structural code dependency graph** exposed through 34 MCP (_Model Context Protocol_) tools.
+**sv-memory** solves this by combining **persistent memories indexed with SQLite FTS5 BM25** and a **structural code dependency graph** exposed through 42 MCP (_Model Context Protocol_) tools.
 
 ---
 
@@ -99,7 +99,7 @@ The wizard guides you through interactive phases in the terminal:
 1. **Phase 1 (GUI Editors):** Registers the MCP server in user configuration files for **Cursor**, **VS Code**, **Zed**, or **Windsurf**.
 2. **Phase 2 (Terminal Assistants):** Configures CLI clients such as **Claude Code**, **Antigravity CLI (agy)**, or **OpenCode**.
 3. **Phase 3 (Confirmation and application):** Shows the summary of selected tools and applies the configurations.
-4. **Phase 4 (MCP Permissions):** Authorizes the **34 sv-memory MCP tools** on platforms with static allow-lists.
+4. **Phase 4 (MCP Permissions):** Authorizes the **42 sv-memory MCP tools** on platforms with static allow-lists.
 
 ---
 
@@ -123,7 +123,7 @@ sv-memory init
    - **OpenCode:** Installs `.opencode/skills/sv-memory/SKILL.md` and native TypeScript plugin (`sv_memory_context`).
    - **Claude Code:** Installs `.claude/hooks/` (`SessionStart`, `SessionEnd`, `PreCompact`, `PreToolUse`).
    - **Cursor / Windsurf:** Writes `.cursor/mcp.json` / `.windsurf/mcp_config.json`.
-4. **Automatic MCP Tool Permissions:** Automatically grants permissions for the 34 MCP tools so the agent never asks for repetitive manual approvals.
+4. **Automatic MCP Tool Permissions:** Automatically grants permissions for the 42 MCP tools so the agent never asks for repetitive manual approvals.
 5. **Git Memory Synchronization:** Syncs shared team memories from `.sv-memory/memories.json` if present.
 6. **Code Dependency Graph:** Scans source files and builds the dependency graph (imports, god nodes, Leiden communities). A background file watcher (fsnotify, enabled by default via `graph_watcher_enabled`) keeps the graph fresh by syncing on source changes, with configurable debounce (`graph_watch_debounce_ms`).
 
@@ -160,7 +160,7 @@ Close and reopen your AI assistant so it loads the MCP, permissions, and freshly
 
 ```bash
 cd /path/to/your-project
-sv-memory permissions status --platform antigravity   # Granted: 34 / 34
+sv-memory permissions status --platform antigravity   # Granted: 42 / 42
 sv-memory hooks status                                # antigravity: ✅ installed
 sv-memory diagnose                                    # 17 pass, 0 failures
 ```

@@ -16,7 +16,7 @@ Cuando trabajas con asistentes de IA en repositorios medianos o grandes, suceden
 2. **Desperdicio de Tokens:** La IA necesita leer decenas de archivos fuente una y otra vez para entender la estructura del código.
 3. **Falta de Continuidad:** Las decisiones técnicas quedan atrapadas en chats individuales en lugar de compartirse con el equipo.
 
-**sv-memory** resuelve esto combinando **memorias persistentes indexadas con SQLite FTS5 BM25** y un **grafo de dependencias estructural de código** expuesto a través de 34 herramientas MCP (_Model Context Protocol_).
+**sv-memory** resuelve esto combinando **memorias persistentes indexadas con SQLite FTS5 BM25** y un **grafo de dependencias estructural de código** expuesto a través de 42 herramientas MCP (_Model Context Protocol_).
 
 ---
 
@@ -99,7 +99,7 @@ El asistente te guiará a través de fases interactivas en la terminal:
 1. **Fase 1 (Editores GUI):** Registra automáticamente el servidor MCP en archivos de configuración de usuario para **Cursor**, **VS Code**, **Zed** o **Windsurf**.
 2. **Fase 2 (Asistentes de Terminal):** Configura clientes CLI como **Claude Code**, **Antigravity CLI (agy)** u **OpenCode**.
 3. **Fase 3 (Confirmación y aplicación):** Muestra el resumen de herramientas seleccionadas y aplica las configuraciones.
-4. **Fase 4 (Permisos MCP):** Autoriza las **34 herramientas MCP de sv-memory** en las plataformas con allow-list estática.
+4. **Fase 4 (Permisos MCP):** Autoriza las **42 herramientas MCP de sv-memory** en las plataformas con allow-list estática.
 
 ---
 
@@ -123,7 +123,7 @@ sv-memory init
    - **OpenCode:** Instala `.opencode/skills/sv-memory/SKILL.md` y plugin nativo TypeScript (`sv_memory_context`).
    - **Claude Code:** Instala `.claude/hooks/` (`SessionStart`, `SessionEnd`, `PreCompact`, `PreToolUse`).
    - **Cursor / Windsurf:** Escribe `.cursor/mcp.json` / `.windsurf/mcp_config.json`.
-4. **Permisos MCP Automáticos:** Concede permisos para las 34 herramientas MCP sin necesidad de confirmaciones manuales repetitivas.
+4. **Permisos MCP Automáticos:** Concede permisos para las 42 herramientas MCP sin necesidad de confirmaciones manuales repetitivas.
 5. **Sincronización Git:** Importa memorias compartidas desde `.sv-memory/memories.json` si existe.
 6. **Grafo de Dependencias:** Escanea el árbol de código y construye el grafo estructural (imports, nodos god, comunidades Leiden). Un observador de archivos en segundo plano (fsnotify, habilitado por defecto con `graph_watcher_enabled`) mantiene el grafo sincronizado al detectar cambios en el código fuente, con rebote configurable (`graph_watch_debounce_ms`).
 
@@ -192,7 +192,7 @@ Cierra y vuelve a abrir tu asistente de IA para que cargue el MCP, los permisos 
 
 ```bash
 cd /ruta/a/tu-proyecto
-sv-memory permissions status --platform antigravity   # Granted: 34 / 34
+sv-memory permissions status --platform antigravity   # Granted: 42 / 42
 sv-memory hooks status                                # antigravity: ✅ installed
 sv-memory diagnose                                    # 17 pass, 0 failures
 ```

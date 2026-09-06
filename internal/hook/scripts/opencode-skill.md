@@ -96,13 +96,13 @@ If the change touches behavior, contracts, APIs, or architecture, use this loop.
 
 ## Tool Quick Reference
 
+- **Graph:** `sv_graph_explore` (ONE-call explore: multi-symbol + source + call path), `sv_graph_search` (discover nodes by pattern when name is unknown), `sv_graph_communities` (list top communities), `sv_graph_diff`, `sv_graph_query`, `sv_graph_explain`, `sv_graph_god_nodes`, `sv_graph_path`, `sv_graph_sync`
+- **Spec Flow:** `sv_spec_list`, `sv_spec_get`, `sv_propose_spec`, `sv_update_spec`, `sv_validate_decision`, `sv_commit_spec` (list → get → propose → update → validate → commit cycle)
+- **Spec Mirror (CLI):** `sv-memory specs export | import <slug> | list | archive | capabilities` (human-readable Markdown projection of changes and capability state under `.sv-memory/specs/` and `openspec/`)
+- **Context Pack:** `sv_mem_context_pack` (one bounded call: graph role + linked memories + active changes for a file/package/symbol)
 - **Session:** `sv_mem_session_start`, `sv_mem_session_summary`, `sv_mem_session_end`, `sv_mem_context`
 - **Memory CRUD:** `sv_mem_save`, `sv_mem_update`, `sv_mem_get`, `sv_mem_delete`, `sv_mem_search`, `sv_mem_timeline`
 - **Pin / Priority:** `sv_mem_pin` (action='unpin' to clear)
-- **Knowledge quality:** `sv_mem_suggest_topic_key`, `sv_mem_judge`, `sv_mem_compare`, `sv_mem_compact`, `sv_mem_review`, `sv_mem_capture_passive`, `sv_mem_conflicts`, `sv_mem_stats`, `sv_mem_diagnose`
+- **Knowledge quality:** `sv_mem_suggest_topic_key`, `sv_mem_judge`, `sv_mem_compact`, `sv_mem_review`, `sv_mem_capture_passive`, `sv_mem_conflicts`, `sv_mem_stats`
 - **User intent:** `sv_mem_capture_prompt` (record what the user asked, recoverable via `sv_mem_context`)
-- **Project admin:** `sv_mem_merge_projects` (merge project variants into a canonical project)
-- **Context Pack:** `sv_mem_context_pack` (one bounded call: graph role + linked memories + active changes for a file/package/symbol)
-- **Spec Flow:** `sv_spec_list`, `sv_spec_get`, `sv_propose_spec`, `sv_update_spec`, `sv_validate_decision`, `sv_commit_spec` (list → get → propose → update → validate → commit cycle)
-- **Spec Mirror (CLI):** `sv-memory specs export | import <slug> | list | archive | capabilities` (human-readable Markdown projection of changes and capability state under `.sv-memory/specs/` and `openspec/`)
-- **Graph:** `sv_graph_explore` (ONE-call explore: multi-symbol + source + call path), `sv_graph_search` (discover nodes by pattern when name is unknown), `sv_graph_communities` (list top communities), `sv_graph_diff`, `sv_graph_query`, `sv_graph_explain`, `sv_graph_god_nodes`, `sv_graph_path`, `sv_graph_sync`, `sv_graph_report`
+- **Maintenance/admin (opt-in):** `sv_mem_diagnose`, `sv_mem_compare`, `sv_mem_merge_projects`, `sv_graph_report`, `sv_graph_viz`, `sv_graph_merge`, `sv_graph_surprising_connections` — registered only when `SV_MEMORY_FULL_TOOLS=1`

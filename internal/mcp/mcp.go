@@ -44,6 +44,22 @@ func debugLog(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "[sv-memory] "+format+"\n", args...)
 }
 
+// fullToolsEnabled reports whether SV_MEMORY_FULL_TOOLS env var is set to a
+// truthy value. When false (the default), the MCP server registers only the
+// core tool set, omitting maintenance/admin tools so the per-request tool
+// surface advertised to agents stays small (token economy). Opt-in restores
+// the full surface for admin/diagnostic work.
+func fullToolsEnabled() bool {
+	v := os.Getenv("SV_MEMORY_FULL_TOOLS")
+	if v == "" {
+		return false
+	}
+	if b, err := strconv.ParseBool(v); err == nil {
+		return b
+	}
+	return true
+}
+
 // Tool describes a single MCP tool exposed by the sv-memory server.
 // AllTools is the single source of truth for the tool surface, reused by the
 // permission manager (sv-memory permissions / configure wizard) so the granted
@@ -51,6 +67,11 @@ func debugLog(format string, args ...interface{}) {
 type Tool struct {
 	Name        string
 	Description string
+	// Hidden marks maintenance/admin/infra tools that are NOT registered on
+	// the default server. They are only registered when SV_MEMORY_FULL_TOOLS
+	// is truthy, keeping the per-request tool surface (and its token cost)
+	// small for agents by default. Core tools leave Hidden unset (zero value).
+	Hidden bool
 }
 
 // AllTools enumerates every tool the sv-memory MCP server exposes, with a
@@ -71,15 +92,15 @@ var AllTools = []Tool{
 	{Name: "sv_mem_get", Description: "Retrieve the full content of a specific memory by ID."},
 	{Name: "sv_mem_timeline", Description: "Get chronological context around a specific memory observation."},
 	{Name: "sv_mem_judge", Description: "Create a relation between memories (supersedes, conflicts_with, relates_to)."},
-	{Name: "sv_mem_compare", Description: "Compare two memories side by side in a Markdown table."},
+	{Name: "sv_mem_compare", Description: "Compare two memories side by side in a Markdown table.", Hidden: true},
 	{Name: "sv_mem_review", Description: "List stale, duplicate, or consolidation-candidate memories, or mark a memory as reviewed (action='mark_reviewed')."},
 	{Name: "sv_mem_stats", Description: "Get aggregate memory statistics per category, session counts, and the current active project (ID, name, path)."},
-	{Name: "sv_mem_diagnose", Description: "Run read-only health checks (database, FTS5, project, graph integrity) and return a report."},
+	{Name: "sv_mem_diagnose", Description: "Run read-only health checks (database, FTS5, project, graph integrity) and return a report.", Hidden: true},
 	{Name: "sv_mem_delete", Description: "Soft-delete (default) or hard-delete a memory."},
 	{Name: "sv_mem_pin", Description: "Pin (default) or unpin (action='unpin') a local memory so key decisions stay visible in session context."},
 	{Name: "sv_mem_capture_passive", Description: "Log lightweight observations (files modified, tests failing) without a save decision."},
 	{Name: "sv_mem_capture_prompt", Description: "Capture the user's prompt as a local observation attached to a session, so future sessions can recover the user's intent after compaction (recoverable via sv_mem_context)."},
-	{Name: "sv_mem_merge_projects", Description: "Merge all memories, sessions, relations, and graph data from one project into another, then delete the source project (admin)."},
+	{Name: "sv_mem_merge_projects", Description: "Merge all memories, sessions, relations, and graph data from one project into another, then delete the source project (admin).", Hidden: true},
 	{Name: "sv_mem_context_pack", Description: "Build a compact context pack for a code path: graph role (fan-in/fan-out, community) plus linked memories (decisions/standards/bugfixes). One bounded call."},
 	{Name: "sv_graph_explore", Description: "Unified explore for code understanding in one call: pass one or more comma-separated symbols/paths to get each symbol's structural role, surgical source snippet, the shortest call path between them, blast radius, and linked memories (decisions/standards/bugfixes). Replaces chaining sv_graph_query + sv_graph_path + sv_graph_explain manually."},
 	{Name: "sv_mem_conflicts", Description: "List, scan, or ignore potential memory conflicts."},
@@ -94,10 +115,10 @@ var AllTools = []Tool{
 	{Name: "sv_graph_sync", Description: "Incrementally re-scan the codebase and rebuild the dependency graph. Call after adding major files or restructuring packages."},
 	{Name: "sv_graph_explain", Description: "Explain a node's role, community, centrality, neighbors, and suggested questions. Use before refactoring or deleting a file."},
 	{Name: "sv_graph_god_nodes", Description: "List the most-connected hub nodes in the dependency graph."},
-	{Name: "sv_graph_surprising_connections", Description: "Find unexpected cross-community connections in the codebase."},
-	{Name: "sv_graph_report", Description: "Generate GRAPH_REPORT.md with god nodes, top communities, surprising cross-community bridges, and suggested questions."},
-	{Name: "sv_graph_viz", Description: "Generate an interactive HTML visualization of the dependency graph."},
-	{Name: "sv_graph_merge", Description: "Merge two project graphs into one (union-merge by node ID)."},
+	{Name: "sv_graph_surprising_connections", Description: "Find unexpected cross-community connections in the codebase.", Hidden: true},
+	{Name: "sv_graph_report", Description: "Generate GRAPH_REPORT.md with god nodes, top communities, surprising cross-community bridges, and suggested questions.", Hidden: true},
+	{Name: "sv_graph_viz", Description: "Generate an interactive HTML visualization of the dependency graph.", Hidden: true},
+	{Name: "sv_graph_merge", Description: "Merge two project graphs into one (union-merge by node ID).", Hidden: true},
 	{Name: "sv_graph_search", Description: "Discover graph nodes matching a text pattern: returns every matching node id/label/path with type, path, degree, fan-in/fan-out, and community. Unlike sv_graph_explain/sv_graph_query, which resolve a single exact node, this is the discovery path when the exact symbol is unknown. Optional 'node_type' filter and 'limit' (default 10, max 50)."},
 	{Name: "sv_graph_communities", Description: "List the top communities in the dependency graph with auto-labels and sizes, or (with 'community_id') detail a specific community's member nodes with their degree/fan-in/fan-out. MCP parity for the 'sv-memory graph communities' CLI."},
 	{Name: "sv_graph_diff", Description: "Compare structural code elements (symbols, calls, imports, blast radius impact) between a Git base reference and the working tree. Use to review architectural impact before committing or opening a PR."},
@@ -236,7 +257,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 1. Tool: sv_mem_save
 	saveTool := mcp.NewTool("sv_mem_save",
-		mcp.WithDescription("Persist a key architectural decision, bug fix, progress journal, or standard guidelines to the project's memory. Supports optional topic_key for upsert semantics (automatically derived from category and title if omitted for non-journal categories) and session_id for session association."),
+		mcp.WithDescription("Persist a decision, bugfix, journal, standard, or progress checkpoint to project memory. Optional topic_key gives upsert semantics (auto-derived for decision/standard/architecture/bugfix if omitted); optional session_id associates the memory with the active session."),
 		mcp.WithString("category", mcp.Required(), mcp.Description("Category of memory: 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem' | 'discussion' | 'idea' | 'qa'")),
 		mcp.WithString("what", mcp.Required(), mcp.Description("Concise description of the decision, standard, or fix")),
 		mcp.WithString("why", mcp.Required(), mcp.Description("Detailed reasoning for this choice")),
@@ -274,7 +295,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 3. Tool: sv_mem_session_start
 	sessionStartTool := mcp.NewTool("sv_mem_session_start",
-		mcp.WithDescription("Register the start of a new coding session and receive an Auto-Boot Context Bundle: previous session summary, key architectural decisions, standards, recent bugfixes, postmortems, recent Q&A, last journals, and top graph hubs. Call this at the beginning of every work session to enable session grouping and post-compaction context recovery."),
+		mcp.WithDescription("Register the start of a coding session and receive an Auto-Boot Context Bundle: previous session summary, key decisions, standards, recent bugfixes, journals, and top graph hubs. Call at the beginning of work to enable session grouping and post-compaction context recovery."),
 		mcp.WithString("goal", mcp.Description("Optional goal or objective for this session. When provided, the Auto-Boot bundle ranks the surfaced decisions/standards/bugfixes by relevance to it instead of pure recency.")),
 		mcp.WithString("directory", mcp.Description("Optional working directory (auto-detected from repo if omitted)")),
 		mcp.WithString("semantic", mcp.Description("When 'true' and a goal is given, re-rank the Auto-Boot bundle candidates with the configured agent CLI by semantic relevance (opt-in; fails open to the deterministic keyword ranking when the agent is unavailable). Default 'false'.")),
@@ -371,17 +392,19 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	)
 	ms.AddTool(judgeTool, s.handleJudge)
 
-	// 12. Tool: sv_mem_compare
-	compareTool := mcp.NewTool("sv_mem_compare",
-		mcp.WithDescription("Compare two memories side by side in a Markdown table. Use to quickly spot contradictions or similarities before judging."),
-		mcp.WithString("id1", mcp.Required(), mcp.Description("The ID of the first memory")),
-		mcp.WithString("id2", mcp.Required(), mcp.Description("The ID of the second memory")),
-	)
-	ms.AddTool(compareTool, s.handleCompare)
+	// 12. Tool: sv_mem_compare (non-core: opt-in via SV_MEMORY_FULL_TOOLS)
+	if fullToolsEnabled() {
+		compareTool := mcp.NewTool("sv_mem_compare",
+			mcp.WithDescription("Compare two memories side by side in a Markdown table. Use to quickly spot contradictions or similarities before judging."),
+			mcp.WithString("id1", mcp.Required(), mcp.Description("The ID of the first memory")),
+			mcp.WithString("id2", mcp.Required(), mcp.Description("The ID of the second memory")),
+		)
+		ms.AddTool(compareTool, s.handleCompare)
+	}
 
 	// 13. Tool: sv_mem_review
 	reviewTool := mcp.NewTool("sv_mem_review",
-		mcp.WithDescription("List memories that may need attention: old, stale, high duplicates, or candidates for consolidation. action='mark_reviewed' (with id) resets a memory's policy-review deadline. action='prune_stale' soft-deletes stale transient memories (journal/qa/discussion/idea) older than the cutoff — dry-run by default, pass apply='true' to actually delete."),
+		mcp.WithDescription("List stale, duplicate, or consolidation-candidate memories. action='mark_reviewed' (with id) clears a memory's review deadline; action='prune_stale' (with apply='true') soft-deletes stale transient memories older than the cutoff (dry-run by default)."),
 		mcp.WithDeferLoading(true),
 		mcp.WithString("action", mcp.Description("Action to perform: 'list' (default), 'mark_reviewed', or 'prune_stale'")),
 		mcp.WithString("id", mcp.Description("Required for action='mark_reviewed': the memory ID to mark as reviewed")),
@@ -398,12 +421,14 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	)
 	ms.AddTool(statsTool, s.handleStats)
 
-	// 15. Tool: sv_mem_diagnose
-	diagnoseTool := mcp.NewTool("sv_mem_diagnose",
-		mcp.WithDescription("Run read-only health checks on the active project: database file, schema tables, FTS5 triggers, project registration, write permissions, chunk directory, and structural graph integrity (dangling edges, orphan nodes, self-loops, missing files)."),
-		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
-	)
-	ms.AddTool(diagnoseTool, s.handleDiagnose)
+	// 15. Tool: sv_mem_diagnose (non-core: opt-in via SV_MEMORY_FULL_TOOLS)
+	if fullToolsEnabled() {
+		diagnoseTool := mcp.NewTool("sv_mem_diagnose",
+			mcp.WithDescription("Run read-only health checks on the active project: database file, schema tables, FTS5 triggers, project registration, write permissions, chunk directory, and structural graph integrity (dangling edges, orphan nodes, self-loops, missing files)."),
+			mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
+		)
+		ms.AddTool(diagnoseTool, s.handleDiagnose)
+	}
 
 	// 16. Tool: sv_mem_delete
 	deleteTool := mcp.NewTool("sv_mem_delete",
@@ -438,17 +463,19 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	)
 	ms.AddTool(capturePromptTool, s.handleCapturePrompt)
 
-	// 18c. Tool: sv_mem_merge_projects (Engram mem_merge_projects parity, admin)
-	mergeProjectsTool := mcp.NewTool("sv_mem_merge_projects",
-		mcp.WithDescription("Merge multiple project name variants into a single canonical project (admin). Moves all memories, sessions, relations, and graph data from 'from' into 'to', then deletes the source project. Mirrors `sv-memory projects consolidate <from> <to>`."),
-		mcp.WithString("from", mcp.Required(), mcp.Description("Source project ID to move data from and then delete")),
-		mcp.WithString("to", mcp.Required(), mcp.Description("Target project ID receiving the data")),
-	)
-	ms.AddTool(mergeProjectsTool, s.handleMergeProjects)
+	// 18c. Tool: sv_mem_merge_projects (Engram mem_merge_projects parity, admin; non-core)
+	if fullToolsEnabled() {
+		mergeProjectsTool := mcp.NewTool("sv_mem_merge_projects",
+			mcp.WithDescription("Merge multiple project name variants into a single canonical project (admin). Moves all memories, sessions, relations, and graph data from 'from' into 'to', then deletes the source project. Mirrors `sv-memory projects consolidate <from> <to>`."),
+			mcp.WithString("from", mcp.Required(), mcp.Description("Source project ID to move data from and then delete")),
+			mcp.WithString("to", mcp.Required(), mcp.Description("Target project ID receiving the data")),
+		)
+		ms.AddTool(mergeProjectsTool, s.handleMergeProjects)
+	}
 
 	// 18b. Tool: sv_mem_context_pack
 	contextPackTool := mcp.NewTool("sv_mem_context_pack",
-		mcp.WithDescription("Build a compact context pack for a code path (file, package, or symbol): the node's structural role in the dependency graph (type, fan-in/fan-out, community) plus the memories linked to that path via where_path or rationale_for edges (decisions, standards, bugfixes). One bounded call replaces the sv_graph_explain + sv_mem_search + sv_mem_get round-trips, saving tokens. Set include_changes='true' to also list active spec changes (proposals) affecting the path."),
+		mcp.WithDescription("Build a compact context pack for a code path: the node's structural graph role (type, fan-in/fan-out, community) plus linked memories (decisions, standards, bugfixes) in one bounded call — replaces chaining sv_graph_explain + sv_mem_search + sv_mem_get. Set include_changes='true' to also list active spec changes affecting the path."),
 		mcp.WithString("path", mcp.Required(), mcp.Description("File path, package name, or symbol to resolve")),
 		mcp.WithString("include_changes", mcp.Description("When 'true', also list active spec changes (proposals) whose where_path matches this path. Default 'false'.")),
 		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
@@ -457,7 +484,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 18b2. Tool: sv_graph_explore (unified explore alias of sv_mem_context_pack)
 	graphExploreTool := mcp.NewTool("sv_graph_explore",
-		mcp.WithDescription("Understand code in ONE call (unified explore): pass one or more comma-separated symbols, file paths, or package names. Each resolved symbol gets its structural role in the dependency graph (type, fan-in/fan-out, community), a surgical source-code snippet, and the shortest call path between the two most significant symbols is rendered — plus blast radius and the memories (decisions/standards/bugfixes) linked to the primary symbol via where_path or rationale_for edges. Use this BEFORE reading/grepping files: the returned source counts as already read. Set include_changes='true' to also list active spec changes affecting the path."),
+		mcp.WithDescription("Understand code in ONE call: pass one or more comma-separated symbols, file paths, or package names. Returns each symbol's structural role (type, fan-in/fan-out, community), a surgical source-code snippet (treat it as already read), the shortest call path between them, blast radius, and linked memories (decisions/standards/bugfixes). Use BEFORE reading/grepping files. include_changes='true' also lists active spec changes."),
 		mcp.WithString("path", mcp.Required(), mcp.Description("Symbol(s), file path(s), or package name(s) to explore. Multiple symbols may be comma-separated (e.g. 'ResolveContextNode, extractSurgicalSnippet') to get their source + call path in one call.")),
 		mcp.WithString("include_changes", mcp.Description("When 'true', also list active spec changes (proposals) whose where_path matches the primary path. Default 'false'.")),
 		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
@@ -466,7 +493,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 18c. Tool: sv_propose_spec
 	proposeSpecTool := mcp.NewTool("sv_propose_spec",
-		mcp.WithDescription("Create a spec change (proposal) for the spec-driven decision engine: registers the change, advances it to the proposed lifecycle state, and runs a pre-flight check against the project's rules and invariants (standards, decisions, architecture memories). A pinned rule overlapping the proposal returns a BLOCK verdict; an ordinary overlap returns WARN. Optionally carries OpenSpec-style delta requirements (requirements param) targeting a single capability (capability_path, defaulting to the slug) that are merged into the capability state on commit. Use before writing code, then sv_validate_decision to re-check after edits, and sv_commit_spec to promote the change into a durable decision memory."),
+		mcp.WithDescription("Create a spec change (proposal) for the spec-driven decision engine: registers the change, advances it to 'proposed', and runs a pre-flight check against project rules/invariants (pinned overlap=BLOCK, ordinary=WARN). Optionally carries OpenSpec-style delta requirements merged into the capability state on commit. Then sv_validate_decision, then sv_commit_spec."),
 		mcp.WithString("slug", mcp.Required(), mcp.Description("Kebab-case unique identifier for the change (e.g. 'implement-session-auth'). Project-unique.")),
 		mcp.WithString("title", mcp.Required(), mcp.Description("Concise title of the proposal")),
 		mcp.WithString("what", mcp.Description("Why and what changes: the proposal body")),
@@ -498,7 +525,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 18d. Tool: sv_validate_decision
 	validateDecisionTool := mcp.NewTool("sv_validate_decision",
-		mcp.WithDescription("Re-check an existing change's proposal against the project's rules and invariants, returning a PASS/WARN/BLOCK verdict, and validate its delta requirements (RFC 2119 keyword presence and MODIFIED scenario drops against the current capability state). Deterministic by default (SQLite FTS5 + Jaccard, zero LLM cost); set semantic='true' to opt into a single batched agent re-ranking by meaning (fails open to the deterministic verdict when the agent is unavailable). Use after editing a proposal and before committing."),
+		mcp.WithDescription("Re-check a change's proposal against the project's rules/invariants and validate its delta requirements, returning PASS/WARN/BLOCK. Deterministic by default (SQLite FTS5 + Jaccard, zero LLM cost); semantic='true' opts into a single batched agent re-ranking (fails open). Use after editing a proposal and before committing."),
 		mcp.WithString("change_id", mcp.Required(), mcp.Description("The change ID returned by sv_propose_spec")),
 		mcp.WithString("semantic", mcp.Description("When 'true', re-rank candidates semantically via the configured agent CLI (opt-in). Default 'false'.")),
 		mcp.WithString("semantic_agent", mcp.Description("Optional agent CLI for semantic validation. Defaults to $SV_MEMORY_SEMANTIC_AGENT, then 'claude'.")),
@@ -508,7 +535,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 18e. Tool: sv_commit_spec
 	commitSpecTool := mcp.NewTool("sv_commit_spec",
-		mcp.WithDescription("Promote a validated spec change into a durable decision/standard memory: saves the decision via the memory engine (topic_key 'decision/<slug>'), links it to the change_id, wires the rationale_for edge to the affected code path, records conflicts_with relations for any pre-flight WARN/BLOCK rules, merges the change's delta requirements into the capability state (spec_capabilities + .sv-memory/specs/capabilities/ mirror + graph spec nodes), and stamps the change as applied. A pre-flight BLOCK (pinned invariant) or a requirements merge conflict rejects the commit unless force='true' explicitly overrides the invariant. Call after implementation, before sv_mem_session_end."),
+		mcp.WithDescription("Promote a validated change into a durable decision/standard memory (topic_key 'decision/<slug>'), wire rationale_for edges, merge its delta requirements into the capability state, and stamp the change applied. A pre-flight BLOCK (pinned invariant) rejects unless force='true'. Call after implementation, before sv_mem_session_end."),
 		mcp.WithString("change_id", mcp.Required(), mcp.Description("The change ID returned by sv_propose_spec")),
 		mcp.WithString("category", mcp.Description("Memory category for the committed decision (default 'decision'; use 'standard' for a reusable rule)")),
 		mcp.WithString("force", mcp.Description("Set 'true' to override a pre-flight BLOCK (pinned invariant) and commit anyway. Default 'false'.")),
@@ -588,41 +615,49 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	)
 	ms.AddTool(godNodesTool, s.handleGodNodes)
 
-	// 25. Tool: sv_graph_surprising_connections
-	surprisingTool := mcp.NewTool("sv_graph_surprising_connections",
-		mcp.WithDescription("Find surprising/interesting cross-community connections (bridges between different parts of the codebase)"),
-		mcp.WithString("limit", mcp.Description("Maximum number of connections to return (default '10')")),
-	)
-	ms.AddTool(surprisingTool, s.handleSurprisingConnections)
+	// 25. Tool: sv_graph_surprising_connections (non-core: opt-in via SV_MEMORY_FULL_TOOLS)
+	if fullToolsEnabled() {
+		surprisingTool := mcp.NewTool("sv_graph_surprising_connections",
+			mcp.WithDescription("Find surprising/interesting cross-community connections (bridges between different parts of the codebase)"),
+			mcp.WithString("limit", mcp.Description("Maximum number of connections to return (default '10')")),
+		)
+		ms.AddTool(surprisingTool, s.handleSurprisingConnections)
+	}
 
-	// 26. Tool: sv_graph_report
-	reportTool := mcp.NewTool("sv_graph_report",
-		mcp.WithDescription("Generate a GRAPH_REPORT.md overview (god nodes, top communities, surprising cross-community bridges, suggested questions), returning the path, byte size, and a bounded summary digest"),
-		mcp.WithDeferLoading(true),
-		mcp.WithString("output", mcp.Description("Output markdown file path (default GRAPH_REPORT.md)")),
-		mcp.WithString("god_nodes", mcp.Description("Number of top god nodes (default 10)")),
-		mcp.WithString("communities", mcp.Description("Number of top communities (default 10)")),
-		mcp.WithString("connections", mcp.Description("Number of surprising connections (default 10)")),
-	)
-	ms.AddTool(reportTool, s.handleGraphReport)
+	// 26. Tool: sv_graph_report (non-core: opt-in via SV_MEMORY_FULL_TOOLS)
+	if fullToolsEnabled() {
+		reportTool := mcp.NewTool("sv_graph_report",
+			mcp.WithDescription("Generate a GRAPH_REPORT.md overview (god nodes, top communities, surprising cross-community bridges, suggested questions), returning the path, byte size, and a bounded summary digest"),
+			mcp.WithDeferLoading(true),
+			mcp.WithString("output", mcp.Description("Output markdown file path (default GRAPH_REPORT.md)")),
+			mcp.WithString("god_nodes", mcp.Description("Number of top god nodes (default 10)")),
+			mcp.WithString("communities", mcp.Description("Number of top communities (default 10)")),
+			mcp.WithString("connections", mcp.Description("Number of surprising connections (default 10)")),
+		)
+		ms.AddTool(reportTool, s.handleGraphReport)
+	}
 
-	// 27. Tool: sv_graph_viz
-	vizTool := mcp.NewTool("sv_graph_viz",
-		mcp.WithDescription("Generate an interactive HTML visualization (graph.html) of the project dependency graph"),
-		mcp.WithDeferLoading(true),
-		mcp.WithString("output", mcp.Description("Output HTML file path (default 'graph.html')")),
-	)
-	ms.AddTool(vizTool, s.handleGraphViz)
+	// 27. Tool: sv_graph_viz (non-core: opt-in via SV_MEMORY_FULL_TOOLS)
+	if fullToolsEnabled() {
+		vizTool := mcp.NewTool("sv_graph_viz",
+			mcp.WithDescription("Generate an interactive HTML visualization (graph.html) of the project dependency graph"),
+			mcp.WithDeferLoading(true),
+			mcp.WithString("output", mcp.Description("Output HTML file path (default 'graph.html')")),
+		)
+		ms.AddTool(vizTool, s.handleGraphViz)
+	}
 
-	// 28. Tool: sv_graph_merge
-	mergeTool := mcp.NewTool("sv_graph_merge",
-		mcp.WithDescription("Merge two project graphs into one (union-merge by node ID)"),
-		mcp.WithDeferLoading(true),
-		mcp.WithString("project_a", mcp.Required(), mcp.Description("First project ID")),
-		mcp.WithString("project_b", mcp.Required(), mcp.Description("Second project ID")),
-		mcp.WithString("output", mcp.Description("Output JSON file path")),
-	)
-	ms.AddTool(mergeTool, s.handleGraphMerge)
+	// 28. Tool: sv_graph_merge (non-core: opt-in via SV_MEMORY_FULL_TOOLS)
+	if fullToolsEnabled() {
+		mergeTool := mcp.NewTool("sv_graph_merge",
+			mcp.WithDescription("Merge two project graphs into one (union-merge by node ID)"),
+			mcp.WithDeferLoading(true),
+			mcp.WithString("project_a", mcp.Required(), mcp.Description("First project ID")),
+			mcp.WithString("project_b", mcp.Required(), mcp.Description("Second project ID")),
+			mcp.WithString("output", mcp.Description("Output JSON file path")),
+		)
+		ms.AddTool(mergeTool, s.handleGraphMerge)
+	}
 
 	// 29. Tool: sv_graph_search
 	graphSearchTool := mcp.NewTool("sv_graph_search",
