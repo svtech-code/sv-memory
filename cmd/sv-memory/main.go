@@ -91,6 +91,8 @@ func init() {
 	rootCmd.AddCommand(contextCmd)
 	rootCmd.AddCommand(setupCmd)
 	rootCmd.AddCommand(captureCmd)
+	rootCmd.AddCommand(sessionCmd)
+	captureCmd.AddCommand(capturePromptCmd)
 
 	deleteCmd.AddCommand(deleteSessionCmd)
 	deleteCmd.AddCommand(deleteProjectCmd)

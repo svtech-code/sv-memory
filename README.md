@@ -226,6 +226,11 @@ sv-memory tui
 | `sv-memory obsidian-export`        | **Export**      | Exports memories into linked Obsidian Markdown notes (`[[wikilinks]]`).                  |
 | `sv-memory conflicts`              | **Memory**      | Detects semantic overlap and memory conflicts across the project.                        |
 | `sv-memory capture`                | **Memory**      | Passively captures git commits or journal observations into persistent memory.           |
+| `sv-memory capture prompt "<text>"` | **Memory**     | Captures the user's prompt as a local observation attached to the active session (CLI parity with `sv_mem_capture_prompt`, for hooks/plugins). |
+| `sv-memory session start`          | **Session**     | Starts a coding session and prints the Auto-Boot context bundle (CLI parity with `sv_mem_session_start`, for hooks/plugins). |
+| `sv-memory session summary <id>`   | **Session**     | Saves a structured summary (goal/discoveries/accomplished/next-steps/files) for a session. |
+| `sv-memory session end`            | **Session**     | Ends the active session (or `--session-id`) with an optional summary, mirroring `sv_mem_session_end`. |
+| `sv-memory session active`         | **Session**     | Prints the active session ID or `none`.                                                 |
 | `sv-memory hooks install`          | **Hooks**       | Installs PreToolUse and Git post-commit hooks for Claude Code, Antigravity, OpenCode, and Git. |
 | `sv-memory permissions list`       | **Permissions** | Lists all sv-memory MCP tools with descriptions.                                         |
 | `sv-memory permissions status`     | **Permissions** | Shows granted/missing MCP permissions per platform.                                      |
