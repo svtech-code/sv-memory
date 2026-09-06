@@ -67,6 +67,22 @@ func EndSession(db *sql.DB, id, summary string) error {
 	return nil
 }
 
+// CloseStaleSessions ends all active sessions older than maxAge. Returns the
+// count of sessions closed. Used by sv_mem_session_start to auto-clean leaked
+// sessions when the user exits an agent without calling sv_mem_session_end.
+func CloseStaleSessions(db *sql.DB, projectID string, maxAge time.Duration) (int, error) {
+	cutoff := time.Now().Add(-maxAge)
+	result, err := db.Exec(
+		"UPDATE sessions SET ended_at = ?, summary = ?, status = 'completed' WHERE project_id = ? AND status = 'active' AND started_at < ?",
+		time.Now(), "Session expired (auto-closed)", projectID, cutoff,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to close stale sessions: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	return int(n), nil
+}
+
 func SaveSessionSummary(db *sql.DB, id, goal, discoveries, accomplished, nextSteps, files string) error {
 	goal = security.SanitizeText(goal)
 	discoveries = security.SanitizeText(discoveries)

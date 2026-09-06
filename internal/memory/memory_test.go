@@ -2736,3 +2736,68 @@ func TestCompareMemoriesTruncatesReason(t *testing.T) {
 		t.Fatalf("expected reason to be truncated in CompareMemories output, but full reason was present")
 	}
 }
+
+func TestCloseStaleSessions(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-close-stale")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_storage.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "test-project"
+	if err = db.RegisterProject(database, projectID, "test-proj", "/tmp"); err != nil {
+		t.Fatalf("RegisterProject error: %v", err)
+	}
+
+	// Create a session that started 2 hours ago (stale with 1h threshold).
+	sess1, err := StartSession(database, projectID, "old session", "/tmp")
+	if err != nil {
+		t.Fatalf("StartSession error: %v", err)
+	}
+	database.Exec("UPDATE sessions SET started_at = ? WHERE id = ?", time.Now().Add(-2*time.Hour), sess1.ID)
+
+	// Create a fresh session (not stale).
+	sess2, err := StartSession(database, projectID, "fresh session", "/tmp")
+	if err != nil {
+		t.Fatalf("StartSession error: %v", err)
+	}
+
+	// Close stale sessions with 1h threshold.
+	closed, err := CloseStaleSessions(database, projectID, 1*time.Hour)
+	if err != nil {
+		t.Fatalf("CloseStaleSessions error: %v", err)
+	}
+	if closed != 1 {
+		t.Fatalf("expected 1 stale session closed, got %d", closed)
+	}
+
+	// Verify old session is completed.
+	var status1 string
+	database.QueryRow("SELECT status FROM sessions WHERE id = ?", sess1.ID).Scan(&status1)
+	if status1 != "completed" {
+		t.Fatalf("expected old session to be completed, got %s", status1)
+	}
+
+	// Verify fresh session is still active.
+	var status2 string
+	database.QueryRow("SELECT status FROM sessions WHERE id = ?", sess2.ID).Scan(&status2)
+	if status2 != "active" {
+		t.Fatalf("expected fresh session to be active, got %s", status2)
+	}
+
+	// Idempotent: closing again should return 0.
+	closed2, err := CloseStaleSessions(database, projectID, 1*time.Hour)
+	if err != nil {
+		t.Fatalf("CloseStaleSessions idempotent error: %v", err)
+	}
+	if closed2 != 0 {
+		t.Fatalf("expected 0 on second call, got %d", closed2)
+	}
+}

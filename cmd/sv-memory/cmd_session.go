@@ -5,9 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/svtech-code/sv-memory/internal/config"
 	"github.com/svtech-code/sv-memory/internal/graph"
@@ -35,6 +38,15 @@ var sessionStartCmd = &cobra.Command{
 			if dir == "" {
 				dir = cfg.ProjPath
 			}
+			// Auto-close stale sessions before starting a new one.
+			staleHours := viper.GetInt("stale_session_hours")
+			if staleHours <= 0 {
+				staleHours = 24
+			}
+			if closed, cErr := memory.CloseStaleSessions(database, cfg.ProjectID, time.Duration(staleHours)*time.Hour); cErr == nil && closed > 0 {
+				fmt.Fprintf(os.Stderr, "Auto-closed %d stale session(s)\n", closed)
+			}
+
 			session, err := memory.StartSession(database, cfg.ProjectID, goal, dir)
 			if err != nil {
 				return fmt.Errorf("failed to start session: %w", err)

@@ -43,6 +43,7 @@ func LoadGlobalAndLocalConfig(projPath string) {
 	viper.SetDefault("graph_boost", true)
 	viper.SetDefault("graph_watcher_enabled", true)
 	viper.SetDefault("graph_watch_debounce_ms", 2000)
+	viper.SetDefault("stale_session_hours", 24)
 
 	// 1. Load global config: ~/.sv-memory/config.yaml
 	home, err := os.UserHomeDir()

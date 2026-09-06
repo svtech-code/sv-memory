@@ -9,6 +9,7 @@ import (
 	"time"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
+	"github.com/spf13/viper"
 
 	"github.com/svtech-code/sv-memory/internal/graph"
 	"github.com/svtech-code/sv-memory/internal/memory"
@@ -177,6 +178,51 @@ func TestSessionStartHonorsTokenBudget(t *testing.T) {
 	out := textContent(res.Content[0])
 	if !strings.Contains(out, "[!] Response truncated to ~1 tokens") {
 		t.Fatalf("expected session_start bundle to be truncated by token_budget, got:\n%s", out)
+	}
+}
+
+func TestSessionStartAutoClosesStaleSessions(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	// Create a stale session (started 2 hours ago).
+	stale, err := memory.StartSession(pool.Writer, cfg.ProjectID, "stale session", "/tmp")
+	if err != nil {
+		t.Fatalf("StartSession error: %v", err)
+	}
+	pool.Writer.Exec("UPDATE sessions SET started_at = ? WHERE id = ?", time.Now().Add(-2*time.Hour), stale.ID)
+
+	// Verify stale session exists.
+	var beforeCount int
+	pool.Reader.QueryRow("SELECT count(*) FROM sessions WHERE project_id = ? AND status = 'active'", cfg.ProjectID).Scan(&beforeCount)
+	if beforeCount != 1 {
+		t.Fatalf("expected 1 active session before start, got %d", beforeCount)
+	}
+
+	// Set stale_session_hours to 1 so the 2-hour-old session is stale.
+	viper.Set("stale_session_hours", 1)
+	defer viper.Set("stale_session_hours", 0)
+
+	// Start a new session — should auto-close the stale one.
+	srv := NewServer(pool, cfg)
+	ctx := context.Background()
+	req := mcpgo.CallToolRequest{}
+	req.Params.Name = "sv_mem_session_start"
+	req.Params.Arguments = map[string]any{}
+	res, err := srv.GetTool("sv_mem_session_start").Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("session_start failed: %v", err)
+	}
+	out := textContent(res.Content[0])
+	if !strings.Contains(out, "Session started") {
+		t.Fatalf("expected started session, got:\n%s", out)
+	}
+
+	// Verify stale session is now completed.
+	var staleStatus string
+	pool.Reader.QueryRow("SELECT status FROM sessions WHERE id = ?", stale.ID).Scan(&staleStatus)
+	if staleStatus != "completed" {
+		t.Fatalf("expected stale session to be completed, got %s", staleStatus)
 	}
 }
 

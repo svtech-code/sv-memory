@@ -21,6 +21,16 @@ func (s *Server) handleSessionStart(ctx context.Context, req mcp.CallToolRequest
 	// context even without an explicit sv_mem_search.
 	s.maybeSyncFromGit()
 
+	// Auto-close stale sessions (leaked when the user exits an agent without
+	// calling sv_mem_session_end). Configurable via stale_session_hours.
+	staleHours := viper.GetInt("stale_session_hours")
+	if staleHours <= 0 {
+		staleHours = 24
+	}
+	if closed, cErr := memory.CloseStaleSessions(s.pool.Writer, s.cfg.ProjectID, time.Duration(staleHours)*time.Hour); cErr == nil && closed > 0 {
+		debugLog("auto-closed %d stale session(s)", closed)
+	}
+
 	goal := req.GetString("goal", "")
 	semantic := req.GetString("semantic", "") == "true"
 	semanticAgent := req.GetString("semantic_agent", "")
