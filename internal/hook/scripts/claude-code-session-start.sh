@@ -8,7 +8,6 @@
 # is uninitialized. Always exits 0.
 SV=sv-memory
 command -v "$SV" >/dev/null 2>&1 || exit 0
-[ -d "$PWD/.sv-memory" ] || exit 0
 
 ACTIVE=$("$SV" session active 2>/dev/null)
 if [ -z "$ACTIVE" ] || [ "$ACTIVE" = "none" ]; then

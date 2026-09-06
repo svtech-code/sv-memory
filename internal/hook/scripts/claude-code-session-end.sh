@@ -8,7 +8,6 @@
 [ -n "$CLAUDE_PROJECT_DIR" ] && cd "$CLAUDE_PROJECT_DIR" 2>/dev/null
 SV=sv-memory
 command -v "$SV" >/dev/null 2>&1 || exit 0
-[ -d "$PWD/.sv-memory" ] || exit 0
 
 "$SV" session end >/dev/null 2>&1
 echo "💡 sv-memory: Session closed. If you did not save a summary, call sv_mem_session_summary at the start of the next session." >&2
