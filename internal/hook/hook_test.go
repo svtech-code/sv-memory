@@ -581,6 +581,34 @@ func TestOpenCodePluginStrictHasToolExecuteBefore(t *testing.T) {
 	}
 }
 
+// TestOpenCodePluginStrictModelAgnostic guards the deterministic (model-agnostic)
+// automation added so sv-memory behaves the same regardless of the model: the
+// plugin must auto-manage the session lifecycle, capture prompts, inject the
+// Auto-Boot bundle, re-orient on model switch, and nudge the spec flow on edits.
+func TestOpenCodePluginStrictModelAgnostic(t *testing.T) {
+	data, err := hookScriptsFS.ReadFile("scripts/opencode-plugin-strict.ts")
+	if err != nil {
+		t.Fatalf("failed to read strict plugin: %v", err)
+	}
+	plugin := string(data)
+	required := []string{
+		"chat.message",
+		"experimental.chat.messages.transform",
+		"experimental.session.compacting",
+		"tool.execute.after",
+		`["session", "start"]`,
+		`["session", "active"]`,
+		`["capture", "prompt", text]`,
+		"Model switched to",
+		"sv_spec_list",
+	}
+	for _, s := range required {
+		if !strings.Contains(plugin, s) {
+			t.Errorf("strict plugin is missing model-agnostic marker %q — re-sync the plugin template", s)
+		}
+	}
+}
+
 func TestInstallOpenCodeStrictPlugin(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-hook-oc-strict")
 	if err != nil {

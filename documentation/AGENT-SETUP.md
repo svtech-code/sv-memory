@@ -90,6 +90,13 @@ Then restart your assistant so it reloads the MCP config and new tools. Verify w
 - **Native plugin:** `.opencode/plugin/sv-memory.ts` registers the `sv_memory_context` tool
   — a first-class way to fetch a context pack for a file/package/symbol by shelling out to
   `sv-memory context <path>`, without needing MCP approval.
+- **Deterministic (model-agnostic) automation:** the plugin auto-starts the session and
+  injects the Auto-Boot Context Bundle on your first request, captures every user prompt
+  (`sv-memory capture prompt`), re-orients the model with active specs when you switch
+  models mid-session, nudges the spec flow after an edit that skipped `sv_spec_list`, and
+  reminds the agent to save the session summary before opencode compacts. All fail-open and
+  gated to fire once, so behavior does not depend on the model choosing to call the tools.
+  Opt-out with `SV_MEMORY_STRICT_DISABLE=1` (also disables the first-read redirect).
 - **Protocol:** sv-memory rules are injected into `AGENTS.md`.
 - **Curated tool surface:** the MCP server registers **42 tools total, 35 core by default**. The 7 maintenance/admin tools (`sv_mem_diagnose`, `sv_mem_compare`, `sv_mem_merge_projects`, `sv_graph_report`, `sv_graph_viz`, `sv_graph_merge`, `sv_graph_surprising_connections`) are omitted by default to keep the per-request tool list small (token economy); set `SV_MEMORY_FULL_TOOLS=1` in the server environment to enable them.
 

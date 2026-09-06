@@ -92,6 +92,14 @@ Luego reinicia tu asistente para que recargue la configuración MCP y las nuevas
 - **Plugin nativo:** `.opencode/plugin/sv-memory.ts` registra el tool `sv_memory_context` —
   una forma de primera clase de obtener un context pack para un archivo/paquete/símbolo
   invocando `sv-memory context <ruta>`, sin necesitar aprobación MCP.
+- **Automatización determinista (agnóstica al modelo):** el plugin arranca la sesión
+  automáticamente e inyecta el Auto-Boot Context Bundle en tu primer request, captura cada
+  prompt del usuario (`sv-memory capture prompt`), re-orienta al modelo con las specs activas
+  cuando cambias de modelo a mitad de sesión, hace un nudge del flujo de specs tras un edit
+  que omitió `sv_spec_list`, y recuerda guardar el resumen de sesión antes de que opencode
+  compacte. Todo fail-open y con disparo único, de modo que el comportamiento no depende de
+  que el modelo elija llamar a las tools. Opt-out con `SV_MEMORY_STRICT_DISABLE=1` (también
+  desactiva la redirección del primer read).
 - **Protocolo:** las reglas sv-memory se inyectan en `AGENTS.md`.
 - **Superficie de tools curada:** el servidor MCP registra **42 herramientas en total, 35 core por defecto**. Las 7 herramientas de mantenimiento/admin (`sv_mem_diagnose`, `sv_mem_compare`, `sv_mem_merge_projects`, `sv_graph_report`, `sv_graph_viz`, `sv_graph_merge`, `sv_graph_surprising_connections`) se omiten por defecto para mantener pequeña la lista de tools por request (economía de tokens); define `SV_MEMORY_FULL_TOOLS=1` en el entorno del servidor para habilitarlas.
 
