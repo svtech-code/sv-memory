@@ -173,8 +173,8 @@ func TestInstallClaudeCodeLifecycleHooks(t *testing.T) {
 		t.Fatalf("install failed: %v", results[0].Err)
 	}
 
-	// All four lifecycle scripts must exist.
-	lifecycleDirs := []string{"session_start", "session_end", "precompact", "subagent_stop"}
+	// All lifecycle scripts must exist.
+	lifecycleDirs := []string{"session_start", "session_end", "precompact", "subagent_stop", "user_prompt_submit"}
 	for _, dir := range lifecycleDirs {
 		scriptPath := filepath.Join(tempDir, ".claude", "hooks", dir, "sv-memory.sh")
 		if _, err = os.Stat(scriptPath); os.IsNotExist(err) {
@@ -196,7 +196,7 @@ func TestInstallClaudeCodeLifecycleHooks(t *testing.T) {
 	if !ok {
 		t.Fatal("expected hooks object in settings")
 	}
-	for _, event := range []string{"PreToolUse", "SessionStart", "SessionEnd", "PreCompact", "SubagentStop"} {
+	for _, event := range []string{"PreToolUse", "UserPromptSubmit", "SessionStart", "SessionEnd", "PreCompact", "SubagentStop"} {
 		entries, ok := hooks[event].([]interface{})
 		if !ok || len(entries) == 0 {
 			t.Errorf("expected %s hook entries in settings.json", event)

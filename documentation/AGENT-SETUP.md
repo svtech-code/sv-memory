@@ -67,14 +67,19 @@ Then restart your assistant so it reloads the MCP config and new tools. Verify w
 - **MCP config:** if the `claude` CLI is on your PATH, run the printed
   `claude mcp add sv-memory ...` command to register the server at user scope. Otherwise a
   project-local `.mcp.json` is written and Claude Code picks it up automatically.
-- **Hooks:** `sv-memory setup claude-code` installs five hook scripts under
+- **Hooks:** `sv-memory setup claude-code` installs six hook scripts under
   `.claude/hooks/` and registers them in `.claude/settings.json`:
   - `PreToolUse` (matcher `Read|Glob|Grep`) — nudges the agent to query memory/graph before
     reading files. With the opt-in silent context injection
     (`sv-memory hooks install --platform claude-code --context-injection`) the first `Read`
     of each file also injects a compact graph+memory context pack as `additionalContext`.
-  - `SessionStart` — reminds the agent to call `sv_mem_session_start`.
-  - `SessionEnd` — reminds the agent to close the session with `sv_mem_session_end`.
+  - `UserPromptSubmit` — **deterministic**: persists every user prompt via
+    `sv-memory capture prompt` (model-agnostic prompt capture).
+  - `SessionStart` — **deterministic**: auto-starts the sv-memory session (when none is
+    active) and injects the Auto-Boot Context Bundle as `additionalContext`, so any model
+    receives prior context without needing to call `sv_mem_session_start`.
+  - `SessionEnd` — **deterministic**: auto-closes the session with `sv-memory session end`
+    (idempotent, preserves a saved summary), so no active session leaks.
   - `PreCompact` — fires right before context compaction and tells the agent to save a
     session summary first (context recovery).
   - `SubagentStop` — reminds the agent to persist durable findings from subagents.
