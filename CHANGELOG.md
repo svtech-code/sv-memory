@@ -5,7 +5,15 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+## [v0.20.0] - 2026-09-06
+
 ### Added
+
+- **Auto-close stale leaked sessions**: `sv_mem_session_start` (MCP) and `sv-memory session start` (CLI) now auto-close active sessions older than `stale_session_hours` (default 24h) before creating a new session. Fixes leaked sessions from agents without `SessionEnd` hooks (OpenCode, Antigravity, Cursor, Windsurf, Codex). Configurable via `~/.sv-memory/config.yaml`. (`4c093a4`)
+- **Reasoning field cap (200 chars)**: the `Reason` field in `MemoryRelation` and `SemanticVerdict` is now silently truncated to 200 chars (no suffix) in `ApplySemanticVerdict` and `CompareMemories`, keeping token usage bounded when the agent inspects relations. (`70ee879`)
+- **Architecture documentation**: new `documentation/ARCHITECTURE.md` (EN) and `documentation/ARCHITECTURE_ES.md` (ES) covering session lifecycle, progressive disclosure, graph unification, conflict surfacing, token economy, spec-driven decision cycle, and sync/freshness. (`b37b734`)
+
+### Added (previous releases)
 
 - **Curated MCP tool surface (token economy)**: the MCP server now registers **35 core tools by default** and only 42 total. The 7 maintenance/admin tools (`sv_mem_diagnose`, `sv_mem_compare`, `sv_mem_merge_projects`, `sv_graph_report`, `sv_graph_viz`, `sv_graph_merge`, `sv_graph_surprising_connections`) are omitted unless `SV_MEMORY_FULL_TOOLS=1` is set, shrinking the per-request tool list advertised to agents. The permission allow-lists still grant all 42 so full mode works without re-running setup.
 - **CLI session lifecycle commands**: new `sv-memory session start|summary|end|active` mirror the `sv_mem_session_start/session_summary/session_end` MCP tools (Auto-Boot bundle + graph hubs included), and `sv-memory capture prompt "<text>"` mirrors `sv_mem_capture_prompt`. These are the CLI counterpart for agent hooks/plugins to drive the session lifecycle deterministically without an MCP round-trip or model choosing to call a tool.
