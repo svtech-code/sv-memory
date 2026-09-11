@@ -24,7 +24,7 @@ func FetchReference(ctx context.Context, url string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Add user-agent to avoid simple blocks
 	req.Header.Set("User-Agent", "sv-memory/1.0 (Web Ingest)")
 
@@ -43,7 +43,7 @@ func FetchReference(ctx context.Context, url string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	text := string(body)
 
 	// If it's already markdown or raw text (e.g. raw.githubusercontent), return as is.
@@ -51,7 +51,7 @@ func FetchReference(ctx context.Context, url string) (string, error) {
 	if strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
 		// Strip scripts and styles
 		text = scriptStyleRe.ReplaceAllString(text, "")
-		
+
 		// Replace some structural tags with newlines
 		text = strings.ReplaceAll(text, "</p>", "\n\n")
 		text = strings.ReplaceAll(text, "<br>", "\n")
@@ -60,10 +60,10 @@ func FetchReference(ctx context.Context, url string) (string, error) {
 		text = strings.ReplaceAll(text, "</h1>", "\n\n")
 		text = strings.ReplaceAll(text, "</h2>", "\n\n")
 		text = strings.ReplaceAll(text, "</h3>", "\n\n")
-		
+
 		// Strip remaining HTML tags
 		text = tagRe.ReplaceAllString(text, "")
-		
+
 		// Decode basic HTML entities
 		text = strings.ReplaceAll(text, "&nbsp;", " ")
 		text = strings.ReplaceAll(text, "&lt;", "<")

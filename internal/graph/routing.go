@@ -30,7 +30,7 @@ func extractRoutingEdges(fileContents map[string][]byte) (map[string]*Node, []*E
 
 	for path, content := range fileContents {
 		fileID := "file:" + path
-		
+
 		// 1. File-based routing
 		if m := svelteRouteRe.FindStringSubmatch(path); len(m) > 0 {
 			routePath := "/" + m[1]
