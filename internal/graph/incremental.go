@@ -86,6 +86,15 @@ func syncGraphFull(db *sql.DB, projectID string, projPath string) error {
 		return err
 	}
 
+	// Phase 2b: Extract framework routing (Next.js, SvelteKit, FastAPI, Spring)
+	routeNodes, routeEdges := extractRoutingEdges(wr.fileContents)
+	if err := bulkInsertNodes(tx, projectID, routeNodes); err != nil {
+		return err
+	}
+	if err := bulkInsertEdges(tx, projectID, routeEdges); err != nil {
+		return err
+	}
+
 	// Store fresh file metadata for future incremental runs.
 	if err := updateFileMeta(tx, projectID, wr.fileMeta); err != nil {
 		return err
@@ -268,13 +277,33 @@ func trySyncGraphIncrementalFiltered(db *sql.DB, projectID string, projPath stri
 		if _, err := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND relation_type = '"+schema.EdgeCalls+"'", projectID); err != nil {
 			return false, fmt.Errorf("failed deleting old call edges: %w", err)
 		}
+		if _, err := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND relation_type = '"+schema.EdgeRoutes+"'", projectID); err != nil {
+			return false, fmt.Errorf("failed deleting old routing edges: %w", err)
+		}
+		if _, err := tx.Exec("DELETE FROM graph_nodes WHERE project_id = ? AND node_type = '"+schema.NodeTypeRoute+"'", projectID); err != nil {
+			return false, fmt.Errorf("failed deleting old routing nodes: %w", err)
+		}
 		callEdges := extractCallEdges(wr.nodes, wr.fileContents)
 		if err := bulkInsertEdges(tx, projectID, callEdges); err != nil {
+			return false, err
+		}
+		routeNodes, routeEdges := extractRoutingEdges(wr.fileContents)
+		if err := bulkInsertNodes(tx, projectID, routeNodes); err != nil {
+			return false, err
+		}
+		if err := bulkInsertEdges(tx, projectID, routeEdges); err != nil {
 			return false, err
 		}
 	} else {
 		callEdges := extractCallEdges(wr.nodes, wr.fileContents)
 		if err := bulkInsertEdges(tx, projectID, callEdges); err != nil {
+			return false, err
+		}
+		routeNodes, routeEdges := extractRoutingEdges(wr.fileContents)
+		if err := bulkInsertNodes(tx, projectID, routeNodes); err != nil {
+			return false, err
+		}
+		if err := bulkInsertEdges(tx, projectID, routeEdges); err != nil {
 			return false, err
 		}
 	}

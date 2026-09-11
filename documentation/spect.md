@@ -459,7 +459,7 @@ CREATE TABLE IF NOT EXISTS graph_edges (
     project_id TEXT NOT NULL,
     source_id TEXT NOT NULL,
     target_id TEXT NOT NULL,
-    relation_type TEXT NOT NULL,              -- 'imports' | 'calls' | 'depends_on' | 'references' | 'rationale_for'
+    relation_type TEXT NOT NULL,              -- 'imports' | 'calls' | 'depends_on' | 'references, routes' | 'rationale_for'
     confidence TEXT NOT NULL DEFAULT 'EXTRACTED', -- 'EXTRACTED' | 'INFERRED' | 'AMBIGUOUS'
     source_location TEXT,                     -- Line numbers/ranges
     PRIMARY KEY(project_id, id),
@@ -1223,7 +1223,7 @@ Parsing uses **tree-sitter** (`gotreesitter`) for the primary languages, with a 
 | Svelte     | `.svelte`     | regex (`<script>` block imports)                           |
 | Lua        | `.lua`        | regex (`require()`, `dofile()`, `loadfile()`)              |
 | Markdown   | `.md`         | regex + semantic parser (headings, code blocks, wikilinks) |
-| SQL        | `.sql`        | scanner-level (table/column references)                    |
+| SQL        | `.sql`        | scanner-level (table/column references, routes)                    |
 
 ---
 

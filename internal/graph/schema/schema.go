@@ -19,10 +19,11 @@ const (
 	NodeTypeSQL       = "sql"
 	NodeTypeDocument  = "document"
 	NodeTypeSpec      = "spec"
+	NodeTypeRoute     = "route"
 )
 
 // Edge relation types understood by the graph. The code scanner produces
-// 'imports' | 'calls' | 'depends_on' | 'contains' | 'references', saved
+// 'imports' | 'calls' | 'depends_on' | 'contains' | 'references' | 'routes', saved
 // memories are linked to their code nodes with 'rationale_for', and the spec
 // engine links capabilities to their code entities with 'implements'.
 const (
@@ -31,6 +32,7 @@ const (
 	EdgeDependsOn    = "depends_on"
 	EdgeContains     = "contains"
 	EdgeReferences   = "references"
+	EdgeRoutes       = "routes"
 	EdgeRationaleFor = "rationale_for"
 	EdgeImplements   = "implements"
 )
