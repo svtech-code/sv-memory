@@ -100,6 +100,7 @@ var AllTools = []Tool{
 	{Name: "sv_mem_pin", Description: "Pin (default) or unpin (action='unpin') a local memory so key decisions stay visible in session context."},
 	{Name: "sv_mem_capture_passive", Description: "Log lightweight observations (files modified, tests failing) without a save decision."},
 	{Name: "sv_mem_capture_prompt", Description: "Capture the user's prompt as a local observation attached to a session, so future sessions can recover the user's intent after compaction (recoverable via sv_mem_context)."},
+	{Name: "sv_mem_fetch_reference", Description: "Fetch and extract clean text from an external URL (e.g. GitHub issues, API docs). Use this to read external context, then summarize and save it via sv_mem_save or sv_propose_spec."},
 	{Name: "sv_mem_merge_projects", Description: "Merge all memories, sessions, relations, and graph data from one project into another, then delete the source project (admin).", Hidden: true},
 	{Name: "sv_mem_context_pack", Description: "Build a compact context pack for a code path: graph role (fan-in/fan-out, community) plus linked memories (decisions/standards/bugfixes). One bounded call."},
 	{Name: "sv_graph_explore", Description: "Unified explore for code understanding in one call: pass one or more comma-separated symbols/paths to get each symbol's structural role, surgical source snippet, the shortest call path between them, blast radius, and linked memories (decisions/standards/bugfixes). Replaces chaining sv_graph_query + sv_graph_path + sv_graph_explain manually."},
@@ -685,6 +686,16 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
 	)
 	ms.AddTool(graphDiffTool, s.handleGraphDiff)
+
+	// 32. Tool: sv_mem_fetch_reference
+	fetchRefTool := mcp.NewTool("sv_mem_fetch_reference",
+		mcp.WithDescription("Fetch and extract clean text from an external URL (e.g. GitHub issues, API docs). Use this to read external context, then summarize and save it via sv_mem_save or sv_propose_spec."),
+		mcp.WithString("url",
+			mcp.Required(),
+			mcp.Description("The HTTP/HTTPS URL to fetch"),
+		),
+	)
+	ms.AddTool(fetchRefTool, s.handleFetchReference)
 
 	return ms
 }

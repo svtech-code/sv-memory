@@ -256,6 +256,7 @@ sv-memory tui
 - **`sv_mem_diagnose`**: Runs read-only health checks (database, FTS5, project, and graph integrity).
 - **`sv_mem_delete`**: Soft-deletes (or hard-deletes) a memory.
 - **`sv_mem_pin`**: Pins a local memory so it surfaces first in session context; `action="unpin"` clears it.
+- **`sv_mem_fetch_reference`**: Fetches an external URL and returns clean markdown. Ideal for reading API docs or GitHub issues to formulate decisions.
 - **`sv_mem_capture_passive`**: Logs lightweight journal entries automatically.
 - **`sv_mem_capture_prompt`**: Records what the user asked (Engram `mem_save_prompt` parity) so future sessions have context about user goals; recoverable via `sv_mem_context` and counted by `sv_mem_stats`. Local-only (not git-synced).
 - **`sv_mem_merge_projects`**: Merges project variants into a canonical project (admin) — moves all memories, sessions, relations, and graph data from `from` into `to`, then deletes the source. Mirrors `sv-memory projects consolidate`.

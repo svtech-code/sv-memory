@@ -114,6 +114,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **Memory CRUD:** sv_mem_save, sv_mem_update, sv_mem_get, sv_mem_delete, sv_mem_search, sv_mem_timeline
 - **Pin / Priority:** sv_mem_pin (action='unpin' to clear)
 - **Knowledge quality:** sv_mem_suggest_topic_key, sv_mem_judge, sv_mem_compact, sv_mem_review, sv_mem_capture_passive, sv_mem_conflicts, sv_mem_stats
+- **Web Ingest:** sv_mem_fetch_reference (fetch clean text from external URLs to save as context)
 - **User intent:** sv_mem_capture_prompt (record what the user asked, recoverable via sv_mem_context)
 - **Maintenance/admin (opt-in):** sv_mem_diagnose, sv_mem_compare, sv_mem_merge_projects, sv_graph_report, sv_graph_viz, sv_graph_merge, sv_graph_surprising_connections — registered only when SV_MEMORY_FULL_TOOLS=1
 
