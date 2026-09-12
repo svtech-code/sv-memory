@@ -270,15 +270,18 @@ export const SvMemoryPlugin: Plugin = async ({ $ }) => {
       },
 
       // 5) Track edits/spec-tool usage to arm the corrective spec nudge.
+      //    Match spec tools by suffix (not hardcoded prefix) so the nudge
+      //    works regardless of how the MCP client prefixes tool names.
       "tool.execute.after": async (input: ToolInput) => {
         const s = stateFor(input.sessionID)
         if (input.tool === "edit" || input.tool === "write" || input.tool === "patch") {
           if (!s.specSeen && !s.pendingNudge) s.pendingNudge = true
         }
+        const t = input.tool
         if (
-          input.tool === "sv-memory_sv_spec_list" ||
-          input.tool === "sv-memory_sv_propose_spec" ||
-          input.tool === "sv-memory_sv_spec_get"
+          t.endsWith("sv_spec_list") ||
+          t.endsWith("sv_propose_spec") ||
+          t.endsWith("sv_spec_get")
         ) {
           s.specSeen = true
           s.pendingNudge = false

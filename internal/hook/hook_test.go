@@ -633,6 +633,31 @@ func TestOpenCodePluginStrictModelAgnostic(t *testing.T) {
 	}
 }
 
+// TestOpenCodePluginUsesSuffixMatching guards the spec-tool detection against
+// hardcoded MCP client prefixes. The corrective nudge must fire regardless of
+// how the client prefixes tool names (e.g. "sv-memory_sv_spec_list" or
+// "custom_prefix_sv_spec_list"). The plugin should match by suffix.
+func TestOpenCodePluginUsesSuffixMatching(t *testing.T) {
+	data, err := hookScriptsFS.ReadFile("scripts/opencode-plugin-strict.ts")
+	if err != nil {
+		t.Fatalf("failed to read strict plugin: %v", err)
+	}
+	plugin := string(data)
+	if !strings.Contains(plugin, `endsWith("sv_spec_list")`) {
+		t.Error("plugin should detect spec_list by suffix, not hardcoded prefix")
+	}
+	if !strings.Contains(plugin, `endsWith("sv_propose_spec")`) {
+		t.Error("plugin should detect propose_spec by suffix, not hardcoded prefix")
+	}
+	if !strings.Contains(plugin, `endsWith("sv_spec_get")`) {
+		t.Error("plugin should detect spec_get by suffix, not hardcoded prefix")
+	}
+	// Ensure no hardcoded prefix for spec tools remains
+	if strings.Contains(plugin, `"sv-memory_sv_spec_list"`) {
+		t.Error("plugin should not hardcode 'sv-memory_' prefix for spec tools")
+	}
+}
+
 func TestInstallOpenCodeStrictPlugin(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-hook-oc-strict")
 	if err != nil {
