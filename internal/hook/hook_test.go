@@ -895,3 +895,77 @@ func TestGitHookWorktree(t *testing.T) {
 		t.Error("expected git status true for worktree")
 	}
 }
+
+// TestSkillParityAndSessionNotes guards the canonical skill files against
+// content drift: both skills must contain the mandatory workflow sections
+// (graph-first, spec cycle, topic keys, progressive disclosure, maintenance),
+// list no hidden tools as core, and carry the correct session-lifecycle note
+// for their platform.
+func TestSkillParityAndSessionNotes(t *testing.T) {
+	required := []string{
+		"**Graph:**",
+		"sv_graph_explore",
+		"Spec-Driven Decision Cycle",
+		"sv_propose_spec",
+		"sv_validate_decision",
+		"sv_commit_spec",
+		"## Topic Keys",
+		"sv_mem_suggest_topic_key",
+		"## Progressive Disclosure",
+		"## Tool Quick Reference",
+		"## Session Lifecycle",
+		"## When to save what",
+		"## Periodic maintenance",
+		"sv_mem_review",
+		"sv_mem_compact",
+	}
+
+	// Hidden tools must NOT appear as standalone core entries — they belong
+	// only in the "(opt-in)" maintenance/admin line.
+	hiddenAsCore := []string{
+		"sv_mem_diagnose",
+		"sv_graph_report",
+	}
+
+	type skillCase struct {
+		name            string
+		content         string
+		wantAutoManaged bool // true = platform auto-manages session
+	}
+
+	cases := []skillCase{
+		{name: "opencode", content: hookScript(PlatformOpenCode, ModeStrict), wantAutoManaged: true},
+		{name: "antigravity", content: antigravitySkillScript(), wantAutoManaged: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, marker := range required {
+				if !strings.Contains(tc.content, marker) {
+					t.Errorf("%s skill missing required marker: %s", tc.name, marker)
+				}
+			}
+			if tc.wantAutoManaged {
+				if !strings.Contains(tc.content, "do not call `sv_mem_session_start` again") {
+					t.Error("opencode skill must contain auto-managed session note")
+				}
+			} else {
+				if strings.Contains(tc.content, "do not call `sv_mem_session_start` again") {
+					t.Errorf("%s skill must NOT contain auto-managed session note (no plugin auto-start)", tc.name)
+				}
+			}
+			for _, tool := range hiddenAsCore {
+				// Check that the tool is NOT a standalone bullet in the core
+				// Quick Reference section. It IS allowed in the opt-in line.
+				corePattern := "- `" + tool + "`"
+				optInLine := "opt-in):"
+				lines := strings.Split(tc.content, "\n")
+				for _, line := range lines {
+					if strings.Contains(line, corePattern) && !strings.Contains(line, optInLine) && !strings.Contains(line, "SV_MEMORY_FULL_TOOLS") {
+						t.Errorf("%s skill lists hidden tool %s as core (should be opt-in only)", tc.name, tool)
+					}
+				}
+			}
+		})
+	}
+}
