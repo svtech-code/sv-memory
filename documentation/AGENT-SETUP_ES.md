@@ -9,11 +9,11 @@ de integración de un solo comando de Engram (`engram setup`).
 
 | Agente          | Comando                      | Qué se instala                                                                                   |
 | :-------------- | :--------------------------- | :----------------------------------------------------------------------------------------------- |
-| Claude Code     | `sv-memory setup claude-code` | Config MCP, hooks `PreToolUse` + ciclo de vida (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`), protocolo en `AGENTS.md`, allow-list de las 42 herramientas |
+| Claude Code     | `sv-memory setup claude-code` | Config MCP, hooks `PreToolUse` + ciclo de vida (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`), protocolo en `AGENTS.md`, allow-list de las 43 herramientas |
 | OpenCode        | `sv-memory setup opencode`    | Config MCP, skill `SKILL.md`, plugin nativo TypeScript (tool `sv_memory_context`), protocolo en `AGENTS.md` |
 | Cursor          | `sv-memory setup cursor`      | Config MCP `.cursor/mcp.json`, inyección de protocolo en `.cursorrules` |
 | Windsurf        | `sv-memory setup windsurf`    | Config MCP `.windsurf/mcp_config.json`, inyección de protocolo en `.windsurfrules` |
-| Antigravity CLI | `sv-memory setup antigravity` | Config MCP, skill nativa (`.agents/skills/sv-memory/SKILL.md`), hooks `PreToolUse` (soft/strict), protocolo en `AGENTS.md`, allow-list de las 42 herramientas |
+| Antigravity CLI | `sv-memory setup antigravity` | Config MCP, skill nativa (`.agents/skills/sv-memory/SKILL.md`), hooks `PreToolUse` (soft/strict), protocolo en `AGENTS.md`, allow-list de las 43 herramientas |
 | Codex           | `sv-memory setup codex`       | Config MCP en `~/.codex/config.toml`, hooks, protocolo en `AGENTS.md` |
 | Git             | `sv-memory hooks install --platform git` | Hook `.git/hooks/post-commit` para captura pasiva automática de commits |
 
@@ -84,7 +84,7 @@ Luego reinicia tu asistente para que recargue la configuración MCP y las nuevas
   - `PreCompact` — se dispara justo antes de la compactación y le pide al agente guardar un
     resumen de sesión primero (recuperación de contexto).
   - `SubagentStop` — recuerda persistir hallazgos duraderos de los subagentes.
-- **Permisos:** las 42 herramientas sv-memory se añaden al allow-list de
+- **Permisos:** las 43 herramientas sv-memory se añaden al allow-list de
   `~/.claude/settings.json` (`mcp__sv-memory__<tool>`) para que el agente las llame sin
   pedir aprobación.
 
@@ -93,7 +93,8 @@ Luego reinicia tu asistente para que recargue la configuración MCP y las nuevas
 - **Config MCP:** se escribe en `~/.config/opencode/opencode.json` (fusionado, preservando
   servidores existentes).
 - **Skill:** `SKILL.md` se instala en `.opencode/skills/sv-memory/` para que el agente cargue
-  el flujo sv-memory con la herramienta `skill`.
+  el flujo sv-memory con la herramienta `skill`. Contiene el flujo completo: ciclo de sesión,
+  exploración graph-first, spec cycle, topic keys, tabla de cuándo guardar, y mantenimiento.
 - **Plugin nativo:** `.opencode/plugin/sv-memory.ts` registra el tool `sv_memory_context` —
   una forma de primera clase de obtener un context pack para un archivo/paquete/símbolo
   invocando `sv-memory context <ruta>`, sin necesitar aprobación MCP.
@@ -106,7 +107,7 @@ Luego reinicia tu asistente para que recargue la configuración MCP y las nuevas
   que el modelo elija llamar a las tools. Opt-out con `SV_MEMORY_STRICT_DISABLE=1` (también
   desactiva la redirección del primer read).
 - **Protocolo:** las reglas sv-memory se inyectan en `AGENTS.md`.
-- **Superficie de tools curada:** el servidor MCP registra **42 herramientas en total, 35 core por defecto**. Las 7 herramientas de mantenimiento/admin (`sv_mem_diagnose`, `sv_mem_compare`, `sv_mem_merge_projects`, `sv_graph_report`, `sv_graph_viz`, `sv_graph_merge`, `sv_graph_surprising_connections`) se omiten por defecto para mantener pequeña la lista de tools por request (economía de tokens); define `SV_MEMORY_FULL_TOOLS=1` en el entorno del servidor para habilitarlas.
+- **Superficie de tools curada:** el servidor MCP registra **43 herramientas en total, 36 core por defecto**. Las 7 herramientas de mantenimiento/admin (`sv_mem_diagnose`, `sv_mem_compare`, `sv_mem_merge_projects`, `sv_graph_report`, `sv_graph_viz`, `sv_graph_merge`, `sv_graph_surprising_connections`) se omiten por defecto para mantener pequeña la lista de tools por request (economía de tokens); define `SV_MEMORY_FULL_TOOLS=1` en el entorno del servidor para habilitarlas.
 
 ### Cursor
 
@@ -123,12 +124,14 @@ Luego reinicia tu asistente para que recargue la configuración MCP y las nuevas
 
 - **Config MCP:** se escribe en el `mcp_config.json` de Antigravity (fusionado).
 - **Skill:** skill nativa instalada bajo `.agents/skills/sv-memory/SKILL.md` con frontmatter YAML
-  para descubrimiento progresivo bajo demanda por el agente.
+  para descubrimiento progresivo bajo demanda por el agente. Contiene el flujo completo
+  (sesión, graph-first, spec cycle, topic keys, mantenimiento), idéntico al de OpenCode excepto
+  la nota de sesión (Antigravity no tiene auto-start).
 - **Hooks:** `.agents/hooks.json` + `.agents/hooks/sv-memory.sh`. El modo soft siempre
   permite la lectura y sugiere vía `AGENTS.md`; `--strict` bloquea la primera lectura cruda
   de archivo de cada sesión. El modo estricto es fail-open: nunca bloquea el agente cuando
   sv-memory falta o `SV_MEMORY_STRICT_DISABLE=1` está definido.
-- **Permisos:** las 42 herramientas sv-memory se añaden al allow-list de Antigravity
+- **Permisos:** las 43 herramientas sv-memory se añaden al allow-list de Antigravity
   (`mcp(sv-memory/<tool>)`).
 
 ### Codex

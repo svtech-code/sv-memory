@@ -23,7 +23,7 @@
   <a href="#-arquitectura">Arquitectura</a> •
   <a href="#-inicio-rápido">Inicio Rápido</a> •
   <a href="#-referencia-de-comandos-cli">Comandos CLI</a> •
-  <a href="#-herramientas-mcp-42-herramientas">Herramientas MCP</a> •
+  <a href="#-herramientas-mcp">Herramientas MCP</a> •
   <a href="documentation/getting_started_guide_ES.md">Guía (ES)</a> •
   <a href="documentation/CODEBASE-GUIDE_ES.md">Código (ES)</a> •
   <a href="documentation/getting_started_guide.md">Guide (EN)</a>
@@ -178,7 +178,7 @@ sv-memory hooks install --platform claude-code --context-injection
 Reinicia tu asistente de IA y confirma que todo quedó conectado:
 
 ```bash
-sv-memory permissions status --platform antigravity   # Granted: 42 / 42
+sv-memory permissions status --platform antigravity   # Granted: 43 / 43
 sv-memory hooks status                                # antigravity: ✅ installed
 sv-memory diagnose
 ```
@@ -323,10 +323,10 @@ gestionar esa allow-list automáticamente, ya sea desde el asistente `configure`
 (Fase 4) o de forma independiente:
 
 ```bash
-# Muestra las 42 herramientas con descripciones
+# Muestra las 43 herramientas con descripciones
 sv-memory permissions list
 
-# Otorga las 42 herramientas a Antigravity CLI (usa --dry-run primero para previsualizar)
+# Otorga las 43 herramientas a Antigravity CLI (usa --dry-run primero para previsualizar)
 sv-memory permissions grant --platform antigravity --all --dry-run
 sv-memory permissions grant --platform antigravity --all
 
@@ -344,7 +344,7 @@ sv-memory permissions revoke --platform antigravity
 - Las entradas no relacionadas (p. ej. `command(npm run)`) siempre se conservan.
 - Reinicia tu asistente de IA tras otorgar permisos para que cargue los cambios.
 
-En el asistente `sv-memory configure`, la **Fase 4** lista las 42 herramientas para que
+En el asistente `sv-memory configure`, la **Fase 4** lista las 43 herramientas para que
 selecciones cuáles autorizar (con `a` seleccionas todas y `x` ninguna) en las plataformas
 configuradas.
 
