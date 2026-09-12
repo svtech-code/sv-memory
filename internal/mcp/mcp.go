@@ -83,22 +83,22 @@ var AllTools = []Tool{
 	{Name: "sv_mem_save", Description: "TRIGGER: ALWAYS use this IMMEDIATELY after a complex bugfix, design decision, or new standard. Persist a decision, bugfix, journal, or standard to project memory (with optional topic_key upsert)."},
 	{Name: "sv_mem_update", Description: "Partially update an existing memory by ID (what, why, learned, where_path, impact, errors_faced, next_steps)."},
 	{Name: "sv_mem_suggest_topic_key", Description: "Generate a stable 'category/kebab-case' topic_key for upsert semantics."},
-	{Name: "sv_mem_session_start", Description: "Register a new coding session and receive the Auto-Boot Context Bundle (previous session summary, key decisions, standards, recent bugfixes, journals, top graph hubs)."},
-	{Name: "sv_mem_session_end", Description: "End the active session with a summary to enable context recovery."},
-	{Name: "sv_mem_session_summary", Description: "Save the session goal, discoveries, accomplished work, and next steps."},
-	{Name: "sv_mem_context", Description: "Recover the last completed session's goal, summary, and associated memories after compaction."},
+	{Name: "sv_mem_session_start", Description: "USE WHEN: starting a coding session or after a context reset. Register the start of a coding session and receive the Auto-Boot Context Bundle (previous session summary, key decisions, standards, recent bugfixes, journals, top graph hubs)."},
+	{Name: "sv_mem_session_end", Description: "USE WHEN: finishing work or the session. End the active session with a summary to enable context recovery."},
+	{Name: "sv_mem_session_summary", Description: "USE WHEN: before ending a session and progress was made. Save the session goal, discoveries, accomplished work, and next steps."},
+	{Name: "sv_mem_context", Description: "USE WHEN: after a compaction or context reset to resume work. Recover the last completed session's goal, summary, and associated memories."},
 	{Name: "sv_mem_compact", Description: "Consolidate historical topic-key revisions and duplicates into clean summaries. Call periodically or after many upserts to keep search fast."},
 	{Name: "sv_mem_search", Description: "TRIGGER: ALWAYS use this BEFORE proposing solutions or answering questions to check past decisions. Search project memories with FTS5 BM25 ranking and category/path filters."},
 	{Name: "sv_mem_get", Description: "Retrieve the full content of a specific memory by ID."},
 	{Name: "sv_mem_timeline", Description: "Get chronological context around a specific memory observation."},
 	{Name: "sv_mem_judge", Description: "Create a relation between memories (supersedes, conflicts_with, relates_to)."},
 	{Name: "sv_mem_compare", Description: "Compare two memories side by side in a Markdown table.", Hidden: true},
-	{Name: "sv_mem_review", Description: "List stale, duplicate, or consolidation-candidate memories, or mark a memory as reviewed (action='mark_reviewed')."},
+	{Name: "sv_mem_review", Description: "USE WHEN: periodic maintenance or memory health seems degraded. List stale, duplicate, or consolidation-candidate memories, or mark a memory as reviewed (action='mark_reviewed')."},
 	{Name: "sv_mem_stats", Description: "Get aggregate memory statistics per category, session counts, and the current active project (ID, name, path)."},
 	{Name: "sv_mem_diagnose", Description: "Run read-only health checks (database, FTS5, project, graph integrity) and return a report.", Hidden: true},
 	{Name: "sv_mem_delete", Description: "Soft-delete (default) or hard-delete a memory."},
 	{Name: "sv_mem_pin", Description: "Pin (default) or unpin (action='unpin') a local memory so key decisions stay visible in session context."},
-	{Name: "sv_mem_capture_passive", Description: "Log lightweight observations (files modified, tests failing) without a save decision."},
+	{Name: "sv_mem_capture_passive", Description: "USE WHEN: logging a lightweight observation without a full save decision (e.g. 'modified file X', 'test Y failed'). Logs context automatically; category is set to 'journal'."},
 	{Name: "sv_mem_capture_prompt", Description: "Capture the user's prompt as a local observation attached to a session, so future sessions can recover the user's intent after compaction (recoverable via sv_mem_context)."},
 	{Name: "sv_mem_fetch_reference", Description: "Fetch and extract clean text from an external URL (e.g. GitHub issues, API docs). Use this to read external context, then summarize and save it via sv_mem_save or sv_propose_spec."},
 	{Name: "sv_mem_merge_projects", Description: "Merge all memories, sessions, relations, and graph data from one project into another, then delete the source project (admin).", Hidden: true},
@@ -106,11 +106,11 @@ var AllTools = []Tool{
 	{Name: "sv_graph_explore", Description: "TRIGGER: ALWAYS use this BEFORE reading/grepping files. Unified explore for code understanding in one call: pass one or more comma-separated symbols/paths to get each symbol's structural role, surgical source snippet, the shortest call path between them, blast radius, and linked memories (decisions/standards/bugfixes). Replaces chaining sv_graph_query + sv_graph_path + sv_graph_explain manually."},
 	{Name: "sv_mem_conflicts", Description: "List, scan, or ignore potential memory conflicts."},
 	{Name: "sv_propose_spec", Description: "TRIGGER: ALWAYS use this BEFORE writing code that changes behavior/architecture. Create a spec change (proposal) with its lifecycle state and run a pre-flight check against the project's rules and invariants."},
-	{Name: "sv_update_spec", Description: "Update an existing spec change proposal: update task progress checkboxes, refine technical design, proposal body, goal, or delta requirements."},
-	{Name: "sv_validate_decision", Description: "Re-check a change's proposal against rules and invariants (PASS/WARN/BLOCK); opt-in semantic re-ranking."},
-	{Name: "sv_commit_spec", Description: "Promote a validated change into a durable decision/standard memory, wire rationale_for edges, and stamp it applied."},
-	{Name: "sv_spec_list", Description: "List active spec changes with status, title, task progress, and capability. Mirrors `openspec list`."},
-	{Name: "sv_spec_get", Description: "Return a full change record: proposal, goal, design, tasks, and rendered delta requirements. Mirrors `openspec show`."},
+	{Name: "sv_update_spec", Description: "USE WHEN: implementing code for a spec change and marking tasks complete. Update task progress checkboxes, refine technical design, proposal body, goal, or delta requirements."},
+	{Name: "sv_validate_decision", Description: "USE WHEN: after implementing a spec change and before committing. Re-check a change's proposal against rules and invariants (PASS/WARN/BLOCK); opt-in semantic re-ranking."},
+	{Name: "sv_commit_spec", Description: "USE WHEN: a spec change is implemented and validated (PASS). Promote into a durable decision/standard memory, wire rationale_for edges, and stamp it applied."},
+	{Name: "sv_spec_list", Description: "USE WHEN: starting work on a task to check what proposals are pending. List active spec changes with status, title, task progress, and capability. Mirrors `openspec list`."},
+	{Name: "sv_spec_get", Description: "USE WHEN: after sv_spec_list to inspect a specific change before implementing. Return a full change record: proposal, goal, design, tasks, and rendered delta requirements. Mirrors `openspec show`."},
 	{Name: "sv_graph_query", Description: "Query the dependency graph for a module, file, or package (returns Mermaid)."},
 	{Name: "sv_graph_path", Description: "Find the shortest dependency path between two nodes."},
 	{Name: "sv_graph_sync", Description: "Incrementally re-scan the codebase and rebuild the dependency graph. Call after adding major files or restructuring packages."},
@@ -120,7 +120,7 @@ var AllTools = []Tool{
 	{Name: "sv_graph_report", Description: "Generate GRAPH_REPORT.md with god nodes, top communities, surprising cross-community bridges, and suggested questions.", Hidden: true},
 	{Name: "sv_graph_viz", Description: "Generate an interactive HTML visualization of the dependency graph.", Hidden: true},
 	{Name: "sv_graph_merge", Description: "Merge two project graphs into one (union-merge by node ID).", Hidden: true},
-	{Name: "sv_graph_search", Description: "Discover graph nodes matching a text pattern: returns every matching node id/label/path with type, path, degree, fan-in/fan-out, and community. Unlike sv_graph_explain/sv_graph_query, which resolve a single exact node, this is the discovery path when the exact symbol is unknown. Optional 'node_type' filter and 'limit' (default 10, max 50)."},
+	{Name: "sv_graph_search", Description: "USE WHEN: the exact symbol or file name is unknown and you need to discover matching nodes. Discover graph nodes matching a text pattern: returns every matching node id/label/path with type, path, degree, fan-in/fan-out, and community."},
 	{Name: "sv_graph_communities", Description: "List the top communities in the dependency graph with auto-labels and sizes, or (with 'community_id') detail a specific community's member nodes with their degree/fan-in/fan-out. MCP parity for the 'sv-memory graph communities' CLI."},
 	{Name: "sv_graph_diff", Description: "Compare structural code elements (symbols, calls, imports, blast radius impact) between a Git base reference and the working tree. Use to review architectural impact before committing or opening a PR."},
 }
@@ -296,7 +296,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 3. Tool: sv_mem_session_start
 	sessionStartTool := mcp.NewTool("sv_mem_session_start",
-		mcp.WithDescription("Register the start of a coding session and receive an Auto-Boot Context Bundle: previous session summary, key decisions, standards, recent bugfixes, journals, and top graph hubs. Call at the beginning of work to enable session grouping and post-compaction context recovery."),
+		mcp.WithDescription("USE WHEN: starting a coding session or after a context reset. Register the start of a coding session and receive an Auto-Boot Context Bundle: previous session summary, key decisions, standards, recent bugfixes, journals, and top graph hubs. Enables session grouping and post-compaction context recovery."),
 		mcp.WithString("goal", mcp.Description("Optional goal or objective for this session. When provided, the Auto-Boot bundle ranks the surfaced decisions/standards/bugfixes by relevance to it instead of pure recency.")),
 		mcp.WithString("directory", mcp.Description("Optional working directory (auto-detected from repo if omitted)")),
 		mcp.WithString("semantic", mcp.Description("When 'true' and a goal is given, re-rank the Auto-Boot bundle candidates with the configured agent CLI by semantic relevance (opt-in; fails open to the deterministic keyword ranking when the agent is unavailable). Default 'false'.")),
@@ -307,7 +307,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 4. Tool: sv_mem_session_end
 	sessionEndTool := mcp.NewTool("sv_mem_session_end",
-		mcp.WithDescription("End an active coding session with an optional summary. If session_id is omitted, the active session is auto-detected. Call this before finishing work to enable context recovery via sv_mem_context."),
+		mcp.WithDescription("USE WHEN: finishing work or the session. End an active coding session with an optional summary. If session_id is omitted, the active session is auto-detected. Enables context recovery via sv_mem_context."),
 		mcp.WithString("session_id", mcp.Description("Optional session ID to end (auto-detected if omitted)")),
 		mcp.WithString("summary", mcp.Description("Optional summary of what was accomplished")),
 		mcp.WithString("goal", mcp.Description("Optional goal or objective of the session")),
@@ -320,7 +320,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 5. Tool: sv_mem_session_summary
 	sessionSummaryTool := mcp.NewTool("sv_mem_session_summary",
-		mcp.WithDescription("Save a structured summary for a session. Call before sv_mem_session_end to record goal, discoveries, accomplished work, next steps, and relevant files."),
+		mcp.WithDescription("USE WHEN: before ending a session and progress was made. Save a structured summary for a session. Call before sv_mem_session_end to record goal, discoveries, accomplished work, next steps, and relevant files."),
 		mcp.WithString("session_id", mcp.Required(), mcp.Description("Session ID to associate the summary with")),
 		mcp.WithString("goal", mcp.Description("Original goal or objective of the session")),
 		mcp.WithString("discoveries", mcp.Description("Key discoveries or findings during the session")),
@@ -332,7 +332,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 6. Tool: sv_mem_context
 	contextTool := mcp.NewTool("sv_mem_context",
-		mcp.WithDescription("Recover context from the last completed session. Call this first after a compaction or context reset to resume work. Returns the last session's goal, summary, and up to the given number of associated memories."),
+		mcp.WithDescription("USE WHEN: after a compaction or context reset to resume work. Recover context from the last completed session. Returns the last session's goal, summary, and up to the given number of associated memories."),
 		mcp.WithString("limit", mcp.Description("Optional limit of memories to include (default '10')")),
 		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
 	)
@@ -405,7 +405,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 13. Tool: sv_mem_review
 	reviewTool := mcp.NewTool("sv_mem_review",
-		mcp.WithDescription("List stale, duplicate, or consolidation-candidate memories. action='mark_reviewed' (with id) clears a memory's review deadline; action='prune_stale' (with apply='true') soft-deletes stale transient memories older than the cutoff (dry-run by default)."),
+		mcp.WithDescription("USE WHEN: periodic maintenance or memory health seems degraded. List stale, duplicate, or consolidation-candidate memories. action='mark_reviewed' (with id) clears a memory's review deadline; action='prune_stale' (with apply='true') soft-deletes stale transient memories older than the cutoff (dry-run by default)."),
 		mcp.WithDeferLoading(true),
 		mcp.WithString("action", mcp.Description("Action to perform: 'list' (default), 'mark_reviewed', or 'prune_stale'")),
 		mcp.WithString("id", mcp.Description("Required for action='mark_reviewed': the memory ID to mark as reviewed")),
@@ -450,7 +450,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 18. Tool: sv_mem_capture_passive
 	captureTool := mcp.NewTool("sv_mem_capture_passive",
-		mcp.WithDescription("Save a lightweight passive observation (e.g. 'modified file X', 'test Y failed'). Unlike sv_mem_save, this requires no explicit decision — it logs context automatically. Category is set to 'journal'."),
+		mcp.WithDescription("USE WHEN: logging a lightweight observation without a full save decision (e.g. 'modified file X', 'test Y failed'). Unlike sv_mem_save, this requires no explicit decision — it logs context automatically. Category is set to 'journal'."),
 		mcp.WithString("what", mcp.Required(), mcp.Description("Brief description of what happened")),
 		mcp.WithString("why", mcp.Required(), mcp.Description("Context or reason for the observation")),
 	)
@@ -476,7 +476,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 18b. Tool: sv_mem_context_pack
 	contextPackTool := mcp.NewTool("sv_mem_context_pack",
-		mcp.WithDescription("TRIGGER: ALWAYS use this BEFORE modifying any file to see blast radius. Build a compact context pack for a code path: the node's structural graph role (type, fan-in/fan-out, community) plus linked memories (decisions, standards, bugfixes) in one bounded call — replaces chaining sv_graph_explain + sv_mem_search + sv_mem_get. Set include_changes='true' to also list active spec changes affecting the path."),
+		mcp.WithDescription("TRIGGER: ALWAYS use this BEFORE modifying any file to see blast radius. Build a compact context pack for a code path: graph role (fan-in/fan-out, community) plus linked memories (decisions/standards/bugfixes) in one bounded call. Set include_changes='true' to also list active spec changes affecting the path."),
 		mcp.WithString("path", mcp.Required(), mcp.Description("File path, package name, or symbol to resolve")),
 		mcp.WithString("include_changes", mcp.Description("When 'true', also list active spec changes (proposals) whose where_path matches this path. Default 'false'.")),
 		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
@@ -485,7 +485,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 18b2. Tool: sv_graph_explore (unified explore alias of sv_mem_context_pack)
 	graphExploreTool := mcp.NewTool("sv_graph_explore",
-		mcp.WithDescription("TRIGGER: ALWAYS use this BEFORE reading/grepping files. Understand code in ONE call: pass one or more comma-separated symbols, file paths, or package names. Returns each symbol's structural role (type, fan-in/fan-out, community), a surgical source-code snippet (treat it as already read), the shortest call path between them, blast radius, and linked memories (decisions/standards/bugfixes). Use BEFORE reading/grepping files. include_changes='true' also lists active spec changes."),
+		mcp.WithDescription("TRIGGER: ALWAYS use this BEFORE reading/grepping files. Understand code in ONE call: pass one or more comma-separated symbols, file paths, or package names. Returns structural role, surgical source snippet (treat as already read), call path between them, blast radius, and linked memories. include_changes='true' also lists active spec changes."),
 		mcp.WithString("path", mcp.Required(), mcp.Description("Symbol(s), file path(s), or package name(s) to explore. Multiple symbols may be comma-separated (e.g. 'ResolveContextNode, extractSurgicalSnippet') to get their source + call path in one call.")),
 		mcp.WithString("include_changes", mcp.Description("When 'true', also list active spec changes (proposals) whose where_path matches the primary path. Default 'false'.")),
 		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
@@ -494,7 +494,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 18c. Tool: sv_propose_spec
 	proposeSpecTool := mcp.NewTool("sv_propose_spec",
-		mcp.WithDescription("TRIGGER: ALWAYS use this BEFORE writing code that changes behavior/architecture. Create a spec change (proposal) for the spec-driven decision engine: registers the change, advances it to 'proposed', and runs a pre-flight check against project rules/invariants (pinned overlap=BLOCK, ordinary=WARN). Optionally carries OpenSpec-style delta requirements merged into the capability state on commit. Then sv_validate_decision, then sv_commit_spec."),
+		mcp.WithDescription("TRIGGER: ALWAYS use this BEFORE writing code that changes behavior/architecture. Create a spec change (proposal): registers the change, runs a pre-flight check (pinned overlap=BLOCK, ordinary=WARN). Optionally carries OpenSpec delta requirements. Then sv_validate_decision, then sv_commit_spec."),
 		mcp.WithString("slug", mcp.Required(), mcp.Description("Kebab-case unique identifier for the change (e.g. 'implement-session-auth'). Project-unique.")),
 		mcp.WithString("title", mcp.Required(), mcp.Description("Concise title of the proposal")),
 		mcp.WithString("what", mcp.Description("Why and what changes: the proposal body")),
@@ -510,7 +510,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 18c2. Tool: sv_update_spec
 	updateSpecTool := mcp.NewTool("sv_update_spec",
-		mcp.WithDescription("Update an existing spec change proposal: update task progress checkboxes (- [ ] to - [x]), refine technical design, proposal body, goal, where_path, capability_path, or delta requirements during the Apply phase. Automatically synchronizes the spec mirror."),
+		mcp.WithDescription("USE WHEN: implementing code for a spec change and marking tasks complete. Update an existing spec change proposal: update task progress checkboxes (- [ ] to - [x]), refine technical design, proposal body, goal, where_path, capability_path, or delta requirements during the Apply phase. Automatically synchronizes the spec mirror."),
 		mcp.WithString("change_id", mcp.Required(), mcp.Description("The change ID or slug to update")),
 		mcp.WithString("tasks", mcp.Description("Optional updated implementation checklist with completed task checkboxes (- [x])")),
 		mcp.WithString("design", mcp.Description("Optional updated technical approach")),
@@ -526,7 +526,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 18d. Tool: sv_validate_decision
 	validateDecisionTool := mcp.NewTool("sv_validate_decision",
-		mcp.WithDescription("Re-check a change's proposal against the project's rules/invariants and validate its delta requirements, returning PASS/WARN/BLOCK. Deterministic by default (SQLite FTS5 + Jaccard, zero LLM cost); semantic='true' opts into a single batched agent re-ranking (fails open). Use after editing a proposal and before committing."),
+		mcp.WithDescription("USE WHEN: after implementing a spec change and before committing. Re-check a proposal against rules/invariants and validate delta requirements (PASS/WARN/BLOCK). Deterministic by default (zero LLM cost); semantic='true' opts into agent re-ranking (fails open)."),
 		mcp.WithString("change_id", mcp.Required(), mcp.Description("The change ID returned by sv_propose_spec")),
 		mcp.WithString("semantic", mcp.Description("When 'true', re-rank candidates semantically via the configured agent CLI (opt-in). Default 'false'.")),
 		mcp.WithString("semantic_agent", mcp.Description("Optional agent CLI for semantic validation. Defaults to $SV_MEMORY_SEMANTIC_AGENT, then 'claude'.")),
@@ -536,7 +536,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 18e. Tool: sv_commit_spec
 	commitSpecTool := mcp.NewTool("sv_commit_spec",
-		mcp.WithDescription("Promote a validated change into a durable decision/standard memory (topic_key 'decision/<slug>'), wire rationale_for edges, merge its delta requirements into the capability state, and stamp the change applied. A pre-flight BLOCK (pinned invariant) rejects unless force='true'. Call after implementation, before sv_mem_session_end."),
+		mcp.WithDescription("USE WHEN: a spec change is implemented and validated (PASS). Promote a validated change into a durable decision/standard memory (topic_key 'decision/<slug>'), wire rationale_for edges, merge its delta requirements into the capability state, and stamp the change applied. A pre-flight BLOCK (pinned invariant) rejects unless force='true'. Call after implementation, before sv_mem_session_end."),
 		mcp.WithString("change_id", mcp.Required(), mcp.Description("The change ID returned by sv_propose_spec")),
 		mcp.WithString("category", mcp.Description("Memory category for the committed decision (default 'decision'; use 'standard' for a reusable rule)")),
 		mcp.WithString("force", mcp.Description("Set 'true' to override a pre-flight BLOCK (pinned invariant) and commit anyway. Default 'false'.")),
@@ -546,14 +546,14 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 18f. Tool: sv_spec_list
 	specListTool := mcp.NewTool("sv_spec_list",
-		mcp.WithDescription("List active spec changes with status, title, task progress, and capability. Mirrors `openspec list` — use this to see what proposals are pending before starting work."),
+		mcp.WithDescription("USE WHEN: starting work on a task to check what proposals are pending. List active spec changes with status, title, task progress, and capability. Mirrors `openspec list`."),
 		mcp.WithString("status", mcp.Description("Optional lifecycle status filter (draft, proposed, validated, applied). Omit to list all active changes.")),
 	)
 	ms.AddTool(specListTool, s.handleSpecList)
 
 	// 18f2. Tool: sv_spec_get
 	specGetTool := mcp.NewTool("sv_spec_get",
-		mcp.WithDescription("Return a full change record: proposal, goal, design, tasks (with checkbox progress), and rendered delta requirements. Mirrors `openspec show` — use after sv_spec_list to inspect the next change to implement."),
+		mcp.WithDescription("USE WHEN: after sv_spec_list to inspect a specific change before implementing. Return a full change record: proposal, goal, design, tasks (with checkbox progress), and rendered delta requirements. Mirrors `openspec show`."),
 		mcp.WithString("change_id", mcp.Required(), mcp.Description("The change ID or slug to retrieve")),
 	)
 	ms.AddTool(specGetTool, s.handleSpecGet)
@@ -662,7 +662,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 29. Tool: sv_graph_search
 	graphSearchTool := mcp.NewTool("sv_graph_search",
-		mcp.WithDescription("Discover graph nodes matching a text pattern across id/label/path. Returns every match with type, path, degree, fan-in/fan-out, and community — use this when the exact symbol name is unknown (sv_graph_explain/sv_graph_query only resolve a single node)."),
+		mcp.WithDescription("USE WHEN: the exact symbol or file name is unknown and you need to discover matching nodes. Discover graph nodes matching a text pattern across id/label/path. Returns every match with type, path, degree, fan-in/fan-out, and community — then explore results with sv_graph_explore or sv_graph_explain."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Text pattern to match against node id, label, and path (required)")),
 		mcp.WithString("limit", mcp.Description("Maximum number of results (default '10', max 50)")),
 		mcp.WithString("node_type", mcp.Description("Optional node type filter (file, function, class, package, etc.)")),
