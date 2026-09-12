@@ -2,7 +2,7 @@
 
 - **ID:** `5fc9de33b4f74398`
 - **Slug:** `auto-close-stale-sessions`
-- **Status:** `proposed`
+- **Status:** `applied`
 - **Where:** `internal/memory/memory_session.go, internal/mcp/tools_session.go, cmd/sv-memory/cmd_session.go, internal/config/config.go`
 - **Capability:** `auto-close-stale-sessions`
 - **Created:** 2026-09-06T15:07:03-03:00

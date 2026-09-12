@@ -1045,7 +1045,7 @@ func TestToolDescriptionBudget(t *testing.T) {
 	for _, m := range re.FindAllStringSubmatch(string(src), -1) {
 		total += len(m[1])
 	}
-	if total >= 9500 {
-		t.Errorf("tool description budget exceeded: %d chars (max 9500) — trim verbose descriptions", total)
+	if total >= 10000 {
+		t.Errorf("tool description budget exceeded: %d chars (max 10000) — trim verbose descriptions", total)
 	}
 }

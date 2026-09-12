@@ -2,7 +2,7 @@
 
 - **ID:** `5a5c5b6b63f745fb`
 - **Slug:** `cap-reasoning-200-chars`
-- **Status:** `proposed`
+- **Status:** `applied`
 - **Where:** `internal/memory/semantic.go, internal/memory/memory_relations.go`
 - **Capability:** `cap-reasoning-200-chars`
 - **Created:** 2026-09-06T14:28:37-03:00

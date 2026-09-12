@@ -5,6 +5,17 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+## [v0.21.0] - 2026-09-12
+
+### Added
+- **Strict Protocol Enforcement (CRITICAL_INSTRUCTIONS)**: Added a `<CRITICAL_INSTRUCTIONS>` XML block to `protocol.go` (and mirrored to `AGENTS.md`, `spect.md`) imposing absolute negative constraints on agent tool usage (`NEVER use native grep/find`, `ALWAYS use sv_graph_explore`). This prevents LLMs from defaulting to their native file tools for synced code.
+- **Trigger-based Tool Descriptions**: Prefixed core MCP tool descriptions (`sv_mem_save`, `sv_mem_search`, `sv_graph_explore`, `sv_mem_context_pack`, `sv_propose_spec`) in `mcp.go` with explicit `TRIGGER:` conditions. This provides strong cues for MCP clients to invoke the tools automatically.
+- **External Web Context Ingest**: Added new MCP tool `sv_mem_fetch_reference` to fetch and extract clean text from external URLs (GitHub issues, API docs) to incorporate into memory or specs.
+- **Framework Routing Graph Nodes**: Extracted framework routing nodes and edges into the structural graph.
+
+### Fixed
+- **HTTP Response Cleanup**: Explicitly ignored errors on `resp.Body.Close` during memory fetch to comply with linters.
+
 ## [v0.20.0] - 2026-09-06
 
 ### Added

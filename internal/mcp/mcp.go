@@ -80,7 +80,7 @@ type Tool struct {
 // TestAllToolsMatchesRegisteredTools in mcp_test.go enforces that every
 // registered tool name appears here.
 var AllTools = []Tool{
-	{Name: "sv_mem_save", Description: "Persist a decision, bugfix, journal, or standard to project memory (with optional topic_key upsert)."},
+	{Name: "sv_mem_save", Description: "TRIGGER: ALWAYS use this IMMEDIATELY after a complex bugfix, design decision, or new standard. Persist a decision, bugfix, journal, or standard to project memory (with optional topic_key upsert)."},
 	{Name: "sv_mem_update", Description: "Partially update an existing memory by ID (what, why, learned, where_path, impact, errors_faced, next_steps)."},
 	{Name: "sv_mem_suggest_topic_key", Description: "Generate a stable 'category/kebab-case' topic_key for upsert semantics."},
 	{Name: "sv_mem_session_start", Description: "Register a new coding session and receive the Auto-Boot Context Bundle (previous session summary, key decisions, standards, recent bugfixes, journals, top graph hubs)."},
@@ -88,7 +88,7 @@ var AllTools = []Tool{
 	{Name: "sv_mem_session_summary", Description: "Save the session goal, discoveries, accomplished work, and next steps."},
 	{Name: "sv_mem_context", Description: "Recover the last completed session's goal, summary, and associated memories after compaction."},
 	{Name: "sv_mem_compact", Description: "Consolidate historical topic-key revisions and duplicates into clean summaries. Call periodically or after many upserts to keep search fast."},
-	{Name: "sv_mem_search", Description: "Search project memories with FTS5 BM25 ranking and category/path filters."},
+	{Name: "sv_mem_search", Description: "TRIGGER: ALWAYS use this BEFORE proposing solutions or answering questions to check past decisions. Search project memories with FTS5 BM25 ranking and category/path filters."},
 	{Name: "sv_mem_get", Description: "Retrieve the full content of a specific memory by ID."},
 	{Name: "sv_mem_timeline", Description: "Get chronological context around a specific memory observation."},
 	{Name: "sv_mem_judge", Description: "Create a relation between memories (supersedes, conflicts_with, relates_to)."},
@@ -102,10 +102,10 @@ var AllTools = []Tool{
 	{Name: "sv_mem_capture_prompt", Description: "Capture the user's prompt as a local observation attached to a session, so future sessions can recover the user's intent after compaction (recoverable via sv_mem_context)."},
 	{Name: "sv_mem_fetch_reference", Description: "Fetch and extract clean text from an external URL (e.g. GitHub issues, API docs). Use this to read external context, then summarize and save it via sv_mem_save or sv_propose_spec."},
 	{Name: "sv_mem_merge_projects", Description: "Merge all memories, sessions, relations, and graph data from one project into another, then delete the source project (admin).", Hidden: true},
-	{Name: "sv_mem_context_pack", Description: "Build a compact context pack for a code path: graph role (fan-in/fan-out, community) plus linked memories (decisions/standards/bugfixes). One bounded call."},
-	{Name: "sv_graph_explore", Description: "Unified explore for code understanding in one call: pass one or more comma-separated symbols/paths to get each symbol's structural role, surgical source snippet, the shortest call path between them, blast radius, and linked memories (decisions/standards/bugfixes). Replaces chaining sv_graph_query + sv_graph_path + sv_graph_explain manually."},
+	{Name: "sv_mem_context_pack", Description: "TRIGGER: ALWAYS use this BEFORE modifying any file to see blast radius. Build a compact context pack for a code path: graph role (fan-in/fan-out, community) plus linked memories (decisions/standards/bugfixes). One bounded call."},
+	{Name: "sv_graph_explore", Description: "TRIGGER: ALWAYS use this BEFORE reading/grepping files. Unified explore for code understanding in one call: pass one or more comma-separated symbols/paths to get each symbol's structural role, surgical source snippet, the shortest call path between them, blast radius, and linked memories (decisions/standards/bugfixes). Replaces chaining sv_graph_query + sv_graph_path + sv_graph_explain manually."},
 	{Name: "sv_mem_conflicts", Description: "List, scan, or ignore potential memory conflicts."},
-	{Name: "sv_propose_spec", Description: "Create a spec change (proposal) with its lifecycle state and run a pre-flight check against the project's rules and invariants."},
+	{Name: "sv_propose_spec", Description: "TRIGGER: ALWAYS use this BEFORE writing code that changes behavior/architecture. Create a spec change (proposal) with its lifecycle state and run a pre-flight check against the project's rules and invariants."},
 	{Name: "sv_update_spec", Description: "Update an existing spec change proposal: update task progress checkboxes, refine technical design, proposal body, goal, or delta requirements."},
 	{Name: "sv_validate_decision", Description: "Re-check a change's proposal against rules and invariants (PASS/WARN/BLOCK); opt-in semantic re-ranking."},
 	{Name: "sv_commit_spec", Description: "Promote a validated change into a durable decision/standard memory, wire rationale_for edges, and stamp it applied."},
@@ -258,7 +258,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 1. Tool: sv_mem_save
 	saveTool := mcp.NewTool("sv_mem_save",
-		mcp.WithDescription("Persist a decision, bugfix, journal, standard, or progress checkpoint to project memory. Optional topic_key gives upsert semantics (auto-derived for decision/standard/architecture/bugfix if omitted); optional session_id associates the memory with the active session."),
+		mcp.WithDescription("TRIGGER: ALWAYS use this IMMEDIATELY after a complex bugfix, design decision, or new standard. Persist a decision, bugfix, journal, standard, or progress checkpoint to project memory. Optional topic_key gives upsert semantics (auto-derived for decision/standard/architecture/bugfix if omitted); optional session_id associates the memory with the active session."),
 		mcp.WithString("category", mcp.Required(), mcp.Description("Category of memory: 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem' | 'discussion' | 'idea' | 'qa'")),
 		mcp.WithString("what", mcp.Required(), mcp.Description("Concise description of the decision, standard, or fix")),
 		mcp.WithString("why", mcp.Required(), mcp.Description("Detailed reasoning for this choice")),
@@ -350,7 +350,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 8. Tool: sv_mem_search
 	searchTool := mcp.NewTool("sv_mem_search",
-		mcp.WithDescription("Search historical project memories using keyword/FTS5 search with BM25 ranking. Returns compact results (ID, category, title, date, topic_key). Use sv_mem_get to retrieve full content of a specific memory, or sv_mem_timeline for chronological context around it."),
+		mcp.WithDescription("TRIGGER: ALWAYS use this BEFORE proposing solutions or answering questions to check past decisions. Search historical project memories using keyword/FTS5 search with BM25 ranking. Returns compact results (ID, category, title, date, topic_key). Use sv_mem_get to retrieve full content of a specific memory, or sv_mem_timeline for chronological context around it."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("The keyword or phrase to search for")),
 		mcp.WithString("category", mcp.Description("Optional category to filter results: 'bugfix' | 'architecture' | 'standard' | 'decision' | 'journal' | 'postmortem' | 'discussion' | 'idea' | 'qa'")),
 		mcp.WithString("path", mcp.Description("Optional path/directory scope filter to narrow memories relevant to a specific file or directory")),
@@ -476,7 +476,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 18b. Tool: sv_mem_context_pack
 	contextPackTool := mcp.NewTool("sv_mem_context_pack",
-		mcp.WithDescription("Build a compact context pack for a code path: the node's structural graph role (type, fan-in/fan-out, community) plus linked memories (decisions, standards, bugfixes) in one bounded call — replaces chaining sv_graph_explain + sv_mem_search + sv_mem_get. Set include_changes='true' to also list active spec changes affecting the path."),
+		mcp.WithDescription("TRIGGER: ALWAYS use this BEFORE modifying any file to see blast radius. Build a compact context pack for a code path: the node's structural graph role (type, fan-in/fan-out, community) plus linked memories (decisions, standards, bugfixes) in one bounded call — replaces chaining sv_graph_explain + sv_mem_search + sv_mem_get. Set include_changes='true' to also list active spec changes affecting the path."),
 		mcp.WithString("path", mcp.Required(), mcp.Description("File path, package name, or symbol to resolve")),
 		mcp.WithString("include_changes", mcp.Description("When 'true', also list active spec changes (proposals) whose where_path matches this path. Default 'false'.")),
 		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
@@ -485,7 +485,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 18b2. Tool: sv_graph_explore (unified explore alias of sv_mem_context_pack)
 	graphExploreTool := mcp.NewTool("sv_graph_explore",
-		mcp.WithDescription("Understand code in ONE call: pass one or more comma-separated symbols, file paths, or package names. Returns each symbol's structural role (type, fan-in/fan-out, community), a surgical source-code snippet (treat it as already read), the shortest call path between them, blast radius, and linked memories (decisions/standards/bugfixes). Use BEFORE reading/grepping files. include_changes='true' also lists active spec changes."),
+		mcp.WithDescription("TRIGGER: ALWAYS use this BEFORE reading/grepping files. Understand code in ONE call: pass one or more comma-separated symbols, file paths, or package names. Returns each symbol's structural role (type, fan-in/fan-out, community), a surgical source-code snippet (treat it as already read), the shortest call path between them, blast radius, and linked memories (decisions/standards/bugfixes). Use BEFORE reading/grepping files. include_changes='true' also lists active spec changes."),
 		mcp.WithString("path", mcp.Required(), mcp.Description("Symbol(s), file path(s), or package name(s) to explore. Multiple symbols may be comma-separated (e.g. 'ResolveContextNode, extractSurgicalSnippet') to get their source + call path in one call.")),
 		mcp.WithString("include_changes", mcp.Description("When 'true', also list active spec changes (proposals) whose where_path matches the primary path. Default 'false'.")),
 		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
@@ -494,7 +494,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 
 	// 18c. Tool: sv_propose_spec
 	proposeSpecTool := mcp.NewTool("sv_propose_spec",
-		mcp.WithDescription("Create a spec change (proposal) for the spec-driven decision engine: registers the change, advances it to 'proposed', and runs a pre-flight check against project rules/invariants (pinned overlap=BLOCK, ordinary=WARN). Optionally carries OpenSpec-style delta requirements merged into the capability state on commit. Then sv_validate_decision, then sv_commit_spec."),
+		mcp.WithDescription("TRIGGER: ALWAYS use this BEFORE writing code that changes behavior/architecture. Create a spec change (proposal) for the spec-driven decision engine: registers the change, advances it to 'proposed', and runs a pre-flight check against project rules/invariants (pinned overlap=BLOCK, ordinary=WARN). Optionally carries OpenSpec-style delta requirements merged into the capability state on commit. Then sv_validate_decision, then sv_commit_spec."),
 		mcp.WithString("slug", mcp.Required(), mcp.Description("Kebab-case unique identifier for the change (e.g. 'implement-session-auth'). Project-unique.")),
 		mcp.WithString("title", mcp.Required(), mcp.Description("Concise title of the proposal")),
 		mcp.WithString("what", mcp.Description("Why and what changes: the proposal body")),
