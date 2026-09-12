@@ -464,6 +464,30 @@ func TestClaudeCodeStrictHasWriteNudge(t *testing.T) {
 	}
 }
 
+// TestClaudeCodeSessionStartClearsFlags verifies that the SessionStart hook
+// clears per-session strict/read and write-nudge temp flags so the graph-first
+// redirect and write nudge fire again in the new session (they previously
+// persisted until reboot, causing the redirect to only fire once per machine).
+func TestClaudeCodeSessionStartClearsFlags(t *testing.T) {
+	data, err := hookScriptsFS.ReadFile("scripts/claude-code-session-start.sh")
+	if err != nil {
+		t.Fatalf("failed to read session-start script: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "sv_mem_hash") {
+		t.Error("session-start script should define sv_mem_hash for flag path computation")
+	}
+	if !strings.Contains(content, ".sv-memory-strict-") {
+		t.Error("session-start script should clear strict/read flag files")
+	}
+	if !strings.Contains(content, ".sv-memory-write-") {
+		t.Error("session-start script should clear write-nudge flag files")
+	}
+	if !strings.Contains(content, "rm -f") {
+		t.Error("session-start script should use rm -f to clear flag files")
+	}
+}
+
 func TestInstallAntigravity(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-hook-agy-test")
 	if err != nil {
