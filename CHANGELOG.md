@@ -5,6 +5,22 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+## [v0.22.0] - 2026-09-12
+
+### Added
+- **Canonical agent skills**: Upgraded Antigravity skill from 56-line stub to full 108-line workflow (topic keys, when-to-save table, graph-first instructions, spec cycle, maintenance). OpenCode skill synced to match. Both carry the complete workflow; they differ only in the session note (OpenCode auto-managed vs Antigravity manual). Added `TestSkillParityAndSessionNotes` guard test to prevent future drift.
+- **USE WHEN triggers on 14 MCP tools**: Added concise "USE WHEN:" prefixes to spec flow (`sv_spec_list`, `sv_spec_get`, `sv_update_spec`, `sv_validate_decision`, `sv_commit_spec`), session (`sv_mem_session_start`, `sv_mem_session_end`, `sv_mem_session_summary`, `sv_mem_context`), `sv_graph_search`, `sv_mem_capture_passive`, and `sv_mem_review`. Weak models now get explicit usage cues without relying solely on protocol instructions.
+
+### Fixed
+- **Claude Code session-start clears strict flags**: `claude-code-session-start.sh` now clears `/tmp/.sv-memory-strict-*` and `/tmp/.sv-memory-write-*` flags on session start. Previously these persisted until reboot, causing the graph-first redirect to only fire once per machine. Added `TestClaudeCodeSessionStartClearsFlags` guard test.
+- **OpenCode plugin suffix matching**: The corrective spec nudge in `opencode-plugin-strict.ts` now detects spec tools by suffix (`endsWith("sv_spec_list")`) instead of hardcoded prefix (`"sv-memory_sv_spec_list"`). Detection works regardless of MCP client prefix convention. Added `TestOpenCodePluginUsesSuffixMatching` guard test. Synced installed copy `.opencode/plugin/sv-memory.ts`.
+
+### Changed
+- **Audit backlog closed**: Verified `escapeCypherStr` is active (not dead code), wiki labels escaped with `html.EscapeString`, `parseIntClamp` consolidated, `atomicWriteFile` unified. Marked `idea/session-end-idempotent` and `journal/pendientes-auditoria-sv-memory` as resolved in project memory.
+
+### Documentation
+- **Correct MCP tool count**: Fixed pre-existing doc drift from 42/35 to 43/36 (total/core) across README, README_ES, AGENT-SETUP, AGENT-SETUP_ES, spect, and spect_ES. Added clarifying note that installed skills carry the full workflow.
+
 ## [v0.21.0] - 2026-09-12
 
 ### Added
