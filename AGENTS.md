@@ -2,10 +2,10 @@
 # SV-Memory Protocol Rules
 
 <CRITICAL_INSTRUCTIONS>
-- YOU MUST NEVER use native grep, find, cat, or read_file to understand codebase structure or search for symbols. YOU MUST ALWAYS use `sv_graph_explore`, `sv_graph_search`, or `sv_mem_context_pack` first. Native tools are ONLY for unindexed config/docs.
-- YOU MUST ALWAYS call `sv_mem_save` immediately after making a design decision, fixing a complex bug, or establishing a convention. Do not wait for the user to ask.
-- YOU MUST ALWAYS initiate the Spec-Driven Decision Cycle (`sv_propose_spec`) BEFORE writing code that changes behavior or architecture. NEVER skip this loop.
-- YOU MUST ALWAYS search memory (`sv_mem_search`) before answering questions about the project or proposing solutions.
+- YOU MUST NEVER use native grep, find, cat, or read_file to understand codebase structure or search for symbols. YOU MUST ALWAYS use 'sv_graph_explore', 'sv_graph_search', or 'sv_mem_context_pack' first. Native tools are ONLY for unindexed config/docs.
+- YOU MUST ALWAYS call 'sv_mem_save' immediately after making a design decision, fixing a complex bug, or establishing a convention. Do not wait for the user to ask.
+- YOU MUST ALWAYS initiate the Spec-Driven Decision Cycle ('sv_propose_spec') BEFORE writing code that changes behavior or architecture. NEVER skip this loop.
+- YOU MUST ALWAYS search memory ('sv_mem_search') before answering questions about the project or proposing solutions.
 </CRITICAL_INSTRUCTIONS>
 
 This project uses 'sv-memory' for persistent architectural memory, progress journals, and structural context graph.
