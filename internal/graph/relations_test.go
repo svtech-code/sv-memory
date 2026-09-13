@@ -1,6 +1,10 @@
 package graph
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 // TestResolveImportSubdirectory guards the forward-slash normalization of
 // resolved relative imports. On Windows filepath.Join produces backslash paths,
@@ -68,6 +72,105 @@ func TestResolveImportPythonRelative(t *testing.T) {
 
 	for _, c := range cases {
 		got, ok := resolveImport("", c.source, c.imp, nodes)
+		if ok != c.ok {
+			t.Errorf("resolveImport(%q, %q) ok=%v, want %v", c.source, c.imp, ok, c.ok)
+			continue
+		}
+		if ok && got != c.want {
+			t.Errorf("resolveImport(%q, %q) = %q, want %q", c.source, c.imp, got, c.want)
+		}
+	}
+}
+
+func TestResolveAliasHeuristic(t *testing.T) {
+	// When no tsconfig exists, @/ should resolve to src/ heuristically.
+	nodes := map[string]*Node{
+		"src/components/ui/button.tsx": {ID: "src/components/ui/button.tsx", Path: "src/components/ui/button.tsx"},
+		"src/utils.ts":                 {ID: "src/utils.ts", Path: "src/utils.ts"},
+	}
+
+	cases := []struct {
+		source string
+		imp    string
+		want   string
+		ok     bool
+	}{
+		{source: "src/App.tsx", imp: "@/components/ui/button", want: "src/components/ui/button.tsx", ok: true},
+		{source: "src/App.tsx", imp: "@/utils", want: "src/utils.ts", ok: true},
+		{source: "src/App.tsx", imp: "@/nonexistent", want: "", ok: false},
+		{source: "src/App.tsx", imp: "~/components/ui/button", want: "src/components/ui/button.tsx", ok: true},
+	}
+
+	for _, c := range cases {
+		got, ok := resolveImport("", c.source, c.imp, nodes)
+		if ok != c.ok {
+			t.Errorf("resolveImport(%q, %q) ok=%v, want %v", c.source, c.imp, ok, c.ok)
+			continue
+		}
+		if ok && got != c.want {
+			t.Errorf("resolveImport(%q, %q) = %q, want %q", c.source, c.imp, got, c.want)
+		}
+	}
+}
+
+func TestResolveAliasTsconfigPaths(t *testing.T) {
+	// When tsconfig.json has paths, aliases should resolve via config.
+	tempDir, err := os.MkdirTemp("", "sv-mem-alias-test")
+	if err != nil {
+		t.Fatalf("failed to create temp workspace: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	tsconfig := `{
+		"compilerOptions": {
+			"baseUrl": ".",
+			"paths": {
+				"@/*": ["./src/*"],
+				"@lib/*": ["./lib/*"]
+			}
+		}
+	}`
+	if err = os.WriteFile(filepath.Join(tempDir, "tsconfig.json"), []byte(tsconfig), 0644); err != nil {
+		t.Fatalf("failed writing tsconfig.json: %v", err)
+	}
+
+	srcDir := filepath.Join(tempDir, "src")
+	if err = os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatalf("failed creating src dir: %v", err)
+	}
+	if err = os.WriteFile(filepath.Join(srcDir, "App.tsx"), []byte(`export {}`), 0644); err != nil {
+		t.Fatalf("failed writing App.tsx: %v", err)
+	}
+	libDir := filepath.Join(tempDir, "lib")
+	if err = os.MkdirAll(libDir, 0755); err != nil {
+		t.Fatalf("failed creating lib dir: %v", err)
+	}
+	if err = os.WriteFile(filepath.Join(libDir, "helpers.ts"), []byte(`export {}`), 0644); err != nil {
+		t.Fatalf("failed writing helpers.ts: %v", err)
+	}
+
+	oldCache := tsconfigCache
+	tsconfigCache = make(map[string]map[string][]string)
+	defer func() { tsconfigCache = oldCache }()
+
+	nodes := map[string]*Node{
+		"src/App.tsx":    {ID: "src/App.tsx", Path: "src/App.tsx"},
+		"lib/helpers.ts": {ID: "lib/helpers.ts", Path: "lib/helpers.ts"},
+	}
+
+	cases := []struct {
+		source string
+		imp    string
+		want   string
+		ok     bool
+	}{
+		{source: "src/App.tsx", imp: "@/App", want: "src/App.tsx", ok: true},
+		{source: "src/App.tsx", imp: "@lib/helpers", want: "lib/helpers.ts", ok: true},
+		{source: "src/App.tsx", imp: "@/nonexistent", want: "", ok: false},
+	}
+
+	for _, c := range cases {
+		got, ok := resolveImport(tempDir, c.source, c.imp, nodes)
 		if ok != c.ok {
 			t.Errorf("resolveImport(%q, %q) ok=%v, want %v", c.source, c.imp, ok, c.ok)
 			continue

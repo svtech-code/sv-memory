@@ -1,7 +1,9 @@
 package graph
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -59,10 +61,140 @@ func resolveImport(projPath, sourcePath, imp string, nodes map[string]*Node) (st
 		}
 	}
 
+	// Try resolving path aliases (@/, ~/) via tsconfig paths or heuristic.
+	if resolved, ok := resolveAlias(projPath, sourcePath, imp, nodes); ok {
+		return resolved, true
+	}
+
 	return "", false
 }
 
-// Stdlib module sets — imports matching these are not registered as pkg: nodes.
+// tsconfigCache caches tsconfig path mappings per project root to avoid
+// re-reading tsconfig.json for every import resolution.
+var tsconfigCache = make(map[string]map[string][]string)
+
+// tsconfigPaths represents the relevant部分 of a tsconfig.json file.
+type tsconfigPaths struct {
+	CompilerOptions struct {
+		Paths   map[string][]string `json:"paths"`
+		BaseURL string              `json:"baseUrl"`
+	} `json:"compilerOptions"`
+}
+
+// loadTsconfigPaths reads tsconfig.json (or tsconfig.app.json) from the
+// nearest ancestor of sourcePath and returns the path alias mappings.
+// Results are cached per project root.
+func loadTsconfigPaths(projPath, sourcePath string) map[string][]string {
+	// Find the nearest tsconfig.json by walking up from the source file's directory.
+	dir := filepath.Dir(filepath.Join(projPath, sourcePath))
+	var tsconfigPath string
+	for dir != "." && dir != "" && strings.HasPrefix(dir, projPath) {
+		for _, name := range []string{"tsconfig.json", "tsconfig.app.json"} {
+			candidate := filepath.Join(dir, name)
+			if _, err := os.Stat(candidate); err == nil {
+				tsconfigPath = candidate
+				break
+			}
+		}
+		if tsconfigPath != "" {
+			break
+		}
+		dir = filepath.Dir(dir)
+	}
+
+	if tsconfigPath == "" {
+		return nil
+	}
+
+	// Check cache by the tsconfig path (not projPath, since different
+	// packages within the same project may have different tsconfigs).
+	if cached, ok := tsconfigCache[tsconfigPath]; ok {
+		return cached
+	}
+
+	content, err := os.ReadFile(tsconfigPath)
+	if err != nil {
+		tsconfigCache[tsconfigPath] = nil
+		return nil
+	}
+
+	var cfg tsconfigPaths
+	if err := json.Unmarshal(content, &cfg); err != nil {
+		tsconfigCache[tsconfigPath] = nil
+		return nil
+	}
+
+	// Normalize: resolve relative to the tsconfig directory.
+	tsconfigDir := filepath.Dir(tsconfigPath)
+	paths := make(map[string][]string, len(cfg.CompilerOptions.Paths))
+	for alias, targets := range cfg.CompilerOptions.Paths {
+		var resolved []string
+		for _, t := range targets {
+			// Strip trailing /* and /*.suffix for matching.
+			clean := strings.TrimSuffix(t, "/*")
+			abs := filepath.Join(tsconfigDir, clean)
+			rel, err := filepath.Rel(projPath, abs)
+			if err != nil {
+				continue
+			}
+			rel = filepath.ToSlash(rel)
+			resolved = append(resolved, rel)
+		}
+		paths[alias] = resolved
+	}
+
+	tsconfigCache[tsconfigPath] = paths
+	return paths
+}
+
+// resolveAlias attempts to resolve a TS/JS path alias (e.g., @/components/button)
+// using tsconfig.json compilerOptions.paths. Falls back to a heuristic mapping
+// (@/ → src/) when no tsconfig exists.
+func resolveAlias(projPath, sourcePath, imp string, nodes map[string]*Node) (string, bool) {
+	// Only process alias-like imports: @, ~, or known prefixes.
+	if !strings.HasPrefix(imp, "@") && !strings.HasPrefix(imp, "~") {
+		return "", false
+	}
+
+	// Try tsconfig paths first.
+	paths := loadTsconfigPaths(projPath, sourcePath)
+	for alias, targets := range paths {
+		// alias is like "@/*" or "@components/*"
+		prefix := strings.TrimSuffix(alias, "/*")
+		if strings.HasPrefix(imp, prefix+"/") || imp == prefix {
+			suffix := strings.TrimPrefix(imp, prefix+"/")
+			for _, base := range targets {
+				candidate := base + "/" + suffix
+				// Try extensions.
+				exts := []string{"", ".ts", ".tsx", ".js", ".jsx", "/index.ts", "/index.tsx", "/index.js", "/index.jsx"}
+				for _, ext := range exts {
+					testPath := candidate + ext
+					if _, exists := nodes[testPath]; exists {
+						return testPath, true
+					}
+				}
+			}
+		}
+	}
+
+	// Heuristic fallback: @/ → src/, ~/ → src/
+	if strings.HasPrefix(imp, "@/") || strings.HasPrefix(imp, "~/") {
+		suffix := strings.TrimPrefix(imp, "@/")
+		suffix = strings.TrimPrefix(suffix, "~/")
+		candidate := "src/" + suffix
+		exts := []string{"", ".ts", ".tsx", ".js", ".jsx", "/index.ts", "/index.tsx", "/index.js", "/index.jsx"}
+		for _, ext := range exts {
+			testPath := candidate + ext
+			if _, exists := nodes[testPath]; exists {
+				return testPath, true
+			}
+		}
+	}
+
+	return "", false
+}
+
+// isExternalPkg returns true if the import path represents a external library.
 var (
 	goStdlib = map[string]bool{
 		"archive": true, "arena": true, "bufio": true, "bytes": true, "cmp": true,
