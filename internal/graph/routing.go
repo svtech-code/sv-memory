@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/svtech-code/sv-memory/internal/config"
 	"github.com/svtech-code/sv-memory/internal/graph/schema"
 )
 
@@ -114,6 +115,17 @@ func extractRoutingEdges(projPath string, fileContents map[string][]byte, filePk
 	// Process each package independently.
 	for pkgRoot, files := range pkgFiles {
 		frameworks := detectPackageFrameworks(projPath, nodes, pkgRoot)
+
+		// Apply config overrides: disabled recipes suppress detection.
+		if !config.RoutingEnabled("nextjs") {
+			frameworks.Next = false
+		}
+		if !config.RoutingEnabled("nuxt") {
+			frameworks.Nuxt = false
+		}
+		if !config.RoutingEnabled("sveltekit") {
+			frameworks.SvelteKit = false
+		}
 
 		for path, content := range files {
 			fileID := path

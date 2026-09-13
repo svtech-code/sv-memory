@@ -45,6 +45,11 @@ func LoadGlobalAndLocalConfig(projPath string) {
 	viper.SetDefault("graph_watch_debounce_ms", 2000)
 	viper.SetDefault("stale_session_hours", 24)
 
+	// Routing recipe defaults (all enabled).
+	viper.SetDefault("routing.recipes.nextjs.enabled", true)
+	viper.SetDefault("routing.recipes.nuxt.enabled", true)
+	viper.SetDefault("routing.recipes.sveltekit.enabled", true)
+
 	// 1. Load global config: ~/.sv-memory/config.yaml
 	home, err := os.UserHomeDir()
 	if err == nil {
@@ -126,6 +131,17 @@ func GetDBPath() (string, error) {
 		return "", fmt.Errorf("could not create configuration directory: %w", err)
 	}
 	return filepath.Join(dbDir, "storage.db"), nil
+}
+
+// RoutingEnabled reports whether a built-in routing recipe is enabled in config.
+// Recipes are keyed by framework name: "nextjs", "nuxt", "sveltekit".
+// Returns true by default (all recipes enabled) unless explicitly disabled.
+func RoutingEnabled(recipe string) bool {
+	key := fmt.Sprintf("routing.recipes.%s.enabled", recipe)
+	if !viper.IsSet(key) {
+		return true
+	}
+	return viper.GetBool(key)
 }
 
 // gitCommandTimeout bounds how long any git helper may wait before giving up.
