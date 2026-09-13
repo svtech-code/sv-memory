@@ -12,12 +12,13 @@ import (
 	"github.com/svtech-code/sv-memory/internal/graph/schema"
 )
 
-// routeFrameworks tracks which file-based routing frameworks are evidenced
-// in a package (by config files or package.json dependencies).
+// routeFrameworks tracks which routing frameworks are evidenced
+// in a package (by config files or dependency declarations).
 type routeFrameworks struct {
 	Next      bool // Next.js (Pages Router + App Router)
 	Nuxt      bool // Nuxt/Vue
 	SvelteKit bool // SvelteKit
+	Laravel   bool // Laravel (PHP)
 }
 
 var (
@@ -35,6 +36,9 @@ var (
 	nextConfigRe   = regexp.MustCompile(`(^|/)next\.config\.(js|ts|mjs|cjs)$`)
 	svelteConfigRe = regexp.MustCompile(`(^|/)svelte\.config\.(js|ts)$`)
 	nuxtConfigRe   = regexp.MustCompile(`(^|/)nuxt\.config\.(js|ts|mjs)$`)
+
+	// Laravel route patterns
+	laravelRouteRe = regexp.MustCompile(`Route::(get|post|put|delete|patch|match|any)\(\s*['"]([^'"]+)['"]`)
 )
 
 // detectPackageFrameworks determines which file-based routing frameworks are
@@ -85,6 +89,20 @@ func detectPackageFrameworks(projPath string, nodes map[string]*Node, pkgRoot st
 		}
 	}
 
+	// 3. Check for Laravel evidence: artisan file or laravel/framework in composer.json.
+	artisanPath := filepath.Join(projPath, pkgRoot, "artisan")
+	if _, err := os.Stat(artisanPath); err == nil {
+		fw.Laravel = true
+	}
+	composerPath := filepath.Join(projPath, pkgRoot, "composer.json")
+	if !fw.Laravel {
+		if composerContent, cErr := os.ReadFile(composerPath); cErr == nil {
+			if strings.Contains(string(composerContent), `"laravel/framework"`) {
+				fw.Laravel = true
+			}
+		}
+	}
+
 	return fw
 }
 
@@ -126,6 +144,9 @@ func extractRoutingEdges(projPath string, fileContents map[string][]byte, filePk
 		if !config.RoutingEnabled("sveltekit") {
 			frameworks.SvelteKit = false
 		}
+		if !config.RoutingEnabled("laravel") {
+			frameworks.Laravel = false
+		}
 
 		for path, content := range files {
 			fileID := path
@@ -159,7 +180,18 @@ func extractRoutingEdges(projPath string, fileContents map[string][]byte, filePk
 				}
 			}
 
-			// 2. Code-based routing (Python) — always active, not package-scoped
+			// 2. Code-based routing (Laravel PHP) — gated by per-package evidence
+			if frameworks.Laravel && strings.HasSuffix(path, ".php") {
+				matches := laravelRouteRe.FindAllStringSubmatch(string(content), -1)
+				for _, m := range matches {
+					method := strings.ToUpper(m[1])
+					routePath := m[2]
+					routeLabel := fmt.Sprintf("%s %s", method, routePath)
+					addRouteEdge(routeLabel, fileID, path, pkgRoot, "Laravel", routeNodes, &edges)
+				}
+			}
+
+			// 3. Code-based routing (Python) — always active, not package-scoped
 			if strings.HasSuffix(path, ".py") {
 				matches := pythonRouteRe.FindAllStringSubmatch(string(content), -1)
 				for _, m := range matches {

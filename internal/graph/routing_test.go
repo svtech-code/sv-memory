@@ -331,3 +331,67 @@ func TestBulkInsertEdgesFKGuard(t *testing.T) {
 		t.Error("expected FK error for edge to nonexistent node, but insert succeeded")
 	}
 }
+
+func TestLaravelRouteExtraction(t *testing.T) {
+	// Laravel routes should be extracted when artisan file is present.
+	tempDir, err := os.MkdirTemp("", "sv-mem-laravel-test")
+	if err != nil {
+		t.Fatalf("failed to create temp workspace: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_storage.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-laravel-test"
+	if err = db.RegisterProject(database, projectID, "Laravel Test", tempDir); err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// Create artisan file (Laravel evidence)
+	if err = os.WriteFile(filepath.Join(tempDir, "artisan"), []byte("#!/usr/bin/env php\n<?php"), 0755); err != nil {
+		t.Fatalf("failed writing artisan: %v", err)
+	}
+
+	// Create routes/api.php with Laravel routes
+	routesDir := filepath.Join(tempDir, "routes")
+	if err = os.MkdirAll(routesDir, 0755); err != nil {
+		t.Fatalf("failed creating routes dir: %v", err)
+	}
+	routesContent := `<?php
+use Illuminate\Support\Facades\Route;
+
+Route::get('/api/users', [UserController::class, 'index']);
+Route::post('/api/users', [UserController::class, 'store']);
+Route::get('/api/users/{id}', [UserController::class, 'show']);
+`
+	if err = os.WriteFile(filepath.Join(routesDir, "api.php"), []byte(routesContent), 0644); err != nil {
+		t.Fatalf("failed writing routes/api.php: %v", err)
+	}
+
+	if err = SyncGraph(database, projectID, tempDir); err != nil {
+		t.Fatalf("SyncGraph failed: %v", err)
+	}
+
+	// Must produce 3 route nodes (get /api/users, post /api/users, get /api/users/{id})
+	var routeCount int
+	if err = database.QueryRow("SELECT COUNT(*) FROM graph_nodes WHERE project_id = ? AND node_type = 'route'", projectID).Scan(&routeCount); err != nil {
+		t.Fatalf("failed querying route nodes: %v", err)
+	}
+	if routeCount != 3 {
+		t.Errorf("expected 3 route nodes for Laravel, got %d", routeCount)
+	}
+
+	// Verify edges reference the correct file
+	var edgeCount int
+	if err = database.QueryRow("SELECT COUNT(*) FROM graph_edges WHERE project_id = ? AND relation_type = 'routes'", projectID).Scan(&edgeCount); err != nil {
+		t.Fatalf("failed querying route edges: %v", err)
+	}
+	if edgeCount != 3 {
+		t.Errorf("expected 3 route edges for Laravel, got %d", edgeCount)
+	}
+}

@@ -49,6 +49,7 @@ func LoadGlobalAndLocalConfig(projPath string) {
 	viper.SetDefault("routing.recipes.nextjs.enabled", true)
 	viper.SetDefault("routing.recipes.nuxt.enabled", true)
 	viper.SetDefault("routing.recipes.sveltekit.enabled", true)
+	viper.SetDefault("routing.recipes.laravel.enabled", true)
 
 	// 1. Load global config: ~/.sv-memory/config.yaml
 	home, err := os.UserHomeDir()
