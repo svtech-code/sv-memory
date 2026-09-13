@@ -11,6 +11,7 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ### Changed
 - **File-based routing gated by framework evidence**: File-based routing patterns (Next.js, SvelteKit, Nuxt) now only activate when the project evidences the corresponding framework via config files (`next.config.*`, `svelte.config.*`, `nuxt.config.*`) or `package.json` dependencies (`next`, `nuxt`, `@sveltejs/kit`). Code-based routing (FastAPI/Flask, Spring) remains always active. Prevents false route nodes on non-framework projects (e.g. Vite+React Router with `pages/` directories).
+- **Package-scoped routing for monorepos**: Route node IDs are now scoped by package root (`route:<pkgRoot>:<hash>`) to prevent collisions across packages in monorepos. Framework evidence is evaluated per-package (nearest `package.json` / config file), not repo-global. Two apps with `pages/index.tsx` now produce distinct route nodes.
 - **macOS Apple Silicon install warning**: Added note in README, getting_started_guide (EN/ES) warning that overwriting an existing binary in place with `cp` triggers a SIGKILL; use `mv` instead.
 
 ## [v0.22.0] - 2026-09-12

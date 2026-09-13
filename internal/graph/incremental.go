@@ -87,8 +87,7 @@ func syncGraphFull(db *sql.DB, projectID string, projPath string) error {
 	}
 
 	// Phase 2b: Extract framework routing (Next.js, SvelteKit, FastAPI, Spring)
-	frameworks := detectFileRoutingFrameworks(projPath, wr.nodes, wr.manifestFiles)
-	routeNodes, routeEdges := extractRoutingEdges(wr.fileContents, frameworks)
+	routeNodes, routeEdges := extractRoutingEdges(projPath, wr.fileContents, wr.filePkgRoot, wr.nodes)
 	if err := bulkInsertNodes(tx, projectID, routeNodes); err != nil {
 		return err
 	}
@@ -288,8 +287,7 @@ func trySyncGraphIncrementalFiltered(db *sql.DB, projectID string, projPath stri
 		if err := bulkInsertEdges(tx, projectID, callEdges); err != nil {
 			return false, err
 		}
-		frameworks := detectFileRoutingFrameworks(projPath, wr.nodes, wr.manifestFiles)
-		routeNodes, routeEdges := extractRoutingEdges(wr.fileContents, frameworks)
+		routeNodes, routeEdges := extractRoutingEdges(projPath, wr.fileContents, wr.filePkgRoot, wr.nodes)
 		if err := bulkInsertNodes(tx, projectID, routeNodes); err != nil {
 			return false, err
 		}
@@ -301,8 +299,7 @@ func trySyncGraphIncrementalFiltered(db *sql.DB, projectID string, projPath stri
 		if err := bulkInsertEdges(tx, projectID, callEdges); err != nil {
 			return false, err
 		}
-		frameworks := detectFileRoutingFrameworks(projPath, wr.nodes, wr.manifestFiles)
-		routeNodes, routeEdges := extractRoutingEdges(wr.fileContents, frameworks)
+		routeNodes, routeEdges := extractRoutingEdges(projPath, wr.fileContents, wr.filePkgRoot, wr.nodes)
 		if err := bulkInsertNodes(tx, projectID, routeNodes); err != nil {
 			return false, err
 		}
