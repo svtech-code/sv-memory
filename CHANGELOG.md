@@ -5,6 +5,12 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+### Fixed
+- **Routing node file ID mismatch (FK failure)**: Fixed `routing.go:32` generating `target_id = "file:" + path` but file nodes use canonical `relPath` (no prefix). This caused FK constraint failure on `graph_edges(target_id) → graph_nodes(id)`, aborting the entire sync transaction. Changed to `fileID = path`. Added defensive FK guard in `bulkInsertEdges` that skips edges with missing endpoints instead of aborting the transaction.
+
+### Changed
+- **File-based routing gated by framework evidence**: File-based routing patterns (Next.js, SvelteKit, Nuxt) now only activate when the project evidences the corresponding framework via config files (`next.config.*`, `svelte.config.*`, `nuxt.config.*`) or `package.json` dependencies (`next`, `nuxt`, `@sveltejs/kit`). Code-based routing (FastAPI/Flask, Spring) remains always active. Prevents false route nodes on non-framework projects (e.g. Vite+React Router with `pages/` directories).
+
 ## [v0.22.0] - 2026-09-12
 
 ### Added

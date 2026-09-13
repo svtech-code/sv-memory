@@ -1,3 +1,10 @@
+---
+name: sv-memory
+description: >-
+  Persistent architectural memory, decision tracking, and dependency graph for AI coding agents.
+  Use before reading or modifying files, when making architectural decisions, or when fixing bugs.
+---
+
 # sv-memory
 
 Persistent architectural memory and dependency graph for AI coding agents.

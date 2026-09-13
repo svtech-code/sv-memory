@@ -87,7 +87,8 @@ func syncGraphFull(db *sql.DB, projectID string, projPath string) error {
 	}
 
 	// Phase 2b: Extract framework routing (Next.js, SvelteKit, FastAPI, Spring)
-	routeNodes, routeEdges := extractRoutingEdges(wr.fileContents)
+	frameworks := detectFileRoutingFrameworks(projPath, wr.nodes, wr.manifestFiles)
+	routeNodes, routeEdges := extractRoutingEdges(wr.fileContents, frameworks)
 	if err := bulkInsertNodes(tx, projectID, routeNodes); err != nil {
 		return err
 	}
@@ -287,7 +288,8 @@ func trySyncGraphIncrementalFiltered(db *sql.DB, projectID string, projPath stri
 		if err := bulkInsertEdges(tx, projectID, callEdges); err != nil {
 			return false, err
 		}
-		routeNodes, routeEdges := extractRoutingEdges(wr.fileContents)
+		frameworks := detectFileRoutingFrameworks(projPath, wr.nodes, wr.manifestFiles)
+		routeNodes, routeEdges := extractRoutingEdges(wr.fileContents, frameworks)
 		if err := bulkInsertNodes(tx, projectID, routeNodes); err != nil {
 			return false, err
 		}
@@ -299,7 +301,8 @@ func trySyncGraphIncrementalFiltered(db *sql.DB, projectID string, projPath stri
 		if err := bulkInsertEdges(tx, projectID, callEdges); err != nil {
 			return false, err
 		}
-		routeNodes, routeEdges := extractRoutingEdges(wr.fileContents)
+		frameworks := detectFileRoutingFrameworks(projPath, wr.nodes, wr.manifestFiles)
+		routeNodes, routeEdges := extractRoutingEdges(wr.fileContents, frameworks)
 		if err := bulkInsertNodes(tx, projectID, routeNodes); err != nil {
 			return false, err
 		}
@@ -370,12 +373,28 @@ func bulkInsertEdges(tx *sql.Tx, projectID string, edges []*Edge) error {
 	if len(edges) == 0 {
 		return nil
 	}
+
+	// Load valid node IDs for FK validation — prevents abort on synthetic
+	// edges whose endpoints don't exist in graph_nodes.
+	validIDs, err := loadValidNodeIDs(tx, projectID)
+	if err != nil {
+		// If we can't load IDs, fall back to unconditional insert (best effort).
+		validIDs = nil
+	}
+
 	stmt, err := tx.Prepare("INSERT INTO graph_edges (id, project_id, source_id, target_id, relation_type, confidence, source_location) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
+	var skipped int
 	for _, edge := range edges {
+		if validIDs != nil {
+			if !validIDs[edge.SourceID] || !validIDs[edge.TargetID] {
+				skipped++
+				continue
+			}
+		}
 		confidence := edge.Confidence
 		if confidence == "" {
 			confidence = "EXTRACTED"
@@ -384,7 +403,27 @@ func bulkInsertEdges(tx *sql.Tx, projectID string, edges []*Edge) error {
 			return fmt.Errorf("failed inserting edge %s: %w", edge.ID, e)
 		}
 	}
+	_ = skipped // available for future diagnostics/logging
 	return nil
+}
+
+// loadValidNodeIDs returns the set of node IDs for a project within the current
+// transaction, used to validate edge endpoints before insertion.
+func loadValidNodeIDs(tx *sql.Tx, projectID string) (map[string]bool, error) {
+	rows, err := tx.Query("SELECT id FROM graph_nodes WHERE project_id = ?", projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := make(map[string]bool)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids[id] = true
+	}
+	return ids, rows.Err()
 }
 
 // mergeExistingSymbols loads previously persisted function/class nodes for
