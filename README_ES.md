@@ -138,6 +138,8 @@ go build -o sv-memory ./cmd/sv-memory
 mv sv-memory ~/.local/bin/
 ```
 
+> **Nota (macOS Apple Silicon):** Usa siempre `mv` en lugar de `cp` para instalar el binario. Sobrescribir un binario existente in-place provoca un SIGKILL del kernel de macOS con "Code Signature Invalid" ([golang/go#63997](https://github.com/golang/go/issues/63997)).
+
 ### 2. Configuración Interactiva (`sv-memory configure`)
 
 Configura editores y clientes CLI (servidores MCP) y otorga permisos de las herramientas MCP en la Fase 4:

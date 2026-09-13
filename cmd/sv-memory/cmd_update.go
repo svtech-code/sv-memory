@@ -423,8 +423,8 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	// invocations pick up the replacement.
 	if err := os.Rename(newBin, exe); err != nil {
 		fmt.Printf("⚠️  Could not replace the binary at %s: %v\n", exe, err)
-		fmt.Println("You may need write permission. Try copying it manually:")
-		fmt.Printf("  cp \"%s\" \"%s\"\n", newBin, exe)
+		fmt.Println("You may need write permission. Try removing the old binary first, then copying:")
+		fmt.Printf("  rm -f \"%s\" && cp \"%s\" \"%s\"\n", exe, newBin, exe)
 		return nil
 	}
 

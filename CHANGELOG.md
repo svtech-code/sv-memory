@@ -7,9 +7,11 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ### Fixed
 - **Routing node file ID mismatch (FK failure)**: Fixed `routing.go:32` generating `target_id = "file:" + path` but file nodes use canonical `relPath` (no prefix). This caused FK constraint failure on `graph_edges(target_id) → graph_nodes(id)`, aborting the entire sync transaction. Changed to `fileID = path`. Added defensive FK guard in `bulkInsertEdges` that skips edges with missing endpoints instead of aborting the transaction.
+- **Update fallback uses unsafe cp-in-place**: `sv-memory update` now uses `rm -f` + `cp` instead of bare `cp` when `os.Rename` fails, preventing a stale macOS kernel code-signature cache that SIGKILLs the binary ([golang/go#63997](https://github.com/golang/go/issues/63997)).
 
 ### Changed
 - **File-based routing gated by framework evidence**: File-based routing patterns (Next.js, SvelteKit, Nuxt) now only activate when the project evidences the corresponding framework via config files (`next.config.*`, `svelte.config.*`, `nuxt.config.*`) or `package.json` dependencies (`next`, `nuxt`, `@sveltejs/kit`). Code-based routing (FastAPI/Flask, Spring) remains always active. Prevents false route nodes on non-framework projects (e.g. Vite+React Router with `pages/` directories).
+- **macOS Apple Silicon install warning**: Added note in README, getting_started_guide (EN/ES) warning that overwriting an existing binary in place with `cp` triggers a SIGKILL; use `mv` instead.
 
 ## [v0.22.0] - 2026-09-12
 

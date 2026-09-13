@@ -64,6 +64,8 @@ mv sv-memory ~/.local/bin/
 sv-memory --help
 ```
 
+> **Nota (macOS Apple Silicon):** Usa siempre `mv` en lugar de `cp` para instalar el binario. Sobrescribir un binario existente in-place provoca un SIGKILL del kernel de macOS con "Code Signature Invalid" ([golang/go#63997](https://github.com/golang/go/issues/63997)).
+
 > **¿Por qué este paso?**
 > Al ubicar el ejecutable en `~/.local/bin/` (una ruta estándar del PATH de usuario), cualquier herramienta de terminal o editor de código en tu sistema podrá invocar `sv-memory mcp` o ejecutar comandos de diagnóstico sin importar en qué directorio te encuentres. El instalador automático (`install.sh` / `install.ps1`) hace este paso por ti sin requerir `sudo`.
 
