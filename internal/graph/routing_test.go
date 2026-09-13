@@ -395,3 +395,65 @@ Route::get('/api/users/{id}', [UserController::class, 'show']);
 		t.Errorf("expected 3 route edges for Laravel, got %d", edgeCount)
 	}
 }
+
+func TestReactRouterRouteExtraction(t *testing.T) {
+	// React Router routes should be extracted when react-router-dom is in package.json.
+	tempDir, err := os.MkdirTemp("", "sv-mem-reactrouter-test")
+	if err != nil {
+		t.Fatalf("failed to create temp workspace: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_storage.db")
+	database, err := db.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-reactrouter-test"
+	if err = db.RegisterProject(database, projectID, "ReactRouter Test", tempDir); err != nil {
+		t.Fatalf("failed to register project: %v", err)
+	}
+
+	// package.json with react-router-dom
+	pkgJSON := `{"dependencies": {"react": "^18.0.0", "react-router-dom": "^7.0.0"}}`
+	if err = os.WriteFile(filepath.Join(tempDir, "package.json"), []byte(pkgJSON), 0644); err != nil {
+		t.Fatalf("failed writing package.json: %v", err)
+	}
+
+	// App.tsx with React Router routes
+	srcDir := filepath.Join(tempDir, "src")
+	if err = os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatalf("failed creating src dir: %v", err)
+	}
+	appContent := `
+import { Routes, Route } from 'react-router-dom';
+
+export function App() {
+  return (
+    <Routes>
+      <Route path="/dashboard" element={<Dashboard />} />
+      <Route path="/settings" element={<Settings />} />
+      <Route path="/users/:id" element={<UserProfile />} />
+    </Routes>
+  );
+}
+`
+	if err = os.WriteFile(filepath.Join(srcDir, "App.tsx"), []byte(appContent), 0644); err != nil {
+		t.Fatalf("failed writing App.tsx: %v", err)
+	}
+
+	if err = SyncGraph(database, projectID, tempDir); err != nil {
+		t.Fatalf("SyncGraph failed: %v", err)
+	}
+
+	// Must produce route nodes for /dashboard, /settings, /users/:id (not /)
+	var routeCount int
+	if err = database.QueryRow("SELECT COUNT(*) FROM graph_nodes WHERE project_id = ? AND node_type = 'route'", projectID).Scan(&routeCount); err != nil {
+		t.Fatalf("failed querying route nodes: %v", err)
+	}
+	if routeCount != 3 {
+		t.Errorf("expected 3 route nodes for React Router, got %d", routeCount)
+	}
+}
