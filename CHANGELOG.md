@@ -5,6 +5,11 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+### Added
+- **Laravel route extraction**: Extracts `Route::get/post/put/delete/patch/match/any` patterns from PHP files. Evidence: `artisan` file or `laravel/framework` in `composer.json`. Per-package scoped. Config: `routing.recipes.laravel.enabled`.
+- **React Router route extraction**: Extracts `<Route path="/...">` JSX patterns and `path: "/path"` in `createBrowserRouter` config. Evidence: `react-router-dom` or `react-router` in `package.json`. Per-package scoped. Config: `routing.recipes.react-router.enabled`.
+- **TypeScript path alias resolution**: Resolves `@/` and `~/` aliases to actual file paths via `tsconfig.json` `compilerOptions.paths`. Heuristic fallback (`@/` → `src/`) when no tsconfig exists.
+
 ### Fixed
 - **Routing node file ID mismatch (FK failure)**: Fixed `routing.go:32` generating `target_id = "file:" + path` but file nodes use canonical `relPath` (no prefix). This caused FK constraint failure on `graph_edges(target_id) → graph_nodes(id)`, aborting the entire sync transaction. Changed to `fileID = path`. Added defensive FK guard in `bulkInsertEdges` that skips edges with missing endpoints instead of aborting the transaction.
 - **Update fallback uses unsafe cp-in-place**: `sv-memory update` now uses `rm -f` + `cp` instead of bare `cp` when `os.Rename` fails, preventing a stale macOS kernel code-signature cache that SIGKILLs the binary ([golang/go#63997](https://github.com/golang/go/issues/63997)).
