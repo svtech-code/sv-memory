@@ -284,6 +284,8 @@ type walkResult struct {
 	fileMeta      map[string]fileMetaEntry
 	manifestFiles []string
 	fileContents  map[string][]byte
+	packageRoots  map[string]bool   // dirs containing a manifest ("" = project root)
+	filePkgRoot   map[string]string // file relPath → nearest package root relPath
 }
 
 type fileMetaEntry struct {
@@ -306,6 +308,13 @@ func scanFilesFiltered(projPath string, readOnly map[string]bool) (*walkResult, 
 	fileList := []string{}
 	fileMeta := make(map[string]fileMetaEntry)
 	fileContents := make(map[string][]byte)
+	packageRoots := make(map[string]bool)
+
+	// Build a set for O(1) manifest lookup during the walk.
+	manifestSet := make(map[string]bool, len(manifestFilenames))
+	for _, mf := range manifestFilenames {
+		manifestSet[mf] = true
+	}
 
 	gi, _ := loadGitignore(projPath)
 
@@ -339,6 +348,16 @@ func scanFilesFiltered(projPath string, readOnly map[string]bool) (*walkResult, 
 		// Skip ignored files (not just directories).
 		if gi != nil && gi.match(relPath, false) {
 			return nil
+		}
+
+		// Detect manifests at any depth for package-root detection.
+		// This runs before the extension filter so .json/.mod/.toml etc. are caught.
+		if manifestSet[filepath.Base(relPath)] {
+			pkgDir := filepath.Dir(relPath)
+			if pkgDir == "." {
+				pkgDir = ""
+			}
+			packageRoots[pkgDir] = true
 		}
 
 		ext := strings.ToLower(filepath.Ext(relPath))
@@ -419,11 +438,33 @@ func scanFilesFiltered(projPath string, readOnly map[string]bool) (*walkResult, 
 			fileMeta[mf] = fileMetaEntry{mtimeMs: mtimeMs, size: size}
 		}
 	}
+
+	// Compute filePkgRoot: map each file to its nearest package root.
+	filePkgRoot := make(map[string]string, len(fileContents))
+	for relPath := range fileContents {
+		filePkgRoot[relPath] = nearestPackageRoot(relPath, packageRoots)
+	}
+
 	return &walkResult{
 		nodes:         nodes,
 		fileList:      fileList,
 		fileMeta:      fileMeta,
 		manifestFiles: manifestFiles,
 		fileContents:  fileContents,
+		packageRoots:  packageRoots,
+		filePkgRoot:   filePkgRoot,
 	}, nil
+}
+
+// nearestPackageRoot returns the nearest ancestor directory of relPath that is
+// a package root (contains a manifest). Returns "" for the project root.
+func nearestPackageRoot(relPath string, packageRoots map[string]bool) string {
+	dir := filepath.Dir(relPath)
+	for dir != "." && dir != "" {
+		if packageRoots[dir] {
+			return dir
+		}
+		dir = filepath.Dir(dir)
+	}
+	return ""
 }
