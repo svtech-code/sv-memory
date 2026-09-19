@@ -155,7 +155,8 @@ start/end sessions, save a summary right before compaction, and persist subagent
 Antigravity CLI additionally installs a `PreInvocation` hook that deterministically
 auto-starts the session and injects the Auto-Boot bundle (first invocation) or an adaptive
 nudge (later invocations), so Gemini models use sv-memory without a manual
-`sv_mem_session_start`.
+`sv_mem_session_start`; it also writes a short always-on rule at
+`.agents/rules/sv-memory.md` to keep the protocol salient.
 See [AGENT-SETUP.md](AGENT-SETUP.md) for the full per-agent guide.
 
 ---

@@ -137,6 +137,9 @@ Luego reinicia tu asistente para que recargue la configuración MCP y las nuevas
   lectura cruda de archivo de cada conversación con una decisión JSON `deny` + motivo
   graph-first. El modo estricto es fail-open: nunca bloquea el agente cuando sv-memory
   falta o `SV_MEMORY_STRICT_DISABLE=1` está definido.
+- **Regla:** una regla corta always-on en `.agents/rules/sv-memory.md` (`trigger: always_on`)
+  mantiene el protocolo graph-first/spec-first presente en modelos que diluyen el gran
+  `AGENTS.md` inyectado.
 - **Permisos:** las 43 herramientas sv-memory se añaden al allow-list de Antigravity
   (`mcp(sv-memory/<tool>)`).
 

@@ -579,6 +579,11 @@ func TestInstallAntigravity(t *testing.T) {
 		t.Fatalf("skill file not created at %s", skillPath)
 	}
 
+	rulePath := filepath.Join(tempDir, ".agents", "rules", "sv-memory.md")
+	if _, statErr := os.Stat(rulePath); os.IsNotExist(statErr) {
+		t.Fatalf("always-on rule not created at %s", rulePath)
+	}
+
 	status := eng.Status([]Platform{PlatformAntigravity})
 	if !status[PlatformAntigravity] {
 		t.Error("expected antigravity status to be installed")
@@ -623,6 +628,11 @@ func TestUninstallAntigravity(t *testing.T) {
 	if _, err := os.Stat(skillPath); !os.IsNotExist(err) {
 		t.Error("skill file should have been removed")
 	}
+
+	rulePath := filepath.Join(tempDir, ".agents", "rules", "sv-memory.md")
+	if _, err := os.Stat(rulePath); !os.IsNotExist(err) {
+		t.Error("always-on rule should have been removed")
+	}
 }
 
 func TestAntigravitySkillContent(t *testing.T) {
@@ -635,6 +645,24 @@ func TestAntigravitySkillContent(t *testing.T) {
 	}
 	if !strings.Contains(content, "sv_mem_context_pack") {
 		t.Error("antigravity skill should emphasize sv_mem_context_pack")
+	}
+}
+
+func TestAntigravityRuleContent(t *testing.T) {
+	content := antigravityRuleScript()
+	if content == "" {
+		t.Fatal("antigravity rule template is missing")
+	}
+	if !strings.Contains(content, "trigger: always_on") {
+		t.Error("antigravity rule should declare the always_on trigger")
+	}
+	for _, marker := range []string{"sv_graph_explore", "Spec-Driven Decision Cycle", "sv_propose_spec", "sv_commit_spec", "sv_mem_session_start"} {
+		if !strings.Contains(content, marker) {
+			t.Errorf("antigravity rule should mention %s", marker)
+		}
+	}
+	if lines := strings.Count(content, "\n") + 1; lines > 45 {
+		t.Errorf("antigravity rule should stay short (got %d lines, want <=45)", lines)
 	}
 }
 

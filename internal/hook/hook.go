@@ -587,6 +587,14 @@ func (e *HookEngine) antigravitySkillPath() string {
 	return filepath.Join(e.antigravitySkillDir(), "SKILL.md")
 }
 
+func (e *HookEngine) antigravityRuleDir() string {
+	return filepath.Join(e.projPath, ".agents", "rules")
+}
+
+func (e *HookEngine) antigravityRulePath() string {
+	return filepath.Join(e.antigravityRuleDir(), "sv-memory.md")
+}
+
 func (e *HookEngine) installAntigravity() ([]string, error) {
 	var created []string
 
@@ -685,6 +693,23 @@ func (e *HookEngine) installAntigravity() ([]string, error) {
 	}
 	created = append(created, skillPath)
 
+	// 4. Write the short always-on rule (.agents/rules/sv-memory.md) so the
+	// graph-first/spec-first protocol stays salient for models that dilute the
+	// large injected AGENTS.md.
+	ruleDir := e.antigravityRuleDir()
+	if err := os.MkdirAll(ruleDir, 0755); err != nil {
+		return created, fmt.Errorf("failed to create .agents/rules dir: %w", err)
+	}
+	rulePath := e.antigravityRulePath()
+	ruleContent := antigravityRuleScript()
+	if ruleContent == "" {
+		return created, fmt.Errorf("missing antigravity rule template")
+	}
+	if err := os.WriteFile(rulePath, []byte(ruleContent), 0644); err != nil {
+		return created, fmt.Errorf("failed to write antigravity rule: %w", err)
+	}
+	created = append(created, rulePath)
+
 	return created, nil
 }
 
@@ -741,6 +766,16 @@ func (e *HookEngine) uninstallAntigravity() ([]string, error) {
 		_ = os.Remove(e.antigravitySkillDir())
 	}
 
+	// 4. Remove the always-on rule (.agents/rules/sv-memory.md)
+	rulePath := e.antigravityRulePath()
+	if err := os.Remove(rulePath); err != nil && !os.IsNotExist(err) {
+		return removed, fmt.Errorf("failed to remove agy rule: %w", err)
+	}
+	if _, err := os.Stat(rulePath); os.IsNotExist(err) {
+		removed = append(removed, rulePath)
+		_ = os.Remove(e.antigravityRuleDir())
+	}
+
 	return removed, nil
 }
 
@@ -759,6 +794,10 @@ func (e *HookEngine) antigravityInstalled() bool {
 	}
 	skillPath := e.antigravitySkillPath()
 	if _, err := os.Stat(skillPath); os.IsNotExist(err) {
+		return false
+	}
+	rulePath := e.antigravityRulePath()
+	if _, err := os.Stat(rulePath); os.IsNotExist(err) {
 		return false
 	}
 	existing, err := os.ReadFile(hooksPath)

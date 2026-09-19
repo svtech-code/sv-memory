@@ -133,6 +133,9 @@ Then restart your assistant so it reloads the MCP config and new tools. Verify w
   read and nudges via `AGENTS.md`; `--strict` blocks the first raw file read of each
   conversation with a JSON `deny` + graph-first reason. Strict is fail-open: it never
   deadlocks when sv-memory is missing or `SV_MEMORY_STRICT_DISABLE=1` is set.
+- **Rule:** a short always-on rule at `.agents/rules/sv-memory.md` (`trigger: always_on`)
+  keeps the graph-first/spec-first protocol salient for models that dilute the large
+  injected `AGENTS.md`.
 - **Permissions:** the 43 sv-memory tools are added to the Antigravity settings allow-list
   (`mcp(sv-memory/<tool>)`).
 

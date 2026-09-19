@@ -145,7 +145,7 @@ sv-memory hooks install --platform antigravity
 
 #### ¿Qué hace este comando?
 
-Crea `.agents/hooks.json`, `.agents/hooks/sv-memory.sh` (PreToolUse) y `.agents/hooks/sv-memory-preinvocation.sh` (PreInvocation). El hook PreToolUse intercepta las lecturas de archivos (`view_file`, `grep_search`, `list_dir`) para que el agente consulte la memoria del proyecto antes de leer código a ciegas; el hook PreInvocation arranca la sesión de forma determinista e inyecta el Auto-Boot Context Bundle (primera invocación) o un recordatorio adaptativo (invocaciones posteriores), de modo que los modelos Gemini usan sv-memory sin un `sv_mem_session_start` manual.
+Crea `.agents/hooks.json`, `.agents/hooks/sv-memory.sh` (PreToolUse) y `.agents/hooks/sv-memory-preinvocation.sh` (PreInvocation). El hook PreToolUse intercepta las lecturas de archivos (`view_file`, `grep_search`, `list_dir`) para que el agente consulte la memoria del proyecto antes de leer código a ciegas; el hook PreInvocation arranca la sesión de forma determinista e inyecta el Auto-Boot Context Bundle (primera invocación) o un recordatorio adaptativo (invocaciones posteriores), de modo que los modelos Gemini usan sv-memory sin un `sv_mem_session_start` manual. Además se escribe una regla always-on corta en `.agents/rules/sv-memory.md` que mantiene el protocolo graph-first/spec-first presente incluso cuando el modelo diluye el `AGENTS.md`.
 
 Existen dos modos:
 

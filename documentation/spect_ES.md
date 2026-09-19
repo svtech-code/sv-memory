@@ -266,7 +266,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **OpenCode:** registra el servidor MCP en `opencode.json`, instala `SKILL.md` más el plugin nativo TypeScript `.opencode/plugin/sv-memory.ts` (añade el tool `sv_memory_context`) e inyecta el protocolo en `AGENTS.md`.
 - **Cursor:** escribe `.cursor/mcp.json` e inyecta `.cursorrules`.
 - **Windsurf:** escribe `.windsurf/mcp_config.json` e inyecta `.windsurfrules`.
-- **Antigravity CLI:** registra el servidor MCP, instala los hooks de `.agents/hooks.json` (PreToolUse + `PreInvocation` de auto-boot/nudge), inyecta `AGENTS.md` y concede el allow-list de 43 herramientas.
+- **Antigravity CLI:** registra el servidor MCP, instala los hooks de `.agents/hooks.json` (PreToolUse + `PreInvocation` de auto-boot/nudge), escribe la skill nativa (`.agents/skills/sv-memory/SKILL.md`) y una regla corta always-on (`.agents/rules/sv-memory.md`), inyecta `AGENTS.md` y concede el allow-list de 43 herramientas.
 - **Codex:** escribe el bloque `[mcp_servers.sv-memory]` en `~/.codex/config.toml`, instala un hook no-op e inyecta `AGENTS.md`.
 
 #### 12. `sv-memory hooks`
