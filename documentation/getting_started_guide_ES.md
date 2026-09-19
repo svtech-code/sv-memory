@@ -145,7 +145,7 @@ sv-memory hooks install --platform antigravity
 
 #### ¿Qué hace este comando?
 
-Crea `.agents/hooks.json` y `.agents/hooks/sv-memory.sh` para que el agente intercepte las lecturas de archivos (`view_file`, `grep_search`, `list_dir`) y consulte la memoria del proyecto antes de leer código a ciegas.
+Crea `.agents/hooks.json`, `.agents/hooks/sv-memory.sh` (PreToolUse) y `.agents/hooks/sv-memory-preinvocation.sh` (PreInvocation). El hook PreToolUse intercepta las lecturas de archivos (`view_file`, `grep_search`, `list_dir`) para que el agente consulte la memoria del proyecto antes de leer código a ciegas; el hook PreInvocation arranca la sesión de forma determinista e inyecta el Auto-Boot Context Bundle (primera invocación) o un recordatorio adaptativo (invocaciones posteriores), de modo que los modelos Gemini usan sv-memory sin un `sv_mem_session_start` manual.
 
 Existen dos modos:
 
@@ -158,7 +158,7 @@ Existen dos modos:
 
 > **Degradación y fail-open:** los scripts de hook nunca llaman al servidor sv-memory solo inspeccionan archivos locales y variables de entorno. Si sv-memory no está inicializado (sin `.sv-memory/`), el binario no está en el PATH, o está `SV_MEMORY_STRICT_DISABLE=1`, el modo strict **permite** la lectura en lugar de bloquearla, de modo que un sv-memory ausente o mal configurado nunca deje al agente atascado. Ten en cuenta que el _bloqueo_ strict solo está implementado en Antigravity CLI; en Claude Code el modo strict es solo nudge (nunca bloquea).
 
-> **Inyección silenciosa de contexto (opt-in, default off):** los hooks de Claude Code pueden auto-inyectar un context pack compacto grafo+memorias (salida de `sv-memory context <file>`) como `additionalContext` en la primera `Read` de cada archivo. Actívala con `sv-memory hooks install --platform claude-code --context-injection`, que crea el marcador `.sv-memory/context-injection-enabled`. La salida se cachea por archivo para la sesión y está acotada en tiempo (2s); el hook siempre sale con `exit 0`, de modo que un binario o `.sv-memory` ausente nunca rompe una llamada. Desactívala con `sv-memory hooks uninstall --context-injection`. Antigravity, Codex y OpenCode no soportan inyección por `additionalContext` y mantienen el mecanismo de nudge/skill.
+> **Inyección silenciosa de contexto (opt-in, default off):** los hooks de Claude Code pueden auto-inyectar un context pack compacto grafo+memorias (salida de `sv-memory context <file>`) como `additionalContext` en la primera `Read` de cada archivo. Actívala con `sv-memory hooks install --platform claude-code --context-injection`, que crea el marcador `.sv-memory/context-injection-enabled`. La salida se cachea por archivo para la sesión y está acotada en tiempo (2s); el hook siempre sale con `exit 0`, de modo que un binario o `.sv-memory` ausente nunca rompe una llamada. Desactívala con `sv-memory hooks uninstall --context-injection`. Codex y OpenCode no soportan inyección por `additionalContext` y mantienen el mecanismo de nudge/skill; Antigravity usa su hook `PreInvocation` nativo (`injectSteps`/`ephemeralMessage`) para auto-iniciar la sesión e inyectar contexto.
 
 > **Por proyecto:** Repite este comando en cada repositorio donde trabajes con IA. Las plataformas soportadas son `claude-code`, `codex`, `antigravity` y `opencode` (omite `--platform` para instalarlo en todas).
 

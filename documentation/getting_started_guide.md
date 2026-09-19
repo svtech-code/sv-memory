@@ -152,6 +152,10 @@ sv-memory setup               # read-only per-agent status
 For Claude Code, `setup claude-code` additionally installs the lifecycle hooks
 (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`) so the agent is nudged to
 start/end sessions, save a summary right before compaction, and persist subagent findings.
+Antigravity CLI additionally installs a `PreInvocation` hook that deterministically
+auto-starts the session and injects the Auto-Boot bundle (first invocation) or an adaptive
+nudge (later invocations), so Gemini models use sv-memory without a manual
+`sv_mem_session_start`.
 See [AGENT-SETUP.md](AGENT-SETUP.md) for the full per-agent guide.
 
 ---

@@ -575,6 +575,10 @@ func (e *HookEngine) antigravityHookScriptPath() string {
 	return filepath.Join(e.projPath, ".agents", "hooks", "sv-memory.sh")
 }
 
+func (e *HookEngine) antigravityPreInvocationScriptPath() string {
+	return filepath.Join(e.projPath, ".agents", "hooks", "sv-memory-preinvocation.sh")
+}
+
 func (e *HookEngine) antigravitySkillDir() string {
 	return filepath.Join(e.projPath, ".agents", "skills", "sv-memory")
 }
@@ -598,9 +602,21 @@ func (e *HookEngine) installAntigravity() ([]string, error) {
 	}
 	created = append(created, scriptPath)
 
+	// 1b. Write PreInvocation hook script (deterministic auto-boot + nudge).
+	prePath := e.antigravityPreInvocationScriptPath()
+	preContent := antigravityPreInvocationScript()
+	if preContent == "" {
+		return created, fmt.Errorf("missing antigravity preinvocation template")
+	}
+	if err := os.WriteFile(prePath, []byte(preContent), 0755); err != nil {
+		return created, fmt.Errorf("failed to write agy preinvocation script: %w", err)
+	}
+	created = append(created, prePath)
+
 	// 2. Build hooks.json config
 	// agy hooks.json shape: named hook groups with event keys.
 	// PreToolUse uses [{matcher, hooks: [{type, command, timeout}]}]
+	// PreInvocation is flat: a list of handler objects (no matcher wrapper).
 	hooksEntry := map[string]interface{}{
 		"sv-memory": map[string]interface{}{
 			"enabled": true,
@@ -614,6 +630,13 @@ func (e *HookEngine) installAntigravity() ([]string, error) {
 							"timeout": 5,
 						},
 					},
+				},
+			},
+			"PreInvocation": []map[string]interface{}{
+				{
+					"type":    "command",
+					"command": prePath,
+					"timeout": 15,
 				},
 			},
 		},
@@ -677,6 +700,15 @@ func (e *HookEngine) uninstallAntigravity() ([]string, error) {
 		removed = append(removed, scriptPath)
 	}
 
+	// 1b. Remove PreInvocation hook script
+	prePath := e.antigravityPreInvocationScriptPath()
+	if err := os.Remove(prePath); err != nil && !os.IsNotExist(err) {
+		return removed, fmt.Errorf("failed to remove agy preinvocation script: %w", err)
+	}
+	if _, err := os.Stat(prePath); os.IsNotExist(err) {
+		removed = append(removed, prePath)
+	}
+
 	// 2. Remove our entry from hooks.json (preserve other named hooks)
 	hooksPath := e.antigravityHooksPath()
 	if existing, err := os.ReadFile(hooksPath); err == nil {
@@ -719,6 +751,10 @@ func (e *HookEngine) antigravityInstalled() bool {
 	}
 	scriptPath := e.antigravityHookScriptPath()
 	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+		return false
+	}
+	prePath := e.antigravityPreInvocationScriptPath()
+	if _, err := os.Stat(prePath); os.IsNotExist(err) {
 		return false
 	}
 	skillPath := e.antigravitySkillPath()

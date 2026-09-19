@@ -126,11 +126,16 @@ Luego reinicia tu asistente para que recargue la configuración MCP y las nuevas
 - **Skill:** skill nativa instalada bajo `.agents/skills/sv-memory/SKILL.md` con frontmatter YAML
   para descubrimiento progresivo bajo demanda por el agente. Contiene el flujo completo
   (sesión, graph-first, spec cycle, topic keys, mantenimiento), idéntico al de OpenCode excepto
-  la nota de sesión (Antigravity no tiene auto-start).
-- **Hooks:** `.agents/hooks.json` + `.agents/hooks/sv-memory.sh`. El modo soft siempre
-  permite la lectura y sugiere vía `AGENTS.md`; `--strict` bloquea la primera lectura cruda
-  de archivo de cada sesión. El modo estricto es fail-open: nunca bloquea el agente cuando
-  sv-memory falta o `SV_MEMORY_STRICT_DISABLE=1` está definido.
+  la nota de sesión (Antigravity auto-inicia la sesión vía su hook `PreInvocation`).
+- **Hooks:** `.agents/hooks.json` + `.agents/hooks/sv-memory.sh` (PreToolUse) +
+  `.agents/hooks/sv-memory-preinvocation.sh` (PreInvocation). El hook `PreInvocation`
+  arranca la sesión de forma determinista e inyecta el Auto-Boot Context Bundle como
+  mensaje efímero en la primera invocación de una conversación, y luego inyecta un
+  recordatorio compacto adaptativo (spec changes activos) en invocaciones posteriores —
+  así cualquier modelo Gemini usa sv-memory sin un `sv_mem_session_start` manual. El modo
+  soft siempre permite la lectura y sugiere vía `AGENTS.md`; `--strict` bloquea la primera
+  lectura cruda de archivo de cada sesión. El modo estricto es fail-open: nunca bloquea el
+  agente cuando sv-memory falta o `SV_MEMORY_STRICT_DISABLE=1` está definido.
 - **Permisos:** las 43 herramientas sv-memory se añaden al allow-list de Antigravity
   (`mcp(sv-memory/<tool>)`).
 

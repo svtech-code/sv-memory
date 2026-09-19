@@ -122,9 +122,15 @@ Then restart your assistant so it reloads the MCP config and new tools. Verify w
 - **MCP config:** written to the Antigravity `mcp_config.json` (merged).
 - **Skill:** native skill installed under `.agents/skills/sv-memory/SKILL.md` with YAML
   frontmatter. Carries the full workflow (session, graph-first, spec cycle, topic keys,
-  maintenance), identical to OpenCode except the session note (Antigravity has no auto-start).
-- **Hooks:** `.agents/hooks.json` + `.agents/hooks/sv-memory.sh`. Soft mode always allows
-  the read and nudges via `AGENTS.md`; `--strict` blocks the first raw file read of each
+  maintenance), identical to OpenCode except the session note (Antigravity auto-starts
+  the session via its `PreInvocation` hook).
+- **Hooks:** `.agents/hooks.json` + `.agents/hooks/sv-memory.sh` (PreToolUse) +
+  `.agents/hooks/sv-memory-preinvocation.sh` (PreInvocation). The `PreInvocation` hook
+  deterministically starts the session and injects the Auto-Boot Context Bundle as an
+  ephemeral message on the first invocation of a conversation, then injects a compact
+  adaptive reminder (active spec changes) on later invocations — so any Gemini model
+  uses sv-memory without a manual `sv_mem_session_start`. Soft mode always allows the
+  read and nudges via `AGENTS.md`; `--strict` blocks the first raw file read of each
   session. Strict is fail-open: it never deadlocks when sv-memory is missing or
   `SV_MEMORY_STRICT_DISABLE=1` is set.
 - **Permissions:** the 43 sv-memory tools are added to the Antigravity settings allow-list

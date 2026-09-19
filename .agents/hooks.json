@@ -12,6 +12,13 @@
         "matcher": "view_file|grep_search|list_dir"
       }
     ],
+    "PreInvocation": [
+      {
+        "command": "/Users/msandoval/.work/svtech/sv-memory/.agents/hooks/sv-memory-preinvocation.sh",
+        "timeout": 15,
+        "type": "command"
+      }
+    ],
     "enabled": true
   }
 }

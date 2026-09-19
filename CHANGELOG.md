@@ -6,6 +6,7 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 ## [Unreleased]
 
 ### Added
+- **Antigravity `PreInvocation` auto-boot + adaptive nudge**: The Antigravity CLI integration now installs a `PreInvocation` hook (`.agents/hooks/sv-memory-preinvocation.sh`) that deterministically auto-starts the sv-memory session and injects the Auto-Boot Context Bundle as an `ephemeralMessage` on the first invocation of a conversation, then injects a compact adaptive nudge (active spec changes) on later invocations. This makes any Gemini model use sv-memory without a manual `sv_mem_session_start`, matching the deterministic behavior already provided for OpenCode (plugin) and Claude Code (lifecycle hooks). Fail-open: emits valid JSON and exits 0 when sv-memory is unavailable.
 - **Laravel route extraction**: Extracts `Route::get/post/put/delete/patch/match/any` patterns from PHP files. Evidence: `artisan` file or `laravel/framework` in `composer.json`. Per-package scoped. Config: `routing.recipes.laravel.enabled`.
 - **React Router route extraction**: Extracts `<Route path="/...">` JSX patterns and `path: "/path"` in `createBrowserRouter` config. Evidence: `react-router-dom` or `react-router` in `package.json`. Per-package scoped. Config: `routing.recipes.react-router.enabled`.
 - **TypeScript path alias resolution**: Resolves `@/` and `~/` aliases to actual file paths via `tsconfig.json` `compilerOptions.paths`. Heuristic fallback (`@/` → `src/`) when no tsconfig exists.

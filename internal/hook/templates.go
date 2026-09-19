@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-//go:embed scripts/claude-code-soft.sh scripts/claude-code-strict.sh scripts/claude-code-session-start.sh scripts/claude-code-precompact.sh scripts/claude-code-subagent-stop.sh scripts/claude-code-session-end.sh scripts/claude-code-user-prompt-submit.sh scripts/codex-noop.sh scripts/antigravity-soft.sh scripts/antigravity-strict.sh scripts/antigravity-skill.md scripts/opencode-skill.md scripts/opencode-plugin-soft.ts scripts/opencode-plugin-strict.ts scripts/git-post-commit.sh
+//go:embed scripts/claude-code-soft.sh scripts/claude-code-strict.sh scripts/claude-code-session-start.sh scripts/claude-code-precompact.sh scripts/claude-code-subagent-stop.sh scripts/claude-code-session-end.sh scripts/claude-code-user-prompt-submit.sh scripts/codex-noop.sh scripts/antigravity-soft.sh scripts/antigravity-strict.sh scripts/antigravity-preinvocation.sh scripts/antigravity-skill.md scripts/opencode-skill.md scripts/opencode-plugin-soft.ts scripts/opencode-plugin-strict.ts scripts/git-post-commit.sh
 var hookScriptsFS embed.FS
 
 // gitPostCommitScript returns the embedded Git post-commit hook script source.
@@ -48,6 +48,17 @@ func opencodePluginScript(mode Mode) string {
 // antigravitySkillScript returns the embedded Antigravity skill source (with YAML frontmatter).
 func antigravitySkillScript() string {
 	data, err := hookScriptsFS.ReadFile("scripts/antigravity-skill.md")
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+// antigravityPreInvocationScript returns the embedded Antigravity PreInvocation
+// hook source. This hook deterministically auto-starts the session and injects
+// the Auto-Boot bundle (first invocation) or an adaptive nudge (later ones).
+func antigravityPreInvocationScript() string {
+	data, err := hookScriptsFS.ReadFile("scripts/antigravity-preinvocation.sh")
 	if err != nil {
 		return ""
 	}
