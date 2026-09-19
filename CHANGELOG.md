@@ -12,6 +12,7 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 - **TypeScript path alias resolution**: Resolves `@/` and `~/` aliases to actual file paths via `tsconfig.json` `compilerOptions.paths`. Heuristic fallback (`@/` → `src/`) when no tsconfig exists.
 
 ### Fixed
+- **Antigravity strict PreToolUse contract**: The strict hook emitted the Claude Code blocking convention (`exit 2` + stderr) while agy expects a JSON decision on stdout, so the graph-first redirect never reached the model. It now emits `{"decision":"deny","reason":...}` once per conversation and resolves the project root from `workspacePaths[0]` instead of `$PWD` (agy runs hooks with the `hooks.json` directory as cwd, so the old `.sv-memory` guard always failed open). The dead write branch was removed; spec reminders are delivered by the `PreInvocation` hook.
 - **Routing node file ID mismatch (FK failure)**: Fixed `routing.go:32` generating `target_id = "file:" + path` but file nodes use canonical `relPath` (no prefix). This caused FK constraint failure on `graph_edges(target_id) → graph_nodes(id)`, aborting the entire sync transaction. Changed to `fileID = path`. Added defensive FK guard in `bulkInsertEdges` that skips edges with missing endpoints instead of aborting the transaction.
 - **Update fallback uses unsafe cp-in-place**: `sv-memory update` now uses `rm -f` + `cp` instead of bare `cp` when `os.Rename` fails, preventing a stale macOS kernel code-signature cache that SIGKILLs the binary ([golang/go#63997](https://github.com/golang/go/issues/63997)).
 

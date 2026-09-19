@@ -134,8 +134,9 @@ Luego reinicia tu asistente para que recargue la configuración MCP y las nuevas
   recordatorio compacto adaptativo (spec changes activos) en invocaciones posteriores —
   así cualquier modelo Gemini usa sv-memory sin un `sv_mem_session_start` manual. El modo
   soft siempre permite la lectura y sugiere vía `AGENTS.md`; `--strict` bloquea la primera
-  lectura cruda de archivo de cada sesión. El modo estricto es fail-open: nunca bloquea el
-  agente cuando sv-memory falta o `SV_MEMORY_STRICT_DISABLE=1` está definido.
+  lectura cruda de archivo de cada conversación con una decisión JSON `deny` + motivo
+  graph-first. El modo estricto es fail-open: nunca bloquea el agente cuando sv-memory
+  falta o `SV_MEMORY_STRICT_DISABLE=1` está definido.
 - **Permisos:** las 43 herramientas sv-memory se añaden al allow-list de Antigravity
   (`mcp(sv-memory/<tool>)`).
 

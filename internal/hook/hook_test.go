@@ -431,16 +431,28 @@ func TestHookScriptContentAntigravity(t *testing.T) {
 func TestHookScriptContentAntigravityStrict(t *testing.T) {
 	content := mustHookScript(t, PlatformAntigravity, ModeStrict)
 	if !strings.Contains(content, "FLAG_FILE") {
-		t.Error("antigravity strict script should have FLAG_FILE session tracking")
+		t.Error("antigravity strict script should have FLAG_FILE per-conversation tracking")
 	}
-	if !strings.Contains(content, "exit 2") {
-		t.Error("antigravity strict script should have exit 2 for blocked tools")
+	if !strings.Contains(content, `"decision":"deny"`) {
+		t.Error("antigravity strict script should emit a JSON deny decision")
+	}
+	if !strings.Contains(content, `"decision":"allow"`) {
+		t.Error("antigravity strict script should emit a JSON allow decision")
+	}
+	if strings.Contains(content, "exit 2") {
+		t.Error("antigravity strict script must not use the Claude Code exit 2 contract")
 	}
 	if !strings.Contains(content, "SV_MEMORY_STRICT_DISABLE") {
 		t.Error("antigravity strict script should support the SV_MEMORY_STRICT_DISABLE opt-out")
 	}
 	if !strings.Contains(content, ".sv-memory") {
 		t.Error("antigravity strict script should fail open when .sv-memory is absent")
+	}
+	if !strings.Contains(content, "workspacePaths") {
+		t.Error("antigravity strict script should resolve the workspace from workspacePaths")
+	}
+	if !strings.Contains(content, "conversationId") {
+		t.Error("antigravity strict script should scope the redirect per conversation")
 	}
 }
 
