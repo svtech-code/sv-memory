@@ -5,21 +5,31 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+## [v0.24.0] - 2026-09-18
+
 ### Added
 - **Public repository warning on init**: `sv-memory init` now performs a best-effort public/private detection (GitHub origin + `gh`, time-bounded, fail-open) and warns when the repository is public, recommending local-only memory and showing how private teams can opt in.
 - **Antigravity always-on rule**: `setup antigravity` now installs a short always-on rule at `.agents/rules/sv-memory.md` (`trigger: always_on`) that front-loads the graph-first/spec-first protocol. This keeps the key instructions salient for models that dilute the large injected `AGENTS.md`. Uninstall removes it.
 - **Antigravity `PreInvocation` auto-boot + adaptive nudge**: The Antigravity CLI integration now installs a `PreInvocation` hook (`.agents/hooks/sv-memory-preinvocation.sh`) that deterministically auto-starts the sv-memory session and injects the Auto-Boot Context Bundle as an `ephemeralMessage` on the first invocation of a conversation, then injects a compact adaptive nudge (active spec changes) on later invocations. This makes any Gemini model use sv-memory without a manual `sv_mem_session_start`, matching the deterministic behavior already provided for OpenCode (plugin) and Claude Code (lifecycle hooks). Fail-open: emits valid JSON and exits 0 when sv-memory is unavailable.
+
+### Fixed
+- **Antigravity strict PreToolUse contract**: The strict hook emitted the Claude Code blocking convention (`exit 2` + stderr) while agy expects a JSON decision on stdout, so the graph-first redirect never reached the model. It now emits `{"decision":"deny","reason":...}` once per conversation and resolves the project root from `workspacePaths[0]` instead of `$PWD` (agy runs hooks with the `hooks.json` directory as cwd, so the old `.sv-memory` guard always failed open). The dead write branch was removed; spec reminders are delivered by the `PreInvocation` hook.
+
+### Changed
+- **Git sync is now opt-in (`git_sync_enabled` defaults to off)**: Memories stay local-only unless a project explicitly enables sharing with `sv-memory configure set git_sync_enabled true` (global) or `--local` (per project). This prevents accidentally publishing internal decisions and journals in public repositories. The manual `sv-memory sync` command remains an explicit action and always runs.
+
+## [v0.23.0] - 2026-09-12
+
+### Added
 - **Laravel route extraction**: Extracts `Route::get/post/put/delete/patch/match/any` patterns from PHP files. Evidence: `artisan` file or `laravel/framework` in `composer.json`. Per-package scoped. Config: `routing.recipes.laravel.enabled`.
 - **React Router route extraction**: Extracts `<Route path="/...">` JSX patterns and `path: "/path"` in `createBrowserRouter` config. Evidence: `react-router-dom` or `react-router` in `package.json`. Per-package scoped. Config: `routing.recipes.react-router.enabled`.
 - **TypeScript path alias resolution**: Resolves `@/` and `~/` aliases to actual file paths via `tsconfig.json` `compilerOptions.paths`. Heuristic fallback (`@/` → `src/`) when no tsconfig exists.
 
 ### Fixed
-- **Antigravity strict PreToolUse contract**: The strict hook emitted the Claude Code blocking convention (`exit 2` + stderr) while agy expects a JSON decision on stdout, so the graph-first redirect never reached the model. It now emits `{"decision":"deny","reason":...}` once per conversation and resolves the project root from `workspacePaths[0]` instead of `$PWD` (agy runs hooks with the `hooks.json` directory as cwd, so the old `.sv-memory` guard always failed open). The dead write branch was removed; spec reminders are delivered by the `PreInvocation` hook.
 - **Routing node file ID mismatch (FK failure)**: Fixed `routing.go:32` generating `target_id = "file:" + path` but file nodes use canonical `relPath` (no prefix). This caused FK constraint failure on `graph_edges(target_id) → graph_nodes(id)`, aborting the entire sync transaction. Changed to `fileID = path`. Added defensive FK guard in `bulkInsertEdges` that skips edges with missing endpoints instead of aborting the transaction.
 - **Update fallback uses unsafe cp-in-place**: `sv-memory update` now uses `rm -f` + `cp` instead of bare `cp` when `os.Rename` fails, preventing a stale macOS kernel code-signature cache that SIGKILLs the binary ([golang/go#63997](https://github.com/golang/go/issues/63997)).
 
 ### Changed
-- **Git sync is now opt-in (`git_sync_enabled` defaults to off)**: Memories stay local-only unless a project explicitly enables sharing with `sv-memory config set git_sync_enabled true` (global) or `--local` (per project). This prevents accidentally publishing internal decisions and journals in public repositories. The manual `sv-memory sync` command remains an explicit action and always runs.
 - **File-based routing gated by framework evidence**: File-based routing patterns (Next.js, SvelteKit, Nuxt) now only activate when the project evidences the corresponding framework via config files (`next.config.*`, `svelte.config.*`, `nuxt.config.*`) or `package.json` dependencies (`next`, `nuxt`, `@sveltejs/kit`). Code-based routing (FastAPI/Flask, Spring) remains always active. Prevents false route nodes on non-framework projects (e.g. Vite+React Router with `pages/` directories).
 - **Package-scoped routing for monorepos**: Route node IDs are now scoped by package root (`route:<pkgRoot>:<hash>`) to prevent collisions across packages in monorepos. Framework evidence is evaluated per-package (nearest `package.json` / config file), not repo-global. Two apps with `pages/index.tsx` now produce distinct route nodes.
 - **Routing config with recipe enable/disable**: Users can disable built-in routing recipes (nextjs, nuxt, sveltekit) via `.sv-memory/config.yaml` under `routing.recipes.<framework>.enabled: false`. All recipes are enabled by default.
