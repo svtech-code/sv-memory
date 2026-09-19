@@ -29,7 +29,9 @@ func LoadGlobalAndLocalConfig(projPath string) {
 
 	// Set default configuration values
 	viper.SetDefault("default_db_path", "")
-	viper.SetDefault("git_sync_enabled", true)
+	// Git sync is opt-in: memories stay local unless a project explicitly
+	// enables sharing. This prevents publishing internal memory in public repos.
+	viper.SetDefault("git_sync_enabled", false)
 	viper.SetDefault("conflict_threshold", 0.45)
 	viper.SetDefault("default_review_limit", 10)
 	viper.SetDefault("auto_compaction_enabled", true)

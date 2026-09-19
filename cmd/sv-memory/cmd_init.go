@@ -39,6 +39,17 @@ var initCmd = &cobra.Command{
 		fmt.Printf("Initializing project: %s (ID: %s)\n", cfg.ProjName, cfg.ProjectID)
 		fmt.Printf("Workspace root: %s\n", cfg.ProjPath)
 
+		// Warn when the repository is public: committed memories are world-readable.
+		if visibility := config.RepoVisibility(cfg.ProjPath); visibility == "public" {
+			fmt.Println()
+			fmt.Println("⚠️  Public repository detected (GitHub).")
+			fmt.Println("   Git sync is OFF by default, so memories stay local. Keep .sv-memory/ out of")
+			fmt.Println("   version control to avoid publishing internal decisions and journals.")
+			fmt.Println("   Private teams can opt in per project with:")
+			fmt.Println("     sv-memory configure set git_sync_enabled true --local")
+			fmt.Println()
+		}
+
 		// 1. Initialize SQLite Database
 		database, err := db.InitDB(cfg.DBPath)
 		if err != nil {

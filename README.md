@@ -354,9 +354,23 @@ platforms.
 
 ## 🔄 Git Sync & Merge Conflicts
 
-sv-memory syncs your SQLite store (local per clone) with `.sv-memory/chunks/{id}.json`
-files committed to Git, so a team shares architectural context across clones. Because
-each memory lives in its own file, agents editing **different** memories never conflict.
+**Git sync is opt-in (off by default).** sv-memory keeps memories local-only unless you
+enable sharing, which syncs your SQLite store (local per clone) with
+`.sv-memory/chunks/{id}.json` files committed to Git so a **private** team shares
+architectural context across clones. Enable it globally or per project:
+
+```bash
+sv-memory configure set git_sync_enabled true            # global (all projects)
+sv-memory configure set git_sync_enabled true --local    # this project only
+```
+
+> ⚠️ **Public repositories:** do **not** commit `.sv-memory/`. Decisions, journals and
+> Q&A reasoning are world-readable once pushed. Keep `.sv-memory/` in `.gitignore`.
+> `sv-memory init` warns you when it detects a public GitHub repository.
+
+The manual `sv-memory sync` command is an explicit user action and always runs, even
+when auto-sync is disabled. Because each memory lives in its own file, agents editing
+**different** memories never conflict.
 
 **Same-memory edits are _not_ zero-conflict.** When two clones edit the _same_ memory
 ID (typically via topic-key upserts), Git produces conflict markers inside `{id}.json`:

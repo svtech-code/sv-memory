@@ -22,5 +22,8 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# NOTA: No ignoramos la carpeta '.sv-memory/' porque contiene 'memories.json',
-# el cual es necesario commitear en Git para compartir el contexto con el equipo.
+# sv-memory store is local-only: it can contain internal decisions, journals and
+# Q&A reasoning. Keep it out of version control (public repos expose it to the
+# world). Private teams can opt into Git sync per project with
+# 'sv-memory configure set git_sync_enabled true --local'.
+.sv-memory/

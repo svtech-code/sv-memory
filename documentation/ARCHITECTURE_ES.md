@@ -187,7 +187,7 @@ Cuando un cambio se confirma, sus delta requirements se mergean en el capability
 
 ### Git sync
 
-Las memorias se sincronizan con Git vía archivos JSON chunked (`.sv-memory/chunks/<id>.json`). La sincronización tiene debounce (default 500ms) y coalesce múltiples cambios en un solo commit.
+Cuando el sync con Git está activado (`git_sync_enabled`, **desactivado por defecto**), las memorias se sincronizan con Git vía archivos JSON chunked (`.sv-memory/chunks/<id>.json`). La sincronización tiene debounce (default 500ms) y coalesce múltiples cambios en un solo commit. Mantén `.sv-memory/` fuera del control de versiones en repositorios públicos.
 
 ### Watcher de archivos en background
 

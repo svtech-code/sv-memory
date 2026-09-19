@@ -354,10 +354,24 @@ configuradas.
 
 ## 🔄 Sync con Git y conflictos de merge
 
-sv-memory sincroniza tu almacén SQLite (local por clon) con los archivos `.sv-memory/chunks/{id}.json`
-commiteados en Git, de modo que el equipo comparte el contexto arquitectónico entre clones.
-Como cada memoria vive en su propio archivo, los agentes que editan **memorias distintas**
-nunca entran en conflicto.
+**La sincronización con Git es opt-in (desactivada por defecto).** sv-memory mantiene las
+memorias solo en local salvo que habilites el compartir, que sincroniza tu almacén SQLite
+(local por clon) con los archivos `.sv-memory/chunks/{id}.json` commiteados en Git para que
+un equipo **privado** comparta el contexto arquitectónico entre clones. Actívalo global o
+por proyecto:
+
+```bash
+sv-memory configure set git_sync_enabled true            # global (todos los proyectos)
+sv-memory configure set git_sync_enabled true --local    # solo este proyecto
+```
+
+> ⚠️ **Repositorios públicos:** **no** commitees `.sv-memory/`. Las decisiones, journals y
+> razonamiento de Q&A quedan visibles para todo el mundo al hacer push. Mantén `.sv-memory/`
+> en `.gitignore`. `sv-memory init` avisa cuando detecta un repositorio público de GitHub.
+
+El comando manual `sv-memory sync` es una acción explícita del usuario y siempre se ejecuta,
+aunque el auto-sync esté desactivado. Como cada memoria vive en su propio archivo, los
+agentes que editan **memorias distintas** nunca entran en conflicto.
 
 **Editar la _misma_ memoria no es zero-conflict.** Cuando dos clones editan la misma memoria
 (típicamente vía topic-key upserts), Git deja marcadores de conflicto dentro de `{id}.json`:

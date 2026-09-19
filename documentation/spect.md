@@ -9,7 +9,7 @@
 1. **Persistent Decision Memory:** Capturing non-obvious fixes, architectural decisions, coding standards, progress journals, discussions, Q&As, and ideas using SQLite + FTS5 full-text search.
 2. **Structural Knowledge Graph:** Mapping code entities (files, components, imports, dependencies) to provide structural context to LLM agents via directed dependency graphs.
 3. **Autonomous Agent Orchestration:** Injecting protocol rules into `AGENTS.md`, `.cursorrules`, or `.windsurfrules` so agents automatically query, record, and maintain context during coding sessions.
-4. **Team Collaboration:** Bidirectional Git-synced JSON (`.sv-memory/chunks/*.json`, one file per memory) so the entire team shares context across clones.
+4. **Team Collaboration:** Bidirectional Git-synced JSON (`.sv-memory/chunks/*.json`, one file per memory) so a private team shares context across clones. Opt-in: `git_sync_enabled` defaults to off, and `.sv-memory/` must not be committed in public repositories.
 
 Developed under the **SVTech** ecosystem as a free, open-source tool for the developer community.
 

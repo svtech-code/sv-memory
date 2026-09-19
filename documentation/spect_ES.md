@@ -9,7 +9,7 @@
 1. **Memoria persistente de decisiones:** Captura correcciones no obvias, decisiones arquitectónicas, estándares de codificación, diarios de progreso, discusiones, Q&A e ideas mediante SQLite + búsqueda de texto completo FTS5.
 2. **Grafo de conocimiento estructural:** Mapea entidades de código (archivos, componentes, imports, dependencias) para proporcionar contexto estructural a los agentes LLM mediante grafos dirigidos de dependencias.
 3. **Orquestación autónoma de agentes:** Inyecta reglas de protocolo en `AGENTS.md`, `.cursorrules` o `.windsurfrules` para que los agentes consulten, registren y mantengan el contexto automáticamente durante las sesiones de codificación.
-4. **Colaboración en equipo:** Sincronización bidireccional con Git mediante JSON (`.sv-memory/chunks/*.json`, un archivo por memoria) para que todo el equipo comparta el contexto entre clones.
+4. **Colaboración en equipo:** Sincronización bidireccional con Git mediante JSON (`.sv-memory/chunks/*.json`, un archivo por memoria) para que un equipo privado comparta el contexto entre clones. Opt-in: `git_sync_enabled` está desactivado por defecto, y `.sv-memory/` no debe commitearse en repositorios públicos.
 
 Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de código abierto para la comunidad de desarrolladores.
 

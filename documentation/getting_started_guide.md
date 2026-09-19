@@ -187,7 +187,7 @@ When you open your editor (Cursor, Windsurf, Claude Code, etc.) and send any mes
 - **Graph Query (<1ms):** If the AI needs to know which files import a module before refactoring, it queries `sv_graph_query`, getting an instant answer thanks to the in-RAM LRU cache. A background file watcher (fsnotify, enabled by default) automatically syncs the graph when source files change, so the dependency data is always fresh without manual `sv_graph_sync` calls.
 - **Context Pack (Graph + Memory in one call):** Before touching a file, the AI calls `sv_mem_context_pack` (or the `sv-memory context <path>` CLI) to get the node's structural role (fan-in/fan-out, community) plus the decisions, standards, and bugfixes linked to that path — one bounded call instead of several searches, with each `why` truncated. In strict mode, the Claude Code hook nudges the agent on the first Write/Edit to capture knowledge before modifying code; on Antigravity that reminder is delivered by the `PreInvocation` hook.
 - **Silent Context Injection (opt-in):** With Claude Code hooks + `--context-injection`, the first Read of each file automatically injects its context pack as `additionalContext` — relevant context at the exact moment, with no search round-trip.
-- **Automatic Saving:** When solving a problem or defining a standard, the AI runs `sv_mem_save`, recording the learning in SQLite and syncing it to `.sv-memory/chunks/` for your Git version control.
+- **Automatic Saving:** When solving a problem or defining a standard, the AI runs `sv_mem_save`, recording the learning in SQLite. With Git sync enabled (opt-in), it also writes `.sv-memory/chunks/` for your Git version control.
 - **Token Ledger:** `sv_mem_stats` reports the estimated tokens injected into the session since `sv_mem_session_start` alongside the `max_response_tokens` budget, so the agent knows when to compact.
 
 #### 📋 2. Spec-Driven Decisions (Governance)
@@ -257,7 +257,7 @@ From the TUI interface you can:
 
 ## 📌 Recommended Best Practices for Teams
 
-1. **Include `.sv-memory/chunks/` in Git:** Allows the whole team to share architectural decisions. Distinct memory IDs never conflict on merge; if two agents edit the _same_ memory, resolve the resulting `{id}.json` conflict markers and re-run `sv-memory sync`.
+1. **Private teams: opt in to Git sync and include `.sv-memory/chunks/` in Git.** Git sync is off by default; enable it with `sv-memory configure set git_sync_enabled true --local`. This lets the whole team share architectural decisions; distinct memory IDs never conflict on merge. If two agents edit the _same_ memory, resolve the resulting `{id}.json` conflict markers and re-run `sv-memory sync`. **Never commit `.sv-memory/` in a public repository** — memories are world-readable once pushed; `sv-memory init` warns when it detects a public GitHub repo.
 2. **Review commits before pushing:** `sv-memory` updates memory JSONs locally, but it never runs `git commit` or `git push` automatically.
 3. **Run `sv_mem_compact` periodically:** If you notice a topic has accumulated many revisions, the AI or you can run compaction to summarize the history into a clean synthesis.
 4. **Keep secrets out of the graph:** `.env`, keys, and credentials are never indexed, and memory text is redacted on save/import. Add `SECRETS.md` and similar files to `.sv-memoryignore` so they are not indexed either.
