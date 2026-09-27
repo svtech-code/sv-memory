@@ -524,7 +524,7 @@ func extractFileSkeleton(db *sql.DB, projectID string, node *ContextNode, projPa
 	if len(symbols) == 0 {
 		return extractSurgicalSnippet(projPath, node, maxSnippetLines)
 	}
-	
+
 	if len(symbols) > maxSnippetLines {
 		symbols = symbols[:maxSnippetLines]
 		symbols = append(symbols, "// ... (truncated to prevent token bloat)")
