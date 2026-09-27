@@ -195,6 +195,6 @@ Un watcher basado en `fsnotify` monitorea el directorio del proyecto por cambios
 
 ### Auto-freshness en context packs
 
-`sv_mem_context_pack` y `sv_graph_explore` llaman `SyncGraphIfHasChanges` antes de resolver nodos, asegurando que los snippets reflejen el estado más reciente del disco sin `sv_graph_sync` manual.
+`sv_graph_explore` y `sv_graph_explore` llaman `SyncGraphIfHasChanges` antes de resolver nodos, asegurando que los snippets reflejen el estado más reciente del disco sin `sv_graph_sync` manual.
 
 **Archivos clave:** `internal/memory/sync.go`, `internal/graph/watcher.go`, `internal/graph/incremental.go`

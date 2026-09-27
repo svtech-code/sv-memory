@@ -646,7 +646,7 @@ func RenderContextPack(p *ContextPack, whyChars int) string {
 			}
 			sb.WriteString("\n")
 		}
-		sb.WriteString("\n*Full spec: `.sv-memory/specs/capabilities/<cap>/spec.md` — drill down with `sv_mem_context_pack` or `sv_graph_query`.*\n")
+		sb.WriteString("\n*Full spec: `.sv-memory/specs/capabilities/<cap>/spec.md` — drill down with `sv_graph_explore` or `sv_graph_query`.*\n")
 	}
 
 	if p.Node == nil && len(p.Memories) == 0 && len(p.Changes) == 0 && len(p.Capabilities) == 0 && len(p.ExtraSnippets) == 0 {

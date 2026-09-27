@@ -12,7 +12,7 @@ const protocolTemplate = `
 # SV-Memory Protocol Rules
 
 <CRITICAL_INSTRUCTIONS>
-- YOU MUST NEVER use native grep, find, cat, or read_file to understand codebase structure or search for symbols. YOU MUST ALWAYS use 'sv_graph_explore', 'sv_graph_search', or 'sv_mem_context_pack' first. Native tools are ONLY for unindexed config/docs.
+- YOU MUST NEVER use native grep, find, cat, or read_file to understand codebase structure or search for symbols. YOU MUST ALWAYS use 'sv_graph_explore' or 'sv_graph_search' first. Native tools are ONLY for unindexed config/docs.
 - YOU MUST ALWAYS call 'sv_mem_save' immediately after making a design decision, fixing a complex bug, or establishing a convention. Do not wait for the user to ask.
 - YOU MUST ALWAYS initiate the Spec-Driven Decision Cycle ('sv_propose_spec') BEFORE writing code that changes behavior or architecture. NEVER skip this loop.
 - YOU MUST ALWAYS search memory ('sv_mem_search') before answering questions about the project or proposing solutions.
@@ -25,7 +25,7 @@ This project uses 'sv-memory' for persistent architectural memory, progress jour
 1. **Start:** Call 'sv_mem_session_start' at the beginning of work. It returns an **Auto-Boot Context Bundle** with the previous session summary, key architectural decisions, standards, recent bugfixes, last journals, and top graph hubs — read it and use it as your starting context.
    - **Auto-managed on OpenCode:** the sv-memory plugin auto-starts the session and injects this bundle into your first request (its header shows the session ID). If you already see that header, skip 'sv_mem_session_start' — do not start a second session.
 2. **Associate saves:** Pass 'session_id' to 'sv_mem_save' to group memories under the active session. If omitted, the active session is auto-detected.
-3. **Capture knowledge as you go:** Save journals, decisions, standards, and bugfixes with 'sv_mem_save' (see the Memory Capture Guidelines below). For evolving categories ('decision', 'standard', 'architecture', 'bugfix'), 'topic_key' is automatically derived if omitted to enable upsert semantics. Use 'sv_mem_capture_passive' for lightweight observations that do not need an explicit save decision.
+3. **Capture knowledge as you go:** Save journals, decisions, standards, and bugfixes with 'sv_mem_save' (see the Memory Capture Guidelines below). For evolving categories ('decision', 'standard', 'architecture', 'bugfix')', 'topic_key' is automatically derived if omitted to enable upsert semantics. Use 'sv_mem_capture_passive' for lightweight observations that do not need an explicit save decision.
 4. **End:** Call 'sv_mem_session_end(accomplished=...)' to save the summary and mark the session as completed in a single call (session_id is auto-detected if omitted). Alternatively, call 'sv_mem_session_summary' before 'sv_mem_session_end'.
 
 After a compaction or context reset, call 'sv_mem_context' to recover the last session state (goal, summary, associated memories).
@@ -37,8 +37,7 @@ The sv-memory tools (session, memory, graph, diagnostics) may be called in ANY o
 ## Context Initialization (Search-Before-Work):
 
 Memory must be consulted before proposing or executing changes:
-- **Graph-first (read-equivalent):** For code comprehension, prefer 'sv_graph_explore(path="<file|symbol>")' or 'sv_mem_context_pack(path="<file|pkg>")' over reading raw source — the returned surgical snippets count as already read and carry blast radius + linked memories (see Graph below).
-- **Single-Call Context Pack (Recommended):** Call 'sv_mem_context_pack(path="<file|pkg>")' before reading or editing code. It surfaces the node role, linked decisions/standards, active changes, and capability state in one call.
+- **Graph-first (read-equivalent):** For code comprehension, prefer 'sv_graph_explore(path="<file|symbol>")' over reading raw source — the returned surgical snippets count as already read and carry blast radius + linked memories (see Graph below).
 - **Orientation:** On a new project, call 'sv_mem_stats' first — it is the cheapest overview of memory distribution (categories, counts, sessions).
 - **Targeted search:** Call 'sv_mem_search' with the topic keywords of your task (feature, component, style, module). Filter by category when relevant ('journal', 'postmortem', 'discussion', 'idea', 'qa', 'architecture', 'decision'). Avoid repeating redundant searches — the Auto-Boot Bundle already carries the previous session context.
 - **Proactive search:** On first user message referencing a project, feature, or problem, call 'sv_mem_search' with their keywords before responding. Never answer from assumptions alone — memory first, code second.
@@ -80,7 +79,7 @@ Always persist design knowledge as structured memories with a topic_key, not jus
 
 The sv-memory graph is a pre-computed structural index of the project (source, call paths, blast radius you would otherwise re-derive by reading). For any symbol or path the graph has synced, prefer graph tools over a raw grep/read loop: one call returns line-numbered source, structure, and consequences in far fewer tokens and round-trips.
 
-- **Explore first (read-equivalent):** Call 'sv_graph_explore' BEFORE reading or grepping a file. Pass one or more comma-separated symbols/paths; it returns each symbol's structural role, a surgical line-numbered source snippet (treat it as already read), the shortest call path between them, blast radius, and linked memories. 'sv_mem_context_pack(path="<file|pkg>")' is the same contract for a single path plus active changes and capabilities.
+- **Explore first (read-equivalent):** Call 'sv_graph_explore' BEFORE reading or grepping a file. Pass one or more comma-separated symbols/paths; it returns each symbol's structural role, a surgical line-numbered source snippet (treat it as already read), the shortest call path between them, blast radius, and linked memories. 'sv_graph_explore(path="<file|pkg>")' is the same contract for a single path plus active changes and capabilities.
 - **Discover by pattern:** Call 'sv_graph_search(query="keyword")' to find nodes matching a text pattern across id/label/path when the exact symbol name is unknown. Then explore results with 'sv_graph_explore' or 'sv_graph_explain'.
 - **Orient before touching code:** Call 'sv_graph_god_nodes' to see the most-connected hub nodes — these are the architectural hotspots any change may ripple through.
 - **Understand a module:** Call 'sv_graph_explain(node=...)' before refactoring, deleting, or restructuring a file/module. It reports the node's role, community, centrality, fan-in/fan-out, neighbors, and suggested questions.
@@ -91,18 +90,23 @@ The sv-memory graph is a pre-computed structural index of the project (source, c
 ### Anti-patterns (don't):
 
 - **Don't re-verify graph results with grep.** They come from a full parse; re-checking with grep is slower, less accurate, and wastes context.
-- **Don't grep or read first** to find or understand synced code — ONE 'sv_graph_explore'/'sv_mem_context_pack' returns the relevant source in a single round-trip. Reach for raw Read/Grep only to confirm a specific detail the graph didn't cover, or for what the graph doesn't index (configs, docs).
+- **Don't grep or read first** to find or understand synced code — ONE 'sv_graph_explore' returns the relevant source in a single round-trip. Reach for raw Read/Grep only to confirm a specific detail the graph didn't cover, or for what the graph doesn't index (configs, docs).
 - **Don't hand-reconstruct a flow** — name both endpoints in one 'sv_graph_explore' call and it surfaces the path between them.
-- **Trust auto-freshness after editing:** context packs re-check the disk and auto-sync when files changed, so snippets stay current; re-run 'sv_graph_explore'/'sv_mem_context_pack' after your edit to see ripple effects instead of re-reading files.
+- **Trust auto-freshness after editing:** context packs re-check the disk and auto-sync when files changed, so snippets stay current; re-run 'sv_graph_explore' after your edit to see ripple effects instead of re-reading files.
 
 ## Spec-Driven Decision Cycle (MANDATORY before behavior/architecture changes):
 
 If the change touches behavior, contracts, APIs, or architecture — you MUST use this flow. Config/docs-only changes are exempt.
 
+
+**When to use what:**
+- **Retrospective/Small (1 tool call):** If you just fixed a bug, defined a coding standard, or made a minor design choice, use 'sv_mem_save(category='decision'|'standard'|'bugfix')'.
+- **Prospective/Major (5 tool calls):** If you are about to implement a *new feature*, refactor a core API, or change the architecture, you MUST use the Spec Cycle.
+
 **The loop (5 tools, one cycle):**
 
 1. **List pending work:** 'sv_spec_list()' shows active changes with status and task progress.
-2. **Consult context + Propose:** 'sv_mem_context_pack(path="<file>", include_changes="true")' for context, then 'sv_propose_spec(slug=..., title=..., what=..., where_path=..., requirements=..., tasks=..., capability_path=...)' registers the change with pre-flight check (BLOCK/WARN/PASS). The 'requirements' param carries OpenSpec-style deltas (## ADDED/MODIFIED/REMOVED/RENAMED Requirements, ### Requirement:, #### Scenario: with GIVEN/WHEN/THEN/AND steps).
+2. **Consult context + Propose:** 'sv_graph_explore(path="<file>", include_changes="true")' for context, then 'sv_propose_spec(slug=..., title=..., what=..., where_path=..., requirements=..., tasks=..., capability_path=...)' registers the change with pre-flight check (BLOCK/WARN/PASS). The 'requirements' param carries OpenSpec-style deltas (## ADDED/MODIFIED/REMOVED/RENAMED Requirements, ### Requirement:, #### Scenario: with GIVEN/WHEN/THEN/AND steps).
 3. **Get + Apply:** 'sv_spec_get(change_id="<slug>")' retrieves proposal/design/tasks. Implement code, then 'sv_update_spec(change_id=..., tasks=...)' marks completed checkboxes.
 4. **Validate:** 'sv_validate_decision(change_id=...)' re-checks after edits (PASS/WARN/BLOCK); validate delta requirements (RFC 2119, scenario consistency). 'semantic="true"' opts into agent re-ranking.
 5. **Commit:** 'sv_commit_spec(change_id=...)' promotes to durable decision memory, merges deltas into capability state (.sv-memory/specs/capabilities/ + graph spec nodes), stamps applied.
@@ -110,9 +114,14 @@ If the change touches behavior, contracts, APIs, or architecture — you MUST us
 - Lifecycle: 'draft' → 'proposed' → 'validated' → 'applied' (→ 'archived') | 'rejected'. Committed decisions get topic_key 'decision/<slug>'.
 - **Human-visible mirror:** every change is auto-projected to '.sv-memory/specs/changes/<slug>.md' and 'openspec/changes/<slug>/' (git-synced) including its delta requirements; the merged current state lives under '.sv-memory/specs/capabilities/<cap>/spec.md'. Humans can edit those files; 'sv-memory specs import <slug>' reconciles the edits back into the store (the SQLite DB stays authoritative). 'sv-memory specs export/list/archive/capabilities' manage the mirror.
 
-## Graph Refresh:
+## Graph Auto-Sync:
 
-Execute 'sv_graph_sync' after adding major new files, creating new packages, or modifying package structures/imports. The graph is rebuilt incrementally and communities/centrality are computed lazily when queried.
+You do NOT need to call 'sv_graph_sync' manually. The graph is automatically and incrementally refreshed using an optimized mtime/size probe whenever you use 'sv_graph_explore'.
+
+
+## Architectural Review (sv_graph_diff):
+
+Before asking the user to commit your changes or finalizing a task, you MUST autonomously run 'sv_graph_diff(base_ref="HEAD")' to self-review the structural impact of your code (added dependencies, fan-out changes) and catch unintended side-effects.
 
 ## Memory Maintenance (periodic):
 
@@ -126,7 +135,6 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **Graph:** sv_graph_explore, sv_graph_search, sv_graph_communities, sv_graph_query, sv_graph_diff, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync (sv_graph_explore = ONE-call explore: source + call path + blast radius)
 - **Spec Flow:** sv_spec_list, sv_spec_get, sv_propose_spec, sv_update_spec, sv_validate_decision, sv_commit_spec (list → get → propose → update → validate → commit cycle)
 - **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive | capabilities (human-readable Markdown projection of changes and capability state under .sv-memory/specs/ and openspec/)
-- **Context Pack:** sv_mem_context_pack (one bounded call: graph role + linked memories + active changes + capabilities for a file/package/symbol)
 - **Session:** sv_mem_session_start, sv_mem_session_summary, sv_mem_session_end, sv_mem_context
 - **Memory CRUD:** sv_mem_save, sv_mem_update, sv_mem_get, sv_mem_delete, sv_mem_search, sv_mem_timeline
 - **Pin / Priority:** sv_mem_pin (action='unpin' to clear)

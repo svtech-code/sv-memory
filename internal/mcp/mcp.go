@@ -102,7 +102,6 @@ var AllTools = []Tool{
 	{Name: "sv_mem_capture_prompt", Description: "Capture the user's prompt as a local observation attached to a session, so future sessions can recover the user's intent after compaction (recoverable via sv_mem_context)."},
 	{Name: "sv_mem_fetch_reference", Description: "Fetch and extract clean text from an external URL (e.g. GitHub issues, API docs). Use this to read external context, then summarize and save it via sv_mem_save or sv_propose_spec."},
 	{Name: "sv_mem_merge_projects", Description: "Merge all memories, sessions, relations, and graph data from one project into another, then delete the source project (admin).", Hidden: true},
-	{Name: "sv_mem_context_pack", Description: "TRIGGER: ALWAYS use this BEFORE modifying any file to see blast radius. Build a compact context pack for a code path: graph role (fan-in/fan-out, community) plus linked memories (decisions/standards/bugfixes). One bounded call."},
 	{Name: "sv_graph_explore", Description: "TRIGGER: ALWAYS use this BEFORE reading/grepping files. Unified explore for code understanding in one call: pass one or more comma-separated symbols/paths to get each symbol's structural role, surgical source snippet, the shortest call path between them, blast radius, and linked memories (decisions/standards/bugfixes). Replaces chaining sv_graph_query + sv_graph_path + sv_graph_explain manually."},
 	{Name: "sv_mem_conflicts", Description: "List, scan, or ignore potential memory conflicts."},
 	{Name: "sv_propose_spec", Description: "TRIGGER: ALWAYS use this BEFORE writing code that changes behavior/architecture. Create a spec change (proposal) with its lifecycle state and run a pre-flight check against the project's rules and invariants."},
@@ -474,16 +473,7 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		ms.AddTool(mergeProjectsTool, s.handleMergeProjects)
 	}
 
-	// 18b. Tool: sv_mem_context_pack
-	contextPackTool := mcp.NewTool("sv_mem_context_pack",
-		mcp.WithDescription("TRIGGER: ALWAYS use this BEFORE modifying any file to see blast radius. Build a compact context pack for a code path: graph role (fan-in/fan-out, community) plus linked memories (decisions/standards/bugfixes) in one bounded call. Set include_changes='true' to also list active spec changes affecting the path."),
-		mcp.WithString("path", mcp.Required(), mcp.Description("File path, package name, or symbol to resolve")),
-		mcp.WithString("include_changes", mcp.Description("When 'true', also list active spec changes (proposals) whose where_path matches this path. Default 'false'.")),
-		mcp.WithString("token_budget", mcp.Description("Optional max tokens for the response (default from config 'max_response_tokens'). Response is truncated with a notice when exceeded.")),
-	)
-	ms.AddTool(contextPackTool, s.handleContextPack)
-
-	// 18b2. Tool: sv_graph_explore (unified explore alias of sv_mem_context_pack)
+	// 18b2. Tool: sv_graph_explore
 	graphExploreTool := mcp.NewTool("sv_graph_explore",
 		mcp.WithDescription("TRIGGER: ALWAYS use this BEFORE reading/grepping files. Understand code in ONE call: pass one or more comma-separated symbols, file paths, or package names. Returns structural role, surgical source snippet (treat as already read), call path between them, blast radius, and linked memories. include_changes='true' also lists active spec changes."),
 		mcp.WithString("path", mcp.Required(), mcp.Description("Symbol(s), file path(s), or package name(s) to explore. Multiple symbols may be comma-separated (e.g. 'ResolveContextNode, extractSurgicalSnippet') to get their source + call path in one call.")),

@@ -71,7 +71,7 @@ else
   [ "$NUDGE_EVERY" -gt 0 ] 2>/dev/null || NUDGE_EVERY=8
   if [ $((INVOCATION_NUM % NUDGE_EVERY)) -eq 0 ]; then
     if "$SV" specs list 2>/dev/null | grep -qE '^(draft|proposed|validated)[[:space:]]'; then
-      CONTEXT="sv-memory: there are active spec changes. Before changing behavior, contracts, APIs or architecture, follow the Spec-Driven Decision Cycle (sv_spec_list → sv_propose_spec → sv_update_spec → sv_validate_decision → sv_commit_spec). Before reading or editing source, query sv_graph_explore / sv_mem_context_pack and sv_mem_search."
+      CONTEXT="sv-memory: there are active spec changes. Before changing behavior, contracts, APIs or architecture, follow the Spec-Driven Decision Cycle (sv_spec_list → sv_propose_spec → sv_update_spec → sv_validate_decision → sv_commit_spec). Before reading or editing source, query sv_graph_explore / sv_graph_explore and sv_mem_search."
     fi
   fi
 fi

@@ -259,11 +259,11 @@ func TestContextPackTool(t *testing.T) {
 
 	srv := NewServer(pool, cfg)
 	req := mcpgo.CallToolRequest{}
-	req.Params.Name = "sv_mem_context_pack"
+	req.Params.Name = "sv_graph_explore"
 	req.Params.Arguments = map[string]any{"path": "main.go"}
-	res, err := srv.GetTool("sv_mem_context_pack").Handler(context.Background(), req)
+	res, err := srv.GetTool("sv_graph_explore").Handler(context.Background(), req)
 	if err != nil {
-		t.Fatalf("sv_mem_context_pack failed: %v", err)
+		t.Fatalf("sv_graph_explore failed: %v", err)
 	}
 	out := textContent(res.Content[0])
 	if !strings.Contains(out, "Context Pack") {

@@ -2,7 +2,7 @@
 # SV-Memory Protocol Rules
 
 <CRITICAL_INSTRUCTIONS>
-- YOU MUST NEVER use native grep, find, cat, or read_file to understand codebase structure or search for symbols. YOU MUST ALWAYS use 'sv_graph_explore', 'sv_graph_search', or 'sv_mem_context_pack' first. Native tools are ONLY for unindexed config/docs.
+- YOU MUST NEVER use native grep, find, cat, or read_file to understand codebase structure or search for symbols. YOU MUST ALWAYS use 'sv_graph_explore' or 'sv_graph_search' first. Native tools are ONLY for unindexed config/docs.
 - YOU MUST ALWAYS call 'sv_mem_save' immediately after making a design decision, fixing a complex bug, or establishing a convention. Do not wait for the user to ask.
 - YOU MUST ALWAYS initiate the Spec-Driven Decision Cycle ('sv_propose_spec') BEFORE writing code that changes behavior or architecture. NEVER skip this loop.
 - YOU MUST ALWAYS search memory ('sv_mem_search') before answering questions about the project or proposing solutions.
@@ -27,8 +27,7 @@ The sv-memory tools (session, memory, graph, diagnostics) may be called in ANY o
 ## Context Initialization (Search-Before-Work):
 
 Memory must be consulted before proposing or executing changes:
-- **Graph-first (read-equivalent):** For code comprehension, prefer 'sv_graph_explore(path="<file|symbol>")' or 'sv_mem_context_pack(path="<file|pkg>")' over reading raw source — the returned surgical snippets count as already read and carry blast radius + linked memories (see Graph below).
-- **Single-Call Context Pack (Recommended):** Call 'sv_mem_context_pack(path="<file|pkg>")' before reading or editing code. It surfaces the node role, linked decisions/standards, active changes, and capability state in one call.
+- **Graph-first (read-equivalent):** For code comprehension, prefer 'sv_graph_explore(path="<file|symbol>")' over reading raw source — the returned surgical snippets count as already read and carry blast radius + linked memories (see Graph below).
 - **Orientation:** On a new project, call 'sv_mem_stats' first — it is the cheapest overview of memory distribution (categories, counts, sessions).
 - **Targeted search:** Call 'sv_mem_search' with the topic keywords of your task (feature, component, style, module). Filter by category when relevant ('journal', 'postmortem', 'discussion', 'idea', 'qa', 'architecture', 'decision'). Avoid repeating redundant searches — the Auto-Boot Bundle already carries the previous session context.
 - **Proactive search:** On first user message referencing a project, feature, or problem, call 'sv_mem_search' with their keywords before responding. Never answer from assumptions alone — memory first, code second.
@@ -81,13 +80,18 @@ The sv-memory graph is a pre-computed structural index of the project (source, c
 ### Anti-patterns (don't):
 
 - **Don't re-verify graph results with grep.** They come from a full parse; re-checking with grep is slower, less accurate, and wastes context.
-- **Don't grep or read first** to find or understand synced code — ONE 'sv_graph_explore'/'sv_mem_context_pack' returns the relevant source in a single round-trip. Reach for raw Read/Grep only to confirm a specific detail the graph didn't cover, or for what the graph doesn't index (configs, docs).
+- **Don't grep or read first** to find or understand synced code — ONE 'sv_graph_explore' returns the relevant source in a single round-trip. Reach for raw Read/Grep only to confirm a specific detail the graph didn't cover, or for what the graph doesn't index (configs, docs).
 - **Don't hand-reconstruct a flow** — name both endpoints in one 'sv_graph_explore' call and it surfaces the path between them.
-- **Trust auto-freshness after editing:** context packs re-check the disk and auto-sync when files changed, so snippets stay current; re-run 'sv_graph_explore'/'sv_mem_context_pack' after your edit to see ripple effects instead of re-reading files.
+- **Trust auto-freshness after editing:** context packs re-check the disk and auto-sync when files changed, so snippets stay current; re-run 'sv_graph_explore' after your edit to see ripple effects instead of re-reading files.
 
 ## Spec-Driven Decision Cycle (MANDATORY before behavior/architecture changes):
 
 If the change touches behavior, contracts, APIs, or architecture — you MUST use this flow. Config/docs-only changes are exempt.
+
+
+**When to use what:**
+- **Retrospective/Small (1 tool call):** If you just fixed a bug, defined a coding standard, or made a minor design choice, use `sv_mem_save(category='decision'|'standard'|'bugfix')`.
+- **Prospective/Major (5 tool calls):** If you are about to implement a *new feature*, refactor a core API, or change the architecture, you MUST use the Spec Cycle.
 
 **The loop (5 tools, one cycle):**
 
@@ -100,9 +104,14 @@ If the change touches behavior, contracts, APIs, or architecture — you MUST us
 - Lifecycle: 'draft' → 'proposed' → 'validated' → 'applied' (→ 'archived') | 'rejected'. Committed decisions get topic_key 'decision/<slug>'.
 - **Human-visible mirror:** every change is auto-projected to '.sv-memory/specs/changes/<slug>.md' and 'openspec/changes/<slug>/' (git-synced) including its delta requirements; the merged current state lives under '.sv-memory/specs/capabilities/<cap>/spec.md'. Humans can edit those files; 'sv-memory specs import <slug>' reconciles the edits back into the store (the SQLite DB stays authoritative). 'sv-memory specs export/list/archive/capabilities' manage the mirror.
 
-## Graph Refresh:
+## Graph Auto-Sync:
 
-Execute 'sv_graph_sync' after adding major new files, creating new packages, or modifying package structures/imports. The graph is rebuilt incrementally and communities/centrality are computed lazily when queried.
+You do NOT need to call 'sv_graph_sync' manually. The graph is automatically and incrementally refreshed using an optimized mtime/size probe whenever you use 'sv_graph_explore'.
+
+
+## Architectural Review (sv_graph_diff):
+
+Before asking the user to commit your changes or finalizing a task, you MUST autonomously run 'sv_graph_diff(base_ref="HEAD")' to self-review the structural impact of your code (added dependencies, fan-out changes) and catch unintended side-effects.
 
 ## Memory Maintenance (periodic):
 
@@ -116,7 +125,6 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **Graph:** sv_graph_explore, sv_graph_search, sv_graph_communities, sv_graph_query, sv_graph_diff, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync (sv_graph_explore = ONE-call explore: source + call path + blast radius)
 - **Spec Flow:** sv_spec_list, sv_spec_get, sv_propose_spec, sv_update_spec, sv_validate_decision, sv_commit_spec (list → get → propose → update → validate → commit cycle)
 - **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive | capabilities (human-readable Markdown projection of changes and capability state under .sv-memory/specs/ and openspec/)
-- **Context Pack:** sv_mem_context_pack (one bounded call: graph role + linked memories + active changes + capabilities for a file/package/symbol)
 - **Session:** sv_mem_session_start, sv_mem_session_summary, sv_mem_session_end, sv_mem_context
 - **Memory CRUD:** sv_mem_save, sv_mem_update, sv_mem_get, sv_mem_delete, sv_mem_search, sv_mem_timeline
 - **Pin / Priority:** sv_mem_pin (action='unpin' to clear)
@@ -130,9 +138,3 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **Commit Format:** Always provide commit messages using the Conventional Commits format (e.g., 'feat(scope): description'). Use the project's configured commit language (default: English), unless the project specifies otherwise.
 - **Forbidden Actions:** You MUST NOT run 'git add', 'git commit', or 'git push' commands autonomously. The user must review changes and run these commands manually.
 <!-- SV-MEMORY:END -->
-
-## Project-Specific Rules (sv-memory)
-
-- **Commit Language:** For this repository specifically, all commit messages must be written in English.
-- **Phase-Gated Workflow:** Multi-phase tasks run one phase at a time. After completing and verifying each phase (go build, go vet, go test -race, gofmt), deliver the commit message (Conventional Commits, English) for the user to apply manually, then ASK FOR CONFIRMATION before starting the next phase. Never run git add/commit/push autonomously. Keep docs EN/ES, skills, and CHANGELOG in sync within each phase.
-- **Lint Before Push:** The CI Lint gate is golangci-lint v2.12.2; 'go vet' does NOT include govet 'shadow' (only enabled by golangci-lint's `govet enable-all`). Always run `golangci-lint run ./...` locally before pushing. In tests, never write `if err := X(); err != nil` when an outer `err` already exists in the function scope reuse it with the repo pattern `if err = X(); err != nil` (see history commits 9adc79f / 6613b56).

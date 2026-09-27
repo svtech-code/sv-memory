@@ -85,7 +85,7 @@ The top search result is already expanded inline — only drill further when nec
 If the change touches behavior, contracts, APIs, or architecture, use this loop. Config/docs-only changes are exempt.
 
 1. **List pending:** `sv_spec_list()` shows active changes with status and task progress.
-2. **Context + Propose:** `sv_mem_context_pack(path=..., include_changes="true")` for context, then `sv_propose_spec(slug=..., title=..., what=..., where_path=..., requirements=..., tasks=..., capability_path=...)` with pre-flight check (BLOCK/WARN/PASS). The `requirements` carries OpenSpec-style deltas (ADDED/MODIFIED/REMOVED/RENAMED, RFC 2119, GIVEN/WHEN/THEN scenarios).
+2. **Context + Propose:** `sv_graph_explore(path=..., include_changes="true")` for context, then `sv_propose_spec(slug=..., title=..., what=..., where_path=..., requirements=..., tasks=..., capability_path=...)` with pre-flight check (BLOCK/WARN/PASS). The `requirements` carries OpenSpec-style deltas (ADDED/MODIFIED/REMOVED/RENAMED, RFC 2119, GIVEN/WHEN/THEN scenarios).
 3. **Get + Apply:** `sv_spec_get(change_id="<slug>")` retrieves proposal/design/tasks. Implement code, then `sv_update_spec(change_id=..., tasks=...)` marks completed checkboxes.
 4. **Validate:** `sv_validate_decision(change_id=...)` re-checks after edits (PASS/WARN/BLOCK); validate delta requirements (RFC 2119 presence, MODIFIED scenario drops).
 5. **Commit:** `sv_commit_spec(change_id=...)` promotes to durable decision memory, merges deltas into capability state, stamps applied.
@@ -106,7 +106,7 @@ If the change touches behavior, contracts, APIs, or architecture, use this loop.
 - **Graph:** `sv_graph_explore` (ONE-call explore: multi-symbol + source + call path), `sv_graph_search` (discover nodes by pattern when name is unknown), `sv_graph_communities` (list top communities), `sv_graph_diff`, `sv_graph_query`, `sv_graph_explain`, `sv_graph_god_nodes`, `sv_graph_path`, `sv_graph_sync`
 - **Spec Flow:** `sv_spec_list`, `sv_spec_get`, `sv_propose_spec`, `sv_update_spec`, `sv_validate_decision`, `sv_commit_spec` (list → get → propose → update → validate → commit cycle)
 - **Spec Mirror (CLI):** `sv-memory specs export | import <slug> | list | archive | capabilities` (human-readable Markdown projection of changes and capability state under `.sv-memory/specs/` and `openspec/`)
-- **Context Pack:** `sv_mem_context_pack` (one bounded call: graph role + linked memories + active changes for a file/package/symbol)
+- **Context Pack:** `sv_graph_explore` (one bounded call: graph role + linked memories + active changes for a file/package/symbol)
 - **Session:** `sv_mem_session_start`, `sv_mem_session_summary`, `sv_mem_session_end`, `sv_mem_context`
 - **Memory CRUD:** `sv_mem_save`, `sv_mem_update`, `sv_mem_get`, `sv_mem_delete`, `sv_mem_search`, `sv_mem_timeline`
 - **Pin / Priority:** `sv_mem_pin` (action='unpin' to clear)

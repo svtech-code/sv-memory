@@ -643,8 +643,8 @@ func TestAntigravitySkillContent(t *testing.T) {
 	if !strings.Contains(content, "description:") {
 		t.Error("antigravity skill should have YAML frontmatter description")
 	}
-	if !strings.Contains(content, "sv_mem_context_pack") {
-		t.Error("antigravity skill should emphasize sv_mem_context_pack")
+	if !strings.Contains(content, "sv_graph_explore") {
+		t.Error("antigravity skill should emphasize sv_graph_explore")
 	}
 }
 

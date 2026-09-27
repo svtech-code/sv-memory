@@ -94,7 +94,7 @@ func TestProtocolTemplateContainsSpecDriven(t *testing.T) {
 		"sv_propose_spec",
 		"sv_validate_decision",
 		"sv_commit_spec",
-		"sv_mem_context_pack(path=\"<file>\", include_changes=\"true\")",
+		"sv_graph_explore(path=\"<file>\", include_changes=\"true\")",
 		"**Spec Flow:**",
 		"**Spec Mirror (CLI):**",
 		"sv-memory specs export",

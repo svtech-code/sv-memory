@@ -82,7 +82,7 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 # SV-Memory Protocol Rules
 
 <CRITICAL_INSTRUCTIONS>
-- YOU MUST NEVER use native grep, find, cat, or read_file to understand codebase structure or search for symbols. YOU MUST ALWAYS use `sv_graph_explore`, `sv_graph_search`, or `sv_mem_context_pack` first. Native tools are ONLY for unindexed config/docs.
+- YOU MUST NEVER use native grep, find, cat, or read_file to understand codebase structure or search for symbols. YOU MUST ALWAYS use `sv_graph_explore`, `sv_graph_search`, or `sv_graph_explore` first. Native tools are ONLY for unindexed config/docs.
 - YOU MUST ALWAYS call `sv_mem_save` immediately after making a design decision, fixing a complex bug, or establishing a convention. Do not wait for the user to ask.
 - YOU MUST ALWAYS initiate the Spec-Driven Decision Cycle (`sv_propose_spec`) BEFORE writing code that changes behavior or architecture. NEVER skip this loop.
 - YOU MUST ALWAYS search memory (`sv_mem_search`) before answering questions about the project or proposing solutions.
@@ -148,7 +148,7 @@ Always persist design knowledge as structured memories with a topic_key, not jus
 
 The sv-memory graph is a pre-computed structural index of the project (source, call paths, blast radius you would otherwise re-derive by reading). For any symbol or path the graph has synced, prefer graph tools over a raw grep/read loop: one call returns line-numbered source, structure, and consequences in far fewer tokens and round-trips.
 
-- **Explore first (read-equivalent):** Call 'sv_graph_explore' BEFORE reading or grepping a file. Pass one or more comma-separated symbols/paths; it returns each symbol's structural role, a surgical line-numbered source snippet (treat it as already read), the shortest call path between them, blast radius, and linked memories. 'sv_mem_context_pack(path="<file|pkg>")' is the same contract for a single path plus active changes and capabilities.
+- **Explore first (read-equivalent):** Call 'sv_graph_explore' BEFORE reading or grepping a file. Pass one or more comma-separated symbols/paths; it returns each symbol's structural role, a surgical line-numbered source snippet (treat it as already read), the shortest call path between them, blast radius, and linked memories. 'sv_graph_explore(path="<file|pkg>")' is the same contract for a single path plus active changes and capabilities.
 - **Orient before touching code:** Call 'sv_graph_god_nodes' to see the most-connected hub nodes — these are the architectural hotspots any change may ripple through.
 - **Understand a module:** Call 'sv_graph_explain(node=...)' before refactoring, deleting, or restructuring a file/module. It reports the node's role, community, centrality, fan-in/fan-out, neighbors, and suggested questions.
 - **Inspect dependencies:** Call 'sv_graph_query(path_or_node=...)' to see a module's dependency sub-graph (imports/calls/depends_on) with depth, direction, and relation-type filters.
@@ -157,14 +157,14 @@ The sv-memory graph is a pre-computed structural index of the project (source, c
 ### Anti-patterns (don't):
 
 - **Don't re-verify graph results with grep.** They come from a full parse; re-checking with grep is slower, less accurate, and wastes context.
-- **Don't grep or read first** to find or understand synced code — ONE 'sv_graph_explore'/'sv_mem_context_pack' returns the relevant source in a single round-trip. Reach for raw Read/Grep only to confirm a specific detail the graph didn't cover, or for what the graph doesn't index (configs, docs).
+- **Don't grep or read first** to find or understand synced code — ONE 'sv_graph_explore'/'sv_graph_explore' returns the relevant source in a single round-trip. Reach for raw Read/Grep only to confirm a specific detail the graph didn't cover, or for what the graph doesn't index (configs, docs).
 - **Don't hand-reconstruct a flow** — name both endpoints in one 'sv_graph_explore' call and it surfaces the path between them.
-- **Trust auto-freshness after editing:** context packs re-check the disk and auto-sync when files changed, so snippets stay current; re-run 'sv_graph_explore'/'sv_mem_context_pack' after your edit to see ripple effects instead of re-reading files.
+- **Trust auto-freshness after editing:** context packs re-check the disk and auto-sync when files changed, so snippets stay current; re-run 'sv_graph_explore'/'sv_graph_explore' after your edit to see ripple effects instead of re-reading files.
 
 ## Spec-Driven Decision Cycle (before proposing or changing behavior):
 
 Proposals go through a lifecycle before code is written. Use it for any behavior/architecture change, not just large features:
-- **Consult context:** 'sv_mem_context_pack(path="<file|pkg>", include_changes="true")' surfaces the node role, linked decisions/standards, and active changes affecting that path in one call.
+- **Consult context:** 'sv_graph_explore(path="<file|pkg>", include_changes="true")' surfaces the node role, linked decisions/standards, and active changes affecting that path in one call.
 - **Propose:** 'sv_propose_spec(slug="<kebab-case>", title=..., what=..., where_path=...)' registers the change and runs a pre-flight check against rules/invariants (standards, decisions, architecture memories). A pinned rule that overlaps the proposal returns a BLOCK verdict.
 - **Validate:** 'sv_validate_decision(change_id=...)' re-checks a proposal after edits (PASS/WARN/BLOCK). Deterministic by default; pass semantic="true" to opt into agent re-ranking.
 - **Commit:** 'sv_commit_spec(change_id=...)' promotes the change into a durable decision/standard memory, links it to the change_id, wires the rationale_for edge, and stamps it applied. A pre-flight BLOCK rejects the commit unless force="true" explicitly overrides the invariant. Call after implementation, before 'sv_mem_session_end'.
@@ -191,7 +191,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **Web Ingest:** sv_mem_fetch_reference (fetch clean text from external URLs to save as context)
 - **User intent:** sv_mem_capture_prompt (record what the user asked, recoverable via sv_mem_context)
 - **Project admin:** sv_mem_merge_projects (merge project variants into a canonical project)
-- **Context Pack:** sv_mem_context_pack (one bounded call: graph role + linked memories + active changes for a file/package/symbol)
+- **Context Pack:** sv_graph_explore (one bounded call: graph role + linked memories + active changes for a file/package/symbol)
 - **Decision Engine:** sv_propose_spec, sv_validate_decision, sv_commit_spec (propose → validate → commit cycle with pre-flight checks)
 - **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive (human-readable Markdown projection of changes under .sv-memory/specs/)
 - **Graph:** sv_graph_explore, sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_report, sv_graph_viz, sv_graph_merge, sv_graph_search, sv_graph_communities, sv_graph_diff
@@ -778,7 +778,7 @@ Registra automáticamente una entrada de diario ligera (p. ej., resultados de te
   - `what` (string, requerido): Descripción resumida.
   - `why` (string, requerido): Contexto o justificación.
 
-### 19b. `sv_mem_context_pack`
+### 19b. `sv_graph_explore`
 
 Construye un **context pack compacto y fusionado** para una ruta de código (archivo, paquete o símbolo) con **auto-frescura transparente** (ejecuta un chequeo ultrarrápido por mtime para sincronizar archivos modificados bajo demanda): incluye el rol estructural del nodo en el grafo de dependencias (tipo, fan-in/fan-out, comunidad, flag de hub), un **fragmento de código fuente quirúrgico** del símbolo resuelto (hasta 60 líneas, eliminando lecturas separadas de archivos), un **análisis de radio de impacto transitivo (*Blast Radius*)** (dependientes/llamadores aguas arriba a múltiples saltos con nivel de profundidad e indicadores de hubs), más las memorias vinculadas a esa ruta vía `where_path` o aristas `rationale_for` (decisiones, estándares, bugfixes), cada una renderizada como título + `why` truncado. Con `include_changes='true'` también lista los spec changes activos (propuestas) cuyo `where_path` coincide con la ruta junto con su **progreso de ejecución de tareas en tiempo real** (`tasks: X/Y (Z%)`). Una sola llamada acotada reemplaza los round-trips de `sv_graph_explain` + `sv_mem_search path=` + varios `sv_mem_get`, ahorrando tokens. Es el puente propietario grafo→memoria que alimenta el hook opcional de inyección silenciosa de contexto.
 
@@ -1054,7 +1054,7 @@ The sv-memory tools (session, memory, graph, diagnostics) may be called in ANY o
 ## Context Initialization (Search-Before-Work):
 
 Memory must be consulted before proposing or executing changes:
-- **Single-Call Context Pack (Recommended):** Call 'sv_mem_context_pack(path="<file|pkg>")' before reading or editing code. It surfaces the node role, linked decisions/standards, active changes, and capability state in one call.
+- **Single-Call Context Pack (Recommended):** Call 'sv_graph_explore(path="<file|pkg>")' before reading or editing code. It surfaces the node role, linked decisions/standards, active changes, and capability state in one call.
 - **Orientation:** On a new project, call 'sv_mem_stats' first — it is the cheapest overview of memory distribution (categories, counts, sessions).
 - **Targeted search:** Call 'sv_mem_search' with the topic keywords of your task (feature, component, style, module). Filter by category when relevant ('journal', 'postmortem', 'discussion', 'idea', 'qa', 'architecture', 'decision'). Avoid repeating redundant searches — the Auto-Boot Bundle already carries the previous session context.
 - **Proactive search:** On first user message referencing a project, feature, or problem, call 'sv_mem_search' with their keywords before responding. Never answer from assumptions alone — memory first, code second.
@@ -1096,7 +1096,7 @@ Always persist design knowledge as structured memories with a topic_key, not jus
 
 The sv-memory graph is a pre-computed structural index of the project (source, call paths, blast radius you would otherwise re-derive by reading). For any symbol or path the graph has synced, prefer graph tools over a raw grep/read loop: one call returns line-numbered source, structure, and consequences in far fewer tokens and round-trips.
 
-- **Explore first (read-equivalent):** Call 'sv_graph_explore' BEFORE reading or grepping a file. Pass one or more comma-separated symbols/paths; it returns each symbol's structural role, a surgical line-numbered source snippet (treat it as already read), the shortest call path between them, blast radius, and linked memories. 'sv_mem_context_pack(path="<file|pkg>")' is the same contract for a single path plus active changes and capabilities.
+- **Explore first (read-equivalent):** Call 'sv_graph_explore' BEFORE reading or grepping a file. Pass one or more comma-separated symbols/paths; it returns each symbol's structural role, a surgical line-numbered source snippet (treat it as already read), the shortest call path between them, blast radius, and linked memories. 'sv_graph_explore(path="<file|pkg>")' is the same contract for a single path plus active changes and capabilities.
 - **Orient before touching code:** Call 'sv_graph_god_nodes' to see the most-connected hub nodes — these are the architectural hotspots any change may ripple through.
 - **Understand a module:** Call 'sv_graph_explain(node=...)' before refactoring, deleting, or restructuring a file/module. It reports the node's role, community, centrality, fan-in/fan-out, neighbors, and suggested questions.
 - **Inspect dependencies:** Call 'sv_graph_query(path_or_node=...)' to see a module's dependency sub-graph (imports/calls/depends_on) with depth, direction, and relation-type filters.
@@ -1105,14 +1105,14 @@ The sv-memory graph is a pre-computed structural index of the project (source, c
 ### Anti-patterns (don't):
 
 - **Don't re-verify graph results with grep.** They come from a full parse; re-checking with grep is slower, less accurate, and wastes context.
-- **Don't grep or read first** to find or understand synced code — ONE 'sv_graph_explore'/'sv_mem_context_pack' returns the relevant source in a single round-trip. Reach for raw Read/Grep only to confirm a specific detail the graph didn't cover, or for what the graph doesn't index (configs, docs).
+- **Don't grep or read first** to find or understand synced code — ONE 'sv_graph_explore'/'sv_graph_explore' returns the relevant source in a single round-trip. Reach for raw Read/Grep only to confirm a specific detail the graph didn't cover, or for what the graph doesn't index (configs, docs).
 - **Don't hand-reconstruct a flow** — name both endpoints in one 'sv_graph_explore' call and it surfaces the path between them.
-- **Trust auto-freshness after editing:** context packs re-check the disk and auto-sync when files changed, so snippets stay current; re-run 'sv_graph_explore'/'sv_mem_context_pack' after your edit to see ripple effects instead of re-reading files.
+- **Trust auto-freshness after editing:** context packs re-check the disk and auto-sync when files changed, so snippets stay current; re-run 'sv_graph_explore'/'sv_graph_explore' after your edit to see ripple effects instead of re-reading files.
 
 ## Spec-Driven Decision Cycle (before proposing or changing behavior):
 
 Proposals go through a lifecycle before code is written. Use it for any behavior/architecture change, not just large features:
-- **Consult context:** 'sv_mem_context_pack(path="<file|pkg>", include_changes="true")' surfaces the node role, linked decisions/standards, active changes, and the capabilities implemented at that path (with their requirements) in one call.
+- **Consult context:** 'sv_graph_explore(path="<file|pkg>", include_changes="true")' surfaces the node role, linked decisions/standards, active changes, and the capabilities implemented at that path (with their requirements) in one call.
 - **Propose:** 'sv_propose_spec(slug="<kebab-case>", title=..., what=..., where_path=..., requirements=..., capability_path=...)' registers the change and runs a pre-flight check against rules/invariants (standards, decisions, architecture memories). A pinned rule that overlaps the proposal returns a BLOCK verdict. The optional 'requirements' param carries OpenSpec-style delta requirements (## ADDED/MODIFIED/REMOVED/RENAMED Requirements, ### Requirement:, #### Scenario: with GIVEN/WHEN/THEN/AND steps) targeting a single capability (defaults to the slug).
 - **Validate:** 'sv_validate_decision(change_id=...)' re-checks a proposal after edits (PASS/WARN/BLOCK) and validates the delta requirements (RFC 2119 keyword presence, MODIFIED scenario drops vs the current capability state). Deterministic by default; pass semantic="true" to opt into agent re-ranking.
 - **Commit:** 'sv_commit_spec(change_id=...)' promotes the change into a durable decision/standard memory, links it to the change_id, wires the rationale_for edge, merges the delta requirements into the capability's current state (.sv-memory/specs/capabilities/ + graph spec nodes), and stamps it applied. A pre-flight BLOCK or a requirements merge conflict rejects the commit unless force="true" explicitly overrides the invariant. Call after implementation, before 'sv_mem_session_end'.
@@ -1139,7 +1139,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **Web Ingest:** sv_mem_fetch_reference (fetch clean text from external URLs to save as context)
 - **User intent:** sv_mem_capture_prompt (record what the user asked, recoverable via sv_mem_context)
 - **Project admin:** sv_mem_merge_projects (merge project variants into a canonical project)
-- **Context Pack:** sv_mem_context_pack (one bounded call: graph role + linked memories + active changes + capabilities for a file/package/symbol)
+- **Context Pack:** sv_graph_explore (one bounded call: graph role + linked memories + active changes + capabilities for a file/package/symbol)
 - **Decision Engine:** sv_propose_spec, sv_validate_decision, sv_commit_spec (propose → validate → commit cycle with pre-flight checks and delta requirements)
 - **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive | capabilities (human-readable Markdown projection of changes and capability state under .sv-memory/specs/)
 - **Graph:** sv_graph_explore, sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_report, sv_graph_viz, sv_graph_merge, sv_graph_search, sv_graph_communities
@@ -1244,7 +1244,7 @@ El parseo usa **tree-sitter** (`gotreesitter`) para los lenguajes principales, c
 | Truncación de campos (`sv_mem_get`)                                | Límite `max_chars` por campo de texto (por defecto 1000)                                                                                    | Evita el consumo de tokens sin límite                                     |
 | Umbrales de truncación configurables                                | Las claves de config `max_field_chars`, `search_expand_chars`, `timeline_why_chars`, `bundle_why_chars` sobreescriben los límites compilados vía YAML | Ajusta el tamaño de las respuestas sin recompilar                   |
 | Guarda de tokens en arranque de sesión (`sv_mem_session_start`)     | Auto-Boot Bundle + Graph Hubs limitados por `max_response_tokens` / `token_budget` por llamada                                               | Acota el payload pre-herramienta más grande de cada sesión                |
-| Context Pack (`sv_mem_context_pack`)                                | Una llamada acotada fusiona el rol del grafo + memorias vinculadas para una ruta (`where_path`/`rationale_for`), reemplazando los round-trips de explain+search+get | 1 llamada en vez de 3+; solo título + `why` truncado                     |
+| Context Pack (`sv_graph_explore`)                                | Una llamada acotada fusiona el rol del grafo + memorias vinculadas para una ruta (`where_path`/`rationale_for`), reemplazando los round-trips de explain+search+get | 1 llamada en vez de 3+; solo título + `why` truncado                     |
 | Inyección silenciosa de contexto (hooks `--context-injection`)       | La 1ª Read de Claude Code inyecta `sv-memory context <file>` como additionalContext (acotado a 3 memorias, cacheado por archivo)                                      | Contexto relevante en el momento exacto, sin round-trip de búsqueda        |
 | Topic key upsert                                                   | Actualización en el lugar en lugar de acumular revisiones                                                                                   | 50% menos resultados de búsqueda redundantes                              |
 | Deduplicación de ventana móvil                                     | Suprime guardados idénticos dentro de 24h                                                                                                   | Evita el crecimiento por duplicados                                       |
@@ -1343,7 +1343,7 @@ El motor de decisiones extiende el vocabulario del grafo (los valores son TEXT l
 - **Tipos de nodo:** `spec`, `decision`, `rule` (además de los del scanner `file`/`function`/`class`/... y los nodos `document` de memoria).
 - **Tipos de arista:** `affects` (un change toca entidades de código vía `where_path`), `constrains` (una regla acota una decisión), `implements` (una decisión/entidad cumple un requisito de spec).
 
-El bundle del Auto-Boot expone un hint `📋 Active changes: N` cuando existen changes no terminales (costo de tokens cero cuando está sano), y `sv_mem_context_pack(include_changes='true')` lista las propuestas que afectan una ruta para que el agente las revise antes de modificar el código.
+El bundle del Auto-Boot expone un hint `📋 Active changes: N` cuando existen changes no terminales (costo de tokens cero cuando está sano), y `sv_graph_explore(include_changes='true')` lista las propuestas que afectan una ruta para que el agente las revise antes de modificar el código.
 
 ### Mirror Markdown (visible para humanos, bidireccional)
 

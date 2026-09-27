@@ -158,12 +158,12 @@ internal/memory/conflicts.go  ScanConflicts
                     (reason limitado a 200 caracteres por disciplina de tokens)
 ```
 
-## Flujo 6 — Context pack (`sv_mem_context_pack`)
+## Flujo 6 — Context pack (`sv_graph_explore`)
 
 El puente grafo→memoria en una sola llamada acotada. Pasando `include_changes="true"` además se exponen los spec changes activos cuyo `where_path` coincide con la ruta; los nodos de capability enlazados vía aristas `implements` añaden la sección "Capabilities implemented here" (acotada: máx 10 caps, 5 nombres de requirement cada una).
 
 ```text
-sv_mem_context_pack(path, [include_changes])
+sv_graph_explore(path, [include_changes])
    │
    ▼
 internal/memory/contextpack.go  GetContextPack

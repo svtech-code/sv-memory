@@ -156,12 +156,12 @@ internal/memory/conflicts.go  ScanConflicts
                     (reason capped at 200 chars for token discipline)
 ```
 
-## Flow 6 — Context pack (`sv_mem_context_pack`)
+## Flow 6 — Context pack (`sv_graph_explore`)
 
 The graph→memory bridge in one bounded call. Passing `include_changes="true"` additionally surfaces active spec changes whose `where_path` matches the path; capability nodes linked via `implements` edges add the "Capabilities implemented here" section (bounded: max 10 caps, 5 requirement names each).
 
 ```text
-sv_mem_context_pack(path, [include_changes])
+sv_graph_explore(path, [include_changes])
    │
    ▼
 internal/memory/contextpack.go  GetContextPack

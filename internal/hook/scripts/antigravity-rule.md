@@ -10,7 +10,7 @@ dependency graph exposed as MCP tools (`sv_*`). The full workflow lives in the
 
 ## Before reading source
 
-1. Call `sv_graph_explore` (or `sv_mem_context_pack`) for the file/symbol — one
+1. Call `sv_graph_explore` (or `sv_graph_explore`) for the file/symbol — one
    call returns source, structure, blast radius and linked memories.
 2. Call `sv_mem_search` for past decisions, standards or bugfixes on the topic.
 3. Only then read raw files.

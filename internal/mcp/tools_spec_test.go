@@ -597,9 +597,9 @@ func TestContextPackIncludeChanges(t *testing.T) {
 	defer cleanupTestEnv(tempDir, pool)
 
 	server := NewServer(pool, cfg)
-	tool := server.GetTool("sv_mem_context_pack")
+	tool := server.GetTool("sv_graph_explore")
 	if tool == nil {
-		t.Fatal("sv_mem_context_pack tool not registered")
+		t.Fatal("sv_graph_explore tool not registered")
 	}
 
 	// Seed a change affecting a known path.
@@ -612,7 +612,7 @@ func TestContextPackIncludeChanges(t *testing.T) {
 
 	// Without include_changes, no active-changes section.
 	reqNo := mcpgo.CallToolRequest{}
-	reqNo.Params.Name = "sv_mem_context_pack"
+	reqNo.Params.Name = "sv_graph_explore"
 	reqNo.Params.Arguments = map[string]any{"path": "main.go"}
 	resNo, err := tool.Handler(ctx, reqNo)
 	if err != nil {
@@ -624,7 +624,7 @@ func TestContextPackIncludeChanges(t *testing.T) {
 
 	// With include_changes=true, the section appears.
 	reqYes := mcpgo.CallToolRequest{}
-	reqYes.Params.Name = "sv_mem_context_pack"
+	reqYes.Params.Name = "sv_graph_explore"
 	reqYes.Params.Arguments = map[string]any{"path": "main.go", "include_changes": "true"}
 	resYes, err := tool.Handler(ctx, reqYes)
 	if err != nil {

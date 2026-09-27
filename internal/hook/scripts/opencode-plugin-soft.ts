@@ -8,7 +8,7 @@ import { tool, type Plugin } from "@opencode-ai/plugin"
  *
  *  - `sv_memory_context` — fetch a compact context pack (structural graph role
  *    + linked memories) for a file/package/symbol in one call, shelling out to
- *    the `sv-memory context <path>` CLI. Mirrors the sv_mem_context_pack MCP
+ *    the `sv-memory context <path>` CLI. Mirrors the sv_graph_explore MCP
  *    tool; bounded output saves tokens before reading source files.
  *
  * The session lifecycle (sv_mem_session_start / sv_mem_session_end) and the
