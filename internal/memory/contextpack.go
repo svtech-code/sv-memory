@@ -209,7 +209,11 @@ func GetContextPack(db *sql.DB, projectID, query string, maxMemories int, includ
 	// 1. Extract surgical source code snippet and blast radius for the resolved node if available.
 	if node != nil {
 		if node.Path != "" && projPath != "" {
-			pack.Snippet, pack.SnippetLine = extractSurgicalSnippet(projPath, node, maxSnippetLines)
+			if node.Type == schema.NodeTypeFile {
+				pack.Snippet, pack.SnippetLine = extractFileSkeleton(db, projectID, node, projPath)
+			} else {
+				pack.Snippet, pack.SnippetLine = extractSurgicalSnippet(projPath, node, maxSnippetLines)
+			}
 		}
 		pack.BlastRadius, _ = graph.CalculateBlastRadius(db, projectID, node.ID, 3, 10)
 	}
@@ -495,6 +499,35 @@ func parseCommunityID(metadata string) int {
 
 // maxSnippetLines is the maximum number of source lines included in a surgical snippet.
 const maxSnippetLines = 60
+
+// extractFileSkeleton returns a structured AST skeleton (list of exported symbols)
+// for a file node by querying its outgoing 'contains' edges in the graph.
+func extractFileSkeleton(db *sql.DB, projectID string, node *ContextNode, projPath string) (string, int) {
+	rows, err := db.Query(`
+		SELECT n.label, n.type 
+		FROM graph_edges e 
+		JOIN graph_nodes n ON e.target_id = n.id 
+		WHERE e.project_id = ? AND e.source_id = ? AND e.relation_type = 'contains'
+		ORDER BY n.label ASC`, projectID, node.ID)
+	if err != nil {
+		return extractSurgicalSnippet(projPath, node, maxSnippetLines)
+	}
+	defer rows.Close()
+
+	var symbols []string
+	for rows.Next() {
+		var label, typ string
+		if err := rows.Scan(&label, &typ); err == nil {
+			symbols = append(symbols, fmt.Sprintf("// - %s (%s)", label, typ))
+		}
+	}
+	if len(symbols) == 0 {
+		return extractSurgicalSnippet(projPath, node, maxSnippetLines)
+	}
+
+	skeleton := fmt.Sprintf("// AST Skeleton for %s\n// This file exports the following symbols:\n%s", node.Path, strings.Join(symbols, "\n"))
+	return skeleton, 1
+}
 
 // extractSurgicalSnippet extracts up to maxLines of source code from the workspace for a node.
 func extractSurgicalSnippet(projPath string, node *ContextNode, maxLines int) (string, int) {
