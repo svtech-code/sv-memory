@@ -524,6 +524,11 @@ func extractFileSkeleton(db *sql.DB, projectID string, node *ContextNode, projPa
 	if len(symbols) == 0 {
 		return extractSurgicalSnippet(projPath, node, maxSnippetLines)
 	}
+	
+	if len(symbols) > maxSnippetLines {
+		symbols = symbols[:maxSnippetLines]
+		symbols = append(symbols, "// ... (truncated to prevent token bloat)")
+	}
 
 	skeleton := fmt.Sprintf("// AST Skeleton for %s\n// This file exports the following symbols:\n%s", node.Path, strings.Join(symbols, "\n"))
 	return skeleton, 1
@@ -733,7 +738,13 @@ func resolveExploreSymbols(db *sql.DB, projectID, projPath, query string) (strin
 		if resErr != nil || extraNode == nil || extraNode.Path == "" || projPath == "" {
 			continue
 		}
-		text, startLine := extractSurgicalSnippet(projPath, extraNode, maxSnippetLines)
+		var text string
+		var startLine int
+		if extraNode.Type == schema.NodeTypeFile {
+			text, startLine = extractFileSkeleton(db, projectID, extraNode, projPath)
+		} else {
+			text, startLine = extractSurgicalSnippet(projPath, extraNode, maxSnippetLines)
+		}
 		if text == "" {
 			continue
 		}

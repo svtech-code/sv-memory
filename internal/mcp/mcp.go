@@ -112,7 +112,7 @@ var AllTools = []Tool{
 	{Name: "sv_spec_get", Description: "USE WHEN: after sv_spec_list to inspect a specific change before implementing. Return a full change record: proposal, goal, design, tasks, and rendered delta requirements. Mirrors `openspec show`."},
 	{Name: "sv_graph_query", Description: "Query the dependency graph for a module, file, or package (returns Mermaid)."},
 	{Name: "sv_graph_path", Description: "Find the shortest dependency path between two nodes."},
-	{Name: "sv_graph_sync", Description: "Incrementally re-scan the codebase and rebuild the dependency graph. Call after adding major files or restructuring packages."},
+	{Name: "sv_graph_sync", Description: "Incrementally re-scan the codebase and rebuild the dependency graph. Call after adding major files or restructuring packages.", Hidden: true},
 	{Name: "sv_graph_explain", Description: "Explain a node's role, community, centrality, neighbors, and suggested questions. Use before refactoring or deleting a file."},
 	{Name: "sv_graph_god_nodes", Description: "List the most-connected hub nodes in the dependency graph."},
 	{Name: "sv_graph_surprising_connections", Description: "Find unexpected cross-community connections in the codebase.", Hidden: true},
@@ -570,11 +570,13 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	)
 	ms.AddTool(graphPathTool, s.handleGraphPath)
 
-	// 21. Tool: sv_graph_sync
-	graphSyncTool := mcp.NewTool("sv_graph_sync",
-		mcp.WithDescription("Incrementally re-scan the codebase and rebuild the dependency graph. Call after adding major new files, creating new packages, or modifying package structures and imports. Communities and centrality are computed lazily on demand."),
-	)
-	ms.AddTool(graphSyncTool, s.handleGraphSync)
+	// 21. Tool: sv_graph_sync (Hidden by default, automated by explore)
+	if fullToolsEnabled() {
+		graphSyncTool := mcp.NewTool("sv_graph_sync",
+			mcp.WithDescription("Incrementally re-scan the codebase and rebuild the dependency graph. Call after adding major new files, creating new packages, or modifying package structures and imports. Communities and centrality are computed lazily on demand."),
+		)
+		ms.AddTool(graphSyncTool, s.handleGraphSync)
+	}
 
 	// 22. Tool: sv_mem_conflicts
 	conflictsTool := mcp.NewTool("sv_mem_conflicts",

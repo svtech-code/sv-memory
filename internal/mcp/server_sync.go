@@ -66,6 +66,8 @@ func (s *Server) scheduleSync() {
 		s.debounceMu.Unlock()
 
 		if !viper.GetBool("git_sync_enabled") {
+			// Best-effort write of the human-readable spec mirror since git sync is skipped.
+			_ = memory.WriteSpecMirror(s.pool.Writer, s.cfg.ProjectID, s.cfg.ProjPath)
 			return
 		}
 		startSync := time.Now()
@@ -96,6 +98,8 @@ func (s *Server) flushPendingSync() {
 			if err := memory.SyncToGitForceFull(s.pool.Writer, s.cfg.ProjectID, s.cfg.ProjPath); err != nil {
 				fmt.Fprintf(os.Stderr, "[sv-memory] Final syncToGit failed: %v\n", err)
 			}
+		} else {
+			_ = memory.WriteSpecMirror(s.pool.Writer, s.cfg.ProjectID, s.cfg.ProjPath)
 		}
 	}
 }
