@@ -5,6 +5,18 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+## [v0.25.0] - 2026-09-27
+
+### Added
+- **AST Skeletons for File Nodes**: Replaced blind snippet truncation with AST skeletons for file nodes in `sv_graph_explore` and context packs (`feat(graph)`).
+
+### Changed
+- **Unified Tool Surface**: Refactored MCP tools to unify the `context pack` and `graph explore` tool surface (`refactor(mcp)`).
+
+### Fixed
+- **Spec Mirror Sync**: Ensured spec mirror always writes even when git sync is disabled, and properly capped AST skeletons to prevent token bloat (`fix(sync)`).
+- **CI Linting**: Resolved trailing whitespace issue that broke `gofmt` and the `golangci-lint` workflow (`fix(lint)`).
+
 ## [v0.24.0] - 2026-09-18
 
 ### Added
