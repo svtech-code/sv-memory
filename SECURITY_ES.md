@@ -27,7 +27,7 @@ Soportamos y parcheamos activamente los problemas de seguridad de las siguientes
 Si descubres una vulnerabilidad de seguridad (como una falla en el motor de sanitización/redacción de secretos o un posible path traversal en las consultas del grafo de código), repórtala de forma privada:
 
 1.  **Redacta un Security Advisory:** Si el repositorio está alojado en GitHub, ve a la pestaña **Security** del repositorio y selecciona **Advisories -> New draft advisory**. Esto nos permite discutir y parchear el problema en privado.
-2.  **Correo electrónico:** Alternativamente, puedes contactar directamente al equipo de SVTech o a los mantenedores del repositorio por correo en `security@svtech.software`.
+2.  **Correo electrónico:** Alternativamente, puedes contactar directamente al equipo de SVTech o a los mantenedores del repositorio por correo en `contacto@svtech.cl`.
 
 Confirmaremos tu reporte en un plazo de **48 horas** y proporcionaremos un cronograma detallado para el parche.
 

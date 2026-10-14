@@ -25,7 +25,7 @@ We actively support and patch security issues for the following versions:
 If you discover a security vulnerability (such as a flaw in the secret sanitization/redaction engine or potential path traversal in code graph queries), please report it to us privately:
 
 1.  **Draft a Security Advisory:** If the repository is hosted on GitHub, go to the **Security** tab of the repository and select **Advisories -> New draft advisory**. This allows us to discuss and patch the issue in private.
-2.  **Email:** Alternatively, you can contact the SVTech team or the repository maintainers directly via email at `security@svtech.software`.
+2.  **Email:** Alternatively, you can contact the SVTech team or the repository maintainers directly via email at `contacto@svtech.cl`.
 
 We will acknowledge your report within **48 hours** and provide a detailed timeline for a patch.
 
