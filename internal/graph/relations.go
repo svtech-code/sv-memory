@@ -335,80 +335,108 @@ func extractCallEdges(nodes map[string]*Node, fileContents map[string][]byte) []
 // by label within the same language group). It returns the edges plus the set
 // of file paths whose calls were emitted (so the heuristic skips them).
 func extractASTCallEdges(nodes map[string]*Node, fileContents map[string][]byte, refExt extractor.CallRefExtractor) ([]*Edge, map[string]bool) {
-	// Build per-file and per-language symbol maps (function/class nodes).
-	fileSymbols := make(map[string][]*Node)
-	langSymbols := make(map[string][]*Node)
-	for _, node := range nodes {
-		if node.Type != schema.NodeTypeFunction && node.Type != schema.NodeTypeClass {
-			continue
-		}
-		fileSymbols[node.Path] = append(fileSymbols[node.Path], node)
-		ext := strings.ToLower(filepath.Ext(node.Path))
-		if lang := getLanguageGroup(ext); lang != "" {
-			langSymbols[lang] = append(langSymbols[lang], node)
-		}
-	}
+	fileSymbols, langSymbols := buildCallSymbolMaps(nodes)
 
 	var edges []*Edge
 	covered := map[string]bool{}
 	seen := map[string]bool{}
 
 	for filePath, symbols := range fileSymbols {
-		ext := strings.ToLower(filepath.Ext(filePath))
-		if getLanguageGroup(ext) == "" {
-			continue
-		}
-		content, ok := fileContents[filePath]
+		fileEdges, ok := extractASTEdgesForFile(filePath, symbols, fileSymbols, langSymbols, fileContents, refExt, seen)
 		if !ok {
-			// Lazy incremental syncs only re-parse the changed files; call
-			// edges of unchanged files are preserved, not re-extracted.
 			continue
-		}
-
-		refs, err := refExt.ExtractCallRefs(content, filePath, ext)
-		if err != nil {
-			continue // regex-only or parse failure → heuristic will handle it
 		}
 		covered[filePath] = true
-
-		// Sort symbols by line so the containing caller can be resolved.
-		sortSymbolsByLine(symbols)
-
-		for _, ref := range refs {
-			if ref.Callee == "" {
-				continue
-			}
-			// Resolve caller: the last symbol whose start line <= call line.
-			caller := resolveCallerAtLine(symbols, ref.Line)
-			if caller == nil {
-				// A top-level call before the first function/class (or in a
-				// file with no functions) has no containing caller; skip it
-				// instead of dereferencing a nil caller below.
-				continue
-			}
-			// Resolve callee: same file first, then cross-file same language.
-			target := resolveCalleeNode(fileSymbols[filePath], ref.Callee, langSymbols[getLanguageGroup(ext)], caller)
-			if target == nil {
-				continue
-			}
-
-			edgeID := fmt.Sprintf("%s-%s-calls", caller.ID, target.ID)
-			if seen[edgeID] {
-				continue
-			}
-			seen[edgeID] = true
-			edges = append(edges, &Edge{
-				ID:             edgeID,
-				SourceID:       caller.ID,
-				TargetID:       target.ID,
-				RelationType:   schema.EdgeCalls,
-				Confidence:     "EXTRACTED",
-				SourceLocation: fmt.Sprintf("L%d:%d", ref.Line, ref.Col),
-			})
-		}
+		edges = append(edges, fileEdges...)
 	}
 
 	return edges, covered
+}
+
+// buildCallSymbolMaps indexes function/class nodes per file and per language
+// group for cross-file call resolution.
+func buildCallSymbolMaps(nodes map[string]*Node) (fileSymbols, langSymbols map[string][]*Node) {
+	fileSymbols = make(map[string][]*Node)
+	langSymbols = make(map[string][]*Node)
+	for _, node := range nodes {
+		if node.Type != schema.NodeTypeFunction && node.Type != schema.NodeTypeClass {
+			continue
+		}
+		fileSymbols[node.Path] = append(fileSymbols[node.Path], node)
+		if lang := getLanguageGroup(strings.ToLower(filepath.Ext(node.Path))); lang != "" {
+			langSymbols[lang] = append(langSymbols[lang], node)
+		}
+	}
+	return fileSymbols, langSymbols
+}
+
+// extractASTEdgesForFile returns the call edges for a single file. ok is false
+// when the file is unsupported, its content is unavailable (unchanged file
+// during a lazy sync), or its parse failed — in which case the heuristic pass
+// handles it.
+func extractASTEdgesForFile(filePath string, symbols []*Node, fileSymbols, langSymbols map[string][]*Node, fileContents map[string][]byte, refExt extractor.CallRefExtractor, seen map[string]bool) ([]*Edge, bool) {
+	ext := strings.ToLower(filepath.Ext(filePath))
+	lang := getLanguageGroup(ext)
+	if lang == "" {
+		return nil, false
+	}
+	content, ok := fileContents[filePath]
+	if !ok {
+		// Lazy incremental syncs only re-parse the changed files; call
+		// edges of unchanged files are preserved, not re-extracted.
+		return nil, false
+	}
+
+	refs, err := refExt.ExtractCallRefs(content, filePath, ext)
+	if err != nil {
+		return nil, false // regex-only or parse failure → heuristic will handle it
+	}
+
+	// Sort symbols by line so the containing caller can be resolved.
+	sortSymbolsByLine(symbols)
+
+	var edges []*Edge
+	for _, ref := range refs {
+		if edge := astCallEdge(symbols, fileSymbols[filePath], langSymbols[lang], ref, seen); edge != nil {
+			edges = append(edges, edge)
+		}
+	}
+	return edges, true
+}
+
+// astCallEdge resolves a single AST call reference to an edge, or nil when it
+// cannot be attributed.
+func astCallEdge(symbols, fileSymbols, langSymbols []*Node, ref extractor.CallRef, seen map[string]bool) *Edge {
+	if ref.Callee == "" {
+		return nil
+	}
+	// Resolve caller: the last symbol whose start line <= call line.
+	caller := resolveCallerAtLine(symbols, ref.Line)
+	if caller == nil {
+		// A top-level call before the first function/class (or in a file with
+		// no functions) has no containing caller; skip it instead of
+		// dereferencing a nil caller.
+		return nil
+	}
+	// Resolve callee: same file first, then cross-file same language.
+	target := resolveCalleeNode(fileSymbols, ref.Callee, langSymbols, caller)
+	if target == nil {
+		return nil
+	}
+
+	edgeID := fmt.Sprintf("%s-%s-calls", caller.ID, target.ID)
+	if seen[edgeID] {
+		return nil
+	}
+	seen[edgeID] = true
+	return &Edge{
+		ID:             edgeID,
+		SourceID:       caller.ID,
+		TargetID:       target.ID,
+		RelationType:   schema.EdgeCalls,
+		Confidence:     "EXTRACTED",
+		SourceLocation: fmt.Sprintf("L%d:%d", ref.Line, ref.Col),
+	}
 }
 
 // resolveCallerAtLine returns the function/class node whose body contains the
@@ -457,103 +485,97 @@ func resolveCalleeNode(fileSymbols []*Node, callee string, langSymbols []*Node, 
 // each edge is produced exactly once. It scans each function/class body for
 // identifiers matching other project symbols.
 func extractHeuristicCallEdges(nodes map[string]*Node, fileContents map[string][]byte, astCovered map[string]bool) []*Edge {
+	fileSymbols, langSymbols := buildCallSymbolMaps(nodes)
+
 	var edges []*Edge
-
-	langSymbols := make(map[string][]*Node)
-	for _, node := range nodes {
-		if node.Type == schema.NodeTypeFunction || node.Type == schema.NodeTypeClass {
-			ext := strings.ToLower(filepath.Ext(node.Path))
-			lang := getLanguageGroup(ext)
-			if lang != "" {
-				langSymbols[lang] = append(langSymbols[lang], node)
-			}
-		}
-	}
-
-	fileSymbols := make(map[string][]*Node)
-	for _, node := range nodes {
-		if node.Type == schema.NodeTypeFunction || node.Type == schema.NodeTypeClass {
-			fileSymbols[node.Path] = append(fileSymbols[node.Path], node)
-		}
-	}
-
 	for filePath, symbols := range fileSymbols {
-		// Files already covered by the AST call path are skipped so each edge
-		// is produced exactly once (EXTRACTED from AST, not duplicated INFERRED).
+		// Files already covered by the AST call path are skipped so each edge is
+		// produced exactly once (EXTRACTED from AST, not duplicated INFERRED).
 		if astCovered[filePath] {
 			continue
 		}
-		var content []byte
-		if cached, ok := fileContents[filePath]; ok {
-			content = cached
-		} else {
+		content, ok := fileContents[filePath]
+		if !ok {
 			// Lazy incremental syncs only re-parse the changed files; call
 			// edges of unchanged files are preserved, not re-extracted.
 			continue
 		}
-		lines := strings.Split(string(content), "\n")
-		if len(lines) == 0 {
+		edges = append(edges, heuristicFileEdges(filePath, symbols, langSymbols, content)...)
+	}
+	return edges
+}
+
+// heuristicFileEdges emits INFERRED call edges for a single file's symbols.
+func heuristicFileEdges(filePath string, symbols []*Node, langSymbols map[string][]*Node, content []byte) []*Edge {
+	lang := getLanguageGroup(strings.ToLower(filepath.Ext(filePath)))
+	if lang == "" {
+		return nil
+	}
+	lines := strings.Split(string(content), "\n")
+	if len(lines) == 0 {
+		return nil
+	}
+	sortSymbolsByLine(symbols)
+	candidates := langSymbols[lang]
+
+	var edges []*Edge
+	for idx, caller := range symbols {
+		startLine := symbolStartLine(caller)
+		if startLine > len(lines) {
 			continue
 		}
+		body := symbolBody(lines, symbols, idx, startLine)
+		edges = append(edges, heuristicCallerEdges(caller, candidates, body, startLine)...)
+	}
+	return edges
+}
 
-		sortSymbolsByLine(symbols)
+// symbolStartLine returns a symbol's 1-based start line, defaulting to 1 when
+// unknown.
+func symbolStartLine(n *Node) int {
+	if l := getSymbolLine(n); l > 0 {
+		return l
+	}
+	return 1
+}
 
-		ext := strings.ToLower(filepath.Ext(filePath))
-		lang := getLanguageGroup(ext)
-		if lang == "" {
-			continue
-		}
-		candidates := langSymbols[lang]
-
-		for idx, caller := range symbols {
-			startLine := getSymbolLine(caller)
-			if startLine <= 0 {
-				startLine = 1
-			}
-
-			endLine := len(lines)
-			if idx+1 < len(symbols) {
-				nextLine := getSymbolLine(symbols[idx+1])
-				if nextLine > startLine {
-					endLine = nextLine - 1
-				}
-			}
-
-			if startLine > len(lines) {
-				continue
-			}
-			if endLine > len(lines) {
-				endLine = len(lines)
-			}
-
-			bodyLines := lines[startLine-1 : endLine]
-			bodyText := strings.Join(bodyLines, "\n")
-
-			words := tokenizeText(bodyText)
-
-			for _, callee := range candidates {
-				if callee.ID == caller.ID {
-					continue
-				}
-
-				if relLine, exists := words[callee.Label]; exists {
-					absoluteLine := startLine + relLine - 1
-					sourceLoc := fmt.Sprintf("L%d", absoluteLine)
-
-					edgeID := fmt.Sprintf("%s-%s-calls", caller.ID, callee.ID)
-					edges = append(edges, &Edge{
-						ID:             edgeID,
-						SourceID:       caller.ID,
-						TargetID:       callee.ID,
-						RelationType:   schema.EdgeCalls,
-						Confidence:     "INFERRED",
-						SourceLocation: sourceLoc,
-					})
-				}
-			}
+// symbolBody returns the source text spanning a symbol's body, bounded by the
+// next symbol's start line.
+func symbolBody(lines []string, symbols []*Node, idx, startLine int) string {
+	endLine := len(lines)
+	if idx+1 < len(symbols) {
+		if nextLine := getSymbolLine(symbols[idx+1]); nextLine > startLine {
+			endLine = nextLine - 1
 		}
 	}
+	if endLine > len(lines) {
+		endLine = len(lines)
+	}
+	return strings.Join(lines[startLine-1:endLine], "\n")
+}
 
+// heuristicCallerEdges scans one symbol body for references to other project
+// symbols and emits INFERRED call edges.
+func heuristicCallerEdges(caller *Node, candidates []*Node, bodyText string, startLine int) []*Edge {
+	words := tokenizeText(bodyText)
+	var edges []*Edge
+	for _, callee := range candidates {
+		if callee.ID == caller.ID {
+			continue
+		}
+		relLine, exists := words[callee.Label]
+		if !exists {
+			continue
+		}
+		edges = append(edges, &Edge{
+			ID:             fmt.Sprintf("%s-%s-calls", caller.ID, callee.ID),
+			SourceID:       caller.ID,
+			TargetID:       callee.ID,
+			RelationType:   schema.EdgeCalls,
+			Confidence:     "INFERRED",
+			SourceLocation: fmt.Sprintf("L%d", startLine+relLine-1),
+		})
+	}
 	return edges
 }
 
@@ -609,89 +631,111 @@ func getSymbolLine(n *Node) int {
 func tokenizeText(text string) map[string]int {
 	words := make(map[string]int)
 	var current strings.Builder
-	lines := strings.Split(text, "\n")
-	for lineIdx, line := range lines {
+	for lineIdx, line := range strings.Split(text, "\n") {
 		for _, r := range line {
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+			if isWordRune(r) {
 				current.WriteRune(r)
-			} else {
-				if current.Len() > 0 {
-					w := current.String()
-					if _, exists := words[w]; !exists {
-						words[w] = lineIdx + 1
-					}
-					current.Reset()
-				}
+				continue
 			}
+			flushWord(words, &current, lineIdx+1)
 		}
-		if current.Len() > 0 {
-			w := current.String()
-			if _, exists := words[w]; !exists {
-				words[w] = lineIdx + 1
-			}
-			current.Reset()
-		}
+		flushWord(words, &current, lineIdx+1)
 	}
 	return words
+}
+
+func isWordRune(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_'
+}
+
+// flushWord records the current token against its 1-based line (keeping the
+// first occurrence) and resets the builder.
+func flushWord(words map[string]int, current *strings.Builder, line int) {
+	if current.Len() == 0 {
+		return
+	}
+	w := current.String()
+	if _, exists := words[w]; !exists {
+		words[w] = line
+	}
+	current.Reset()
 }
 
 // resolveMarkdownLink resolves a markdown link or wikilink to a node in the graph,
 // supporting relative paths, project absolute paths, and fuzzy base name matches.
 func resolveMarkdownLink(projPath, sourcePath, target string, nodes map[string]*Node) (string, bool) {
+	target = stripLinkFragment(target)
+	if target == "" || isExternalLink(target) {
+		return "", false
+	}
+
+	if id, ok := matchNodePath(relMarkdownPath(sourcePath, target), nodes); ok {
+		return id, true
+	}
+	if id, ok := matchNodePath(cleanMarkdownPath(target), nodes); ok {
+		return id, true
+	}
+	return matchNodeByBaseName(filepath.Base(target), nodes)
+}
+
+// stripLinkFragment removes any #anchor or ?query suffix and trims whitespace.
+func stripLinkFragment(target string) string {
 	if idx := strings.IndexAny(target, "#?"); idx != -1 {
 		target = target[:idx]
 	}
-	target = strings.TrimSpace(target)
-	if target == "" {
-		return "", false
-	}
+	return strings.TrimSpace(target)
+}
 
-	if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "mailto:") {
-		return "", false
-	}
+func isExternalLink(target string) bool {
+	return strings.HasPrefix(target, "http://") ||
+		strings.HasPrefix(target, "https://") ||
+		strings.HasPrefix(target, "mailto:")
+}
 
-	sourceDir := filepath.Dir(sourcePath)
-	relTarget := filepath.Join(sourceDir, target)
-	relTarget = filepath.Clean(relTarget)
-	relTarget = strings.ReplaceAll(relTarget, "\\", "/")
-	relTarget = strings.TrimPrefix(relTarget, "./")
+// relMarkdownPath joins a link target to its source directory and normalizes it.
+func relMarkdownPath(sourcePath, target string) string {
+	rel := filepath.Clean(filepath.Join(filepath.Dir(sourcePath), target))
+	rel = strings.ReplaceAll(rel, "\\", "/")
+	return strings.TrimPrefix(rel, "./")
+}
 
-	if _, exists := nodes[relTarget]; exists {
-		return relTarget, true
+// cleanMarkdownPath normalizes a project-absolute link target.
+func cleanMarkdownPath(target string) string {
+	clean := filepath.Clean(target)
+	clean = strings.ReplaceAll(clean, "\\", "/")
+	return strings.TrimPrefix(clean, "./")
+}
+
+// matchNodePath returns the node id for a path, or its .md-suffixed variant when
+// the path carries no extension.
+func matchNodePath(p string, nodes map[string]*Node) (string, bool) {
+	if _, exists := nodes[p]; exists {
+		return p, true
 	}
-	if filepath.Ext(relTarget) == "" {
-		if _, exists := nodes[relTarget+".md"]; exists {
-			return relTarget + ".md", true
+	if filepath.Ext(p) == "" {
+		if _, exists := nodes[p+".md"]; exists {
+			return p + ".md", true
 		}
 	}
+	return "", false
+}
 
-	targetClean := filepath.Clean(target)
-	targetClean = strings.ReplaceAll(targetClean, "\\", "/")
-	targetClean = strings.TrimPrefix(targetClean, "./")
-	if _, exists := nodes[targetClean]; exists {
-		return targetClean, true
-	}
-	if filepath.Ext(targetClean) == "" {
-		if _, exists := nodes[targetClean+".md"]; exists {
-			return targetClean + ".md", true
-		}
-	}
-
-	targetBase := filepath.Base(target)
+// matchNodeByBaseName finds a file/document node whose base name matches
+// targetBase case-insensitively, tolerating a missing .md extension.
+func matchNodeByBaseName(targetBase string, nodes map[string]*Node) (string, bool) {
+	noExt := filepath.Ext(targetBase) == ""
 	for id, node := range nodes {
-		if node.Type == "file" || node.Type == "document" {
-			nodeBase := filepath.Base(node.Path)
-			if strings.EqualFold(nodeBase, targetBase) {
-				return id, true
-			}
-			if filepath.Ext(targetBase) == "" {
-				if strings.EqualFold(nodeBase, targetBase+".md") {
-					return id, true
-				}
-			}
+		if node.Type != "file" && node.Type != "document" {
+			continue
+		}
+		nodeBase := filepath.Base(node.Path)
+		if strings.EqualFold(nodeBase, targetBase) {
+			return id, true
+		}
+		if noExt && strings.EqualFold(nodeBase, targetBase+".md") {
+			return id, true
 		}
 	}
-
 	return "", false
 }
 

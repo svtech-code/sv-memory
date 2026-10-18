@@ -101,53 +101,75 @@ func (g *InMemoryGraph) LeidenDetectCommunities() map[string]int {
 
 func (g *InMemoryGraph) leidenLocalMoving(ls *leidenState) {
 	for localIter := 0; localIter < 10; localIter++ {
-		moved := false
-		order := ls.rng.Perm(ls.n)
-		for _, idx := range order {
-			curComm := ls.community[idx]
-			k_v := g.degreeByIdx(idx, ls)
-
-			neighborComms := make(map[int]float64)
-			for _, edge := range g.EdgesBySource[ls.nodeIDs[idx]] {
-				if tIdx, ok := ls.nodeIndex[edge.TargetID]; ok {
-					neighborComms[ls.community[tIdx]] += 1.0
-				}
-			}
-			for _, edge := range g.EdgesByTarget[ls.nodeIDs[idx]] {
-				if sIdx, ok := ls.nodeIndex[edge.SourceID]; ok {
-					neighborComms[ls.community[sIdx]] += 1.0
-				}
-			}
-
-			bestComm := curComm
-			bestDelta := 0.0
-
-			removeDelta := -neighborComms[curComm]/ls.m +
-				ls.gamma*k_v*(ls.tot[curComm]-k_v)/(2.0*ls.m*ls.m)
-
-			for nc, w := range neighborComms {
-				if nc == curComm {
-					continue
-				}
-				addDelta := w/ls.m - ls.gamma*k_v*ls.tot[nc]/(2.0*ls.m*ls.m)
-				totalDelta := removeDelta + addDelta
-				if totalDelta > bestDelta+1e-12 {
-					bestDelta = totalDelta
-					bestComm = nc
-				}
-			}
-
-			if bestComm != curComm {
-				ls.tot[curComm] -= k_v
-				ls.tot[bestComm] += k_v
-				ls.community[idx] = bestComm
-				moved = true
-			}
-		}
-		if !moved {
-			break
+		if !g.leidenSweep(ls) {
+			return
 		}
 	}
+}
+
+// leidenSweep performs one local-moving pass over a random node order; reports
+// whether any node moved.
+func (g *InMemoryGraph) leidenSweep(ls *leidenState) bool {
+	moved := false
+	for _, idx := range ls.rng.Perm(ls.n) {
+		if g.leidenMoveNode(ls, idx) {
+			moved = true
+		}
+	}
+	return moved
+}
+
+// leidenMoveNode relocates a single node to its best neighbouring community;
+// reports whether it moved.
+func (g *InMemoryGraph) leidenMoveNode(ls *leidenState, idx int) bool {
+	curComm := ls.community[idx]
+	k_v := g.degreeByIdx(idx, ls)
+	neighborComms := g.neighborCommunityWeights(ls, idx)
+	bestComm, _ := g.bestCommunity(ls, curComm, k_v, neighborComms)
+	if bestComm == curComm {
+		return false
+	}
+	ls.tot[curComm] -= k_v
+	ls.tot[bestComm] += k_v
+	ls.community[idx] = bestComm
+	return true
+}
+
+// neighborCommunityWeights tallies edge weight per neighbouring community.
+func (g *InMemoryGraph) neighborCommunityWeights(ls *leidenState, idx int) map[int]float64 {
+	weights := make(map[int]float64)
+	for _, edge := range g.EdgesBySource[ls.nodeIDs[idx]] {
+		if tIdx, ok := ls.nodeIndex[edge.TargetID]; ok {
+			weights[ls.community[tIdx]] += 1.0
+		}
+	}
+	for _, edge := range g.EdgesByTarget[ls.nodeIDs[idx]] {
+		if sIdx, ok := ls.nodeIndex[edge.SourceID]; ok {
+			weights[ls.community[sIdx]] += 1.0
+		}
+	}
+	return weights
+}
+
+// bestCommunity picks the neighbouring community with the largest positive
+// modularity delta, or curComm when none improves on it.
+func (g *InMemoryGraph) bestCommunity(ls *leidenState, curComm int, k_v float64, neighborComms map[int]float64) (int, float64) {
+	bestComm := curComm
+	bestDelta := 0.0
+	removeDelta := -neighborComms[curComm]/ls.m +
+		ls.gamma*k_v*(ls.tot[curComm]-k_v)/(2.0*ls.m*ls.m)
+
+	for nc, w := range neighborComms {
+		if nc == curComm {
+			continue
+		}
+		addDelta := w/ls.m - ls.gamma*k_v*ls.tot[nc]/(2.0*ls.m*ls.m)
+		if totalDelta := removeDelta + addDelta; totalDelta > bestDelta+1e-12 {
+			bestDelta = totalDelta
+			bestComm = nc
+		}
+	}
+	return bestComm, bestDelta
 }
 
 func (g *InMemoryGraph) countCommunities(community []int) int {

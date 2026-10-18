@@ -51,22 +51,21 @@ var (
 // framework markers.
 func detectPackageFrameworks(projPath string, nodes map[string]*Node, pkgRoot string) routeFrameworks {
 	var fw routeFrameworks
+	detectConfigFrameworks(nodes, pkgRoot, &fw)
+	detectDependencyFrameworks(projPath, pkgRoot, &fw)
+	detectLaravel(projPath, pkgRoot, &fw)
+	return fw
+}
 
-	prefix := ""
-	if pkgRoot != "" {
-		prefix = pkgRoot + "/"
-	}
-
-	// 1. Check config file nodes within this package.
+// detectConfigFrameworks flags frameworks by their config-file nodes within the
+// package.
+func detectConfigFrameworks(nodes map[string]*Node, pkgRoot string, fw *routeFrameworks) {
+	prefix := pkgPrefix(pkgRoot)
 	for _, node := range nodes {
-		if node.Type != schema.NodeTypeFile {
+		if node.Type != schema.NodeTypeFile || !strings.HasPrefix(node.Path, prefix) {
 			continue
 		}
-		p := node.Path
-		if !strings.HasPrefix(p, prefix) {
-			continue
-		}
-		relToPkg := p[len(prefix):]
+		relToPkg := node.Path[len(prefix):]
 		switch {
 		case nextConfigRe.MatchString(relToPkg):
 			fw.Next = true
@@ -76,32 +75,45 @@ func detectPackageFrameworks(projPath string, nodes map[string]*Node, pkgRoot st
 			fw.Nuxt = true
 		}
 	}
+}
 
-	// 2. Check package.json dependencies.
-	pkgJSON := filepath.Join(projPath, pkgRoot, "package.json")
-	if content, err := os.ReadFile(pkgJSON); err == nil {
-		for _, dep := range parsePackageJSON(content) {
-			switch dep {
-			case "next":
-				fw.Next = true
-			case "nuxt", "nuxt3":
-				fw.Nuxt = true
-			case "@sveltejs/kit":
-				fw.SvelteKit = true
-			case "react-router-dom", "react-router":
-				fw.ReactRouter = true
-			}
+func pkgPrefix(pkgRoot string) string {
+	if pkgRoot == "" {
+		return ""
+	}
+	return pkgRoot + "/"
+}
+
+// detectDependencyFrameworks flags frameworks declared in package.json.
+func detectDependencyFrameworks(projPath, pkgRoot string, fw *routeFrameworks) {
+	content, err := os.ReadFile(filepath.Join(projPath, pkgRoot, "package.json"))
+	if err != nil {
+		return
+	}
+	for _, dep := range parsePackageJSON(content) {
+		switch dep {
+		case "next":
+			fw.Next = true
+		case "nuxt", "nuxt3":
+			fw.Nuxt = true
+		case "@sveltejs/kit":
+			fw.SvelteKit = true
+		case "react-router-dom", "react-router":
+			fw.ReactRouter = true
 		}
 	}
+}
 
-	// 3. Check for Laravel evidence: artisan file or laravel/framework in composer.json.
+// detectLaravel flags Laravel by the artisan file or the laravel/framework
+// dependency in composer.json.
+func detectLaravel(projPath, pkgRoot string, fw *routeFrameworks) {
 	if _, err := os.Stat(filepath.Join(projPath, pkgRoot, "artisan")); err == nil {
 		fw.Laravel = true
-	} else if composerContent, err := os.ReadFile(filepath.Join(projPath, pkgRoot, "composer.json")); err == nil {
-		fw.Laravel = strings.Contains(string(composerContent), `"laravel/framework"`)
+		return
 	}
-
-	return fw
+	if composer, err := os.ReadFile(filepath.Join(projPath, pkgRoot, "composer.json")); err == nil {
+		fw.Laravel = strings.Contains(string(composer), `"laravel/framework"`)
+	}
 }
 
 // applyConfigOverrides disables frameworks whose recipes are disabled in config.
@@ -156,49 +168,61 @@ func extractFileBasedRoutes(path, pkgRoot string, fw routeFrameworks, nodes map[
 func extractCodeBasedRoutes(path string, content []byte, pkgRoot string, fw routeFrameworks, nodes map[string]*Node, edges *[]*Edge) {
 	contentStr := string(content)
 
-	// Laravel PHP
 	if fw.Laravel && strings.HasSuffix(path, ".php") {
-		for _, m := range laravelRouteRe.FindAllStringSubmatch(contentStr, -1) {
-			routeLabel := fmt.Sprintf("%s %s", strings.ToUpper(m[1]), m[2])
-			addRouteEdge(routeLabel, path, path, pkgRoot, "Laravel", nodes, edges)
-		}
+		extractLaravelRoutes(path, contentStr, pkgRoot, nodes, edges)
 	}
-
-	// React Router (JSX/TSX)
 	if fw.ReactRouter && (strings.HasSuffix(path, ".tsx") || strings.HasSuffix(path, ".jsx")) {
-		for _, m := range reactRouterJSXRe.FindAllStringSubmatch(contentStr, -1) {
-			if m[1] != "/" {
-				addRouteEdge(m[1], path, path, pkgRoot, "React Router", nodes, edges)
-			}
-		}
-		for _, m := range reactRouterPathRe.FindAllStringSubmatch(contentStr, -1) {
-			if m[1] != "/" && !strings.HasPrefix(m[1], ":") {
-				addRouteEdge(m[1], path, path, pkgRoot, "React Router", nodes, edges)
-			}
-		}
+		extractReactRouterRoutes(path, contentStr, pkgRoot, nodes, edges)
 	}
-
-	// Python FastAPI/Flask
 	if strings.HasSuffix(path, ".py") {
-		for _, m := range pythonRouteRe.FindAllStringSubmatch(contentStr, -1) {
-			routeLabel := fmt.Sprintf("%s %s", strings.ToUpper(m[1]), m[2])
-			addRouteEdge(routeLabel, path, path, pkgRoot, "FastAPI/Flask", nodes, edges)
-		}
+		extractPythonRoutes(path, contentStr, pkgRoot, nodes, edges)
 	}
-
-	// Java/Spring
 	if strings.HasSuffix(path, ".java") {
-		for _, m := range springRouteRe.FindAllStringSubmatch(contentStr, -1) {
-			method := strings.TrimSuffix(m[1], "Mapping")
-			if method == "Request" {
-				method = "ANY"
-			} else {
-				method = strings.ToUpper(method)
-			}
-			routeLabel := fmt.Sprintf("%s %s", method, m[2])
-			addRouteEdge(routeLabel, path, path, pkgRoot, "Spring", nodes, edges)
+		extractSpringRoutes(path, contentStr, pkgRoot, nodes, edges)
+	}
+}
+
+func extractLaravelRoutes(path, content, pkgRoot string, nodes map[string]*Node, edges *[]*Edge) {
+	for _, m := range laravelRouteRe.FindAllStringSubmatch(content, -1) {
+		routeLabel := fmt.Sprintf("%s %s", strings.ToUpper(m[1]), m[2])
+		addRouteEdge(routeLabel, path, path, pkgRoot, "Laravel", nodes, edges)
+	}
+}
+
+func extractReactRouterRoutes(path, content, pkgRoot string, nodes map[string]*Node, edges *[]*Edge) {
+	for _, m := range reactRouterJSXRe.FindAllStringSubmatch(content, -1) {
+		if m[1] != "/" {
+			addRouteEdge(m[1], path, path, pkgRoot, "React Router", nodes, edges)
 		}
 	}
+	for _, m := range reactRouterPathRe.FindAllStringSubmatch(content, -1) {
+		if m[1] != "/" && !strings.HasPrefix(m[1], ":") {
+			addRouteEdge(m[1], path, path, pkgRoot, "React Router", nodes, edges)
+		}
+	}
+}
+
+func extractPythonRoutes(path, content, pkgRoot string, nodes map[string]*Node, edges *[]*Edge) {
+	for _, m := range pythonRouteRe.FindAllStringSubmatch(content, -1) {
+		routeLabel := fmt.Sprintf("%s %s", strings.ToUpper(m[1]), m[2])
+		addRouteEdge(routeLabel, path, path, pkgRoot, "FastAPI/Flask", nodes, edges)
+	}
+}
+
+func extractSpringRoutes(path, content, pkgRoot string, nodes map[string]*Node, edges *[]*Edge) {
+	for _, m := range springRouteRe.FindAllStringSubmatch(content, -1) {
+		routeLabel := fmt.Sprintf("%s %s", springMethodLabel(m[1]), m[2])
+		addRouteEdge(routeLabel, path, path, pkgRoot, "Spring", nodes, edges)
+	}
+}
+
+// springMethodLabel maps a Spring annotation to its HTTP method label.
+func springMethodLabel(annotation string) string {
+	method := strings.TrimSuffix(annotation, "Mapping")
+	if method == "Request" {
+		return "ANY"
+	}
+	return strings.ToUpper(method)
 }
 
 // extractRoutingEdges parses files for framework routing semantics and returns

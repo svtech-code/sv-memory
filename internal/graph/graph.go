@@ -127,36 +127,44 @@ func parseSymbols(relPath, ext string, content []byte) ([]*Node, map[string]inte
 	return symbolNodes, meta
 }
 
-//nolint:gocyclo // long denylist of invalid symbol characters; refactor later
+// invalidSymbolRunes are characters that mark a code fragment or a malformed
+// extraction rather than a valid symbol name: whitespace, braces, brackets,
+// and operators.
+var invalidSymbolRunes = func() map[rune]bool {
+	set := make(map[rune]bool)
+	for _, r := range "{}()[] \t\n\r=+*/%<>&|!^~" {
+		set[r] = true
+	}
+	return set
+}()
+
 func isValidSymbolName(name string) bool {
 	if name == "" {
 		return false
 	}
-	// Reject names with whitespace, braces, brackets, or operators — those are
-	// code fragments or malformed extractions, not valid symbols.
+	hasIdentifier := false
 	for _, r := range name {
-		if r == '{' || r == '}' || r == '(' || r == ')' || r == '[' || r == ']' {
+		if invalidSymbolRunes[r] {
 			return false
 		}
-		if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
-			return false
-		}
-		if r == '=' || r == '+' || r == '*' || r == '/' || r == '%' {
-			return false
-		}
-		if r == '<' || r == '>' || r == '&' || r == '|' || r == '!' || r == '^' || r == '~' {
-			return false
+		if isSymbolIdentifierRune(r) {
+			hasIdentifier = true
 		}
 	}
-	// Reject names that are just punctuation
-	hasLetter := false
-	for _, r := range name {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
-			hasLetter = true
-			break
-		}
-	}
-	return hasLetter
+	// Reject names that are just punctuation.
+	return hasIdentifier
+}
+
+func isSymbolIdentifierRune(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_'
+}
+
+// parseResult is the outcome of parsing a single file's imports.
+type parseResult struct {
+	sourcePath string
+	ext        string
+	imports    []string
+	err        error
 }
 
 // parseFiles concurrently parses imports for the given file list using a
@@ -174,13 +182,6 @@ func parseFiles(projPath string, nodes map[string]*Node, toParse []string, fileC
 		numWorkers = len(toParse)
 	}
 
-	type parseResult struct {
-		sourcePath string
-		ext        string
-		imports    []string
-		err        error
-	}
-
 	bufSize := numWorkers * 2
 	if len(toParse) < bufSize {
 		bufSize = len(toParse)
@@ -189,31 +190,7 @@ func parseFiles(projPath string, nodes map[string]*Node, toParse []string, fileC
 	results := make(chan parseResult, bufSize)
 
 	for w := 0; w < numWorkers; w++ {
-		go func() {
-			for sourcePath := range jobs {
-				ext := strings.ToLower(filepath.Ext(sourcePath))
-				var content []byte
-				var err error
-				if cached, ok := fileContents[sourcePath]; ok {
-					content = cached
-				} else {
-					absPath := filepath.Join(projPath, sourcePath)
-					content, err = os.ReadFile(absPath)
-				}
-				if err != nil {
-					results <- parseResult{sourcePath: sourcePath, ext: ext, err: err}
-					continue
-				}
-
-				_, imports, err := currentExtractor.Extract(content, sourcePath, ext)
-				if err != nil {
-					results <- parseResult{sourcePath: sourcePath, ext: ext, err: err}
-					continue
-				}
-
-				results <- parseResult{sourcePath: sourcePath, ext: ext, imports: imports}
-			}
-		}()
+		go parseWorker(projPath, jobs, results, fileContents)
 	}
 
 	go func() {
@@ -229,50 +206,86 @@ func parseFiles(projPath string, nodes map[string]*Node, toParse []string, fileC
 		if res.err != nil {
 			continue
 		}
-		for _, imp := range res.imports {
-			var targetID string
-			var found bool
-			if res.ext == ".md" {
-				targetID, found = resolveMarkdownLink(projPath, res.sourcePath, imp, nodes)
-			} else {
-				targetID, found = resolveImport(projPath, res.sourcePath, imp, nodes)
-			}
+		edges = append(edges, edgesForImportResult(projPath, res, nodes)...)
+	}
+	return edges
+}
 
-			if found {
-				relType := schema.EdgeImports
-				if res.ext == ".md" {
-					relType = schema.EdgeReferences
-				}
-				edgeID := fmt.Sprintf("%s-%s-%s", res.sourcePath, targetID, relType)
-				edges = append(edges, &Edge{
-					ID:           edgeID,
-					SourceID:     res.sourcePath,
-					TargetID:     targetID,
-					RelationType: relType,
-					Confidence:   "EXTRACTED",
-				})
-			} else if res.ext != ".md" && isExternalPkg(imp) && !isStdlib(imp, res.ext) {
-				pkgNodeID := "pkg:" + imp
-				if _, exists := nodes[pkgNodeID]; !exists {
-					nodes[pkgNodeID] = &Node{
-						ID:    pkgNodeID,
-						Type:  schema.NodeTypePackage,
-						Label: imp,
-						Path:  imp,
-					}
-				}
-				edgeID := fmt.Sprintf("%s-%s-%s", res.sourcePath, pkgNodeID, schema.EdgeImports)
-				edges = append(edges, &Edge{
-					ID:           edgeID,
-					SourceID:     res.sourcePath,
-					TargetID:     pkgNodeID,
-					RelationType: schema.EdgeImports,
-					Confidence:   "EXTRACTED",
-				})
-			}
+// parseWorker consumes file paths from jobs and emits a parseResult per file.
+func parseWorker(projPath string, jobs <-chan string, results chan<- parseResult, fileContents map[string][]byte) {
+	for sourcePath := range jobs {
+		results <- parseOneFile(projPath, sourcePath, fileContents)
+	}
+}
+
+// parseOneFile parses a single file's imports, preferring cached content.
+func parseOneFile(projPath, sourcePath string, fileContents map[string][]byte) parseResult {
+	ext := strings.ToLower(filepath.Ext(sourcePath))
+	content, ok := fileContents[sourcePath]
+	if !ok {
+		var err error
+		content, err = os.ReadFile(filepath.Join(projPath, sourcePath))
+		if err != nil {
+			return parseResult{sourcePath: sourcePath, ext: ext, err: err}
+		}
+	}
+	_, imports, err := currentExtractor.Extract(content, sourcePath, ext)
+	if err != nil {
+		return parseResult{sourcePath: sourcePath, ext: ext, err: err}
+	}
+	return parseResult{sourcePath: sourcePath, ext: ext, imports: imports}
+}
+
+// edgesForImportResult turns a parsed file's imports into import/reference edges,
+// synthesising package nodes for external imports.
+func edgesForImportResult(projPath string, res parseResult, nodes map[string]*Node) []*Edge {
+	var edges []*Edge
+	for _, imp := range res.imports {
+		if edge, ok := importEdge(projPath, res, imp, nodes); ok {
+			edges = append(edges, edge)
 		}
 	}
 	return edges
+}
+
+// importEdge resolves a single import to an edge. Returns (edge, true) for both
+// resolvable internal imports and synthesised external package imports.
+func importEdge(projPath string, res parseResult, imp string, nodes map[string]*Node) (*Edge, bool) {
+	if res.ext == ".md" {
+		targetID, found := resolveMarkdownLink(projPath, res.sourcePath, imp, nodes)
+		if !found {
+			return nil, false
+		}
+		return newImportEdge(res.sourcePath, targetID, schema.EdgeReferences), true
+	}
+
+	if targetID, found := resolveImport(projPath, res.sourcePath, imp, nodes); found {
+		return newImportEdge(res.sourcePath, targetID, schema.EdgeImports), true
+	}
+
+	if !isExternalPkg(imp) || isStdlib(imp, res.ext) {
+		return nil, false
+	}
+	pkgNodeID := "pkg:" + imp
+	if _, exists := nodes[pkgNodeID]; !exists {
+		nodes[pkgNodeID] = &Node{
+			ID:    pkgNodeID,
+			Type:  schema.NodeTypePackage,
+			Label: imp,
+			Path:  imp,
+		}
+	}
+	return newImportEdge(res.sourcePath, pkgNodeID, schema.EdgeImports), true
+}
+
+func newImportEdge(sourceID, targetID, relType string) *Edge {
+	return &Edge{
+		ID:           fmt.Sprintf("%s-%s-%s", sourceID, targetID, relType),
+		SourceID:     sourceID,
+		TargetID:     targetID,
+		RelationType: relType,
+		Confidence:   "EXTRACTED",
+	}
 }
 
 // parseManifests reads known manifest files and returns depends_on edges.

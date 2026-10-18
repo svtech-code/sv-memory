@@ -206,18 +206,19 @@ type SubGraph struct {
 // Query performs a BFS traversal to find all nodes and edges within maxDepth,
 // filtered by optional relation type and direction ('in', 'out', 'all').
 // If hubThreshold > 0, nodes with total degree >= hubThreshold are not expanded through.
+// bfsItem is a node awaiting expansion during a graph traversal.
+type bfsItem struct {
+	id    string
+	depth int
+}
+
 func (g *InMemoryGraph) Query(start string, maxDepth int, relationType string, direction string, hubThreshold int) *SubGraph {
 	startID := g.FindNode(start)
 	if startID == "" {
 		return &SubGraph{}
 	}
 
-	type queueItem struct {
-		id    string
-		depth int
-	}
-
-	queue := []queueItem{{id: startID, depth: 0}}
+	queue := []bfsItem{{id: startID, depth: 0}}
 	visitedNodes := map[string]*Node{startID: g.Nodes[startID]}
 	visitedEdges := map[string]*Edge{}
 
@@ -225,56 +226,65 @@ func (g *InMemoryGraph) Query(start string, maxDepth int, relationType string, d
 		curr := queue[0]
 		queue = queue[1:]
 
-		if curr.depth >= maxDepth {
+		if curr.depth >= maxDepth || g.isHub(curr, hubThreshold) {
 			continue
 		}
-
-		// Hub suppression: don't expand through nodes that exceed the threshold
-		if hubThreshold > 0 {
-			deg := g.FanIn[curr.id] + g.FanOut[curr.id]
-			if curr.depth > 0 && deg >= hubThreshold {
-				continue
-			}
-		}
-
-		// Explore outgoing edges if direction is 'out' or 'all'
 		if direction == "out" || direction == "all" {
-			for _, edge := range g.EdgesBySource[curr.id] {
-				if relationType != "" && edge.RelationType != relationType {
-					continue
-				}
-				visitedEdges[edge.ID] = edge
-				if _, visited := visitedNodes[edge.TargetID]; !visited {
-					visitedNodes[edge.TargetID] = g.Nodes[edge.TargetID]
-					queue = append(queue, queueItem{id: edge.TargetID, depth: curr.depth + 1})
-				}
-			}
+			queue = g.expand(g.EdgesBySource[curr.id], curr, relationType, "target", visitedNodes, visitedEdges, queue)
 		}
-
-		// Explore incoming edges if direction is 'in' or 'all'
 		if direction == "in" || direction == "all" {
-			for _, edge := range g.EdgesByTarget[curr.id] {
-				if relationType != "" && edge.RelationType != relationType {
-					continue
-				}
-				visitedEdges[edge.ID] = edge
-				if _, visited := visitedNodes[edge.SourceID]; !visited {
-					visitedNodes[edge.SourceID] = g.Nodes[edge.SourceID]
-					queue = append(queue, queueItem{id: edge.SourceID, depth: curr.depth + 1})
-				}
-			}
+			queue = g.expand(g.EdgesByTarget[curr.id], curr, relationType, "source", visitedNodes, visitedEdges, queue)
 		}
 	}
 
-	var nodes []*Node
-	for _, n := range visitedNodes {
-		nodes = append(nodes, n)
+	return &SubGraph{Nodes: nodeValues(visitedNodes), Edges: edgeValues(visitedEdges)}
+}
+
+// isHub reports whether curr exceeds the hub threshold and must not be expanded.
+// The start node (depth 0) is always expanded.
+func (g *InMemoryGraph) isHub(curr bfsItem, hubThreshold int) bool {
+	if hubThreshold <= 0 || curr.depth == 0 {
+		return false
 	}
-	var edges []*Edge
-	for _, e := range visitedEdges {
-		edges = append(edges, e)
+	return g.FanIn[curr.id]+g.FanOut[curr.id] >= hubThreshold
+}
+
+// expand pushes the unvisited neighbours of curr onto the queue, recording every
+// traversed edge. neighborSide selects whether to follow edge targets ("target")
+// or sources ("source").
+func (g *InMemoryGraph) expand(edges []*Edge, curr bfsItem, relationType, neighborSide string, visitedNodes map[string]*Node, visitedEdges map[string]*Edge, queue []bfsItem) []bfsItem {
+	for _, edge := range edges {
+		if relationType != "" && edge.RelationType != relationType {
+			continue
+		}
+		visitedEdges[edge.ID] = edge
+		neighborID := edge.TargetID
+		if neighborSide == "source" {
+			neighborID = edge.SourceID
+		}
+		if _, visited := visitedNodes[neighborID]; visited {
+			continue
+		}
+		visitedNodes[neighborID] = g.Nodes[neighborID]
+		queue = append(queue, bfsItem{id: neighborID, depth: curr.depth + 1})
 	}
-	return &SubGraph{Nodes: nodes, Edges: edges}
+	return queue
+}
+
+func nodeValues(m map[string]*Node) []*Node {
+	out := make([]*Node, 0, len(m))
+	for _, n := range m {
+		out = append(out, n)
+	}
+	return out
+}
+
+func edgeValues(m map[string]*Edge) []*Edge {
+	out := make([]*Edge, 0, len(m))
+	for _, e := range m {
+		out = append(out, e)
+	}
+	return out
 }
 
 // NodeBetweennessCentrality extracts the betweenness_centrality value from a node's metadata.
@@ -371,12 +381,7 @@ type SearchResult struct {
 // matching code nodes with their network metrics. The optional nodeType filter
 // restricts matches (file/function/class/etc).
 func (g *InMemoryGraph) SearchNodes(query, nodeType string, limit int) []SearchResult {
-	if limit <= 0 {
-		limit = 10
-	}
-	if limit > 50 {
-		limit = 50
-	}
+	limit = clampSearchLimit(limit)
 	if query == "" {
 		return nil
 	}
@@ -386,32 +391,62 @@ func (g *InMemoryGraph) SearchNodes(query, nodeType string, limit int) []SearchR
 		if nodeType != "" && n.Type != nodeType {
 			continue
 		}
-		var rank int
-		switch {
-		case n.Path == query:
-			rank = 4
-		case n.Label == query:
-			rank = 3
-		case strings.Contains(id, query) || strings.Contains(n.Label, query) || strings.Contains(n.Path, query):
-			rank = 2
-		}
+		rank := matchRank(id, n.Label, n.Path, query)
 		if rank == 0 {
 			continue
 		}
-		degree := g.FanIn[id] + g.FanOut[id]
-		out = append(out, SearchResult{
-			ID:        id,
-			Label:     n.Label,
-			Type:      n.Type,
-			Path:      n.Path,
-			FanIn:     g.FanIn[id],
-			FanOut:    g.FanOut[id],
-			Degree:    degree,
-			Community: NodeCommunityID(n),
-			Rank:      rank,
-		})
+		out = append(out, g.searchResultFor(id, n, rank))
 	}
 
+	sortSearchResults(out)
+
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}
+
+func clampSearchLimit(limit int) int {
+	switch {
+	case limit <= 0:
+		return 10
+	case limit > 50:
+		return 50
+	default:
+		return limit
+	}
+}
+
+// matchRank scores how well a node's id/label/path matches a query: exact path
+// (4) > exact label (3) > substring (2) > no match (0).
+func matchRank(id, label, path, query string) int {
+	switch {
+	case path == query:
+		return 4
+	case label == query:
+		return 3
+	case strings.Contains(id, query) || strings.Contains(label, query) || strings.Contains(path, query):
+		return 2
+	default:
+		return 0
+	}
+}
+
+func (g *InMemoryGraph) searchResultFor(id string, n *Node, rank int) SearchResult {
+	return SearchResult{
+		ID:        id,
+		Label:     n.Label,
+		Type:      n.Type,
+		Path:      n.Path,
+		FanIn:     g.FanIn[id],
+		FanOut:    g.FanOut[id],
+		Degree:    g.FanIn[id] + g.FanOut[id],
+		Community: NodeCommunityID(n),
+		Rank:      rank,
+	}
+}
+
+func sortSearchResults(out []SearchResult) {
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Rank != out[j].Rank {
 			return out[i].Rank > out[j].Rank
@@ -424,9 +459,4 @@ func (g *InMemoryGraph) SearchNodes(query, nodeType string, limit int) []SearchR
 		}
 		return out[i].ID < out[j].ID
 	})
-
-	if len(out) > limit {
-		out = out[:limit]
-	}
-	return out
 }

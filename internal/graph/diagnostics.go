@@ -25,100 +25,122 @@ type GraphDiagnosticReport struct {
 
 // DiagnoseGraph performs a health check on the SQLite graph tables for a project.
 func DiagnoseGraph(db *sql.DB, projectID, projPath string) (*GraphDiagnosticReport, error) {
-	report := &GraphDiagnosticReport{
-		IsHealthy: true,
-	}
+	report := &GraphDiagnosticReport{IsHealthy: true}
 
-	// 1. Total nodes and total edges
-	if err := db.QueryRow("SELECT COUNT(*) FROM graph_nodes WHERE project_id = ?", projectID).Scan(&report.TotalNodes); err != nil {
-		return nil, fmt.Errorf("failed to count graph_nodes: %w", err)
+	if err := report.countNodesAndEdges(db, projectID); err != nil {
+		return nil, err
 	}
-	if err := db.QueryRow("SELECT COUNT(*) FROM graph_edges WHERE project_id = ?", projectID).Scan(&report.TotalEdges); err != nil {
-		return nil, fmt.Errorf("failed to count graph_edges: %w", err)
+	report.checkSelfLoops(db, projectID)
+	report.checkDanglingEdges(db, projectID)
+	report.checkOrphanNodes(db, projectID)
+	if projPath != "" {
+		report.checkMissingFiles(db, projectID, projPath)
+		report.checkStaleMemoryBindings(db, projectID, projPath)
 	}
+	return report, nil
+}
 
-	// 2. Self loops (source_id == target_id)
-	if err := db.QueryRow("SELECT COUNT(*) FROM graph_edges WHERE project_id = ? AND source_id = target_id", projectID).Scan(&report.SelfLoops); err == nil && report.SelfLoops > 0 {
-		report.IsHealthy = false
-		report.IssuesSummary = append(report.IssuesSummary, fmt.Sprintf("Found %d self-loop edges.", report.SelfLoops))
+func (r *GraphDiagnosticReport) countNodesAndEdges(db *sql.DB, projectID string) error {
+	if err := db.QueryRow("SELECT COUNT(*) FROM graph_nodes WHERE project_id = ?", projectID).Scan(&r.TotalNodes); err != nil {
+		return fmt.Errorf("failed to count graph_nodes: %w", err)
 	}
+	if err := db.QueryRow("SELECT COUNT(*) FROM graph_edges WHERE project_id = ?", projectID).Scan(&r.TotalEdges); err != nil {
+		return fmt.Errorf("failed to count graph_edges: %w", err)
+	}
+	return nil
+}
 
-	// 3. Dangling edges (source or target node not in graph_nodes)
-	danglingQuery := `
+// flag marks the report unhealthy and records an issue.
+func (r *GraphDiagnosticReport) flag(issue string) {
+	r.IsHealthy = false
+	r.IssuesSummary = append(r.IssuesSummary, issue)
+}
+
+func (r *GraphDiagnosticReport) checkSelfLoops(db *sql.DB, projectID string) {
+	if err := db.QueryRow("SELECT COUNT(*) FROM graph_edges WHERE project_id = ? AND source_id = target_id", projectID).Scan(&r.SelfLoops); err == nil && r.SelfLoops > 0 {
+		r.flag(fmt.Sprintf("Found %d self-loop edges.", r.SelfLoops))
+	}
+}
+
+func (r *GraphDiagnosticReport) checkDanglingEdges(db *sql.DB, projectID string) {
+	const danglingQuery = `
 	SELECT COUNT(*) FROM graph_edges e
 	WHERE e.project_id = ? AND (
 		NOT EXISTS (SELECT 1 FROM graph_nodes n WHERE n.project_id = e.project_id AND n.id = e.source_id)
 		OR
 		NOT EXISTS (SELECT 1 FROM graph_nodes n WHERE n.project_id = e.project_id AND n.id = e.target_id)
 	)`
-	if err := db.QueryRow(danglingQuery, projectID).Scan(&report.DanglingEdges); err == nil && report.DanglingEdges > 0 {
-		report.IsHealthy = false
-		report.IssuesSummary = append(report.IssuesSummary, fmt.Sprintf("Found %d dangling edges pointing to non-existent nodes.", report.DanglingEdges))
+	if err := db.QueryRow(danglingQuery, projectID).Scan(&r.DanglingEdges); err == nil && r.DanglingEdges > 0 {
+		r.flag(fmt.Sprintf("Found %d dangling edges pointing to non-existent nodes.", r.DanglingEdges))
 	}
+}
 
-	// 4. Orphan nodes (nodes with no incoming or outgoing edges)
-	orphanQuery := `
+func (r *GraphDiagnosticReport) checkOrphanNodes(db *sql.DB, projectID string) {
+	const orphanQuery = `
 	SELECT COUNT(*) FROM graph_nodes n
 	WHERE n.project_id = ? AND (
 		NOT EXISTS (SELECT 1 FROM graph_edges e WHERE e.project_id = n.project_id AND (e.source_id = n.id OR e.target_id = n.id))
 	)`
-	if err := db.QueryRow(orphanQuery, projectID).Scan(&report.OrphanNodes); err == nil && report.OrphanNodes > 0 {
-		report.IssuesSummary = append(report.IssuesSummary, fmt.Sprintf("Found %d orphan nodes with no connections.", report.OrphanNodes))
+	if err := db.QueryRow(orphanQuery, projectID).Scan(&r.OrphanNodes); err == nil && r.OrphanNodes > 0 {
+		// Orphan nodes are informational and do not affect overall health.
+		r.IssuesSummary = append(r.IssuesSummary, fmt.Sprintf("Found %d orphan nodes with no connections.", r.OrphanNodes))
 	}
+}
 
-	// 5. Missing physical files (file nodes pointing to missing disk files)
-	if projPath != "" {
-		rows, err := db.Query("SELECT path FROM graph_nodes WHERE project_id = ? AND node_type IN ('"+schema.NodeTypeFile+"', '"+schema.NodeTypeDocument+"', '"+schema.NodeTypeSQL+"')", projectID)
-		if err == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var relPath string
-				if scanErr := rows.Scan(&relPath); scanErr == nil {
-					absPath := filepath.Join(projPath, relPath)
-					if _, statErr := os.Stat(absPath); os.IsNotExist(statErr) {
-						report.MissingFiles++
-					}
-				}
-			}
-			if report.MissingFiles > 0 {
-				report.IsHealthy = false
-				report.IssuesSummary = append(report.IssuesSummary, fmt.Sprintf("Found %d file nodes pointing to missing files on disk.", report.MissingFiles))
-			}
+func (r *GraphDiagnosticReport) checkMissingFiles(db *sql.DB, projectID, projPath string) {
+	query := "SELECT path FROM graph_nodes WHERE project_id = ? AND node_type IN ('" + schema.NodeTypeFile + "', '" + schema.NodeTypeDocument + "', '" + schema.NodeTypeSQL + "')"
+	rows, err := db.Query(query, projectID)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var relPath string
+		if scanErr := rows.Scan(&relPath); scanErr != nil {
+			continue
 		}
-
-		// 6. Stale memory bindings (memories with where_path pointing to deleted or missing files)
-		mRows, mErr := db.Query("SELECT id, where_path FROM memories WHERE project_id = ? AND where_path IS NOT NULL AND where_path != '' AND deleted_at IS NULL", projectID)
-		if mErr == nil {
-			defer mRows.Close()
-			for mRows.Next() {
-				var memID, wherePath string
-				if scanErr := mRows.Scan(&memID, &wherePath); scanErr == nil {
-					paths := strings.Split(wherePath, ",")
-					hasMissing := false
-					for _, p := range paths {
-						p = strings.TrimSpace(p)
-						if p == "" {
-							continue
-						}
-						absPath := filepath.Join(projPath, filepath.FromSlash(p))
-						if _, statErr := os.Stat(absPath); os.IsNotExist(statErr) {
-							hasMissing = true
-							break
-						}
-					}
-					if hasMissing {
-						report.StaleMemoryBindings++
-					}
-				}
-			}
-			if report.StaleMemoryBindings > 0 {
-				report.IsHealthy = false
-				report.IssuesSummary = append(report.IssuesSummary, fmt.Sprintf("Found %d memories bound to missing files on disk (stale where_path).", report.StaleMemoryBindings))
-			}
+		if _, statErr := os.Stat(filepath.Join(projPath, relPath)); os.IsNotExist(statErr) {
+			r.MissingFiles++
 		}
 	}
+	if r.MissingFiles > 0 {
+		r.flag(fmt.Sprintf("Found %d file nodes pointing to missing files on disk.", r.MissingFiles))
+	}
+}
 
-	return report, nil
+func (r *GraphDiagnosticReport) checkStaleMemoryBindings(db *sql.DB, projectID, projPath string) {
+	rows, err := db.Query("SELECT id, where_path FROM memories WHERE project_id = ? AND where_path IS NOT NULL AND where_path != '' AND deleted_at IS NULL", projectID)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var memID, wherePath string
+		if scanErr := rows.Scan(&memID, &wherePath); scanErr != nil {
+			continue
+		}
+		if wherePathHasMissing(wherePath, projPath) {
+			r.StaleMemoryBindings++
+		}
+	}
+	if r.StaleMemoryBindings > 0 {
+		r.flag(fmt.Sprintf("Found %d memories bound to missing files on disk (stale where_path).", r.StaleMemoryBindings))
+	}
+}
+
+// wherePathHasMissing reports whether any comma-separated path in wherePath does
+// not exist under projPath.
+func wherePathHasMissing(wherePath, projPath string) bool {
+	for _, p := range strings.Split(wherePath, ",") {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if _, statErr := os.Stat(filepath.Join(projPath, filepath.FromSlash(p))); os.IsNotExist(statErr) {
+			return true
+		}
+	}
+	return false
 }
 
 // String returns a clean Markdown formatted report.

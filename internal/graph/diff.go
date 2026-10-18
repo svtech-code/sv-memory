@@ -253,81 +253,69 @@ func diffModifiedFile(projPath, baseRef string, f FileDiffStatus, ext string, re
 	currSyms, currImps, _ := currentExtractor.Extract(currContent, f.Path, ext)
 	oldSyms, oldImps, _ := currentExtractor.Extract(oldData, f.Path, ext)
 
-	currMap := make(map[string]extractor.Symbol)
-	for _, s := range currSyms {
+	diffSymbols(f.Path, significantSymbolMap(currSyms), significantSymbolMap(oldSyms), report)
+	diffImports(f.Path, currImps, oldImps, report)
+}
+
+// significantSymbolMap indexes significant symbols by name.
+func significantSymbolMap(syms []extractor.Symbol) map[string]extractor.Symbol {
+	m := make(map[string]extractor.Symbol)
+	for _, s := range syms {
 		if isSignificantSymbol(s) {
-			currMap[s.Name] = s
+			m[s.Name] = s
 		}
 	}
+	return m
+}
 
-	oldMap := make(map[string]extractor.Symbol)
-	for _, s := range oldSyms {
-		if isSignificantSymbol(s) {
-			oldMap[s.Name] = s
-		}
-	}
-
+// diffSymbols records added/modified/removed symbols into report.
+func diffSymbols(path string, currMap, oldMap map[string]extractor.Symbol, report *GraphDiffReport) {
 	for name, cs := range currMap {
-		if os, exists := oldMap[name]; !exists {
-			report.AddedSymbols = append(report.AddedSymbols, SymbolDiffItem{
-				File:     f.Path,
-				Name:     cs.Name,
-				Type:     cs.Type,
-				Line:     cs.Line,
-				Exported: cs.Exported,
-			})
-		} else if cs.Line != os.Line || cs.Exported != os.Exported {
-			report.ModifiedSymbols = append(report.ModifiedSymbols, SymbolDiffItem{
-				File:     f.Path,
-				Name:     cs.Name,
-				Type:     cs.Type,
-				Line:     cs.Line,
-				Exported: cs.Exported,
-			})
+		old, exists := oldMap[name]
+		switch {
+		case !exists:
+			report.AddedSymbols = append(report.AddedSymbols, symbolDiffItem(path, cs))
+		case cs.Line != old.Line || cs.Exported != old.Exported:
+			report.ModifiedSymbols = append(report.ModifiedSymbols, symbolDiffItem(path, cs))
 		}
 	}
-
-	for name, os := range oldMap {
+	for name, old := range oldMap {
 		if _, exists := currMap[name]; !exists {
-			report.RemovedSymbols = append(report.RemovedSymbols, SymbolDiffItem{
-				File:     f.Path,
-				Name:     os.Name,
-				Type:     os.Type,
-				Line:     os.Line,
-				Exported: os.Exported,
-			})
+			report.RemovedSymbols = append(report.RemovedSymbols, symbolDiffItem(path, old))
 		}
 	}
+}
 
-	currImpMap := make(map[string]bool)
-	for _, imp := range currImps {
-		currImpMap[imp] = true
-	}
-	oldImpMap := make(map[string]bool)
-	for _, imp := range oldImps {
-		oldImpMap[imp] = true
-	}
+func symbolDiffItem(path string, s extractor.Symbol) SymbolDiffItem {
+	return SymbolDiffItem{File: path, Name: s.Name, Type: s.Type, Line: s.Line, Exported: s.Exported}
+}
 
-	for imp := range currImpMap {
-		if !oldImpMap[imp] {
-			report.AddedDependencies = append(report.AddedDependencies, DependencyDiff{
-				Source:     f.Path,
-				Target:     imp,
-				Type:       "imports",
-				Confidence: "EXTRACTED",
-			})
+// diffImports records added/removed import dependencies into report.
+func diffImports(path string, currImps, oldImps []string, report *GraphDiffReport) {
+	currSet := stringSet(currImps)
+	oldSet := stringSet(oldImps)
+	for imp := range currSet {
+		if !oldSet[imp] {
+			report.AddedDependencies = append(report.AddedDependencies, importDependency(path, imp))
 		}
 	}
-	for imp := range oldImpMap {
-		if !currImpMap[imp] {
-			report.RemovedDependencies = append(report.RemovedDependencies, DependencyDiff{
-				Source:     f.Path,
-				Target:     imp,
-				Type:       "imports",
-				Confidence: "EXTRACTED",
-			})
+	for imp := range oldSet {
+		if !currSet[imp] {
+			report.RemovedDependencies = append(report.RemovedDependencies, importDependency(path, imp))
 		}
 	}
+}
+
+func stringSet(items []string) map[string]bool {
+	m := make(map[string]bool, len(items))
+	for _, it := range items {
+		m[it] = true
+	}
+	return m
+}
+
+func importDependency(path, imp string) DependencyDiff {
+	return DependencyDiff{Source: path, Target: imp, Type: "imports", Confidence: "EXTRACTED"}
 }
 
 func calculateBlastRadiusForDiff(db *sql.DB, projectID string, files []FileDiffStatus, report *GraphDiffReport) {
@@ -385,63 +373,55 @@ func RenderGraphDiffReport(r *GraphDiffReport) string {
 		return sb.String()
 	}
 
-	if len(r.AddedSymbols) > 0 {
-		sb.WriteString("\n### Added Symbols\n\n")
-		sb.WriteString("| File | Symbol | Type | Line |\n")
-		sb.WriteString("| :--- | :--- | :--- | :--- |\n")
-		for _, s := range r.AddedSymbols {
-			exp := ""
-			if s.Exported {
-				exp = " *(exported)*"
-			}
-			fmt.Fprintf(&sb, "| `%s` | `%s`%s | `%s` | %d |\n", s.File, s.Name, exp, s.Type, s.Line)
-		}
-	}
-
-	if len(r.RemovedSymbols) > 0 {
-		sb.WriteString("\n### Removed Symbols\n\n")
-		sb.WriteString("| File | Symbol | Type | Line |\n")
-		sb.WriteString("| :--- | :--- | :--- | :--- |\n")
-		for _, s := range r.RemovedSymbols {
-			fmt.Fprintf(&sb, "| `%s` | `%s` | `%s` | %d |\n", s.File, s.Name, s.Type, s.Line)
-		}
-	}
-
-	if len(r.ModifiedSymbols) > 0 {
-		sb.WriteString("\n### Modified Symbols\n\n")
-		sb.WriteString("| File | Symbol | Type | Line |\n")
-		sb.WriteString("| :--- | :--- | :--- | :--- |\n")
-		for _, s := range r.ModifiedSymbols {
-			fmt.Fprintf(&sb, "| `%s` | `%s` | `%s` | %d |\n", s.File, s.Name, s.Type, s.Line)
-		}
-	}
-
-	if len(r.AddedDependencies) > 0 {
-		sb.WriteString("\n### Added Dependencies\n\n")
-		sb.WriteString("| Source | Target | Type |\n")
-		sb.WriteString("| :--- | :--- | :--- |\n")
-		for _, d := range r.AddedDependencies {
-			fmt.Fprintf(&sb, "| `%s` | `%s` | `%s` |\n", d.Source, d.Target, d.Type)
-		}
-	}
-
-	if len(r.RemovedDependencies) > 0 {
-		sb.WriteString("\n### Removed Dependencies\n\n")
-		sb.WriteString("| Source | Target | Type |\n")
-		sb.WriteString("| :--- | :--- | :--- |\n")
-		for _, d := range r.RemovedDependencies {
-			fmt.Fprintf(&sb, "| `%s` | `%s` | `%s` |\n", d.Source, d.Target, d.Type)
-		}
-	}
-
-	if len(r.HighImpactNodes) > 0 {
-		sb.WriteString("\n### Blast Radius & Architectural Impact\n\n")
-		sb.WriteString("| File / Node | Upstream Consumers | Risk Level |\n")
-		sb.WriteString("| :--- | :---: | :---: |\n")
-		for _, n := range r.HighImpactNodes {
-			fmt.Fprintf(&sb, "| `%s` | %d | **%s** |\n", n.Path, n.BlastRadiusCount, n.RiskLevel)
-		}
-	}
+	writeSymbolDiffSection(&sb, "Added Symbols", r.AddedSymbols, true)
+	writeSymbolDiffSection(&sb, "Removed Symbols", r.RemovedSymbols, false)
+	writeSymbolDiffSection(&sb, "Modified Symbols", r.ModifiedSymbols, false)
+	writeDependencyDiffSection(&sb, "Added Dependencies", r.AddedDependencies)
+	writeDependencyDiffSection(&sb, "Removed Dependencies", r.RemovedDependencies)
+	writeBlastRadiusSection(&sb, r.HighImpactNodes)
 
 	return sb.String()
+}
+
+// writeSymbolDiffSection renders a markdown table of symbol changes.
+func writeSymbolDiffSection(sb *strings.Builder, title string, symbols []SymbolDiffItem, markExported bool) {
+	if len(symbols) == 0 {
+		return
+	}
+	fmt.Fprintf(sb, "\n### %s\n\n", title)
+	sb.WriteString("| File | Symbol | Type | Line |\n")
+	sb.WriteString("| :--- | :--- | :--- | :--- |\n")
+	for _, s := range symbols {
+		exp := ""
+		if markExported && s.Exported {
+			exp = " *(exported)*"
+		}
+		fmt.Fprintf(sb, "| `%s` | `%s`%s | `%s` | %d |\n", s.File, s.Name, exp, s.Type, s.Line)
+	}
+}
+
+// writeDependencyDiffSection renders a markdown table of dependency changes.
+func writeDependencyDiffSection(sb *strings.Builder, title string, deps []DependencyDiff) {
+	if len(deps) == 0 {
+		return
+	}
+	fmt.Fprintf(sb, "\n### %s\n\n", title)
+	sb.WriteString("| Source | Target | Type |\n")
+	sb.WriteString("| :--- | :--- | :--- |\n")
+	for _, d := range deps {
+		fmt.Fprintf(sb, "| `%s` | `%s` | `%s` |\n", d.Source, d.Target, d.Type)
+	}
+}
+
+// writeBlastRadiusSection renders the blast-radius markdown table.
+func writeBlastRadiusSection(sb *strings.Builder, nodes []ImpactRiskNode) {
+	if len(nodes) == 0 {
+		return
+	}
+	sb.WriteString("\n### Blast Radius & Architectural Impact\n\n")
+	sb.WriteString("| File / Node | Upstream Consumers | Risk Level |\n")
+	sb.WriteString("| :--- | :---: | :---: |\n")
+	for _, n := range nodes {
+		fmt.Fprintf(sb, "| `%s` | %d | **%s** |\n", n.Path, n.BlastRadiusCount, n.RiskLevel)
+	}
 }

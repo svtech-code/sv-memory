@@ -32,6 +32,15 @@ func isManifestPath(relPath string) bool {
 	return false
 }
 
+// staleProbe accumulates the results of a staleness walk.
+type staleProbe struct {
+	projPath string
+	gi       *gitignoreMatcher
+	oldMeta  map[string]fileMetaEntry
+	current  map[string]fileMetaEntry
+	report   *StaleReport
+}
+
 // DetectStaleFiles walks the project doing only os.Stat per file (no content
 // reads) and compares mtime/size against graph_files_meta. It returns the set
 // of files that changed, were deleted, or whether a full rebuild is needed.
@@ -50,76 +59,82 @@ func DetectStaleFiles(db *sql.DB, projectID string, projPath string) (*StaleRepo
 	}
 
 	gi, _ := loadGitignore(projPath)
-	current := make(map[string]fileMetaEntry)
-
-	err = filepath.WalkDir(projPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		relPath, relErr := filepath.Rel(projPath, path)
-		if relErr != nil {
-			return nil
-		}
-		// Match the forward-slash keys written by the scanner/loadFileMeta, so
-		// the probe never misreports unchanged files as changed on Windows.
-		relPath = filepath.ToSlash(relPath)
-		if d.IsDir() {
-			if fallbackIgnoreDirs[d.Name()] {
-				return filepath.SkipDir
-			}
-			if gi != nil && gi.match(relPath, true) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if gi != nil && gi.match(relPath, false) {
-			return nil
-		}
-		ext := strings.ToLower(filepath.Ext(relPath))
-		// Manifest files (package.json, go.mod, …) are registered as graph
-		// nodes but their extensions are not in supportedScanExts, so they must
-		// be probed explicitly or a manifest edit would never trigger a resync
-		// and the depends_on edges would go stale.
-		if !supportedScanExts[ext] && !isManifestPath(relPath) {
-			return nil
-		}
-
-		fi, fiErr := os.Stat(path)
-		mtimeMs := int64(0)
-		size := int64(0)
-		if fiErr == nil {
-			mtimeMs = fi.ModTime().UnixMilli()
-			size = fi.Size()
-		}
-		current[relPath] = fileMetaEntry{mtimeMs: mtimeMs, size: size}
-
-		prev, tracked := oldMeta[relPath]
-		if !tracked {
-			report.Changed = append(report.Changed, relPath)
-		} else if prev.mtimeMs != mtimeMs || prev.size != size {
-			report.Changed = append(report.Changed, relPath)
-		}
-		return nil
-	})
-	if err != nil {
+	p := &staleProbe{
+		projPath: projPath,
+		gi:       gi,
+		oldMeta:  oldMeta,
+		current:  make(map[string]fileMetaEntry),
+		report:   report,
+	}
+	if err := filepath.WalkDir(projPath, p.visit); err != nil {
 		return nil, fmt.Errorf("failed walking directory for staleness: %w", err)
 	}
 
-	for p := range oldMeta {
-		if _, stillExists := current[p]; !stillExists {
-			report.Deleted = append(report.Deleted, p)
-		}
-	}
-
-	// Excessive churn (>30% of tracked files) → full rebuild is cheaper.
-	totalTracked := len(oldMeta)
-	churn := len(report.Changed) + len(report.Deleted)
-	if totalTracked > 0 && float64(churn)/float64(totalTracked) > 0.30 {
-		report.NeedsFull = true
-	}
-
+	report.Deleted = missingPaths(oldMeta, p.current)
+	report.NeedsFull = churnExceedsThreshold(len(oldMeta), len(report.Changed)+len(report.Deleted))
 	report.HasChanges = len(report.Changed) > 0 || len(report.Deleted) > 0
 	return report, nil
+}
+
+// visit handles a single walk entry, skipping ignored dirs/files and probing
+// supported files.
+func (p *staleProbe) visit(path string, d fs.DirEntry, err error) error {
+	if err != nil {
+		return err
+	}
+	relPath, relErr := filepath.Rel(p.projPath, path)
+	if relErr != nil {
+		return nil
+	}
+	// Match the forward-slash keys written by the scanner/loadFileMeta, so
+	// the probe never misreports unchanged files as changed on Windows.
+	relPath = filepath.ToSlash(relPath)
+
+	if d.IsDir() {
+		if fallbackIgnoreDirs[d.Name()] || (p.gi != nil && p.gi.match(relPath, true)) {
+			return filepath.SkipDir
+		}
+		return nil
+	}
+	if p.gi != nil && p.gi.match(relPath, false) {
+		return nil
+	}
+	if !isScannablePath(relPath) {
+		return nil
+	}
+	p.record(relPath, path)
+	return nil
+}
+
+func (p *staleProbe) record(relPath, path string) {
+	mtimeMs, size := statFile(path)
+	p.current[relPath] = fileMetaEntry{mtimeMs: mtimeMs, size: size}
+
+	prev, tracked := p.oldMeta[relPath]
+	if !tracked || prev.mtimeMs != mtimeMs || prev.size != size {
+		p.report.Changed = append(p.report.Changed, relPath)
+	}
+}
+
+// isScannablePath reports whether relPath participates in the graph. Manifest
+// files (package.json, go.mod, …) are registered as graph nodes but their
+// extensions are not in supportedScanExts, so they must be probed explicitly or
+// a manifest edit would never trigger a resync and its depends_on edges would go
+// stale.
+func isScannablePath(relPath string) bool {
+	ext := strings.ToLower(filepath.Ext(relPath))
+	return supportedScanExts[ext] || isManifestPath(relPath)
+}
+
+// missingPaths returns the tracked paths absent from the current scan.
+func missingPaths(oldMeta, current map[string]fileMetaEntry) []string {
+	var deleted []string
+	for p := range oldMeta {
+		if _, stillExists := current[p]; !stillExists {
+			deleted = append(deleted, p)
+		}
+	}
+	return deleted
 }
 
 // SyncGraphIfStale refreshes the dependency graph only when project files

@@ -120,8 +120,6 @@ func trySyncGraphIncremental(db *sql.DB, projectID string, projPath string) (boo
 // for symbols; every other supported file is still registered as a file node
 // via its mtime/size so import resolution stays intact. This avoids re-reading
 // the whole project when only a few files changed.
-//
-//nolint:gocyclo // incremental sync orchestrates many branches; refactor later
 func trySyncGraphIncrementalFiltered(db *sql.DB, projectID string, projPath string, readOnly map[string]bool) (bool, error) {
 	wr, err := scanFilesFiltered(projPath, readOnly)
 	if err != nil {
@@ -139,27 +137,10 @@ func trySyncGraphIncrementalFiltered(db *sql.DB, projectID string, projPath stri
 		return false, nil
 	}
 
-	// Classify files as unchanged, new, changed, or deleted.
-	var toParse, deleted []string
-	for _, p := range wr.fileList {
-		cur := wr.fileMeta[p]
-		prev, exists := oldMeta[p]
-		if !exists {
-			toParse = append(toParse, p)
-		} else if cur.mtimeMs != prev.mtimeMs || cur.size != prev.size {
-			toParse = append(toParse, p)
-		}
-	}
-	for p := range oldMeta {
-		if _, stillExists := wr.fileMeta[p]; !stillExists {
-			deleted = append(deleted, p)
-		}
-	}
+	toParse, deleted := classifyFileChanges(wr, oldMeta)
 
 	// If more than 30% of tracked files changed, fall back to full rebuild.
-	totalTracked := len(oldMeta)
-	churn := len(toParse) + len(deleted)
-	if totalTracked > 0 && float64(churn)/float64(totalTracked) > 0.30 {
+	if churnExceedsThreshold(len(oldMeta), len(toParse)+len(deleted)) {
 		return false, nil
 	}
 
@@ -180,139 +161,191 @@ func trySyncGraphIncrementalFiltered(db *sql.DB, projectID string, projPath stri
 	}
 	defer tx.Rollback()
 
-	// 1. Remove deleted files's nodes and edges (including child symbols).
-	for _, p := range deleted {
-		if _, e := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND (source_id = ? OR source_id LIKE ? OR target_id = ? OR target_id LIKE ?)", projectID, p, p+":%", p, p+":%"); e != nil {
-			return false, fmt.Errorf("failed deleting edges for deleted file %s: %w", p, e)
-		}
-		if _, e := tx.Exec("DELETE FROM graph_nodes WHERE project_id = ? AND (id = ? OR id LIKE ?)", projectID, p, p+":%"); e != nil {
-			return false, fmt.Errorf("failed deleting nodes for deleted file %s: %w", p, e)
-		}
-		if _, e := tx.Exec("DELETE FROM graph_files_meta WHERE project_id = ? AND path = ?", projectID, p); e != nil {
-			return false, fmt.Errorf("failed removing file meta for %s: %w", p, e)
-		}
+	if err = deleteRemovedFiles(tx, projectID, deleted); err != nil {
+		return false, err
+	}
+	if err = resetChangedFiles(tx, projectID, toParse); err != nil {
+		return false, err
 	}
 
-	// 2. Remove old edges and child nodes for changed files.
+	codeToParse, manifestToParse := splitManifests(wr, toParse)
+	codeEdges, err := parseAndUpsertCode(tx, projectID, projPath, wr, codeToParse)
+	if err != nil {
+		return false, err
+	}
+	if err = insertChangedEdges(tx, projectID, projPath, wr, codeEdges, manifestToParse); err != nil {
+		return false, err
+	}
+	if err = upsertChangedFileMeta(tx, projectID, wr, toParse); err != nil {
+		return false, err
+	}
+	if err = syncCallAndRouteEdges(tx, projectID, projPath, wr, readOnly); err != nil {
+		return false, err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// fileChangeSet is the outcome of comparing a fresh scan against the persisted
+// file metadata.
+type fileChangeSet struct {
+	toParse []string
+	deleted []string
+}
+
+// classifyFileChanges splits the scanned files into those needing (re)parsing
+// (new or mtime/size-changed) and those deleted since the last sync.
+func classifyFileChanges(wr *walkResult, oldMeta map[string]fileMetaEntry) (toParse, deleted []string) {
+	for _, p := range wr.fileList {
+		cur := wr.fileMeta[p]
+		prev, exists := oldMeta[p]
+		if !exists || cur.mtimeMs != prev.mtimeMs || cur.size != prev.size {
+			toParse = append(toParse, p)
+		}
+	}
+	for p := range oldMeta {
+		if _, stillExists := wr.fileMeta[p]; !stillExists {
+			deleted = append(deleted, p)
+		}
+	}
+	return toParse, deleted
+}
+
+// churnExceedsThreshold reports whether the changed+deleted ratio is high enough
+// to justify a full rebuild instead of an incremental update.
+func churnExceedsThreshold(total, churn int) bool {
+	return total > 0 && float64(churn)/float64(total) > 0.30
+}
+
+// deleteRemovedFiles removes all nodes, edges, and metadata for files that no
+// longer exist on disk.
+func deleteRemovedFiles(tx *sql.Tx, projectID string, deleted []string) error {
+	for _, p := range deleted {
+		if _, e := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND (source_id = ? OR source_id LIKE ? OR target_id = ? OR target_id LIKE ?)", projectID, p, p+":%", p, p+":%"); e != nil {
+			return fmt.Errorf("failed deleting edges for deleted file %s: %w", p, e)
+		}
+		if _, e := tx.Exec("DELETE FROM graph_nodes WHERE project_id = ? AND (id = ? OR id LIKE ?)", projectID, p, p+":%"); e != nil {
+			return fmt.Errorf("failed deleting nodes for deleted file %s: %w", p, e)
+		}
+		if _, e := tx.Exec("DELETE FROM graph_files_meta WHERE project_id = ? AND path = ?", projectID, p); e != nil {
+			return fmt.Errorf("failed removing file meta for %s: %w", p, e)
+		}
+	}
+	return nil
+}
+
+// resetChangedFiles clears the source edges and stale child symbols for files
+// that are about to be re-parsed.
+func resetChangedFiles(tx *sql.Tx, projectID string, toParse []string) error {
 	for _, p := range toParse {
 		if _, e := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND (source_id = ? OR source_id LIKE ?)", projectID, p, p+":%"); e != nil {
-			return false, fmt.Errorf("failed deleting edges for changed file %s: %w", p, e)
+			return fmt.Errorf("failed deleting edges for changed file %s: %w", p, e)
 		}
 		// Remove stale child symbols (function/class nodes) that will be
 		// re-created by scanFiles during step 3.
 		if _, e := tx.Exec("DELETE FROM graph_nodes WHERE project_id = ? AND id LIKE ?", projectID, p+":%"); e != nil {
-			return false, fmt.Errorf("failed deleting child nodes for changed file %s: %w", p, e)
+			return fmt.Errorf("failed deleting child nodes for changed file %s: %w", p, e)
 		}
 	}
+	return nil
+}
 
-	// Separate manifest files from code files before parsing.
+// splitManifests partitions the files to parse into code files and manifests.
+func splitManifests(wr *walkResult, toParse []string) (code, manifests []string) {
 	isManifest := make(map[string]bool, len(wr.manifestFiles))
 	for _, mf := range wr.manifestFiles {
 		isManifest[mf] = true
 	}
-	var codeToParse []string
-	var manifestToParse []string
 	for _, p := range toParse {
 		if isManifest[p] {
-			manifestToParse = append(manifestToParse, p)
+			manifests = append(manifests, p)
 		} else {
-			codeToParse = append(codeToParse, p)
+			code = append(code, p)
 		}
 	}
+	return code, manifests
+}
 
-	// 3. Parse new+changed code files and insert nodes+edges.
+// parseAndUpsertCode parses the changed code files, upserts their file + child
+// symbol nodes, and returns the resulting import edges.
+func parseAndUpsertCode(tx *sql.Tx, projectID, projPath string, wr *walkResult, codeToParse []string) ([]*Edge, error) {
 	codeEdges := parseFiles(projPath, wr.nodes, codeToParse, wr.fileContents)
 	for _, p := range codeToParse {
 		if err := upsertNode(tx, projectID, wr.nodes[p]); err != nil {
-			return false, fmt.Errorf("failed upserting node %s: %w", p, err)
+			return nil, fmt.Errorf("failed upserting node %s: %w", p, err)
 		}
 		// Also upsert child symbol nodes (functions/classes) for this file.
 		prefix := p + ":"
 		for id, node := range wr.nodes {
 			if strings.HasPrefix(id, prefix) {
 				if err := upsertNode(tx, projectID, node); err != nil {
-					return false, fmt.Errorf("failed upserting child node %s: %w", id, err)
+					return nil, fmt.Errorf("failed upserting child node %s: %w", id, err)
 				}
 			}
 		}
 	}
-	// Also process changed manifests.
-	var edges []*Edge
-	edges = append(edges, codeEdges...)
-	manifestEdges := parseManifests(projPath, wr.nodes, manifestToParse)
-	edges = append(edges, manifestEdges...)
+	return codeEdges, nil
+}
+
+// insertChangedEdges writes the code + manifest edges, upserts package nodes,
+// and then writes the "contains" edges.
+func insertChangedEdges(tx *sql.Tx, projectID, projPath string, wr *walkResult, codeEdges []*Edge, manifestToParse []string) error {
+	edges := append([]*Edge{}, codeEdges...)
+	edges = append(edges, parseManifests(projPath, wr.nodes, manifestToParse)...)
 	// Upsert package nodes (from both code and manifest parsers).
 	for _, node := range wr.nodes {
 		if node.Type == schema.NodeTypePackage {
 			if err := upsertNode(tx, projectID, node); err != nil {
-				return false, fmt.Errorf("failed upserting package node %s: %w", node.ID, err)
+				return fmt.Errorf("failed upserting package node %s: %w", node.ID, err)
 			}
 		}
 	}
 	if err := bulkInsertEdges(tx, projectID, edges); err != nil {
-		return false, err
+		return err
 	}
+	// "contains" edges for documents and SQL schemas
+	return bulkInsertEdges(tx, projectID, extractContainsEdges(wr.nodes))
+}
 
-	// 3b. "contains" edges for documents and SQL schemas
-	containEdges := extractContainsEdges(wr.nodes)
-	if err := bulkInsertEdges(tx, projectID, containEdges); err != nil {
-		return false, err
-	}
-
-	// 4. Update file metadata for added/changed files (code + manifests).
+// upsertChangedFileMeta stores the fresh mtime/size for parsed files.
+func upsertChangedFileMeta(tx *sql.Tx, projectID string, wr *walkResult, toParse []string) error {
 	for _, p := range toParse {
 		m := wr.fileMeta[p]
 		if _, e := tx.Exec("INSERT OR REPLACE INTO graph_files_meta (project_id, path, mtime_ms, size) VALUES (?, ?, ?, ?)", projectID, p, m.mtimeMs, m.size); e != nil {
-			return false, fmt.Errorf("failed upserting file meta for %s: %w", p, e)
+			return fmt.Errorf("failed upserting file meta for %s: %w", p, e)
 		}
 	}
+	return nil
+}
 
-	// Phase 2: Extract and sync function and class calls. A full incremental
-	// sync rebuilds every call edge from the complete symbol map. A lazy sync
-	// (readOnly set) only refreshes call edges for the changed files — the
-	// source-side edges of those files were already removed in step 2, and call
-	// edges that do not touch a changed file are preserved, so a single-file
-	// edit cannot wipe the rest of the calls graph.
+// syncCallAndRouteEdges refreshes call and routing edges. A full incremental
+// sync rebuilds every call/route edge from the complete symbol map; a lazy sync
+// (readOnly set) only inserts edges for the changed files — source-side edges
+// were already removed, and edges that do not touch a changed file are
+// preserved, so a single-file edit cannot wipe the rest of the calls graph.
+func syncCallAndRouteEdges(tx *sql.Tx, projectID, projPath string, wr *walkResult, readOnly map[string]bool) error {
 	if readOnly == nil {
-		if _, err := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND relation_type = '"+schema.EdgeCalls+"'", projectID); err != nil {
-			return false, fmt.Errorf("failed deleting old call edges: %w", err)
+		for _, rt := range []string{schema.EdgeCalls, schema.EdgeRoutes} {
+			if _, err := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND relation_type = ?", projectID, rt); err != nil {
+				return fmt.Errorf("failed deleting old %s edges: %w", rt, err)
+			}
 		}
-		if _, err := tx.Exec("DELETE FROM graph_edges WHERE project_id = ? AND relation_type = '"+schema.EdgeRoutes+"'", projectID); err != nil {
-			return false, fmt.Errorf("failed deleting old routing edges: %w", err)
-		}
-		if _, err := tx.Exec("DELETE FROM graph_nodes WHERE project_id = ? AND node_type = '"+schema.NodeTypeRoute+"'", projectID); err != nil {
-			return false, fmt.Errorf("failed deleting old routing nodes: %w", err)
-		}
-		callEdges := extractCallEdges(wr.nodes, wr.fileContents)
-		if err := bulkInsertEdges(tx, projectID, callEdges); err != nil {
-			return false, err
-		}
-		routeNodes, routeEdges := extractRoutingEdges(projPath, wr.fileContents, wr.filePkgRoot, wr.nodes)
-		if err := bulkInsertNodes(tx, projectID, routeNodes); err != nil {
-			return false, err
-		}
-		if err := bulkInsertEdges(tx, projectID, routeEdges); err != nil {
-			return false, err
-		}
-	} else {
-		callEdges := extractCallEdges(wr.nodes, wr.fileContents)
-		if err := bulkInsertEdges(tx, projectID, callEdges); err != nil {
-			return false, err
-		}
-		routeNodes, routeEdges := extractRoutingEdges(projPath, wr.fileContents, wr.filePkgRoot, wr.nodes)
-		if err := bulkInsertNodes(tx, projectID, routeNodes); err != nil {
-			return false, err
-		}
-		if err := bulkInsertEdges(tx, projectID, routeEdges); err != nil {
-			return false, err
+		if _, err := tx.Exec("DELETE FROM graph_nodes WHERE project_id = ? AND node_type = ?", projectID, schema.NodeTypeRoute); err != nil {
+			return fmt.Errorf("failed deleting old routing nodes: %w", err)
 		}
 	}
-
-	if err := tx.Commit(); err != nil {
-		return false, err
+	if err := bulkInsertEdges(tx, projectID, extractCallEdges(wr.nodes, wr.fileContents)); err != nil {
+		return err
 	}
-
-	return true, nil
+	routeNodes, routeEdges := extractRoutingEdges(projPath, wr.fileContents, wr.filePkgRoot, wr.nodes)
+	if err := bulkInsertNodes(tx, projectID, routeNodes); err != nil {
+		return err
+	}
+	return bulkInsertEdges(tx, projectID, routeEdges)
 }
 
 // sanitizeNodeForPersist redacts secrets from a node's label and metadata before

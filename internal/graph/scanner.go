@@ -297,6 +297,19 @@ func scanFiles(projPath string) (*walkResult, error) {
 	return scanFilesFiltered(projPath, nil)
 }
 
+// scanState accumulates the results of a filesystem walk.
+type scanState struct {
+	readOnly     map[string]bool
+	manifestSet  map[string]bool
+	gi           *gitignoreMatcher
+	nodes        map[string]*Node
+	fileList     []string
+	fileMeta     map[string]fileMetaEntry
+	fileContents map[string][]byte
+	packageRoots map[string]bool
+	manifests    []string
+}
+
 // scanFilesFiltered walks the project and builds nodes/edges metadata. When
 // readOnly is non-nil, only those relative paths are read from disk and parsed
 // for symbols; every other supported file is still registered as a file node
@@ -304,156 +317,180 @@ func scanFiles(projPath string) (*walkResult, error) {
 // not read. When readOnly is nil every supported file is fully scanned (the
 // original full-scan behaviour).
 func scanFilesFiltered(projPath string, readOnly map[string]bool) (*walkResult, error) {
-	nodes := make(map[string]*Node)
-	fileList := []string{}
-	fileMeta := make(map[string]fileMetaEntry)
-	fileContents := make(map[string][]byte)
-	packageRoots := make(map[string]bool)
-
-	// Build a set for O(1) manifest lookup during the walk.
-	manifestSet := make(map[string]bool, len(manifestFilenames))
-	for _, mf := range manifestFilenames {
-		manifestSet[mf] = true
-	}
-
 	gi, _ := loadGitignore(projPath)
+	s := &scanState{
+		readOnly:     readOnly,
+		manifestSet:  buildManifestSet(),
+		gi:           gi,
+		nodes:        make(map[string]*Node),
+		fileList:     []string{},
+		fileMeta:     make(map[string]fileMetaEntry),
+		fileContents: make(map[string][]byte),
+		packageRoots: make(map[string]bool),
+	}
 
 	err := filepath.WalkDir(projPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-
-		relPath, relErr := filepath.Rel(projPath, path)
-		if relErr != nil {
-			return nil
-		}
-		// Canonicalize node paths to forward slashes on every OS so graph node
-		// ids/paths are identical regardless of the platform's separator. This
-		// keeps markdown link resolution, sv_graph_query/path lookups, and the
-		// exported vault/wiki consistent on Windows.
-		relPath = filepath.ToSlash(relPath)
-
-		if d.IsDir() {
-			// Skip if this directory name is in the fallback list or
-			// matches any gitignore/sv-memoryignore pattern.
-			if fallbackIgnoreDirs[d.Name()] {
-				return filepath.SkipDir
-			}
-			if gi != nil && gi.match(relPath, true) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Skip ignored files (not just directories).
-		if gi != nil && gi.match(relPath, false) {
-			return nil
-		}
-
-		// Detect manifests at any depth for package-root detection.
-		// This runs before the extension filter so .json/.mod/.toml etc. are caught.
-		if manifestSet[filepath.Base(relPath)] {
-			pkgDir := filepath.Dir(relPath)
-			if pkgDir == "." {
-				pkgDir = ""
-			}
-			packageRoots[pkgDir] = true
-		}
-
-		ext := strings.ToLower(filepath.Ext(relPath))
-		if !supportedScanExts[ext] {
-			return nil
-		}
-
-		fi, fiErr := os.Stat(path)
-		mtimeMs := int64(0)
-		size := int64(0)
-		if fiErr == nil {
-			mtimeMs = fi.ModTime().UnixMilli()
-			size = fi.Size()
-		}
-
-		baseMeta := map[string]interface{}{
-			"extension": ext,
-			"size":      size,
-		}
-
-		// Read + parse symbols only when this file is in the requested set
-		// (or when doing a full scan with readOnly == nil).
-		if symbolScanExts[ext] && (readOnly == nil || readOnly[relPath]) {
-			content, readErr := os.ReadFile(path)
-			if readErr == nil {
-				fileContents[relPath] = content
-				symbolNodes, symMeta := parseSymbols(relPath, ext, content)
-				for k, v := range symMeta {
-					baseMeta[k] = v
-				}
-				for _, sn := range symbolNodes {
-					nodes[sn.ID] = sn
-				}
-			}
-		}
-
-		nodeType := schema.NodeTypeFile
-		switch ext {
-		case ".md":
-			nodeType = schema.NodeTypeDocument
-		case ".sql":
-			nodeType = schema.NodeTypeSQL
-		}
-		nodes[relPath] = &Node{
-			ID:       relPath,
-			Type:     nodeType,
-			Label:    filepath.Base(relPath),
-			Path:     relPath,
-			Metadata: baseMeta,
-		}
-		fileList = append(fileList, relPath)
-		fileMeta[relPath] = fileMetaEntry{mtimeMs: mtimeMs, size: size}
-		return nil
+		return s.visit(projPath, path, d)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed walking directory: %w", err)
 	}
 
-	var manifestFiles []string
-	for _, mf := range manifestFilenames {
-		mfPath := filepath.Join(projPath, mf)
-		if fi, stErr := os.Stat(mfPath); stErr == nil {
-			mtimeMs := fi.ModTime().UnixMilli()
-			size := fi.Size()
-			manifestFiles = append(manifestFiles, mf)
-
-			nodes[mf] = &Node{
-				ID:    mf,
-				Type:  schema.NodeTypeFile,
-				Label: mf,
-				Path:  mf,
-				Metadata: map[string]interface{}{
-					"size":      size,
-					"extension": filepath.Ext(mf),
-				},
-			}
-			fileList = append(fileList, mf)
-			fileMeta[mf] = fileMetaEntry{mtimeMs: mtimeMs, size: size}
-		}
-	}
+	s.collectManifestNodes(projPath)
 
 	// Compute filePkgRoot: map each file to its nearest package root.
-	filePkgRoot := make(map[string]string, len(fileContents))
-	for relPath := range fileContents {
-		filePkgRoot[relPath] = nearestPackageRoot(relPath, packageRoots)
+	filePkgRoot := make(map[string]string, len(s.fileContents))
+	for relPath := range s.fileContents {
+		filePkgRoot[relPath] = nearestPackageRoot(relPath, s.packageRoots)
 	}
 
 	return &walkResult{
-		nodes:         nodes,
-		fileList:      fileList,
-		fileMeta:      fileMeta,
-		manifestFiles: manifestFiles,
-		fileContents:  fileContents,
-		packageRoots:  packageRoots,
+		nodes:         s.nodes,
+		fileList:      s.fileList,
+		fileMeta:      s.fileMeta,
+		manifestFiles: s.manifests,
+		fileContents:  s.fileContents,
+		packageRoots:  s.packageRoots,
 		filePkgRoot:   filePkgRoot,
 	}, nil
+}
+
+func buildManifestSet() map[string]bool {
+	set := make(map[string]bool, len(manifestFilenames))
+	for _, mf := range manifestFilenames {
+		set[mf] = true
+	}
+	return set
+}
+
+// visit handles a single walk entry, skipping ignored dirs/files and recording
+// supported files.
+func (s *scanState) visit(projPath, path string, d fs.DirEntry) error {
+	relPath, relErr := filepath.Rel(projPath, path)
+	if relErr != nil {
+		return nil
+	}
+	// Canonicalize node paths to forward slashes on every OS so graph node
+	// ids/paths are identical regardless of the platform's separator. This
+	// keeps markdown link resolution, sv_graph_query/path lookups, and the
+	// exported vault/wiki consistent on Windows.
+	relPath = filepath.ToSlash(relPath)
+
+	if d.IsDir() {
+		if s.skipDir(relPath, d.Name()) {
+			return filepath.SkipDir
+		}
+		return nil
+	}
+
+	if s.gi != nil && s.gi.match(relPath, false) {
+		return nil
+	}
+
+	s.recordPackageRoot(relPath)
+
+	ext := strings.ToLower(filepath.Ext(relPath))
+	if !supportedScanExts[ext] {
+		return nil
+	}
+	s.addFileNode(projPath, path, relPath, ext)
+	return nil
+}
+
+func (s *scanState) skipDir(relPath, name string) bool {
+	if fallbackIgnoreDirs[name] {
+		return true
+	}
+	return s.gi != nil && s.gi.match(relPath, true)
+}
+
+func (s *scanState) recordPackageRoot(relPath string) {
+	if !s.manifestSet[filepath.Base(relPath)] {
+		return
+	}
+	pkgDir := filepath.Dir(relPath)
+	if pkgDir == "." {
+		pkgDir = ""
+	}
+	s.packageRoots[pkgDir] = true
+}
+
+// addFileNode records a supported file's node, metadata, and (when requested)
+// its parsed symbols.
+func (s *scanState) addFileNode(projPath, path, relPath, ext string) {
+	mtimeMs, size := statFile(path)
+	baseMeta := map[string]interface{}{
+		"extension": ext,
+		"size":      size,
+	}
+
+	if symbolScanExts[ext] && (s.readOnly == nil || s.readOnly[relPath]) {
+		if content, readErr := os.ReadFile(path); readErr == nil {
+			s.fileContents[relPath] = content
+			symbolNodes, symMeta := parseSymbols(relPath, ext, content)
+			for k, v := range symMeta {
+				baseMeta[k] = v
+			}
+			for _, sn := range symbolNodes {
+				s.nodes[sn.ID] = sn
+			}
+		}
+	}
+
+	s.nodes[relPath] = &Node{
+		ID:       relPath,
+		Type:     nodeTypeForExt(ext),
+		Label:    filepath.Base(relPath),
+		Path:     relPath,
+		Metadata: baseMeta,
+	}
+	s.fileList = append(s.fileList, relPath)
+	s.fileMeta[relPath] = fileMetaEntry{mtimeMs: mtimeMs, size: size}
+}
+
+func nodeTypeForExt(ext string) string {
+	switch ext {
+	case ".md":
+		return schema.NodeTypeDocument
+	case ".sql":
+		return schema.NodeTypeSQL
+	default:
+		return schema.NodeTypeFile
+	}
+}
+
+// collectManifestNodes registers project-root manifest files as nodes.
+func (s *scanState) collectManifestNodes(projPath string) {
+	for _, mf := range manifestFilenames {
+		fi, stErr := os.Stat(filepath.Join(projPath, mf))
+		if stErr != nil {
+			continue
+		}
+		s.manifests = append(s.manifests, mf)
+		s.nodes[mf] = &Node{
+			ID:    mf,
+			Type:  schema.NodeTypeFile,
+			Label: mf,
+			Path:  mf,
+			Metadata: map[string]interface{}{
+				"size":      fi.Size(),
+				"extension": filepath.Ext(mf),
+			},
+		}
+		s.fileList = append(s.fileList, mf)
+		s.fileMeta[mf] = fileMetaEntry{mtimeMs: fi.ModTime().UnixMilli(), size: fi.Size()}
+	}
+}
+
+func statFile(path string) (mtimeMs, size int64) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return 0, 0
+	}
+	return fi.ModTime().UnixMilli(), fi.Size()
 }
 
 // nearestPackageRoot returns the nearest ancestor directory of relPath that is

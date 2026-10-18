@@ -12,143 +12,163 @@ import (
 
 // DetectCommunities runs a label propagation community detection algorithm on the graph.
 func (g *InMemoryGraph) DetectCommunities() map[string]int {
-	nodeList := make([]string, 0, len(g.Nodes))
-	for id := range g.Nodes {
-		nodeList = append(nodeList, id)
-	}
-	sort.Strings(nodeList)
-
-	nodeIndex := make(map[string]int)
-	for idx, id := range nodeList {
-		nodeIndex[id] = idx
-	}
+	nodeList, nodeIndex := g.sortedNodeIndex()
 
 	labels := make([]int, len(nodeList))
 	for i := range labels {
 		labels[i] = i
 	}
+	g.propagateLabels(nodeList, nodeIndex, labels, 15)
 
-	maxIterations := 15
+	return relabelCommunities(nodeList, labels)
+}
+
+// sortedNodeIndex returns node IDs in deterministic order plus their index map.
+func (g *InMemoryGraph) sortedNodeIndex() ([]string, map[string]int) {
+	nodeList := make([]string, 0, len(g.Nodes))
+	for id := range g.Nodes {
+		nodeList = append(nodeList, id)
+	}
+	sort.Strings(nodeList)
+	nodeIndex := make(map[string]int, len(nodeList))
+	for idx, id := range nodeList {
+		nodeIndex[id] = idx
+	}
+	return nodeList, nodeIndex
+}
+
+// propagateLabels runs label propagation in place until stable or maxIterations.
+func (g *InMemoryGraph) propagateLabels(nodeList []string, nodeIndex map[string]int, labels []int, maxIterations int) {
 	for iter := 0; iter < maxIterations; iter++ {
-		changed := false
-		for i, id := range nodeList {
-			labelFreq := make(map[int]float64)
-
-			// Outgoing edges
-			for _, edge := range g.EdgesBySource[id] {
-				targetIdx, ok := nodeIndex[edge.TargetID]
-				if ok {
-					labelFreq[labels[targetIdx]] += 1.0
-				}
-			}
-			// Incoming edges
-			for _, edge := range g.EdgesByTarget[id] {
-				sourceIdx, ok := nodeIndex[edge.SourceID]
-				if ok {
-					labelFreq[labels[sourceIdx]] += 1.0
-				}
-			}
-
-			if len(labelFreq) == 0 {
-				continue
-			}
-
-			maxFreq := -1.0
-			bestLabel := labels[i]
-			for lbl, freq := range labelFreq {
-				if freq > maxFreq {
-					maxFreq = freq
-					bestLabel = lbl
-				} else if freq == maxFreq && lbl < bestLabel {
-					bestLabel = lbl
-				}
-			}
-
-			if labels[i] != bestLabel {
-				labels[i] = bestLabel
-				changed = true
-			}
-		}
-		if !changed {
-			break
+		if !g.propagateOnce(nodeList, nodeIndex, labels) {
+			return
 		}
 	}
+}
 
-	communities := make(map[string]int)
+// propagateOnce performs a single label-propagation sweep; reports whether any
+// label changed.
+func (g *InMemoryGraph) propagateOnce(nodeList []string, nodeIndex map[string]int, labels []int) bool {
+	changed := false
+	for i, id := range nodeList {
+		freq := g.neighborLabelFreq(id, nodeIndex, labels)
+		if len(freq) == 0 {
+			continue
+		}
+		if best := dominantLabel(freq, labels[i]); labels[i] != best {
+			labels[i] = best
+			changed = true
+		}
+	}
+	return changed
+}
+
+// neighborLabelFreq tallies the labels of a node's neighbours (both directions).
+func (g *InMemoryGraph) neighborLabelFreq(id string, nodeIndex map[string]int, labels []int) map[int]float64 {
+	freq := make(map[int]float64)
+	for _, edge := range g.EdgesBySource[id] {
+		if idx, ok := nodeIndex[edge.TargetID]; ok {
+			freq[labels[idx]] += 1.0
+		}
+	}
+	for _, edge := range g.EdgesByTarget[id] {
+		if idx, ok := nodeIndex[edge.SourceID]; ok {
+			freq[labels[idx]] += 1.0
+		}
+	}
+	return freq
+}
+
+// dominantLabel returns the most frequent label, breaking ties by lower label id.
+func dominantLabel(freq map[int]float64, fallback int) int {
+	maxFreq := -1.0
+	best := fallback
+	for lbl, f := range freq {
+		if f > maxFreq || (f == maxFreq && lbl < best) {
+			maxFreq = f
+			best = lbl
+		}
+	}
+	return best
+}
+
+// relabelCommunities maps raw labels to dense 1-based community ids in node order.
+func relabelCommunities(nodeList []string, labels []int) map[string]int {
+	communities := make(map[string]int, len(nodeList))
 	labelMap := make(map[int]int)
 	commIdx := 1
 	for i, id := range nodeList {
 		lbl := labels[i]
 		c, ok := labelMap[lbl]
 		if !ok {
-			labelMap[lbl] = commIdx
 			c = commIdx
+			labelMap[lbl] = c
 			commIdx++
 		}
 		communities[id] = c
 	}
-
 	return communities
 }
 
 // BetweennessCentrality calculates betweenness centrality for all nodes using Brandes' algorithm.
 func (g *InMemoryGraph) BetweennessCentrality() map[string]float64 {
-	centrality := make(map[string]float64)
+	centrality := make(map[string]float64, len(g.Nodes))
 	for id := range g.Nodes {
 		centrality[id] = 0.0
 	}
-
 	for s := range g.Nodes {
-		S := []string{}
-		pred := make(map[string][]string)
-		sigma := make(map[string]float64)
-		dist := make(map[string]int)
+		g.brandesFrom(s, centrality)
+	}
+	return centrality
+}
 
-		for v := range g.Nodes {
-			dist[v] = -1
-		}
+// brandesFrom runs one Brandes single-source pass and accumulates dependency
+// scores into centrality.
+func (g *InMemoryGraph) brandesFrom(s string, centrality map[string]float64) {
+	S := []string{}
+	pred := make(map[string][]string)
+	sigma := make(map[string]float64)
+	dist := make(map[string]int)
 
-		sigma[s] = 1.0
-		dist[s] = 0
+	for v := range g.Nodes {
+		dist[v] = -1
+	}
+	sigma[s] = 1.0
+	dist[s] = 0
+	queue := []string{s}
 
-		queue := []string{s}
+	for len(queue) > 0 {
+		v := queue[0]
+		queue = queue[1:]
+		S = append(S, v)
 
-		for len(queue) > 0 {
-			v := queue[0]
-			queue = queue[1:]
-			S = append(S, v)
-
-			for _, edge := range g.EdgesBySource[v] {
-				w := edge.TargetID
-				if _, exists := g.Nodes[w]; !exists {
-					continue
-				}
-				if dist[w] < 0 {
-					dist[w] = dist[v] + 1
-					queue = append(queue, w)
-				}
-				if dist[w] == dist[v]+1 {
-					sigma[w] += sigma[v]
-					pred[w] = append(pred[w], v)
-				}
+		for _, edge := range g.EdgesBySource[v] {
+			w := edge.TargetID
+			if _, exists := g.Nodes[w]; !exists {
+				continue
 			}
-		}
-
-		delta := make(map[string]float64)
-		for len(S) > 0 {
-			w := S[len(S)-1]
-			S = S[:len(S)-1]
-
-			for _, v := range pred[w] {
-				delta[v] += (sigma[v] / sigma[w]) * (1.0 + delta[w])
+			if dist[w] < 0 {
+				dist[w] = dist[v] + 1
+				queue = append(queue, w)
 			}
-			if w != s {
-				centrality[w] += delta[w]
+			if dist[w] == dist[v]+1 {
+				sigma[w] += sigma[v]
+				pred[w] = append(pred[w], v)
 			}
 		}
 	}
 
-	return centrality
+	delta := make(map[string]float64)
+	for len(S) > 0 {
+		w := S[len(S)-1]
+		S = S[:len(S)-1]
+		for _, v := range pred[w] {
+			delta[v] += (sigma[v] / sigma[w]) * (1.0 + delta[w])
+		}
+		if w != s {
+			centrality[w] += delta[w]
+		}
+	}
 }
 
 // UpdateCommunitiesAndCentrality updates the community_id and betweenness_centrality in node metadata.
@@ -311,49 +331,14 @@ func (g *InMemoryGraph) FindSurprisingConnections(communities map[string]int, ce
 			if !dstOk {
 				continue
 			}
-
 			key := srcID + "->" + edge.TargetID
 			if seen[key] {
 				continue
 			}
 			seen[key] = true
 
-			sDegree := g.FanIn[srcID] + g.FanOut[srcID]
-			dDegree := g.FanIn[edge.TargetID] + g.FanOut[edge.TargetID]
-			sBC := centrality[srcID]
-			dBC := centrality[edge.TargetID]
-
-			var score float64
-			if srcComm != dstComm {
-				avgBC := (sBC + dBC) / 2.0
-				totalDegree := sDegree + dDegree
-				if totalDegree == 0 {
-					totalDegree = 1
-				}
-				score = avgBC * 2.0 / float64(totalDegree)
-			}
-
-			if score > 0 {
-				srcLabel := srcID
-				if n, ok := g.Nodes[srcID]; ok {
-					srcLabel = n.Label
-				}
-				dstLabel := edge.TargetID
-				if n, ok := g.Nodes[edge.TargetID]; ok {
-					dstLabel = n.Label
-				}
-
-				candidates = append(candidates, SurprisingConnection{
-					SourceID:      srcID,
-					SourceLabel:   srcLabel,
-					TargetID:      edge.TargetID,
-					TargetLabel:   dstLabel,
-					EdgeType:      edge.RelationType,
-					Confidence:    edge.Confidence,
-					SrcCommunity:  srcComm,
-					DstCommunity:  dstComm,
-					SurpriseScore: score,
-				})
+			if conn, ok := g.surprisingConnection(srcID, edge, srcComm, dstComm, centrality); ok {
+				candidates = append(candidates, conn)
 			}
 		}
 	}
@@ -365,6 +350,51 @@ func (g *InMemoryGraph) FindSurprisingConnections(communities map[string]int, ce
 	if len(candidates) > limit {
 		candidates = candidates[:limit]
 	}
-
 	return candidates
+}
+
+// surprisingConnection scores a single cross-community edge; ok is false for
+// same-community or zero-score edges.
+func (g *InMemoryGraph) surprisingConnection(srcID string, edge *Edge, srcComm, dstComm int, centrality map[string]float64) (SurprisingConnection, bool) {
+	if srcComm == dstComm {
+		return SurprisingConnection{}, false
+	}
+	score := surpriseScore(
+		g.FanIn[srcID]+g.FanOut[srcID],
+		g.FanIn[edge.TargetID]+g.FanOut[edge.TargetID],
+		centrality[srcID], centrality[edge.TargetID],
+	)
+	if score <= 0 {
+		return SurprisingConnection{}, false
+	}
+	return SurprisingConnection{
+		SourceID:      srcID,
+		SourceLabel:   g.nodeLabel(srcID),
+		TargetID:      edge.TargetID,
+		TargetLabel:   g.nodeLabel(edge.TargetID),
+		EdgeType:      edge.RelationType,
+		Confidence:    edge.Confidence,
+		SrcCommunity:  srcComm,
+		DstCommunity:  dstComm,
+		SurpriseScore: score,
+	}, true
+}
+
+// surpriseScore is the average betweenness of the endpoints, doubled and
+// normalised by their combined degree.
+func surpriseScore(sDegree, dDegree int, sBC, dBC float64) float64 {
+	avgBC := (sBC + dBC) / 2.0
+	totalDegree := sDegree + dDegree
+	if totalDegree == 0 {
+		totalDegree = 1
+	}
+	return avgBC * 2.0 / float64(totalDegree)
+}
+
+// nodeLabel returns a node's label, falling back to its id.
+func (g *InMemoryGraph) nodeLabel(id string) string {
+	if n, ok := g.Nodes[id]; ok {
+		return n.Label
+	}
+	return id
 }
