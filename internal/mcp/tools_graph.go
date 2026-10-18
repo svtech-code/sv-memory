@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -11,30 +10,15 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/svtech-code/sv-memory/internal/db"
 	"github.com/svtech-code/sv-memory/internal/graph"
-	"github.com/svtech-code/sv-memory/internal/security"
 )
 
-//nolint:gocyclo // BFS query renders many report branches; refactor later
 func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	pathOrNode, err := req.RequireString("path_or_node")
 	if err != nil {
 		return mcp.NewToolResultError("missing required field: path_or_node"), nil
 	}
-	depthStr := req.GetString("depth", "1")
-	depth := 1
-	if depthStr != "" {
-		if d, convErr := strconv.Atoi(depthStr); convErr == nil {
-			depth = d
-		}
-	}
-	if depth < 1 {
-		depth = 1
-	} else if depth > 5 {
-		depth = 5
-	}
-
+	depth := clampRange(req.GetString("depth", "1"), 1, 1, 5)
 	relationType := req.GetString("relation_type", "")
 	direction := req.GetString("direction", "out")
 	confidenceFilter := req.GetString("confidence", "")
@@ -61,115 +45,14 @@ func (s *Server) handleGraphQuery(ctx context.Context, req mcp.CallToolRequest) 
 	// confidence level. Nodes remain in the subgraph for context, but only
 	// matching edges are rendered.
 	if confidenceFilter != "" {
-		var filtered []*graph.Edge
-		for _, e := range subGraph.Edges {
-			conf := e.Confidence
-			if conf == "" {
-				conf = "EXTRACTED"
-			}
-			if conf == confidenceFilter {
-				filtered = append(filtered, e)
-			}
-		}
-		subGraph.Edges = filtered
+		subGraph.Edges = filterEdgesByConfidence(subGraph.Edges, confidenceFilter)
 	}
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "## Code Sub-Graph for '%s' (Depth: %d)\n\n", pathOrNode, depth)
-
-	sb.WriteString("### Nodes in Sub-graph:\n")
-	for _, node := range subGraph.Nodes {
-		cID := graph.NodeCommunityID(node)
-		bc := graph.NodeBetweennessCentrality(node)
-		commStr := commLabelStr(cID, commLabels)
-		fmt.Fprintf(&sb, "- **%s** (`%s`): %s (fan-in: %d, fan-out: %d, community: %s, BC: %.2f)\n",
-			node.Label, node.ID, node.Type, g.FanIn[node.ID], g.FanOut[node.ID], commStr, bc)
-	}
-	sb.WriteString("\n")
-
-	// Identify potential God Nodes (degree > 10 or high betweenness centrality)
-	var godNodes []string
-	for _, node := range subGraph.Nodes {
-		bc := graph.NodeBetweennessCentrality(node)
-		if g.FanIn[node.ID] > 10 || g.FanOut[node.ID] > 10 || bc > 50.0 {
-			godNodes = append(godNodes, node.ID)
-		}
-	}
-	if len(godNodes) > 0 {
-		sb.WriteString("### Potential God Nodes:\n")
-		for _, id := range godNodes {
-			bc := graph.NodeBetweennessCentrality(g.Nodes[id])
-			fmt.Fprintf(&sb, "- **%s** (fan-in: %d, fan-out: %d, BC: %.2f)\n", g.Nodes[id].Label, g.FanIn[id], g.FanOut[id], bc)
-		}
-		sb.WriteString("\n")
-	}
-
-	if len(subGraph.Edges) > 0 {
-		if mermaidFlag {
-			commColors := []string{
-				"#ECECFF", "#FFF0F5", "#F0FFF0", "#F5F5DC", "#FFF8DC",
-				"#F0F8FF", "#FDF5E6", "#FFF5EE", "#F5FFFA", "#F0FFFF",
-			}
-			sb.WriteString("### Mermaid Dependency Diagram:\n")
-			sb.WriteString("```mermaid\ngraph TD\n")
-			for _, edge := range subGraph.Edges {
-				srcEscaped := escapeMermaid(edge.SourceID)
-				tgtEscaped := escapeMermaid(edge.TargetID)
-
-				if edge.RelationType == "imports" {
-					fmt.Fprintf(&sb, "    %s -->|imports| %s\n", srcEscaped, tgtEscaped)
-				} else {
-					fmt.Fprintf(&sb, "    %s -->|%s| %s\n", srcEscaped, edge.RelationType, tgtEscaped)
-				}
-			}
-
-			for _, node := range subGraph.Nodes {
-				cID := graph.NodeCommunityID(node)
-				if cID > 0 {
-					nodeEscaped := escapeMermaid(node.ID)
-					color := commColors[(cID-1)%len(commColors)]
-					fmt.Fprintf(&sb, "    style %s fill:%s,stroke:#333,stroke-width:1px\n", nodeEscaped, color)
-				}
-			}
-
-			sb.WriteString("```\n")
-		} else {
-			// Default: a compact, LLM-friendly edge list instead of the Mermaid
-			// block, which is token-heavy and rarely rendered by an agent.
-			sb.WriteString("### Edges:\n")
-			for _, edge := range subGraph.Edges {
-				fmt.Fprintf(&sb, "- `%s` →[%s]→ `%s` (%s)\n",
-					edge.SourceID, edge.RelationType, edge.TargetID, edge.Confidence)
-			}
-			sb.WriteString("\n")
-		}
-
-		// Confidence breakdown
-		var extracted, inferred, ambiguous int
-		for _, edge := range subGraph.Edges {
-			switch edge.Confidence {
-			case "EXTRACTED":
-				extracted++
-			case "INFERRED":
-				inferred++
-			case "AMBIGUOUS":
-				ambiguous++
-			default:
-				extracted++
-			}
-		}
-		total := extracted + inferred + ambiguous
-		if total > 0 {
-			sb.WriteString("\n### Edge Confidence Breakdown:\n")
-			fmt.Fprintf(&sb, "- **EXTRACTED:** %d (%d%%) — explicit in source\n", extracted, extracted*100/total)
-			fmt.Fprintf(&sb, "- **INFERRED:** %d (%d%%) — derived by resolution\n", inferred, inferred*100/total)
-			if ambiguous > 0 {
-				fmt.Fprintf(&sb, "- **AMBIGUOUS:** %d (%d%%) — uncertain\n", ambiguous, ambiguous*100/total)
-			}
-		}
-	} else {
-		sb.WriteString("*No connections/edges found in this range.*\n")
-	}
+	renderSubGraphNodes(&sb, g, subGraph.Nodes, commLabels)
+	renderGodNodes(&sb, g, godNodeIDs(g, subGraph.Nodes))
+	renderEdgesSection(&sb, subGraph.Edges, subGraph.Nodes, mermaidFlag)
 
 	// Route through s.respond so the shared token-budget truncation applies
 	// and the estimated tokens are accrued into the session token ledger
@@ -186,17 +69,7 @@ func (s *Server) handleGraphPath(ctx context.Context, req mcp.CallToolRequest) (
 	if err != nil {
 		return mcp.NewToolResultError("missing required field: target"), nil
 	}
-	maxHopsStr := req.GetString("max_hops", "10")
-	maxHops := 10
-	if d, convErr := strconv.Atoi(maxHopsStr); convErr == nil {
-		maxHops = d
-	}
-	if maxHops < 1 {
-		maxHops = 1
-	}
-	if maxHops > 20 {
-		maxHops = 20
-	}
+	maxHops := clampRange(req.GetString("max_hops", "10"), 10, 1, 20)
 
 	g, err := s.getOrLoadGraph()
 	if err != nil {
@@ -217,36 +90,7 @@ func (s *Server) handleGraphPath(ctx context.Context, req mcp.CallToolRequest) (
 		return mcp.NewToolResultText(fmt.Sprintf("No path found between %s and %s.", startNode, endNode)), nil
 	}
 
-	var pathParts []string
-	for i := 0; i < len(path); i++ {
-		node := g.Nodes[path[i]]
-		label := path[i]
-		if node != nil {
-			label = node.Label
-		}
-		pathParts = append(pathParts, fmt.Sprintf("`%s`", label))
-
-		if i+1 < len(path) {
-			// Find edge between this node and next
-			edgeInfo := ""
-			for _, e := range g.EdgesBySource[path[i]] {
-				if e.TargetID == path[i+1] {
-					conf := e.Confidence
-					if conf == "" {
-						conf = "EXTRACTED"
-					}
-					edgeInfo = fmt.Sprintf(" --[%s %s]--> ", e.RelationType, conf)
-					break
-				}
-			}
-			if edgeInfo == "" {
-				edgeInfo = " --> "
-			}
-			pathParts = append(pathParts, edgeInfo)
-		}
-	}
-
-	return s.respond(req, fmt.Sprintf("Shortest path (%d hops):\n%s", len(path)-1, strings.Join(pathParts, ""))), nil
+	return s.respond(req, fmt.Sprintf("Shortest path (%d hops):\n%s", len(path)-1, renderGraphPath(g, path))), nil
 }
 
 func (s *Server) handleGraphSync(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -270,226 +114,172 @@ func (s *Server) handleGraphSync(ctx context.Context, req mcp.CallToolRequest) (
 	return mcp.NewToolResultText("Dependency graph refreshed and synchronized successfully in SQLite."), nil
 }
 
-//nolint:gocyclo // rich node explanation renderer; refactor later
-func (s *Server) handleGraphExplain(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	nodeName, err := req.RequireString("node")
-	if err != nil {
-		return mcp.NewToolResultError("missing required field: node"), nil
-	}
-
-	g, err := s.getOrLoadGraph()
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
-	}
-
-	nID := g.FindNode(nodeName)
-	if nID == "" {
-		return mcp.NewToolResultText(fmt.Sprintf("Could not find node matching '%s' in the graph.\nDid you mean to discover matches? Call sv_graph_search(query=\"%s\").", nodeName, nodeName)), nil
-	}
-
-	node := g.Nodes[nID]
-
-	// Lazy-calculate communities and centrality if missing
-	var hasBC bool
-	if node.Metadata != nil {
-		_, hasBC = node.Metadata["betweenness_centrality"]
-	}
-	if !hasBC {
-		debugLog("betweenness_centrality missing, calculating communities and centrality dynamically...")
-		s.computeCentralityIfMissing()
-		g, _ = s.getOrLoadGraph()
-		node = g.Nodes[nID]
-	}
-
-	commLabels := computeCommLabels(g)
-	cID := graph.NodeCommunityID(node)
-	bc := graph.NodeBetweennessCentrality(node)
-	fanIn := g.FanIn[nID]
-	fanOut := g.FanOut[nID]
-
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "## Structural Explanation of Node: `%s`\n\n", node.Label)
-	fmt.Fprintf(&sb, "- **Node ID:** `%s`\n", node.ID)
-	fmt.Fprintf(&sb, "- **Type:** `%s`\n", node.Type)
-	if node.Path != "" {
-		fmt.Fprintf(&sb, "- **Path:** `%s`\n", node.Path)
-	}
-
-	if node.Metadata != nil {
-		if lang, ok := node.Metadata["language"]; ok {
-			fmt.Fprintf(&sb, "- **Language:** `%v`\n", lang)
+// renderGraphPath joins the node labels and edge arrows of a shortest path into
+// a single human-readable chain.
+func renderGraphPath(g *graph.InMemoryGraph, path []string) string {
+	var pathParts []string
+	for i := 0; i < len(path); i++ {
+		label := path[i]
+		if node := g.Nodes[path[i]]; node != nil {
+			label = node.Label
 		}
-		if loc, ok := node.Metadata["loc"]; ok {
-			fmt.Fprintf(&sb, "- **Lines of Code (LOC):** `%v`\n", loc)
+		pathParts = append(pathParts, fmt.Sprintf("`%s`", label))
+		if i+1 < len(path) {
+			pathParts = append(pathParts, edgeArrow(g, path[i], path[i+1]))
 		}
 	}
+	return strings.Join(pathParts, "")
+}
 
-	sb.WriteString("\n### 📊 Network Metrics:\n")
-	fmt.Fprintf(&sb, "- **Community:** `%s`\n", commLabelStr(cID, commLabels))
-	fmt.Fprintf(&sb, "- **Betweenness Centrality (BC):** `%.2f`\n", bc)
-	fmt.Fprintf(&sb, "- **Fan-In (Dependents):** `%d`\n", fanIn)
-	fmt.Fprintf(&sb, "- **Fan-Out (Dependencies):** `%d`\n", fanOut)
-
-	// God node evaluation
-	isGod := false
-	reasons := []string{}
-	if fanIn > 10 {
-		isGod = true
-		reasons = append(reasons, fmt.Sprintf("High Fan-In (%d dependents)", fanIn))
-	}
-	if fanOut > 10 {
-		isGod = true
-		reasons = append(reasons, fmt.Sprintf("High Fan-Out (%d dependencies)", fanOut))
-	}
-	if bc > 50.0 {
-		isGod = true
-		reasons = append(reasons, fmt.Sprintf("High Betweenness Centrality (%.2f) - acts as a structural bridge", bc))
-	}
-
-	sb.WriteString("\n### 🧠 Architectural Role:\n")
-	if isGod {
-		sb.WriteString("⚠️ **Potential God Node/Hub:** This node plays a central role in the codebase due to:\n")
-		for _, r := range reasons {
-			fmt.Fprintf(&sb, "  - %s\n", r)
+// edgeArrow renders the annotated arrow between two consecutive path nodes,
+// falling back to a plain arrow when no edge record is found.
+func edgeArrow(g *graph.InMemoryGraph, from, to string) string {
+	for _, e := range g.EdgesBySource[from] {
+		if e.TargetID == to {
+			return fmt.Sprintf(" --[%s %s]--> ", e.RelationType, confidenceOrExtracted(e.Confidence))
 		}
-		sb.WriteString("Refactoring this node could have significant ripple effects. Consider splitting its responsibilities.\n")
-	} else if fanIn == 0 && fanOut > 0 {
-		sb.WriteString("🟢 **Entry Point / Controller:** This node has dependencies but no local dependents. It is likely an entry point or top-level controller.\n")
-	} else if fanIn > 0 && fanOut == 0 {
-		sb.WriteString("🟢 **Leaf Node / Utility:** This node is depended upon by others but has no dependencies. It represents a low-level utility or core data model.\n")
-	} else if fanIn > 0 && fanOut > 0 {
-		sb.WriteString("🟢 **Intermediate Component:** This node acts as an intermediary, receiving calls/imports and delegating to low-level utilities.\n")
+	}
+	return " --> "
+}
+
+// filterEdgesByConfidence keeps only edges whose (defaulted) confidence equals
+// the requested level.
+func filterEdgesByConfidence(edges []*graph.Edge, filter string) []*graph.Edge {
+	var filtered []*graph.Edge
+	for _, e := range edges {
+		if confidenceOrExtracted(e.Confidence) == filter {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
+}
+
+func renderSubGraphNodes(sb *strings.Builder, g *graph.InMemoryGraph, nodes []*graph.Node, commLabels map[int]string) {
+	sb.WriteString("### Nodes in Sub-graph:\n")
+	for _, node := range nodes {
+		cID := graph.NodeCommunityID(node)
+		bc := graph.NodeBetweennessCentrality(node)
+		commStr := commLabelStr(cID, commLabels)
+		fmt.Fprintf(sb, "- **%s** (`%s`): %s (fan-in: %d, fan-out: %d, community: %s, BC: %.2f)\n",
+			node.Label, node.ID, node.Type, g.FanIn[node.ID], g.FanOut[node.ID], commStr, bc)
+	}
+	sb.WriteString("\n")
+}
+
+// godNodeIDs identifies potential God Nodes (degree > 10 or high betweenness
+// centrality) among the given nodes.
+func godNodeIDs(g *graph.InMemoryGraph, nodes []*graph.Node) []string {
+	var ids []string
+	for _, node := range nodes {
+		bc := graph.NodeBetweennessCentrality(node)
+		if g.FanIn[node.ID] > 10 || g.FanOut[node.ID] > 10 || bc > 50.0 {
+			ids = append(ids, node.ID)
+		}
+	}
+	return ids
+}
+
+func renderGodNodes(sb *strings.Builder, g *graph.InMemoryGraph, ids []string) {
+	if len(ids) == 0 {
+		return
+	}
+	sb.WriteString("### Potential God Nodes:\n")
+	for _, id := range ids {
+		bc := graph.NodeBetweennessCentrality(g.Nodes[id])
+		fmt.Fprintf(sb, "- **%s** (fan-in: %d, fan-out: %d, BC: %.2f)\n", g.Nodes[id].Label, g.FanIn[id], g.FanOut[id], bc)
+	}
+	sb.WriteString("\n")
+}
+
+// renderEdgesSection renders either a Mermaid diagram or the compact edge list,
+// followed by the confidence breakdown, or a no-edges note when empty.
+func renderEdgesSection(sb *strings.Builder, edges []*graph.Edge, nodes []*graph.Node, mermaid bool) {
+	if len(edges) == 0 {
+		sb.WriteString("*No connections/edges found in this range.*\n")
+		return
+	}
+	if mermaid {
+		renderMermaidEdges(sb, edges, nodes)
 	} else {
-		sb.WriteString("🟢 **Isolated Node:** This node currently has no connections in the dependency graph.\n")
+		// Default: a compact, LLM-friendly edge list instead of the Mermaid
+		// block, which is token-heavy and rarely rendered by an agent.
+		sb.WriteString("### Edges:\n")
+		for _, edge := range edges {
+			fmt.Fprintf(sb, "- `%s` →[%s]→ `%s` (%s)\n",
+				edge.SourceID, edge.RelationType, edge.TargetID, edge.Confidence)
+		}
+		sb.WriteString("\n")
 	}
+	renderConfidenceBreakdown(sb, edges)
+}
 
-	// Actionable suggestions (E1): turn the metrics above into concrete next
-	// steps the agent can take without re-deriving them.
-	sb.WriteString("\n### 💡 Actionable Suggestions:\n")
-	switch {
-	case isGod:
-		sb.WriteString("- **Refactor risk:** 🔴 **HIGH** (hub node)\n")
-		sb.WriteString("- Before changing this node, map ripple effects: run `sv_graph_query` on the key dependents/dependencies listed above and `sv_graph_path` to trace worst-case cascades.\n")
-		sb.WriteString("- Consider splitting its responsibilities along community boundaries (see community in Network Metrics).\n")
-	case fanIn > 5 || fanOut > 8:
-		sb.WriteString("- **Refactor risk:** 🟠 **MEDIUM** (above-average connectivity)\n")
-		sb.WriteString("- Prefer additive changes (new exported function/type) over signature changes to limit breakage.\n")
-	default:
-		sb.WriteString("- **Refactor risk:** 🟢 **LOW**\n")
+func renderMermaidEdges(sb *strings.Builder, edges []*graph.Edge, nodes []*graph.Node) {
+	commColors := []string{
+		"#ECECFF", "#FFF0F5", "#F0FFF0", "#F5F5DC", "#FFF8DC",
+		"#F0F8FF", "#FDF5E6", "#FFF5EE", "#F5FFFA", "#F0FFFF",
 	}
-	if fanIn > 0 && fanOut == 0 {
-		sb.WriteString("- Low-level utility: changing its signature may break every dependent listed above — review them first.\n")
-	}
-	if fanIn == 0 && fanOut > 0 {
-		sb.WriteString("- Likely an entry point: renaming is safe, but verify launch/CLI references before doing it.\n")
-	}
-	if fanOut > fanIn {
-		sb.WriteString("- Depends on more modules than depend on it: upstream changes could cascade into this node.\n")
-	}
-	if bc > 50.0 {
-		sb.WriteString("- High betweenness: this node bridges communities. Removing it could disconnect otherwise-unrelated parts of the codebase.\n")
-	}
-
-	// Neighbors
-	sb.WriteString("\n### 🔗 Immediate Neighbors:\n")
-	var dependents []string
-	var rationales []string
-	for _, e := range g.EdgesByTarget[nID] {
-		if e.RelationType == "rationale_for" {
-			srcNode := g.Nodes[e.SourceID]
-			if srcNode != nil {
-				if isMemory, _ := srcNode.Metadata["memory"].(bool); isMemory {
-					// Memory-backed rationale: the source is a saved sv_mem_save
-					// decision, not a code comment. Surface it as a decision link.
-					rationales = append(rationales, fmt.Sprintf("- **Memory/Decision:** `%s` (ID: `%s`)\n  → run `sv_mem_get(id=\"%s\")` for full context",
-						srcNode.Label, srcNode.ID, srcNode.ID))
-					continue
-				}
-				lineVal := 0
-				if srcNode.Metadata != nil {
-					if l, ok := srcNode.Metadata["line"]; ok {
-						if lf, ok := l.(float64); ok {
-							lineVal = int(lf)
-						} else if li, ok := l.(int); ok {
-							lineVal = li
-						}
-					}
-				}
-				rationales = append(rationales, fmt.Sprintf("- **Line %d:** `%s`", lineVal, srcNode.Label))
-			}
+	sb.WriteString("### Mermaid Dependency Diagram:\n")
+	sb.WriteString("```mermaid\ngraph TD\n")
+	for _, edge := range edges {
+		srcEscaped := escapeMermaid(edge.SourceID)
+		tgtEscaped := escapeMermaid(edge.TargetID)
+		if edge.RelationType == "imports" {
+			fmt.Fprintf(sb, "    %s -->|imports| %s\n", srcEscaped, tgtEscaped)
 		} else {
-			srcNode := g.Nodes[e.SourceID]
-			if srcNode != nil {
-				conf := e.Confidence
-				if conf == "" {
-					conf = "EXTRACTED"
-				}
-				dependents = append(dependents, fmt.Sprintf("- `%s` (relation: `%s`, confidence: `%s`)", srcNode.Label, e.RelationType, conf))
-			}
+			fmt.Fprintf(sb, "    %s -->|%s| %s\n", srcEscaped, edge.RelationType, tgtEscaped)
 		}
 	}
-
-	if len(dependents) > 0 {
-		sb.WriteString("**Dependents (Who imports/calls this):**\n")
-		for _, dep := range dependents {
-			sb.WriteString(dep + "\n")
-		}
-	} else {
-		sb.WriteString("**Dependents:** None.\n")
-	}
-
-	if len(g.EdgesBySource[nID]) > 0 {
-		sb.WriteString("\n**Dependencies (What this imports/calls):**\n")
-		for _, e := range g.EdgesBySource[nID] {
-			tgtNode := g.Nodes[e.TargetID]
-			if tgtNode != nil {
-				conf := e.Confidence
-				if conf == "" {
-					conf = "EXTRACTED"
-				}
-				fmt.Fprintf(&sb, "- `%s` (relation: `%s`, confidence: `%s`)\n", tgtNode.Label, e.RelationType, conf)
-			}
-		}
-	} else {
-		sb.WriteString("\n**Dependencies:** None.\n")
-	}
-
-	if len(rationales) > 0 {
-		sb.WriteString("\n### 💡 Code Rationales (Empirical Decisions in Comments):\n")
-		for _, r := range rationales {
-			sb.WriteString(r + "\n")
+	for _, node := range nodes {
+		if cID := graph.NodeCommunityID(node); cID > 0 {
+			color := commColors[(cID-1)%len(commColors)]
+			fmt.Fprintf(sb, "    style %s fill:%s,stroke:#333,stroke-width:1px\n", escapeMermaid(node.ID), color)
 		}
 	}
+	sb.WriteString("```\n")
+}
 
-	// Token benchmark
-	allNodes := []*graph.Node{node}
-	for _, e := range g.EdgesBySource[nID] {
-		if n, ok := g.Nodes[e.TargetID]; ok {
-			allNodes = append(allNodes, n)
+func renderConfidenceBreakdown(sb *strings.Builder, edges []*graph.Edge) {
+	var extracted, inferred, ambiguous int
+	for _, edge := range edges {
+		switch edge.Confidence {
+		case "INFERRED":
+			inferred++
+		case "AMBIGUOUS":
+			ambiguous++
+		default:
+			extracted++
 		}
 	}
-	for _, e := range g.EdgesByTarget[nID] {
-		if n, ok := g.Nodes[e.SourceID]; ok {
-			allNodes = append(allNodes, n)
-		}
+	total := extracted + inferred + ambiguous
+	if total == 0 {
+		return
 	}
-	benchmark := tokenBenchmark(allNodes, sb.Len()/4)
-	if benchmark != "" {
-		sb.WriteString("\n" + benchmark + "\n")
+	sb.WriteString("\n### Edge Confidence Breakdown:\n")
+	fmt.Fprintf(sb, "- **EXTRACTED:** %d (%d%%) — explicit in source\n", extracted, extracted*100/total)
+	fmt.Fprintf(sb, "- **INFERRED:** %d (%d%%) — derived by resolution\n", inferred, inferred*100/total)
+	if ambiguous > 0 {
+		fmt.Fprintf(sb, "- **AMBIGUOUS:** %d (%d%%) — uncertain\n", ambiguous, ambiguous*100/total)
 	}
+}
 
-	sb.WriteString("\n### ❓ Suggested Questions to ask Antigravity about this node:\n")
-	fmt.Fprintf(&sb, "1. \"What is the primary responsibility of `%s`?\"\n", node.Label)
-	fmt.Fprintf(&sb, "2. \"Are there any architectural patterns or guidelines used inside `%s`?\"\n", node.Label)
-	if isGod {
-		fmt.Fprintf(&sb, "3. \"How can we refactor or break down the God node `%s` into smaller modules?\"\n", node.Label)
-	} else if fanIn > 0 {
-		fmt.Fprintf(&sb, "3. \"Who are the main dependents of `%s` and how would a change here affect them?\"\n", node.Label)
-	} else {
-		fmt.Fprintf(&sb, "3. \"Show me the source code implementation details of `%s`.\"\n", node.Label)
+// confidenceOrExtracted defaults an empty edge confidence to EXTRACTED, the
+// implicit level for every edge written before confidence was tracked.
+func confidenceOrExtracted(conf string) string {
+	if conf == "" {
+		return "EXTRACTED"
 	}
+	return conf
+}
 
-	return s.respond(req, sb.String()), nil
+// ensureCentralityGraph lazily computes communities/centrality when missing and
+// reloads the graph so the caller's local copy carries the fresh metrics.
+func (s *Server) ensureCentralityGraph(g *graph.InMemoryGraph) (*graph.InMemoryGraph, error) {
+	if graphHasCentrality(g) {
+		return g, nil
+	}
+	debugLog("betweenness_centrality missing, calculating communities and centrality...")
+	s.computeCentralityIfMissing()
+	return s.getOrLoadGraph()
 }
 
 // graphHasCentrality reports whether any graph node carries betweenness
@@ -506,471 +296,23 @@ func graphHasCentrality(g *graph.InMemoryGraph) bool {
 	return false
 }
 
-func (s *Server) handleGodNodes(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	topNStr := req.GetString("top_n", "10")
-	topN := 10
-	if d, err := strconv.Atoi(topNStr); err == nil && d > 0 {
-		topN = d
-	}
-	if topN > 100 {
-		topN = 100
-	}
-
-	g, err := s.getOrLoadGraph()
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
-	}
-
-	// Lazy-calculate communities and centrality if missing.
-	if !graphHasCentrality(g) {
-		debugLog("betweenness_centrality missing, calculating communities and centrality...")
-		s.computeCentralityIfMissing()
-		// Reload the graph so the local copy carries the freshly computed
-		// centrality (computeCentralityIfMissing invalidates the cache).
-		if g, err = s.getOrLoadGraph(); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
-		}
-	}
-	type rankedNode struct {
-		id     string
-		node   *graph.Node
-		degree int
-		bc     float64
-		comm   int
-	}
-	var ranked []rankedNode
-	for id, n := range g.Nodes {
-		// External package nodes (pkg:*) are imports with high fan-in, not
-		// architectural hubs — exclude them so the ranking surfaces real
-		// project code (files/functions/classes).
-		if n.Type == "package" {
-			continue
-		}
-		deg := g.FanIn[id] + g.FanOut[id]
-		ranked = append(ranked, rankedNode{
-			id:     id,
-			node:   n,
-			degree: deg,
-			bc:     graph.NodeBetweennessCentrality(n),
-			comm:   graph.NodeCommunityID(n),
-		})
-	}
-	sort.Slice(ranked, func(i, j int) bool {
-		return ranked[i].degree > ranked[j].degree
-	})
-	if topN > len(ranked) {
-		topN = len(ranked)
-	}
-	ranked = ranked[:topN]
-
-	commLabels := computeCommLabels(g)
-
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "## Top %d God Nodes (Most Connected)\n\n", topN)
-	sb.WriteString("Ranked by total degree (fan-in + fan-out). High-degree nodes are architectural hubs.\n\n")
-	sb.WriteString("| Rank | Label | Type | Degree | Fan-In | Fan-Out | BC | Community |\n")
-	sb.WriteString("|------|-------|------|--------|--------|---------|----|-----------|\n")
-	for i, r := range ranked {
-		commStr := strconv.Itoa(r.comm)
-		if r.comm == 0 {
-			commStr = "none"
-		} else if label, ok := commLabels[r.comm]; ok {
-			commStr = fmt.Sprintf("%s (%d)", label, r.comm)
-		}
-		fmt.Fprintf(&sb, "| %d | **%s** | `%s` | %d | %d | %d | %.2f | %s |\n",
-			i+1, r.node.Label, r.node.Type, r.degree, g.FanIn[r.id], g.FanOut[r.id], r.bc, commStr)
-	}
-	sb.WriteString("\n*Use `sv_graph_explain` on any node for deeper analysis.*\n")
-
-	var allNodes []*graph.Node
-	for _, r := range ranked {
-		allNodes = append(allNodes, r.node)
-	}
-	benchmark := tokenBenchmark(allNodes, sb.Len()/4)
-	if benchmark != "" {
-		sb.WriteString("\n" + benchmark + "\n")
-	}
-
-	return s.respond(req, sb.String()), nil
-}
-
-func (s *Server) handleSurprisingConnections(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	startLoad := time.Now()
-	g, err := s.getOrLoadGraph()
-	debugLog("graph_load took %s", time.Since(startLoad))
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
-	}
-
-	limitStr := req.GetString("limit", "10")
-	limit := 10
-	if d, convErr := strconv.Atoi(limitStr); convErr == nil && d > 0 {
-		limit = d
-	}
-	if limit > 50 {
-		limit = 50
-	}
-
-	// Lazily compute and reload when betweenness centrality is missing, like
-	// the other graph tools, so a freshly-synced graph does not error here.
-	if !graphHasCentrality(g) {
-		s.computeCentralityIfMissing()
-		if g, err = s.getOrLoadGraph(); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
-		}
-	}
-
-	centrality := g.BetweennessCentrality()
-	communities := g.ExtractCommunities()
-	if len(communities) == 0 {
-		return mcp.NewToolResultText("No community data found. Run community detection first."), nil
-	}
-
-	conns := g.FindSurprisingConnections(communities, centrality, limit)
-
-	if len(conns) == 0 {
-		return mcp.NewToolResultText("No surprising cross-community connections found."), nil
-	}
-
-	commLabels := computeCommLabels(g, centrality)
-
-	// Rank the top connection once so it can be highlighted in a summary line
-	// before the full table (E3: bridge-score formatting for the LLM).
-	type scoredConn struct {
-		idx   int
-		score float64
-		src   string
-		tgt   string
-		etype string
-		conf  string
-		srcC  string
-		dstC  string
-	}
-	rowsFormatted := make([]scoredConn, 0, len(conns))
-	for i, c := range conns {
-		conf := c.Confidence
-		if conf == "" {
-			conf = "EXTRACTED"
-		}
-		rowsFormatted = append(rowsFormatted, scoredConn{
-			idx:   i + 1,
-			score: c.SurpriseScore,
-			src:   c.SourceLabel,
-			tgt:   c.TargetLabel,
-			etype: c.EdgeType,
-			conf:  conf,
-			srcC:  commLabelStr(c.SrcCommunity, commLabels),
-			dstC:  commLabelStr(c.DstCommunity, commLabels),
-		})
-	}
-	best := rowsFormatted[0]
-	for _, r := range rowsFormatted[1:] {
-		if r.score > best.score {
-			best = r
-		}
-	}
-
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "## Surprising Connections (Top %d)\n\n", len(conns))
-	fmt.Fprintf(&sb, "**%d cross-community bridge(s)** linking otherwise separate parts of the codebase.\n\n", len(conns))
-	fmt.Fprintf(&sb, "🔥 **Most surprising bridge:** `%s` → `%s` (`%s`, score **%.2f**) between **%s** and **%s**.\n",
-		best.src, best.tgt, best.etype, best.score, best.srcC, best.dstC)
-	sb.WriteString("Drill down with `sv_graph_path(source=\"<node>\", target=\"<node>\")` to trace the full dependency chain.\n\n")
-
-	sb.WriteString("| Rank | Source | Target | Edge Type | Confidence | Surprise Score | Communities |\n")
-	sb.WriteString("|------|--------|--------|-----------|------------|----------------|-------------|\n")
-	for _, r := range rowsFormatted {
-		fmt.Fprintf(&sb, "| %d | **%s** | **%s** | `%s` | `%s` | %.2f | %s ↔ %s |\n",
-			r.idx, r.src, r.tgt, r.etype, r.conf, r.score, r.srcC, r.dstC)
-	}
-
-	sb.WriteString("\n*Higher surprise score means a more unexpected bridge between communities.*\n")
-	return s.respond(req, sb.String()), nil
-}
-
-func (s *Server) handleGraphReport(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	startLoad := time.Now()
-	g, err := s.getOrLoadGraph()
-	debugLog("graph_load took %s", time.Since(startLoad))
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
-	}
-
-	// Lazy-compute and persist centrality when missing, mirroring the other
-	// graph tools, so the report renders from up-to-date computed metrics.
-	// GenerateGraphReport loads the graph from the DB itself, so g is only
-	// consulted as the freshness signal here.
-	if !graphHasCentrality(g) {
-		s.computeCentralityIfMissing()
-	}
-
-	var opts graph.ReportOptions
-	opts.GodNodes = positiveInt(req.GetString("god_nodes", "10"), 10)
-	opts.Communities = positiveInt(req.GetString("communities", "10"), 10)
-	opts.Connections = positiveInt(req.GetString("connections", "10"), 10)
-
-	output := req.GetString("output", "GRAPH_REPORT.md")
-	output, err = security.ValidateWritePath(s.cfg.ProjPath, output)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("invalid output path: %v", err)), nil
-	}
-
-	summary, err := graph.GenerateGraphReport(s.pool.Reader, s.cfg.ProjectID, output, opts)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to generate graph report: %v", err)), nil
-	}
-
-	digest := fmt.Sprintf(
-		"Graph report written to `%s` (%d bytes).\n\n- **Nodes:** %d\n- **Edges:** %d\n- **Communities:** %d (hub threshold p99 = %d)\n- **God nodes:** %d\n- **Surprising connections:** %d\n\nCoverage drill-down: `sv_graph_god_nodes`, `sv_graph_surprising_connections`, `sv_graph_explain(node=...)`.",
-		output, summary.Bytes, summary.Nodes, summary.Edges, summary.Communities, summary.HubThreshold, summary.GodNodes, summary.Connections)
-	return s.respond(req, digest), nil
-}
-
-func (s *Server) handleGraphViz(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	g, err := s.getOrLoadGraph()
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
-	}
-
-	output := req.GetString("output", "graph.html")
-	output, err = security.ValidateWritePath(s.cfg.ProjPath, output)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("invalid output path: %v", err)), nil
-	}
-
-	comms := g.LeidenDetectCommunities()
-	centrality := g.BetweennessCentrality()
-	commLabels := g.DetectCommunityLabels(comms, centrality)
-
-	var buf strings.Builder
-	if err := g.ExportHTML(&buf, comms, commLabels); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to generate HTML: %v", err)), nil
-	}
-
-	if err := os.WriteFile(output, []byte(buf.String()), 0644); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to write %s: %v", output, err)), nil
-	}
-
-	return mcp.NewToolResultText(fmt.Sprintf("Graph visualization exported to %s (%d bytes)", output, buf.Len())), nil
-}
-
-func (s *Server) handleGraphMerge(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	projA, err := req.RequireString("project_a")
-	if err != nil {
-		return mcp.NewToolResultError("missing required field: project_a"), nil
-	}
-	projB, err := req.RequireString("project_b")
-	if err != nil {
-		return mcp.NewToolResultError("missing required field: project_b"), nil
-	}
-	output := req.GetString("output", "")
-	if output != "" {
-		output, err = security.ValidateWritePath(s.cfg.ProjPath, output)
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("invalid output path: %v", err)), nil
-		}
-	}
-
-	mergeDB, err := db.InitDB(s.cfg.DBPath)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to open DB: %v", err)), nil
-	}
-	defer mergeDB.Close()
-
-	ga, err := graph.LoadFullGraph(mergeDB, projA)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to load project %s: %v", projA, err)), nil
-	}
-	gb, err := graph.LoadFullGraph(mergeDB, projB)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to load project %s: %v", projB, err)), nil
-	}
-
-	merged := ga.Merge(gb)
-	jsonStr := merged.SerializeJSON()
-
-	if output != "" {
-		if err := os.WriteFile(output, []byte(jsonStr), 0644); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to write %s: %v", output, err)), nil
-		}
-		return mcp.NewToolResultText(fmt.Sprintf("Merged graph exported to %s (%d nodes, %d edges)", output, len(merged.Nodes), len(merged.EdgesBySource))), nil
-	}
-
-	return mcp.NewToolResultText(fmt.Sprintf("Merged graph: %d nodes, %d edges\n\n```json\n%s\n```",
-		len(merged.Nodes), len(merged.EdgesBySource), jsonStr)), nil
-}
-
-func (s *Server) handleGraphSearch(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	query, err := req.RequireString("query")
-	if err != nil {
-		return mcp.NewToolResultError("missing required field: query"), nil
-	}
-
-	g, err := s.getOrLoadGraph()
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
-	}
-
-	// Lazily compute and reload communities/centrality when missing, mirroring
-	// the other graph tools, so a freshly-synced graph still reports the
-	// community of each match.
-	if !graphHasCentrality(g) {
-		s.computeCentralityIfMissing()
-		if g, err = s.getOrLoadGraph(); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
-		}
-	}
-
-	limit := positiveInt(req.GetString("limit", "10"), 10)
-	nodeType := req.GetString("node_type", "")
-
-	results := g.SearchNodes(query, nodeType, limit)
-
-	var sb strings.Builder
-	if len(results) == 0 {
-		fmt.Fprintf(&sb, "No nodes match '%s'%s in the project graph.\n", query, typeSuffix(nodeType))
-		sb.WriteString("Try a shorter term, `sv_graph_god_nodes`, or `sv_graph_report` for an overview.\n")
-		return s.respond(req, sb.String()), nil
-	}
-
-	commLabels := computeCommLabels(g)
-
-	fmt.Fprintf(&sb, "## Graph Search Results for '%s'\n\n", query)
-	fmt.Fprintf(&sb, "%d node(s) match (showing up to %d). Ranked by match precision, then degree.\n\n", len(results), limit)
-	sb.WriteString("| # | Node | Type | Path | Degree | Fan-In | Fan-Out | Community |\n")
-	sb.WriteString("|---|------|------|------|--------|--------|---------|-----------|\n")
-	for i, r := range results {
-		commStr := commLabelStr(r.Community, commLabels)
-		fmt.Fprintf(&sb, "| %d | `%s` | %s | `%s` | %d | %d | %d | %s |\n",
-			i+1, r.ID, codeOrPlain(r.Type), r.Path, r.Degree, r.FanIn, r.FanOut, commStr)
-	}
-	sb.WriteString("\n*Drill down with `sv_graph_explain(node=\"<node>\")` or `sv_graph_query(path_or_node=\"<node>\")`.*\n")
-
-	var allNodes []*graph.Node
-	for _, r := range results {
-		if n, ok := g.Nodes[r.ID]; ok {
-			allNodes = append(allNodes, n)
-		}
-	}
-	benchmark := tokenBenchmark(allNodes, sb.Len()/4)
-	if benchmark != "" {
-		sb.WriteString("\n" + benchmark + "\n")
-	}
-
-	return s.respond(req, sb.String()), nil
-}
-
-func (s *Server) handleGraphCommunities(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	g, err := s.getOrLoadGraph()
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
-	}
-
-	// Lazily compute and reload communities/centrality when missing, so a
-	// freshly-synced graph (no persisted community_id) still works here.
-	if !graphHasCentrality(g) {
-		s.computeCentralityIfMissing()
-		if g, err = s.getOrLoadGraph(); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to load graph: %v", err)), nil
-		}
-	}
-
-	communities := g.ExtractCommunities()
-	if len(communities) == 0 {
-		return mcp.NewToolResultText("No communities found in the project graph."), nil
-	}
-
-	topN := positiveInt(req.GetString("top_n", "10"), 10)
-	commIDStr := req.GetString("community_id", "")
-
-	// Group members by community id.
+// groupCommunityMembers inverts the node->community map into a community->nodes
+// map, with each member list sorted for deterministic output.
+func groupCommunityMembers(communities map[string]int) map[int][]string {
 	members := make(map[int][]string)
 	for id, cid := range communities {
 		members[cid] = append(members[cid], id)
 	}
-	// Sort each member list for deterministic output.
 	for cid := range members {
 		sort.Strings(members[cid])
 	}
+	return members
+}
 
-	commLabels := computeCommLabels(g)
-
-	var sb strings.Builder
-
-	if commIDStr != "" {
-		commID, convErr := strconv.Atoi(commIDStr)
-		if convErr != nil || commID <= 0 {
-			return mcp.NewToolResultError(fmt.Sprintf("invalid community_id: %s", commIDStr)), nil
-		}
-		if _, ok := members[commID]; !ok {
-			return mcp.NewToolResultText(fmt.Sprintf("Community %d not found in the project graph.", commID)), nil
-		}
-		label := commLabelStr(commID, commLabels)
-		fmt.Fprintf(&sb, "## Community %s\n\n", label)
-		fmt.Fprintf(&sb, "**%d member(s).**\n\n", len(members[commID]))
-		sb.WriteString("| # | Node | Type | Degree | Fan-In | Fan-Out |\n")
-		sb.WriteString("|---|------|------|--------|--------|---------|\n")
-		for i, id := range members[commID] {
-			n, ok := g.Nodes[id]
-			if !ok {
-				continue
-			}
-			deg := g.FanIn[id] + g.FanOut[id]
-			fmt.Fprintf(&sb, "| %d | `%s` | %s | %d | %d | %d |\n",
-				i+1, id, codeOrPlain(n.Type), deg, g.FanIn[id], g.FanOut[id])
-		}
-		sb.WriteString("\n*Explore any member with `sv_graph_explain(node=\"<node>\")`.*\n")
-		return s.respond(req, sb.String()), nil
-	}
-
-	// Rank communities by size.
-	type commInfo struct {
-		id    int
-		count int
-	}
-	sorted := make([]commInfo, 0, len(members))
-	for cid, ids := range members {
-		sorted = append(sorted, commInfo{id: cid, count: len(ids)})
-	}
-	sort.Slice(sorted, func(i, j int) bool {
-		if sorted[i].count != sorted[j].count {
-			return sorted[i].count > sorted[j].count
-		}
-		return sorted[i].id < sorted[j].id
-	})
-	if topN > len(sorted) {
-		topN = len(sorted)
-	}
-	sorted = sorted[:topN]
-
-	fmt.Fprintf(&sb, "## Top %d Graph Communities\n\n", topN)
-	sb.WriteString("Ranked by member count. Communities group code that changes together.\n\n")
-	sb.WriteString("| # | Community | Label | Size |\n")
-	sb.WriteString("|---|-----------|-------|------|\n")
-	for i, c := range sorted {
-		fmt.Fprintf(&sb, "| %d | %d | %s | %d |\n", i+1, c.id, commLabelStr(c.id, commLabels), c.count)
-	}
-
-	var sampleNodes []*graph.Node
-	for i, c := range sorted {
-		if i >= 5 {
-			break
-		}
-		if len(members[c.id]) > 0 {
-			if n, ok := g.Nodes[members[c.id][0]]; ok {
-				sampleNodes = append(sampleNodes, n)
-			}
-		}
-	}
-	benchmark := tokenBenchmark(sampleNodes, sb.Len()/4)
-	if benchmark != "" {
-		sb.WriteString("\n" + benchmark + "\n")
-	}
-
-	sb.WriteString(`To inspect a community's members, call `)
-	sb.WriteString("`sv_graph_communities(community_id=\"<id>\")`.\n")
-
-	return s.respond(req, sb.String()), nil
+// communityInfo pairs a community id with its member count for ranking.
+type communityInfo struct {
+	id    int
+	count int
 }
 
 // typeSuffix renders the optional node_type filter suffix for the no-match
@@ -1055,6 +397,22 @@ func positiveInt(raw string, def int) int {
 	return def
 }
 
+// clampRange parses raw into an integer defaulting to def and clamps it to
+// [min, max].
+func clampRange(raw string, def, min, max int) int {
+	v := def
+	if d, err := strconv.Atoi(raw); err == nil {
+		v = d
+	}
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
 // commLabelStr returns a formatted community string: "Label (ID N)" or "none".
 func commLabelStr(commID int, labels map[int]string) string {
 	if commID == 0 {
@@ -1064,17 +422,4 @@ func commLabelStr(commID int, labels map[int]string) string {
 		return fmt.Sprintf("%s (ID %d)", label, commID)
 	}
 	return fmt.Sprintf("community_%d", commID)
-}
-
-func (s *Server) handleGraphDiff(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	baseRef := req.GetString("base_ref", "")
-	blastRadius := req.GetString("blast_radius", "true") != "false"
-
-	report, err := graph.ComputeGraphDiff(s.pool.Reader, s.cfg.ProjectID, s.cfg.ProjPath, baseRef, blastRadius)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to compute graph diff: %v", err)), nil
-	}
-
-	rendered := graph.RenderGraphDiffReport(report)
-	return s.respond(req, rendered), nil
 }

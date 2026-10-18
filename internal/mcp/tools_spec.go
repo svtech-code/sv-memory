@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 
@@ -32,6 +33,23 @@ func renderPreflight(r *memory.PreflightResult) string {
 	}
 	sb.WriteString("\n*Drill down with `sv_mem_get(id=\"<id>\")` or `sv_mem_judge` to record a relation.*\n")
 	return sb.String()
+}
+
+// resolveChangeByIDOrSlug looks a change up by ID and falls back to slug,
+// preserving the historic error wording for each stage.
+func resolveChangeByIDOrSlug(reader *sql.DB, projectID, changeID string) (*memory.Change, error) {
+	c, err := memory.GetChange(reader, projectID, changeID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get change: %v", err)
+	}
+	if c != nil {
+		return c, nil
+	}
+	c, err = memory.GetChangeBySlug(reader, projectID, changeID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve change: %v", err)
+	}
+	return c, nil
 }
 
 // handleProposeSpec creates a spec change in the draft state, optionally stores
@@ -74,16 +92,9 @@ func (s *Server) handleProposeSpec(ctx context.Context, req mcp.CallToolRequest)
 		return mcp.NewToolResultError(fmt.Sprintf("failed to mark change proposed: %v", err)), nil
 	}
 
-	// Store delta requirements (single capability per change) when provided.
-	var reqSummary []string
-	if requirements != "" {
-		deltas := memory.ParseSpecDeltas(requirements)
-		if err = memory.ReplaceChangeRequirements(s.pool.Writer, s.cfg.ProjectID, c.ID, c.CapabilityPath, deltas); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to store requirements: %v", err)), nil
-		}
-		for _, d := range deltas {
-			reqSummary = append(reqSummary, fmt.Sprintf("%d %s", len(d.Requirements), strings.ToLower(d.Op)))
-		}
+	reqSummary, err := s.storeChangeRequirements(c, requirements)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to store requirements: %v", err)), nil
 	}
 	s.scheduleSync()
 
@@ -98,6 +109,27 @@ func (s *Server) handleProposeSpec(ctx context.Context, req mcp.CallToolRequest)
 	// Pre-flight check against rules/invariants (deterministic, zero LLM cost).
 	preflight, pfErr := memory.PreflightCheck(s.pool.Reader, s.cfg.ProjectID, title, what)
 
+	return s.respond(req, renderProposedChange(c, reqSummary, preflight, pfErr)), nil
+}
+
+// storeChangeRequirements replaces the change's delta requirements and returns
+// a per-delta summary ("2 added", "1 modified", ...).
+func (s *Server) storeChangeRequirements(c *memory.Change, requirements string) ([]string, error) {
+	if requirements == "" {
+		return nil, nil
+	}
+	deltas := memory.ParseSpecDeltas(requirements)
+	if err := memory.ReplaceChangeRequirements(s.pool.Writer, s.cfg.ProjectID, c.ID, c.CapabilityPath, deltas); err != nil {
+		return nil, err
+	}
+	var summary []string
+	for _, d := range deltas {
+		summary = append(summary, fmt.Sprintf("%d %s", len(d.Requirements), strings.ToLower(d.Op)))
+	}
+	return summary, nil
+}
+
+func renderProposedChange(c *memory.Change, reqSummary []string, preflight *memory.PreflightResult, pfErr error) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "## Change proposed: `%s`\n\n", c.Slug)
 	fmt.Fprintf(&sb, "- **ID:** `%s`\n- **Status:** `%s`\n", c.ID, c.Status)
@@ -120,7 +152,7 @@ func (s *Server) handleProposeSpec(ctx context.Context, req mcp.CallToolRequest)
 	} else {
 		fmt.Fprintf(&sb, "\n_Pre-flight check unavailable: %v_\n", pfErr)
 	}
-	return s.respond(req, sb.String()), nil
+	return sb.String()
 }
 
 // handleUpdateSpec updates an existing change proposal (tasks, design, what,
@@ -133,24 +165,41 @@ func (s *Server) handleUpdateSpec(ctx context.Context, req mcp.CallToolRequest) 
 		return mcp.NewToolResultError("missing required field: change_id"), nil
 	}
 
-	c, err := memory.GetChange(s.pool.Reader, s.cfg.ProjectID, changeID)
+	c, err := resolveChangeByIDOrSlug(s.pool.Reader, s.cfg.ProjectID, changeID)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to get change: %v", err)), nil
+		return mcp.NewToolResultError(err.Error()), nil
 	}
 	if c == nil {
-		// Try resolving by slug if ID lookup returned nil
-		c, err = memory.GetChangeBySlug(s.pool.Reader, s.cfg.ProjectID, changeID)
+		return mcp.NewToolResultError(fmt.Sprintf("change %q not found", changeID)), nil
+	}
+
+	upd, updatedFields := collectChangeUpdate(req)
+
+	if len(updatedFields) > 0 {
+		c, err = memory.UpdateChange(s.pool.Writer, s.cfg.ProjectID, c.ID, upd)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to resolve change: %v", err)), nil
-		}
-		if c == nil {
-			return mcp.NewToolResultError(fmt.Sprintf("change %q not found", changeID)), nil
+			return mcp.NewToolResultError(fmt.Sprintf("failed to update change: %v", err)), nil
 		}
 	}
 
+	// Update delta requirements if provided
+	if reqs := req.GetString("requirements", ""); reqs != "" {
+		deltas := memory.ParseSpecDeltas(reqs)
+		if err = memory.ReplaceChangeRequirements(s.pool.Writer, s.cfg.ProjectID, c.ID, c.CapabilityPath, deltas); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to update requirements: %v", err)), nil
+		}
+		updatedFields = append(updatedFields, "requirements")
+	}
+
+	s.scheduleSync()
+	return s.respond(req, renderUpdatedChange(c, updatedFields)), nil
+}
+
+// collectChangeUpdate gathers the optional fields present in an update request
+// and the list of their names, in the historic order.
+func collectChangeUpdate(req mcp.CallToolRequest) (memory.ChangeUpdate, []string) {
 	upd := memory.ChangeUpdate{}
 	var updatedFields []string
-
 	if title := req.GetString("title", ""); title != "" {
 		upd.Title = &title
 		updatedFields = append(updatedFields, "title")
@@ -179,25 +228,10 @@ func (s *Server) handleUpdateSpec(ctx context.Context, req mcp.CallToolRequest) 
 		upd.Tasks = &tasks
 		updatedFields = append(updatedFields, "tasks")
 	}
+	return upd, updatedFields
+}
 
-	if len(updatedFields) > 0 {
-		c, err = memory.UpdateChange(s.pool.Writer, s.cfg.ProjectID, c.ID, upd)
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to update change: %v", err)), nil
-		}
-	}
-
-	// Update delta requirements if provided
-	if reqs := req.GetString("requirements", ""); reqs != "" {
-		deltas := memory.ParseSpecDeltas(reqs)
-		if err = memory.ReplaceChangeRequirements(s.pool.Writer, s.cfg.ProjectID, c.ID, c.CapabilityPath, deltas); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to update requirements: %v", err)), nil
-		}
-		updatedFields = append(updatedFields, "requirements")
-	}
-
-	s.scheduleSync()
-
+func renderUpdatedChange(c *memory.Change, updatedFields []string) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "## Change updated: `%s`\n\n", c.Slug)
 	fmt.Fprintf(&sb, "- **ID:** `%s`\n- **Status:** `%s`\n", c.ID, c.Status)
@@ -209,7 +243,7 @@ func (s *Server) handleUpdateSpec(ctx context.Context, req mcp.CallToolRequest) 
 			fmt.Fprintf(&sb, "- **Task Progress:** %s\n", prog.Summary)
 		}
 	}
-	return s.respond(req, sb.String()), nil
+	return sb.String()
 }
 
 // handleValidateDecision re-checks a change's proposal against the project's
@@ -236,12 +270,7 @@ func (s *Server) handleValidateDecision(ctx context.Context, req mcp.CallToolReq
 		return mcp.NewToolResultText(fmt.Sprintf("Change `%s` is %s — validation is only meaningful for active proposals.", c.Slug, c.Status)), nil
 	}
 
-	var preflight *memory.PreflightResult
-	if semantic {
-		preflight, err = memory.SemanticPreflight(ctx, s.pool.Reader, s.cfg.ProjectID, c.Title, c.What, agent)
-	} else {
-		preflight, err = memory.PreflightCheck(s.pool.Reader, s.cfg.ProjectID, c.Title, c.What)
-	}
+	preflight, err := s.runPreflight(ctx, semantic, agent, c)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to validate decision: %v", err)), nil
 	}
@@ -253,6 +282,18 @@ func (s *Server) handleValidateDecision(ctx context.Context, req mcp.CallToolReq
 		debugLog("requirements validation unavailable for %s: %v", c.ID, reqErr)
 	}
 
+	return s.respond(req, renderValidation(c, semantic, preflight, reqIssues)+s.advanceToValidated(c, preflight)), nil
+}
+
+// runPreflight runs the deterministic or semantic pre-flight check.
+func (s *Server) runPreflight(ctx context.Context, semantic bool, agent string, c *memory.Change) (*memory.PreflightResult, error) {
+	if semantic {
+		return memory.SemanticPreflight(ctx, s.pool.Reader, s.cfg.ProjectID, c.Title, c.What, agent)
+	}
+	return memory.PreflightCheck(s.pool.Reader, s.cfg.ProjectID, c.Title, c.What)
+}
+
+func renderValidation(c *memory.Change, semantic bool, preflight *memory.PreflightResult, reqIssues []memory.RequirementIssue) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "## Validation: `%s`\n\n", c.Slug)
 	if semantic {
@@ -272,19 +313,24 @@ func (s *Server) handleValidateDecision(ctx context.Context, req mcp.CallToolReq
 		}
 	}
 	sb.WriteString("\n\nTo proceed once the proposal is sound, run `sv_commit_spec change_id=\"" + c.ID + "\"`.")
+	return sb.String()
+}
 
-	// Advance the lifecycle proposed -> validated when the proposal is sound
-	// (PASS or WARN). A BLOCK keeps the change proposed so the conflict must be
-	// resolved first; terminal states are never re-stamped.
-	if preflight.Verdict != memory.PreflightBlock &&
-		c.Status != memory.ChangeStatusApplied &&
-		c.Status != memory.ChangeStatusArchived &&
-		c.Status != memory.ChangeStatusRejected {
-		if _, tErr := memory.UpdateChangeStatus(s.pool.Writer, s.cfg.ProjectID, c.ID, memory.ChangeStatusValidated); tErr == nil {
-			sb.WriteString("\n_Status updated to `validated`._")
-		}
+// advanceToValidated moves a sound proposal (PASS/WARN) to the validated state.
+// A BLOCK keeps the change proposed so the conflict must be resolved first;
+// terminal states are never re-stamped. Returns the status note or "".
+func (s *Server) advanceToValidated(c *memory.Change, preflight *memory.PreflightResult) string {
+	if preflight.Verdict == memory.PreflightBlock {
+		return ""
 	}
-	return s.respond(req, sb.String()), nil
+	switch c.Status {
+	case memory.ChangeStatusApplied, memory.ChangeStatusArchived, memory.ChangeStatusRejected:
+		return ""
+	}
+	if _, tErr := memory.UpdateChangeStatus(s.pool.Writer, s.cfg.ProjectID, c.ID, memory.ChangeStatusValidated); tErr != nil {
+		return ""
+	}
+	return "\n_Status updated to `validated`._"
 }
 
 // handleSpecList lists active spec changes with their status, title, task
@@ -300,30 +346,7 @@ func (s *Server) handleSpecList(ctx context.Context, req mcp.CallToolRequest) (*
 		return mcp.NewToolResultError(fmt.Sprintf("failed to list changes: %v", err)), nil
 	}
 
-	var display []*memory.Change
-	hiddenApplied := 0
-	if status == "" {
-		var pending []*memory.Change
-		var applied []*memory.Change
-		for _, c := range changes {
-			switch c.Status {
-			case memory.ChangeStatusDraft, memory.ChangeStatusProposed, memory.ChangeStatusValidated:
-				pending = append(pending, c)
-			case memory.ChangeStatusApplied:
-				applied = append(applied, c)
-			}
-		}
-		display = append(display, pending...)
-		if len(applied) > maxDefaultAppliedSpecs {
-			display = append(display, applied[:maxDefaultAppliedSpecs]...)
-			hiddenApplied = len(applied) - maxDefaultAppliedSpecs
-		} else {
-			display = append(display, applied...)
-		}
-	} else {
-		display = changes
-	}
-
+	display, hiddenApplied := selectSpecChanges(changes, status)
 	if len(display) == 0 {
 		return mcp.NewToolResultText("No active changes in this project. Create one with `sv_propose_spec`."), nil
 	}
@@ -347,6 +370,29 @@ func (s *Server) handleSpecList(ctx context.Context, req mcp.CallToolRequest) (*
 	return s.respond(req, sb.String()), nil
 }
 
+// selectSpecChanges picks the changes to display: pending (draft/proposed/
+// validated) plus a bounded tail of applied ones when no status filter is set.
+func selectSpecChanges(changes []*memory.Change, status string) ([]*memory.Change, int) {
+	if status != "" {
+		return changes, 0
+	}
+	var pending, applied []*memory.Change
+	for _, c := range changes {
+		switch c.Status {
+		case memory.ChangeStatusDraft, memory.ChangeStatusProposed, memory.ChangeStatusValidated:
+			pending = append(pending, c)
+		case memory.ChangeStatusApplied:
+			applied = append(applied, c)
+		}
+	}
+	display := append([]*memory.Change{}, pending...)
+	if len(applied) > maxDefaultAppliedSpecs {
+		display = append(display, applied[:maxDefaultAppliedSpecs]...)
+		return display, len(applied) - maxDefaultAppliedSpecs
+	}
+	return append(display, applied...), 0
+}
+
 // handleSpecGet returns a full change record: proposal, goal, design, tasks
 // (with checkbox progress), and rendered delta requirements. Mirrors
 // `openspec show` for MCP consumers.
@@ -356,18 +402,12 @@ func (s *Server) handleSpecGet(ctx context.Context, req mcp.CallToolRequest) (*m
 		return mcp.NewToolResultError("missing required field: change_id"), nil
 	}
 
-	c, err := memory.GetChange(s.pool.Reader, s.cfg.ProjectID, changeID)
+	c, err := resolveChangeByIDOrSlug(s.pool.Reader, s.cfg.ProjectID, changeID)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to get change: %v", err)), nil
+		return mcp.NewToolResultError(err.Error()), nil
 	}
 	if c == nil {
-		c, err = memory.GetChangeBySlug(s.pool.Reader, s.cfg.ProjectID, changeID)
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to resolve change: %v", err)), nil
-		}
-		if c == nil {
-			return mcp.NewToolResultError(fmt.Sprintf("change %q not found", changeID)), nil
-		}
+		return mcp.NewToolResultError(fmt.Sprintf("change %q not found", changeID)), nil
 	}
 
 	var sb strings.Builder
@@ -437,13 +477,40 @@ func (s *Server) handleCommitSpec(ctx context.Context, req mcp.CallToolRequest) 
 		return mcp.NewToolResultError(fmt.Sprintf("failed to run pre-flight gate: %v", pfErr)), nil
 	}
 	if preflight.Verdict == memory.PreflightBlock && !force {
-		var sb strings.Builder
-		sb.WriteString("## Commit blocked by pre-flight check\n\n")
-		sb.WriteString(renderPreflight(preflight))
-		sb.WriteString("\n\nOverride the invariant explicitly by passing `force=\"true\"` if you have confirmed the rule no longer applies (and update/archive the conflicting rule).")
-		return mcp.NewToolResultText(sb.String()), nil
+		return mcp.NewToolResultText(renderCommitBlocked(preflight)), nil
 	}
 
+	mem := s.buildDecisionMemory(c, category)
+
+	// Load the delta requirements for the atomic commit. Zero deltas is a
+	// valid commit (a decision without requirements).
+	deltas, dErr := memory.LoadChangeDeltas(s.pool.Writer, s.cfg.ProjectID, c.ID)
+	if dErr != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to load change requirements: %v", dErr)), nil
+	}
+
+	// Commit the authoritative state atomically: decision memory + change link
+	// + capability delta merge + lifecycle stamp all land (or none do). On a
+	// partial failure (e.g. ADDED of an existing requirement) nothing is
+	// persisted, so the delta can be fixed and the commit retried cleanly.
+	saved, err := memory.CommitChangeAtomic(s.pool.Writer, mem, c.ID, c.CapabilityPath, deltas, memory.ChangeStatusApplied)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to commit spec: %v — fix the delta and re-run sv_validate_decision", err)), nil
+	}
+
+	// Graph wiring and conflict judgments are derived, best-effort concerns
+	// that run AFTER the authoritative transaction commits, so a graph hiccup
+	// never rolls back the commit.
+	s.wireCommittedChange(c, saved)
+	s.recordCommitConflicts(c, saved, preflight)
+	s.scheduleSync()
+
+	return s.respond(req, renderCommittedChange(c, saved, deltas, preflight)), nil
+}
+
+// buildDecisionMemory assembles the durable decision/standard memory from the
+// committed change and the cached git metadata.
+func (s *Server) buildDecisionMemory(c *memory.Change, category string) *memory.Memory {
 	gitMeta := s.cachedGitMetadata()
 	what := c.Title
 	if c.What != "" {
@@ -468,30 +535,12 @@ func (s *Server) handleCommitSpec(ctx context.Context, req mcp.CallToolRequest) 
 	if mem.Why == "" {
 		mem.Why = "No explicit goal recorded for the change; see change " + c.Slug
 	}
+	return mem
+}
 
-	// Load the delta requirements for the atomic commit. Zero deltas is a
-	// valid commit (a decision without requirements).
-	deltas, dErr := memory.LoadChangeDeltas(s.pool.Writer, s.cfg.ProjectID, c.ID)
-	if dErr != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to load change requirements: %v", dErr)), nil
-	}
-
-	// Commit the authoritative state atomically: decision memory + change link
-	// + capability delta merge + lifecycle stamp all land (or none do). On a
-	// partial failure (e.g. ADDED of an existing requirement) nothing is
-	// persisted, so the delta can be fixed and the commit retried cleanly.
-	saved, err := memory.CommitChangeAtomic(s.pool.Writer, mem, c.ID, c.CapabilityPath, deltas, memory.ChangeStatusApplied)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to commit spec: %v — fix the delta and re-run sv_validate_decision", err)), nil
-	}
-	mergedReqs := 0
-	for _, d := range deltas {
-		mergedReqs += len(d.Requirements)
-	}
-
-	// Graph wiring and conflict judgments are derived, best-effort concerns
-	// that run AFTER the authoritative transaction commits, so a graph hiccup
-	// never rolls back the commit.
+// wireCommittedChange links the committed decision memory to its capability and
+// affected code path in the knowledge graph (best-effort).
+func (s *Server) wireCommittedChange(c *memory.Change, saved *memory.Memory) {
 	_ = graph.EnsureMemoryRationaleEdge(s.pool.Writer, s.cfg.ProjectID, graph.MemoryRationaleRef{
 		ID:        saved.ID,
 		Category:  saved.Category,
@@ -504,21 +553,39 @@ func (s *Server) handleCommitSpec(ctx context.Context, req mcp.CallToolRequest) 
 		CapabilityPath: c.CapabilityPath,
 		WherePath:      c.WherePath,
 	})
+}
 
-	// Record conflicts_with relations for rules the proposal overlaps, so the
-	// pending-conflict surfacing (Auto-Boot hint + sv_mem_conflicts) sees them.
-	if preflight.Verdict != memory.PreflightPass {
-		for _, it := range preflight.Issues {
-			if it.MemoryID == saved.ID {
-				continue
-			}
-			if _, jErr := memory.SaveJudgment(s.pool.Writer, s.cfg.ProjectID, saved.ID, it.MemoryID,
-				"conflicts_with", "Pre-flight flagged similarity during commit of change "+c.Slug, "agent"); jErr != nil {
-				debugLog("failed to record conflicts_with for %s: %v", it.MemoryID, jErr)
-			}
+// recordCommitConflicts records conflicts_with relations for rules the
+// proposal overlaps, so pending-conflict surfacing (Auto-Boot hint +
+// sv_mem_conflicts) sees them.
+func (s *Server) recordCommitConflicts(c *memory.Change, saved *memory.Memory, preflight *memory.PreflightResult) {
+	if preflight.Verdict == memory.PreflightPass {
+		return
+	}
+	for _, it := range preflight.Issues {
+		if it.MemoryID == saved.ID {
+			continue
+		}
+		if _, jErr := memory.SaveJudgment(s.pool.Writer, s.cfg.ProjectID, saved.ID, it.MemoryID,
+			"conflicts_with", "Pre-flight flagged similarity during commit of change "+c.Slug, "agent"); jErr != nil {
+			debugLog("failed to record conflicts_with for %s: %v", it.MemoryID, jErr)
 		}
 	}
-	s.scheduleSync()
+}
+
+func renderCommitBlocked(preflight *memory.PreflightResult) string {
+	var sb strings.Builder
+	sb.WriteString("## Commit blocked by pre-flight check\n\n")
+	sb.WriteString(renderPreflight(preflight))
+	sb.WriteString("\n\nOverride the invariant explicitly by passing `force=\"true\"` if you have confirmed the rule no longer applies (and update/archive the conflicting rule).")
+	return sb.String()
+}
+
+func renderCommittedChange(c *memory.Change, saved *memory.Memory, deltas []memory.Delta, preflight *memory.PreflightResult) string {
+	mergedReqs := 0
+	for _, d := range deltas {
+		mergedReqs += len(d.Requirements)
+	}
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "## Committed: `%s`\n\n", c.Slug)
@@ -530,5 +597,5 @@ func (s *Server) handleCommitSpec(ctx context.Context, req mcp.CallToolRequest) 
 	if preflight.Verdict == memory.PreflightWarn {
 		sb.WriteString("\n_Committed with a WARN — review the flagged rules with `sv_mem_judge` if they should be superseded._\n")
 	}
-	return s.respond(req, sb.String()), nil
+	return sb.String()
 }

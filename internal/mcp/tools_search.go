@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strconv"
 	"strings"
@@ -13,58 +14,23 @@ import (
 	"github.com/svtech-code/sv-memory/internal/memory"
 )
 
+// searchParams holds the parsed, clamped inputs of an sv_mem_search call.
+type searchParams struct {
+	query         string
+	category      string
+	pathFilter    string
+	matchMode     string
+	semantic      bool
+	semanticAgent string
+	limit         int
+	offset        int
+	searchLimit   int
+}
+
 func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	query, err := req.RequireString("query")
+	p, err := parseSearchParams(req)
 	if err != nil {
 		return mcp.NewToolResultError("missing required field: query"), nil
-	}
-	if runes := []rune(query); len(runes) > 256 {
-		query = string(runes[:256])
-	}
-	category := req.GetString("category", "")
-	pathFilter := req.GetString("path", "")
-	matchMode := req.GetString("match_mode", "hybrid")
-	if matchMode != "all" && matchMode != "any" && matchMode != "hybrid" {
-		matchMode = "hybrid"
-	}
-	semantic := req.GetString("semantic", "") == "true"
-	semanticAgent := req.GetString("semantic_agent", "")
-	limitStr := req.GetString("limit", "10")
-	offsetStr := req.GetString("offset", "0")
-
-	limit := 10
-	if limitStr != "" {
-		if l, convErr := strconv.Atoi(limitStr); convErr == nil {
-			limit = l
-		}
-	}
-	if limit < 1 {
-		limit = 1
-	} else if limit > 50 {
-		limit = 50
-	}
-
-	offset := 0
-	if offsetStr != "" {
-		if o, convErr := strconv.Atoi(offsetStr); convErr == nil && o >= 0 {
-			offset = o
-		}
-	}
-	if offset < 0 {
-		offset = 0
-	} else if offset > 1000 {
-		offset = 1000
-	}
-
-	// In semantic mode the keyword pass only feeds a candidate pool to the LLM
-	// ranker, so fetch up to 3x the limit (capped) and let SemanticRecall trim
-	// back down to `limit`. Pagination is driven by the final semantic ranking.
-	searchLimit := limit
-	if semantic {
-		searchLimit = limit * 3
-		if searchLimit > memory.SemanticRecallMaxCandidates {
-			searchLimit = memory.SemanticRecallMaxCandidates
-		}
 	}
 
 	startSync := time.Now()
@@ -77,18 +43,9 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 	// surfaces memories for the entire module, not just the exact file. Falls
 	// back to the plain path-filtered search when the graph has no community
 	// data or graph_boost is disabled.
-	communityPaths := s.searchCommunityPaths(pathFilter)
-	var results []*memory.MemorySearchResult
-	if len(communityPaths) > 0 {
-		paths := make([]string, 0, len(communityPaths))
-		for p := range communityPaths {
-			paths = append(paths, p)
-		}
-		results, err = memory.SearchMemoriesByPaths(s.pool.Reader, s.cfg.ProjectID, query, category, matchMode, pathFilter, paths, searchLimit, offset)
-	} else {
-		results, err = memory.SearchMemoriesCompactScoped(s.pool.Reader, s.cfg.ProjectID, query, category, pathFilter, matchMode, searchLimit, offset)
-	}
-	debugLog("mem_search query=%q category=%q offset=%d graphBoost=%t returned %d rows in %s", query, category, offset, len(communityPaths) > 0, len(results), time.Since(startSearch))
+	communityPaths := s.searchCommunityPaths(p.pathFilter)
+	results, err := s.runMemorySearch(p, communityPaths)
+	debugLog("mem_search query=%q category=%q offset=%d graphBoost=%t returned %d rows in %s", p.query, p.category, p.offset, len(communityPaths) > 0, len(results), time.Since(startSearch))
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed searching memories: %v", err)), nil
 	}
@@ -98,8 +55,8 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 	// agent is unavailable or its response cannot be parsed.
 	semanticUsed := false
 	var reasons map[string]string
-	if semantic && len(results) > 0 {
-		results, reasons, semanticUsed = memory.SemanticRecall(ctx, s.pool.Reader, s.cfg.ProjectID, query, results, memory.ResolveSemanticAgent(semanticAgent), limit)
+	if p.semantic && len(results) > 0 {
+		results, reasons, semanticUsed = memory.SemanticRecall(ctx, s.pool.Reader, s.cfg.ProjectID, p.query, results, memory.ResolveSemanticAgent(p.semanticAgent), p.limit)
 	}
 
 	if len(results) == 0 {
@@ -113,7 +70,55 @@ func (s *Server) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 	// annotated without a per-row query.
 	whereByID := s.resultWherePaths(results)
 
-	return s.respond(req, s.renderSearchResults(results, whereByID, communityPaths, pathFilter, offset, semantic, semanticUsed, reasons)), nil
+	return s.respond(req, s.renderSearchResults(results, whereByID, communityPaths, p.pathFilter, p.offset, p.semantic, semanticUsed, reasons)), nil
+}
+
+// parseSearchParams extracts and clamps the sv_mem_search inputs.
+func parseSearchParams(req mcp.CallToolRequest) (searchParams, error) {
+	query, err := req.RequireString("query")
+	if err != nil {
+		return searchParams{}, err
+	}
+	if runes := []rune(query); len(runes) > 256 {
+		query = string(runes[:256])
+	}
+	p := searchParams{
+		query:         query,
+		category:      req.GetString("category", ""),
+		pathFilter:    req.GetString("path", ""),
+		matchMode:     req.GetString("match_mode", "hybrid"),
+		semantic:      req.GetString("semantic", "") == "true",
+		semanticAgent: req.GetString("semantic_agent", ""),
+		limit:         clampRange(req.GetString("limit", "10"), 10, 1, 50),
+		offset:        clampRange(req.GetString("offset", "0"), 0, 0, 1000),
+	}
+	if p.matchMode != "all" && p.matchMode != "any" && p.matchMode != "hybrid" {
+		p.matchMode = "hybrid"
+	}
+	// In semantic mode the keyword pass only feeds a candidate pool to the LLM
+	// ranker, so fetch up to 3x the limit (capped) and let SemanticRecall trim
+	// back down to `limit`. Pagination is driven by the final semantic ranking.
+	p.searchLimit = p.limit
+	if p.semantic {
+		p.searchLimit = p.limit * 3
+		if p.searchLimit > memory.SemanticRecallMaxCandidates {
+			p.searchLimit = memory.SemanticRecallMaxCandidates
+		}
+	}
+	return p, nil
+}
+
+// runMemorySearch executes the keyword search, using the community-expanded
+// path set when graph_boost surfaced one.
+func (s *Server) runMemorySearch(p searchParams, communityPaths map[string]bool) ([]*memory.MemorySearchResult, error) {
+	if len(communityPaths) > 0 {
+		paths := make([]string, 0, len(communityPaths))
+		for path := range communityPaths {
+			paths = append(paths, path)
+		}
+		return memory.SearchMemoriesByPaths(s.pool.Reader, s.cfg.ProjectID, p.query, p.category, p.matchMode, p.pathFilter, paths, p.searchLimit, p.offset)
+	}
+	return memory.SearchMemoriesCompactScoped(s.pool.Reader, s.cfg.ProjectID, p.query, p.category, p.pathFilter, p.matchMode, p.searchLimit, p.offset)
 }
 
 // renderSearchResults builds the compact table output (progressive disclosure:
@@ -128,6 +133,22 @@ func (s *Server) renderSearchResults(results []*memory.MemorySearchResult, where
 	} else if semanticRequested {
 		sb.WriteString("*Semantic recall unavailable — showing keyword results.*\n")
 	}
+	graphRows := renderSearchTable(&sb, results, whereByID, communityPaths, pathFilter, semanticUsed, reasons)
+	if graphRows > 0 {
+		sb.WriteString("\n`[graph]` = memory for a file in the same graph community as the search path (graph_boost).\n")
+	}
+
+	// Expand the top-1 hit inline so the agent often skips the follow-up
+	// sv_mem_get round-trip. Only for fresh searches (offset 0) with a query.
+	if offset == 0 && len(results) > 0 {
+		s.expandTopResult(&sb, results[0].ID)
+	}
+	return sb.String()
+}
+
+// renderSearchTable writes the compact result table and returns the number of
+// rows annotated with the [graph] marker.
+func renderSearchTable(sb *strings.Builder, results []*memory.MemorySearchResult, whereByID map[string]string, communityPaths map[string]bool, pathFilter string, semanticUsed bool, reasons map[string]string) int {
 	sb.WriteString("| # | ID | Category | Title | Topic | Date |\n")
 	sb.WriteString("|---|----|----------|-------|-------|------|\n")
 	graphRows := 0
@@ -146,34 +167,33 @@ func (s *Server) renderSearchResults(results []*memory.MemorySearchResult, where
 			title += " `[graph]`"
 			graphRows++
 		}
-		fmt.Fprintf(&sb, "| %d | %s | %s | %s | %s | %s |\n",
+		fmt.Fprintf(sb, "| %d | %s | %s | %s | %s | %s |\n",
 			i+1, r.ID, strings.ToUpper(r.Category), title, escapeTableCell(topic), r.CreatedAt.Format("2006-01-02"))
 	}
-	if graphRows > 0 {
-		sb.WriteString("\n`[graph]` = memory for a file in the same graph community as the search path (graph_boost).\n")
-	}
+	return graphRows
+}
 
-	// Expand the top-1 hit inline so the agent often skips the follow-up
-	// sv_mem_get round-trip. Only for fresh searches (offset 0) with a query.
-	if offset == 0 && len(results) > 0 {
-		if top, gErr := memory.GetMemory(s.pool.Reader, s.cfg.ProjectID, results[0].ID); gErr == nil && top != nil {
-			sb.WriteString("\n### Top result (expanded):\n")
-			fmt.Fprintf(&sb, "- [%s] **%s** (ID: %s)\n", strings.ToUpper(top.Category), top.What, top.ID)
-			if top.Why != "" {
-				fmt.Fprintf(&sb, "  *Why:* %s\n", truncateField(top.Why, configuredInt("search_expand_chars", searchExpandChars)))
-			}
-			if top.Learned != "" {
-				fmt.Fprintf(&sb, "  *Learned:* %s\n", truncateField(top.Learned, configuredInt("search_expand_chars", searchExpandChars)))
-			}
-			if top.WherePath != "" {
-				fmt.Fprintf(&sb, "  *Path:* `%s`\n", top.WherePath)
-			}
-			if top.TopicKey != "" {
-				fmt.Fprintf(&sb, "  *Topic:* `%s`\n", top.TopicKey)
-			}
-		}
+// expandTopResult appends the inline expansion of a single memory.
+func (s *Server) expandTopResult(sb *strings.Builder, id string) {
+	top, gErr := memory.GetMemory(s.pool.Reader, s.cfg.ProjectID, id)
+	if gErr != nil || top == nil {
+		return
 	}
-	return sb.String()
+	expandChars := configuredInt("search_expand_chars", searchExpandChars)
+	sb.WriteString("\n### Top result (expanded):\n")
+	fmt.Fprintf(sb, "- [%s] **%s** (ID: %s)\n", strings.ToUpper(top.Category), top.What, top.ID)
+	if top.Why != "" {
+		fmt.Fprintf(sb, "  *Why:* %s\n", truncateField(top.Why, expandChars))
+	}
+	if top.Learned != "" {
+		fmt.Fprintf(sb, "  *Learned:* %s\n", truncateField(top.Learned, expandChars))
+	}
+	if top.WherePath != "" {
+		fmt.Fprintf(sb, "  *Path:* `%s`\n", top.WherePath)
+	}
+	if top.TopicKey != "" {
+		fmt.Fprintf(sb, "  *Topic:* `%s`\n", top.TopicKey)
+	}
 }
 
 // escapeTableCell sanitizes a string for safe embedding in a markdown table
@@ -237,8 +257,7 @@ func (s *Server) handleGet(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 		return mcp.NewToolResultError("missing required field: id"), nil
 	}
 	maxChars := configuredInt("max_field_chars", maxFieldTruncateChars)
-	maxCharsStr := req.GetString("max_chars", "")
-	if maxCharsStr != "" {
+	if maxCharsStr := req.GetString("max_chars", ""); maxCharsStr != "" {
 		if m, convErr := strconv.Atoi(maxCharsStr); convErr == nil && m >= 0 {
 			maxChars = m
 		}
@@ -253,44 +272,50 @@ func (s *Server) handleGet(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "### [%s] %s (ID: %s)\n", strings.ToUpper(mem.Category), mem.What, mem.ID)
-	fmt.Fprintf(&sb, "* **Why:** %s\n", truncateField(mem.Why, maxChars))
-	fmt.Fprintf(&sb, "* **Rule / Learned:** %s\n", truncateField(mem.Learned, maxChars))
+	renderMemoryFields(&sb, mem, maxChars)
+	return s.respond(req, sb.String()), nil
+}
+
+// renderMemoryFields writes the full memory detail block (progressive
+// disclosure layer 3), truncating long text fields to maxChars.
+func renderMemoryFields(sb *strings.Builder, mem *memory.Memory, maxChars int) {
+	fmt.Fprintf(sb, "### [%s] %s (ID: %s)\n", strings.ToUpper(mem.Category), mem.What, mem.ID)
+	fmt.Fprintf(sb, "* **Why:** %s\n", truncateField(mem.Why, maxChars))
+	fmt.Fprintf(sb, "* **Rule / Learned:** %s\n", truncateField(mem.Learned, maxChars))
 	if mem.WherePath != "" {
-		fmt.Fprintf(&sb, "* **Path:** `%s`\n", mem.WherePath)
+		fmt.Fprintf(sb, "* **Path:** `%s`\n", mem.WherePath)
 	}
 	if mem.TopicKey != "" {
-		fmt.Fprintf(&sb, "* **Topic:** `%s` (revision %d)\n", mem.TopicKey, mem.RevisionCount)
+		fmt.Fprintf(sb, "* **Topic:** `%s` (revision %d)\n", mem.TopicKey, mem.RevisionCount)
 	}
 	if mem.DuplicateCount > 0 {
-		fmt.Fprintf(&sb, "* **Duplicates:** %d\n", mem.DuplicateCount)
+		fmt.Fprintf(sb, "* **Duplicates:** %d\n", mem.DuplicateCount)
 	}
 	if mem.Pinned {
 		sb.WriteString("* **Pinned:** 📌 yes\n")
 	}
 	if !mem.ReviewAfter.IsZero() {
-		fmt.Fprintf(&sb, "* **Review after:** %s\n", mem.ReviewAfter.Format("2006-01-02"))
+		fmt.Fprintf(sb, "* **Review after:** %s\n", mem.ReviewAfter.Format("2006-01-02"))
 	}
 	if mem.GitBranch != "" {
-		fmt.Fprintf(&sb, "* **Branch:** `%s`\n", mem.GitBranch)
+		fmt.Fprintf(sb, "* **Branch:** `%s`\n", mem.GitBranch)
 	}
 	if mem.GitCommit != "" {
-		fmt.Fprintf(&sb, "* **Commit:** `%s`\n", mem.GitCommit)
+		fmt.Fprintf(sb, "* **Commit:** `%s`\n", mem.GitCommit)
 	}
 	if mem.Author != "" {
-		fmt.Fprintf(&sb, "* **Author:** `%s`\n", mem.Author)
+		fmt.Fprintf(sb, "* **Author:** `%s`\n", mem.Author)
 	}
 	if mem.Impact != "" {
-		fmt.Fprintf(&sb, "* **What went well / Impact:** %s\n", truncateField(mem.Impact, maxChars))
+		fmt.Fprintf(sb, "* **What went well / Impact:** %s\n", truncateField(mem.Impact, maxChars))
 	}
 	if mem.ErrorsFaced != "" {
-		fmt.Fprintf(&sb, "* **Roadblocks / Errors faced:** %s\n", truncateField(mem.ErrorsFaced, maxChars))
+		fmt.Fprintf(sb, "* **Roadblocks / Errors faced:** %s\n", truncateField(mem.ErrorsFaced, maxChars))
 	}
 	if mem.NextSteps != "" {
-		fmt.Fprintf(&sb, "* **Next steps / Pending:** %s\n", truncateField(mem.NextSteps, maxChars))
+		fmt.Fprintf(sb, "* **Next steps / Pending:** %s\n", truncateField(mem.NextSteps, maxChars))
 	}
-	fmt.Fprintf(&sb, "* **Date:** %s\n", mem.CreatedAt.Format("2006-01-02"))
-	return s.respond(req, sb.String()), nil
+	fmt.Fprintf(sb, "* **Date:** %s\n", mem.CreatedAt.Format("2006-01-02"))
 }
 
 func (s *Server) handleTimeline(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -298,22 +323,8 @@ func (s *Server) handleTimeline(ctx context.Context, req mcp.CallToolRequest) (*
 	if err != nil {
 		return mcp.NewToolResultError("missing required field: observation_id"), nil
 	}
-	beforeStr := req.GetString("before", "5")
-	afterStr := req.GetString("after", "5")
-	before, _ := strconv.Atoi(beforeStr)
-	after, _ := strconv.Atoi(afterStr)
-	if before <= 0 {
-		before = 5
-	}
-	if before > 50 {
-		before = 50
-	}
-	if after <= 0 {
-		after = 5
-	}
-	if after > 50 {
-		after = 50
-	}
+	before := neighborCount(req.GetString("before", "5"))
+	after := neighborCount(req.GetString("after", "5"))
 
 	prev, next, err := memory.GetTimelineCompact(s.pool.Reader, s.cfg.ProjectID, obsID, before, after)
 	if err != nil {
@@ -321,25 +332,47 @@ func (s *Server) handleTimeline(ctx context.Context, req mcp.CallToolRequest) (*
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "## Timeline around observation `%s`\n\n", obsID)
+	renderTimelineCentral(&sb, s.pool.Reader, s.cfg.ProjectID, obsID)
+	renderTimelineNeighbors(&sb, prev, next)
 
-	// Surface the central observation with a short rationale so the agent
-	// usually doesn't need a separate sv_mem_get call for context.
-	if central, cerr := memory.GetMemory(s.pool.Reader, s.cfg.ProjectID, obsID); cerr == nil && central != nil {
-		fmt.Fprintf(&sb, "### Central observation:\n")
-		fmt.Fprintf(&sb, "- [%s] **%s** (ID: %s, %s)\n",
-			strings.ToUpper(central.Category), central.What, central.ID, central.CreatedAt.Format("2006-01-02 15:04"))
-		if central.Why != "" {
-			fmt.Fprintf(&sb, "  *Why:* %s\n", truncateField(central.Why, configuredInt("timeline_why_chars", timelineWhyChars)))
-		}
-		sb.WriteString("\n")
+	return s.respond(req, sb.String()), nil
+}
+
+// neighborCount parses the before/after window size, defaulting to 5 and
+// clamping to [1, 50].
+func neighborCount(raw string) int {
+	v, _ := strconv.Atoi(raw)
+	if v <= 0 {
+		return 5
 	}
+	if v > 50 {
+		return 50
+	}
+	return v
+}
 
+// renderTimelineCentral surfaces the central observation with a short rationale
+// so the agent usually doesn't need a separate sv_mem_get call for context.
+func renderTimelineCentral(sb *strings.Builder, reader *sql.DB, projectID, obsID string) {
+	fmt.Fprintf(sb, "## Timeline around observation `%s`\n\n", obsID)
+	central, cerr := memory.GetMemory(reader, projectID, obsID)
+	if cerr != nil || central == nil {
+		return
+	}
+	fmt.Fprintf(sb, "### Central observation:\n")
+	fmt.Fprintf(sb, "- [%s] **%s** (ID: %s, %s)\n",
+		strings.ToUpper(central.Category), central.What, central.ID, central.CreatedAt.Format("2006-01-02 15:04"))
+	if central.Why != "" {
+		fmt.Fprintf(sb, "  *Why:* %s\n", truncateField(central.Why, configuredInt("timeline_why_chars", timelineWhyChars)))
+	}
+	sb.WriteString("\n")
+}
+
+func renderTimelineNeighbors(sb *strings.Builder, prev, next []*memory.MemorySearchResult) {
 	if len(prev) > 0 {
 		sb.WriteString("### Before:\n")
 		for _, m := range prev {
-			fmt.Fprintf(&sb, "- [%s] **%s** (ID: %s, %s)\n",
-				strings.ToUpper(m.Category), m.What, m.ID, m.CreatedAt.Format("2006-01-02 15:04"))
+			writeTimelineRow(sb, m)
 		}
 	}
 	if len(next) > 0 {
@@ -348,15 +381,17 @@ func (s *Server) handleTimeline(ctx context.Context, req mcp.CallToolRequest) (*
 		}
 		sb.WriteString("### After:\n")
 		for _, m := range next {
-			fmt.Fprintf(&sb, "- [%s] **%s** (ID: %s, %s)\n",
-				strings.ToUpper(m.Category), m.What, m.ID, m.CreatedAt.Format("2006-01-02 15:04"))
+			writeTimelineRow(sb, m)
 		}
 	}
 	if len(prev) == 0 && len(next) == 0 {
 		sb.WriteString("No other memories found nearby in time.\n")
 	}
+}
 
-	return s.respond(req, sb.String()), nil
+func writeTimelineRow(sb *strings.Builder, m *memory.MemorySearchResult) {
+	fmt.Fprintf(sb, "- [%s] **%s** (ID: %s, %s)\n",
+		strings.ToUpper(m.Category), m.What, m.ID, m.CreatedAt.Format("2006-01-02 15:04"))
 }
 
 func (s *Server) handleCompare(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -376,68 +411,75 @@ func (s *Server) handleCompare(ctx context.Context, req mcp.CallToolRequest) (*m
 }
 
 func (s *Server) handleReview(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	action := req.GetString("action", "list")
-	if action == "mark_reviewed" {
-		id, err := req.RequireString("id")
-		if err != nil {
-			return mcp.NewToolResultError("missing required field: id (needed for action='mark_reviewed')"), nil
+	switch req.GetString("action", "list") {
+	case "mark_reviewed":
+		return s.reviewMarkReviewed(req)
+	case "prune_stale":
+		return s.reviewPruneStale(req)
+	default:
+		return s.reviewList(req)
+	}
+}
+
+func (s *Server) reviewMarkReviewed(req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := req.RequireString("id")
+	if err != nil {
+		return mcp.NewToolResultError("missing required field: id (needed for action='mark_reviewed')"), nil
+	}
+	if err := memory.MarkMemoryReviewed(s.pool.Writer, s.cfg.ProjectID, id); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to mark memory as reviewed: %v", err)), nil
+	}
+	s.scheduleSync()
+	return mcp.NewToolResultText(fmt.Sprintf("Memory %s marked as reviewed. Its policy-review deadline was reset and the change will be synced to Git.", id)), nil
+}
+
+func (s *Server) reviewPruneStale(req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	olderThanDays := viper.GetInt("prune_stale_days")
+	if dStr := req.GetString("older_than_days", ""); dStr != "" {
+		if d, convErr := strconv.Atoi(dStr); convErr == nil && d > 0 {
+			olderThanDays = d
 		}
-		if err := memory.MarkMemoryReviewed(s.pool.Writer, s.cfg.ProjectID, id); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to mark memory as reviewed: %v", err)), nil
-		}
+	}
+	category := req.GetString("category", "")
+	apply := req.GetString("apply", "") == "true"
+
+	pruned, err := memory.PruneStaleMemories(s.pool.Writer, s.cfg.ProjectID, olderThanDays, category, apply)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to prune stale memories: %v", err)), nil
+	}
+	if apply {
 		s.scheduleSync()
-		return mcp.NewToolResultText(fmt.Sprintf("Memory %s marked as reviewed. Its policy-review deadline was reset and the change will be synced to Git.", id)), nil
 	}
-
-	if action == "prune_stale" {
-		olderThanDays := viper.GetInt("prune_stale_days")
-		if dStr := req.GetString("older_than_days", ""); dStr != "" {
-			if d, convErr := strconv.Atoi(dStr); convErr == nil && d > 0 {
-				olderThanDays = d
-			}
-		}
-		category := req.GetString("category", "")
-		apply := req.GetString("apply", "") == "true"
-
-		pruned, err := memory.PruneStaleMemories(s.pool.Writer, s.cfg.ProjectID, olderThanDays, category, apply)
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to prune stale memories: %v", err)), nil
-		}
-		if apply {
-			s.scheduleSync()
-		}
-
-		if len(pruned) == 0 {
-			return mcp.NewToolResultText("No stale transient memories found to prune."), nil
-		}
-
-		var sb strings.Builder
-		if apply {
-			fmt.Fprintf(&sb, "Pruned %d stale transient memories (soft-deleted, change synced to Git):\n\n", len(pruned))
-		} else {
-			fmt.Fprintf(&sb, "Dry run: %d stale transient memories would be pruned (pass apply='true' to delete):\n\n", len(pruned))
-		}
-		sb.WriteString("| ID | Category | Title | Date |\n")
-		sb.WriteString("|---|----------|-------|------|\n")
-		for _, m := range pruned {
-			fmt.Fprintf(&sb, "| %s | %s | %s | %s |\n", m.ID, strings.ToUpper(m.Category), escapeTableCell(m.What), m.CreatedAt.Format("2006-01-02"))
-		}
-		sb.WriteString("\n*Prune only touches transient categories (journal, qa, discussion, idea) unless `category` overrides; pinned and durable memories are never removed.*\n")
-		return mcp.NewToolResultText(sb.String()), nil
+	if len(pruned) == 0 {
+		return mcp.NewToolResultText("No stale transient memories found to prune."), nil
 	}
+	return mcp.NewToolResultText(renderPruneReport(pruned, apply)), nil
+}
 
-	reviewLimit := viper.GetInt("default_review_limit")
-	items, err := memory.ReviewMemories(s.pool.Reader, s.cfg.ProjectID, reviewLimit)
+// renderPruneReport formats the prune result table and its trailing note.
+func renderPruneReport(pruned []*memory.MemorySearchResult, apply bool) string {
+	var sb strings.Builder
+	if apply {
+		fmt.Fprintf(&sb, "Pruned %d stale transient memories (soft-deleted, change synced to Git):\n\n", len(pruned))
+	} else {
+		fmt.Fprintf(&sb, "Dry run: %d stale transient memories would be pruned (pass apply='true' to delete):\n\n", len(pruned))
+	}
+	sb.WriteString("| ID | Category | Title | Date |\n")
+	sb.WriteString("|---|----------|-------|------|\n")
+	for _, m := range pruned {
+		fmt.Fprintf(&sb, "| %s | %s | %s | %s |\n", m.ID, strings.ToUpper(m.Category), escapeTableCell(m.What), m.CreatedAt.Format("2006-01-02"))
+	}
+	sb.WriteString("\n*Prune only touches transient categories (journal, qa, discussion, idea) unless `category` overrides; pinned and durable memories are never removed.*\n")
+	return sb.String()
+}
+
+func (s *Server) reviewList(req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	items, err := memory.ReviewMemories(s.pool.Reader, s.cfg.ProjectID, viper.GetInt("default_review_limit"))
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to review memories: %v", err)), nil
 	}
 
-	stats, errStats := memory.ConflictStats(s.pool.Reader, s.cfg.ProjectID)
-	pendingConflicts := 0
-	if errStats == nil {
-		pendingConflicts = stats["pending"]
-	}
-
+	pendingConflicts := pendingConflictCount(s.pool.Reader, s.cfg.ProjectID)
 	if len(items) == 0 && pendingConflicts == 0 {
 		return mcp.NewToolResultText("No memories found for review."), nil
 	}
@@ -449,35 +491,52 @@ func (s *Server) handleReview(ctx context.Context, req mcp.CallToolRequest) (*mc
 	} else {
 		sb.WriteString("\n")
 	}
-
 	for _, item := range items {
-		fmt.Fprintf(&sb, "### [%s] %s (ID: %s)\n", strings.ToUpper(item.Memory.Category), item.Memory.What, item.Memory.ID)
-		fmt.Fprintf(&sb, "* **Status:** %s\n", item.Reason)
-		fmt.Fprintf(&sb, "* **Age:** %d days", item.AgeDays)
-		if item.LastSeenDays > 0 {
-			fmt.Fprintf(&sb, ", last seen %d days ago", item.LastSeenDays)
-		}
-		sb.WriteString("\n")
-		if item.DuplicateCount > 0 {
-			fmt.Fprintf(&sb, "* **Duplicates:** %d\n", item.DuplicateCount)
-		}
-		if item.RevisionCount > 0 {
-			fmt.Fprintf(&sb, "* **Revisions:** %d\n", item.RevisionCount)
-		}
-		if item.RelationCount > 0 {
-			fmt.Fprintf(&sb, "* **Relations:** %d\n", item.RelationCount)
-		}
-		if item.NeedsConsolidation {
-			sb.WriteString("* **⚠ Needs consolidation** (many revisions)\n")
-		}
-		if item.NeedsReview {
-			if item.ReviewDueDays > 0 {
-				fmt.Fprintf(&sb, "* **⏰ Due for policy review** (%d days overdue)\n", item.ReviewDueDays)
-			} else {
-				sb.WriteString("* **⏰ Due for policy review**\n")
-			}
-		}
-		sb.WriteString("\n")
+		renderReviewItem(&sb, item)
 	}
 	return s.respond(req, sb.String()), nil
+}
+
+// pendingConflictCount returns the number of pending conflict relations,
+// defaulting to 0 when the stats query fails.
+func pendingConflictCount(reader *sql.DB, projectID string) int {
+	stats, err := memory.ConflictStats(reader, projectID)
+	if err != nil {
+		return 0
+	}
+	return stats["pending"]
+}
+
+func renderReviewItem(sb *strings.Builder, item *memory.MemoryReviewItem) {
+	fmt.Fprintf(sb, "### [%s] %s (ID: %s)\n", strings.ToUpper(item.Memory.Category), item.Memory.What, item.Memory.ID)
+	fmt.Fprintf(sb, "* **Status:** %s\n", item.Reason)
+	fmt.Fprintf(sb, "* **Age:** %d days", item.AgeDays)
+	if item.LastSeenDays > 0 {
+		fmt.Fprintf(sb, ", last seen %d days ago", item.LastSeenDays)
+	}
+	sb.WriteString("\n")
+	if item.DuplicateCount > 0 {
+		fmt.Fprintf(sb, "* **Duplicates:** %d\n", item.DuplicateCount)
+	}
+	if item.RevisionCount > 0 {
+		fmt.Fprintf(sb, "* **Revisions:** %d\n", item.RevisionCount)
+	}
+	if item.RelationCount > 0 {
+		fmt.Fprintf(sb, "* **Relations:** %d\n", item.RelationCount)
+	}
+	if item.NeedsConsolidation {
+		sb.WriteString("* **⚠ Needs consolidation** (many revisions)\n")
+	}
+	if item.NeedsReview {
+		renderReviewDue(sb, item.ReviewDueDays)
+	}
+	sb.WriteString("\n")
+}
+
+func renderReviewDue(sb *strings.Builder, dueDays int) {
+	if dueDays > 0 {
+		fmt.Fprintf(sb, "* **⏰ Due for policy review** (%d days overdue)\n", dueDays)
+		return
+	}
+	sb.WriteString("* **⏰ Due for policy review**\n")
 }

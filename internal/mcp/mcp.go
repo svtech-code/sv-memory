@@ -264,6 +264,20 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	shutdownCleanup = s.flushPendingSync
 	cleanupMu.Unlock()
 
+	registerCoreMemoryTools(ms, s)
+	registerSessionTools(ms, s)
+	registerSearchAndReviewTools(ms, s)
+	registerLifecycleTools(ms, s)
+	registerSpecTools(ms, s)
+	registerGraphQueryTools(ms, s)
+	registerGraphAnalysisTools(ms, s)
+	registerReferenceTools(ms, s)
+
+	return ms
+}
+
+// registerCoreMemoryTools registers the primary memory CRUD tools.
+func registerCoreMemoryTools(ms *server.MCPServer, s *Server) {
 	// 1. Tool: sv_mem_save
 	saveTool := mcp.NewTool("sv_mem_save",
 		mcp.WithDescription("TRIGGER: ALWAYS use this IMMEDIATELY after a complex bugfix, design decision, or new standard. Persist a decision, bugfix, journal, standard, or progress checkpoint to project memory. Optional topic_key gives upsert semantics (auto-derived for decision/standard/architecture/bugfix if omitted); optional session_id associates the memory with the active session."),
@@ -302,6 +316,10 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	)
 	ms.AddTool(suggestTool, s.handleSuggestTopicKey)
 
+}
+
+// registerSessionTools registers the session lifecycle and context tools.
+func registerSessionTools(ms *server.MCPServer, s *Server) {
 	// 3. Tool: sv_mem_session_start
 	sessionStartTool := mcp.NewTool("sv_mem_session_start",
 		mcp.WithDescription("USE WHEN: starting a coding session or after a context reset. Register the start of a coding session and receive an Auto-Boot Context Bundle: previous session summary, key decisions, standards, recent bugfixes, journals, and top graph hubs. Enables session grouping and post-compaction context recovery."),
@@ -346,6 +364,11 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	)
 	ms.AddTool(contextTool, s.handleContext)
 
+}
+
+// registerSearchAndReviewTools registers search, progressive-disclosure,
+// review, and diagnostic tools.
+func registerSearchAndReviewTools(ms *server.MCPServer, s *Server) {
 	// 7. Tool: sv_mem_compact
 	compactTool := mcp.NewTool("sv_mem_compact",
 		mcp.WithDescription("Trigger memory compaction for the project. Consolidates historical topic key revisions and duplicates into clean, high-quality summary records to keep search fast and token usage minimal. Supports threshold-based auto-compaction and health check modes."),
@@ -439,6 +462,10 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		ms.AddTool(diagnoseTool, s.handleDiagnose)
 	}
 
+}
+
+// registerLifecycleTools registers delete, pin, capture, and project-merge tools.
+func registerLifecycleTools(ms *server.MCPServer, s *Server) {
 	// 16. Tool: sv_mem_delete
 	deleteTool := mcp.NewTool("sv_mem_delete",
 		mcp.WithDescription("Delete a memory. Soft delete (default) marks it as deleted but preserves it in the database for potential recovery. Hard delete removes it permanently."),
@@ -482,6 +509,11 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		ms.AddTool(mergeProjectsTool, s.handleMergeProjects)
 	}
 
+}
+
+// registerSpecTools registers graph_explore (context pack) and the spec-driven
+// decision-cycle tools.
+func registerSpecTools(ms *server.MCPServer, s *Server) {
 	// 18b2. Tool: sv_graph_explore
 	graphExploreTool := mcp.NewTool("sv_graph_explore",
 		mcp.WithDescription("TRIGGER: ALWAYS use this BEFORE reading/grepping files. Understand code in ONE call: pass one or more comma-separated symbols, file paths, or package names. Returns structural role, surgical source snippet (treat as already read), call path between them, blast radius, and linked memories. include_changes='true' also lists active spec changes."),
@@ -557,6 +589,10 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	)
 	ms.AddTool(specGetTool, s.handleSpecGet)
 
+}
+
+// registerGraphQueryTools registers the core graph traversal/query tools.
+func registerGraphQueryTools(ms *server.MCPServer, s *Server) {
 	// 19. Tool: sv_graph_query
 	graphQueryTool := mcp.NewTool("sv_graph_query",
 		mcp.WithDescription("Retrieve a module's dependency sub-graph (imports/calls/depends_on) in one call. Use BEFORE reading files to understand a module's connections without grepping multiple sources."),
@@ -603,6 +639,11 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	)
 	ms.AddTool(conflictsTool, s.handleConflicts)
 
+}
+
+// registerGraphAnalysisTools registers graph explanation, ranking, report, and
+// visualization tools.
+func registerGraphAnalysisTools(ms *server.MCPServer, s *Server) {
 	// 23. Tool: sv_graph_explain
 	graphExplainTool := mcp.NewTool("sv_graph_explain",
 		mcp.WithDescription("Explain a node's structural role, community, centrality metrics, neighbors, and suggested questions. Use before refactoring, deleting, or restructuring a file/module to understand its impact — richer than sv_graph_query for a single node."),
@@ -688,6 +729,10 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	)
 	ms.AddTool(graphDiffTool, s.handleGraphDiff)
 
+}
+
+// registerReferenceTools registers external-reference ingestion.
+func registerReferenceTools(ms *server.MCPServer, s *Server) {
 	// 32. Tool: sv_mem_fetch_reference
 	fetchRefTool := mcp.NewTool("sv_mem_fetch_reference",
 		mcp.WithDescription("Fetch and extract clean text from an external URL (e.g. GitHub issues, API docs). Use this to read external context, then summarize and save it via sv_mem_save or sv_propose_spec."),
@@ -697,6 +742,4 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 		),
 	)
 	ms.AddTool(fetchRefTool, s.handleFetchReference)
-
-	return ms
 }
