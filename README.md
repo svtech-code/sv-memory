@@ -50,7 +50,7 @@
 | 🎨 **Interfaces**    | **Interactive TUI**        | Terminal User Interface (`sv-memory tui`) for memory inspection, search, and graph diagnostics.                                       |
 | 📦 **Export**        | **Obsidian & Cypher**      | Exports to linked Markdown Obsidian Vaults (`[[wikilinks]]`) and Neo4j / FalkorDB Cypher scripts.                                     |
 | 🔄 **Collaboration** | **Git Sync Chunks**        | Git sync via `.sv-memory/chunks/{id}.json` files per memory conflict-free for distinct IDs; same-ID edits surface resolvable markers. |
-| 🛡️ **Integration**   | **PreToolUse Hooks**       | Intercepts raw file reads in Claude Code, Antigravity CLI (agy), and OpenCode to query memory first.                                  |
+| 🛡️ **Integration**   | **PreToolUse Hooks**       | Intercepts raw file reads in Claude Code and Antigravity CLI (agy) to query memory first.                                  |
 
 ---
 
@@ -60,7 +60,7 @@
 flowchart TD
     subgraph Clients["AI Clients & Assistants"]
         A1[Cursor / VS Code]
-        A2[Claude Code / Antigravity CLI / OpenCode]
+        A2[Claude Code / Antigravity CLI / OpenCode / Codex / Pi]
     end
 
     subgraph Core["sv-memory Single-Binary Core"]
@@ -124,7 +124,7 @@ SHA-256 checksum, and replaces the running executable. Your memories and configu
 are stored separately and are never affected by an update.
 
 > **After updating, re-wire your agents.** The update only replaces the binary — it does
-> not refresh your MCP allow-lists or injected protocol. Run `sv-memory setup --all` (or
+> not refresh your MCP allow-lists or injected protocol. Run `sv-memory init` (or
 > `setup <agent>` per agent) so newly added MCP tools are granted and the protocol/skill
 > text matches the new binary, then restart your assistant. See
 > [AGENT-SETUP.md](documentation/AGENT-SETUP.md#updating-sv-memory-post-update).
@@ -173,7 +173,7 @@ sv-memory hooks install --platform claude-code --context-injection
 
 **Hook modes and degradation:** the hook scripts never call the sv-memory server they are lightweight shell nudges that only inspect local files. **Soft** mode never blocks and always allows the read; **strict** returns a JSON `deny` on the _first_ file read of each conversation so the agent must consult `sv_mem_search`/`sv_graph_query` first. Blocking is only implemented where the platform supports it (Antigravity CLI returns `{"decision":"deny","reason":...}`); on Claude Code, strict mode is nudge-only and never blocks. Antigravity CLI also installs a `PreInvocation` hook that deterministically auto-starts the session and injects the Auto-Boot Context Bundle (first invocation) or an adaptive nudge (later invocations), so any model uses sv-memory without a manual `sv_mem_session_start`. Strict is **fail-open**: if sv-memory is not initialized (no `.sv-memory/`), the binary is missing, or `SV_MEMORY_STRICT_DISABLE=1` is set, the hook allows the read instead of deadlocking the agent.
 
-**Silent context injection (`--context-injection`, opt-in):** with Claude Code hooks, the first `Read` of each file injects `sv-memory context <file>` output — the node's graph role plus linked memories (title + truncated `why`, bounded to 3) — as `additionalContext`. Output is cached per file for the session and time-bounded (2s portable timeout); the hook always exits 0, so a missing binary or `.sv-memory` never breaks a tool call. Disable with `sv-memory hooks uninstall --context-injection`. Antigravity, Codex, and OpenCode do not support `additionalContext` injection and keep the nudge/skill mechanism.
+**Silent context injection (`--context-injection`, opt-in):** with Claude Code hooks, the first `Read` of each file injects `sv-memory context <file>` output — the node's graph role plus linked memories (title + truncated `why`, bounded to 3) — as `additionalContext`. Output is cached per file for the session and time-bounded (2s portable timeout); the hook always exits 0, so a missing binary or `.sv-memory` never breaks a tool call. Disable with `sv-memory hooks uninstall --context-injection`. `additionalContext` injection is Claude Code-only: Antigravity keeps its `PreInvocation` hook and OpenCode its `SKILL.md`, while Codex, Pi, and Cursor rely on MCP-native instructions + `AGENTS.md`.
 
 ### 5. Restart the Agent & Verify
 
@@ -233,7 +233,7 @@ sv-memory tui
 | `sv-memory session summary <id>`   | **Session**     | Saves a structured summary (goal/discoveries/accomplished/next-steps/files) for a session. |
 | `sv-memory session end`            | **Session**     | Ends the active session (or `--session-id`) with an optional summary, mirroring `sv_mem_session_end`. |
 | `sv-memory session active`         | **Session**     | Prints the active session ID or `none`.                                                 |
-| `sv-memory hooks install`          | **Hooks**       | Installs PreToolUse and Git post-commit hooks for Claude Code, Antigravity, OpenCode, and Git. |
+| `sv-memory hooks install`          | **Hooks**       | Installs PreToolUse and Git post-commit hooks for Claude Code, Antigravity, and Git. |
 | `sv-memory permissions list`       | **Permissions** | Lists all sv-memory MCP tools with descriptions.                                         |
 | `sv-memory permissions status`     | **Permissions** | Shows granted/missing MCP permissions per platform.                                      |
 | `sv-memory permissions grant`      | **Permissions** | Writes MCP tool allow-lists (`--all`/`--tool`, `--dry-run`) for Antigravity/Claude Code. |
@@ -340,7 +340,7 @@ sv-memory permissions revoke --platform antigravity
 
 - **Antigravity** writes `mcp(sv-memory/<tool>)` entries into `~/.gemini/antigravity-cli/settings.json`.
 - **Claude Code** writes `mcp__sv-memory__<tool>` entries into `~/.claude/settings.json`.
-- **OpenCode** and **Codex** use interactive approval and are skipped (no static allow-list).
+- **OpenCode** allows MCP tools by default (no allow-list) and **Codex** approves interactively — both are skipped.
 - Unrelated entries (e.g. `command(npm run)`) are always preserved.
 - Restart your AI assistant after granting to load the new permissions.
 

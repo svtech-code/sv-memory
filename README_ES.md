@@ -50,7 +50,7 @@
 | 🎨 **Interfaz**      | **TUI Interactiva**        | Interfaz de Usuario en Terminal (`sv-memory tui`) para inspección, búsqueda BM25 y diagnósticos.                                                                             |
 | 📦 **Exportación**   | **Obsidian & Cypher**      | Exporta a notas Markdown vinculadas de Obsidian (`[[wikilinks]]`) y scripts Cypher para Neo4j / FalkorDB.                                                                    |
 | 🔄 **Colaboración**  | **Git Sync Chunks**        | Sincronización Git mediante archivos `.sv-memory/chunks/{id}.json` por memoria sin conflictos para IDs distintos; las ediciones del mismo ID producen marcadores resolubles. |
-| 🛡️ **Integración**   | **Hooks PreToolUse**       | Intercepta lecturas raw de archivos en Claude Code, Antigravity CLI (agy) y OpenCode para consultar la memoria primero.                                                      |
+| 🛡️ **Integración**   | **Hooks PreToolUse**       | Intercepta lecturas raw de archivos en Claude Code y Antigravity CLI (agy) para consultar la memoria primero.                                                      |
 
 ---
 
@@ -60,7 +60,7 @@
 flowchart TD
     subgraph Clientes["Clientes & Asistentes de IA"]
         A1[Cursor / VS Code]
-        A2[Claude Code / Antigravity CLI / OpenCode]
+        A2[Claude Code / Antigravity CLI / OpenCode / Codex / Pi]
     end
 
     subgraph Core["Núcleo sv-memory (Binario Único)"]
@@ -124,7 +124,7 @@ checksum SHA-256 y reemplaza el ejecutable en uso. Tus memorias y configuración
 por separado y nunca se ven afectadas por una actualización.
 
 > **Tras actualizar, re-cablea tus agentes.** La actualización solo reemplaza el binario —
-> no refresca tus allow-lists MCP ni el protocolo inyectado. Ejecuta `sv-memory setup --all`
+> no refresca tus allow-lists MCP ni el protocolo inyectado. Ejecuta `sv-memory init`
 > (o `setup <agente>` por agente) para que las tools MCP nuevas se otorguen y el texto del
 > protocolo/skill coincida con el binario nuevo, y luego reinicia tu asistente. Ver
 > [AGENT-SETUP_ES.md](documentation/AGENT-SETUP_ES.md#actualizar-sv-memory-post-update).
@@ -173,7 +173,7 @@ sv-memory hooks install --platform claude-code --context-injection
 
 **Modos de hook y degradación:** los scripts de hook nunca llaman al servidor sv-memory son nudges ligeros de shell que solo inspeccionan archivos locales. El modo **soft** nunca bloquea y siempre permite la lectura; el modo **strict** devuelve una decisión JSON `deny` en la _primera_ lectura de archivo de cada conversación para que el agente consulte primero `sv_mem_search`/`sv_graph_query`. El bloqueo solo existe donde la plataforma lo soporta (Antigravity CLI devuelve `{"decision":"deny","reason":...}`); en Claude Code el modo strict es solo nudge y nunca bloquea. Antigravity CLI también instala un hook `PreInvocation` que auto-inicia la sesión de forma determinista e inyecta el Auto-Boot Context Bundle (primera invocación) o un recordatorio adaptativo (invocaciones posteriores), de modo que cualquier modelo usa sv-memory sin un `sv_mem_session_start` manual. El modo strict es **fail-open**: si sv-memory no está inicializado (sin `.sv-memory/`), el binario no existe, o está `SV_MEMORY_STRICT_DISABLE=1`, el hook permite la lectura en lugar de bloquear al agente.
 
-**Inyección silenciosa de contexto (`--context-injection`, opt-in):** con hooks de Claude Code, la primera `Read` de cada archivo inyecta la salida de `sv-memory context <file>` — el rol del nodo en el grafo más las memorias vinculadas (título + `why` truncado, acotado a 3) — como `additionalContext`. La salida se cachea por archivo para la sesión y está acotada en tiempo (timeout portable de 2s); el hook siempre sale con `exit 0`, así que un binario o `.sv-memory` ausente nunca rompe una llamada. Desactiva con `sv-memory hooks uninstall --context-injection`. Antigravity, Codex y OpenCode no soportan inyección por `additionalContext` y mantienen el mecanismo de nudge/skill.
+**Inyección silenciosa de contexto (`--context-injection`, opt-in):** con hooks de Claude Code, la primera `Read` de cada archivo inyecta la salida de `sv-memory context <file>` — el rol del nodo en el grafo más las memorias vinculadas (título + `why` truncado, acotado a 3) — como `additionalContext`. La salida se cachea por archivo para la sesión y está acotada en tiempo (timeout portable de 2s); el hook siempre sale con `exit 0`, así que un binario o `.sv-memory` ausente nunca rompe una llamada. Desactiva con `sv-memory hooks uninstall --context-injection`. La inyección por `additionalContext` es exclusiva de Claude Code: Antigravity mantiene su hook `PreInvocation` y OpenCode su `SKILL.md`, mientras que Codex, Pi y Cursor dependen de las instrucciones MCP nativas + `AGENTS.md`.
 
 ### 5. Reiniciar el Agente y Verificar
 
@@ -233,7 +233,7 @@ sv-memory tui
 | `sv-memory session summary <id>`   | **Sesión**        | Guarda un resumen estructurado (goal/discoveries/accomplished/next-steps/files) de una sesión.        |
 | `sv-memory session end`            | **Sesión**        | Termina la sesión activa (o `--session-id`) con un resumen opcional, espejo de `sv_mem_session_end`.  |
 | `sv-memory session active`         | **Sesión**        | Imprime el ID de la sesión activa o `none`.                                                          |
-| `sv-memory hooks install`          | **Hooks**         | Instala hooks PreToolUse y Git post-commit para Claude Code, Antigravity, OpenCode y Git.             |
+| `sv-memory hooks install`          | **Hooks**         | Instala hooks PreToolUse y Git post-commit para Claude Code, Antigravity y Git.             |
 | `sv-memory permissions list`       | **Permisos**      | Lista todas las herramientas MCP de sv-memory con descripciones.                                      |
 | `sv-memory permissions status`     | **Permisos**      | Muestra permisos MCP otorgados/faltantes por plataforma.                                              |
 | `sv-memory permissions grant`      | **Permisos**      | Escribe allow-lists de herramientas MCP (`--all`/`--tool`, `--dry-run`) para Antigravity/Claude Code. |
@@ -340,7 +340,7 @@ sv-memory permissions revoke --platform antigravity
 
 - **Antigravity** escribe entradas `mcp(sv-memory/<tool>)` en `~/.gemini/antigravity-cli/settings.json`.
 - **Claude Code** escribe entradas `mcp__sv-memory__<tool>` en `~/.claude/settings.json`.
-- **OpenCode** y **Codex** usan aprobación interactiva y se omiten (sin allow-list estática).
+- **OpenCode** permite las tools MCP por defecto (sin allow-list) y **Codex** aprueba de forma interactiva — ambos se omiten.
 - Las entradas no relacionadas (p. ej. `command(npm run)`) siempre se conservan.
 - Reinicia tu asistente de IA tras otorgar permisos para que cargue los cambios.
 
