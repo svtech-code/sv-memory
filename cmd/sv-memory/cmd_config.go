@@ -81,6 +81,35 @@ var configSetCmd = &cobra.Command{
 			scope = "locally"
 		}
 		fmt.Printf("Successfully set %s %s to %v\n", key, scope, val)
+
+		if key == "git_sync_enabled" {
+			enabled, _ := val.(bool)
+			if config.HasGitOrGitignore(cfg.ProjPath) {
+				if changed, gitErr := config.EnsureGitignoreStore(cfg.ProjPath, !enabled); gitErr != nil {
+					fmt.Printf("⚠️  Warning: failed to update .gitignore: %v\n", gitErr)
+				} else if changed {
+					if enabled {
+						fmt.Println("🤝 Updated .gitignore: removed '.sv-memory/' blanket ignore so memories and specs can be tracked in Git.")
+					} else {
+						fmt.Println("🔒 Updated .gitignore: added '.sv-memory/' so memories and specs stay local.")
+					}
+				}
+			}
+
+			if enabled {
+				if config.RepoVisibility(cfg.ProjPath) == "public" {
+					fmt.Println("⚠️  WARNING: This repository appears to be PUBLIC on GitHub.")
+					fmt.Println("   Committing .sv-memory/ will make internal decisions, journals, and specs publicly visible.")
+				}
+				fmt.Println("Next steps (Private Team Git Sync):")
+				fmt.Println("  1. Export current specs if needed: sv-memory specs export")
+				fmt.Println("  2. Stage and commit shared store:  git add .sv-memory/ .gitignore && git commit -m \"chore(memory): enable team git sync\"")
+			} else {
+				fmt.Println("Next steps (Local-only / Public Repository Mode):")
+				fmt.Println("  - If .sv-memory/ was previously committed to Git, untrack it (keeping local files):")
+				fmt.Println("    git rm -r --cached .sv-memory && git add .gitignore && git commit -m \"chore(memory): keep .sv-memory local-only\"")
+			}
+		}
 		return nil
 	},
 }

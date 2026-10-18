@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/svtech-code/sv-memory/internal/config"
 	"github.com/svtech-code/sv-memory/internal/db"
@@ -39,15 +40,55 @@ var initCmd = &cobra.Command{
 		fmt.Printf("Initializing project: %s (ID: %s)\n", cfg.ProjName, cfg.ProjectID)
 		fmt.Printf("Workspace root: %s\n", cfg.ProjPath)
 
+		gitSyncEnabled := viper.GetBool("git_sync_enabled")
+		if cmd.Flags().Changed("git-sync") {
+			gitSyncFlag, _ := cmd.Flags().GetBool("git-sync")
+			if writeErr := config.WriteConfigKey(cfg.ProjPath, "git_sync_enabled", gitSyncFlag, true); writeErr != nil {
+				return fmt.Errorf("failed to persist git_sync_enabled: %w", writeErr)
+			}
+			gitSyncEnabled = gitSyncFlag
+		}
+
+		visibility := config.RepoVisibility(cfg.ProjPath)
+		if config.HasGitOrGitignore(cfg.ProjPath) {
+			changedGitignore, gitignoreErr := config.EnsureGitignoreStore(cfg.ProjPath, !gitSyncEnabled)
+			if gitignoreErr != nil {
+				fmt.Printf("⚠️  Warning: failed to update .gitignore: %v\n", gitignoreErr)
+			} else if !gitSyncEnabled {
+				if changedGitignore {
+					fmt.Println("🔒 Added '.sv-memory/' to .gitignore (local-only / public-safe mode).")
+				} else {
+					fmt.Println("🔒 '.sv-memory/' is ignored in .gitignore (local-only / public-safe mode).")
+				}
+			} else if changedGitignore {
+				fmt.Println("🤝 Updated .gitignore for private team Git sync (.sv-memory/ tracked; runtime state ignored).")
+			}
+		}
+
 		// Warn when the repository is public: committed memories are world-readable.
-		if visibility := config.RepoVisibility(cfg.ProjPath); visibility == "public" {
+		if visibility == "public" {
 			fmt.Println()
 			fmt.Println("⚠️  Public repository detected (GitHub).")
-			fmt.Println("   Git sync is OFF by default, so memories stay local. Keep .sv-memory/ out of")
-			fmt.Println("   version control to avoid publishing internal decisions and journals.")
-			fmt.Println("   Private teams can opt in per project with:")
-			fmt.Println("     sv-memory configure set git_sync_enabled true --local")
+			if gitSyncEnabled {
+				fmt.Println("   WARNING: git_sync_enabled is TRUE in a PUBLIC repository!")
+				fmt.Println("   Committing .sv-memory/ will publish internal decisions, specs, and journals.")
+				fmt.Println("   To switch back to local-only mode and protect .sv-memory/:")
+				fmt.Println("     sv-memory configure set git_sync_enabled false --local")
+				fmt.Println("     git rm -r --cached .sv-memory 2>/dev/null || true")
+			} else {
+				fmt.Println("   Git sync is OFF by default, and .sv-memory/ is ignored in .gitignore so")
+				fmt.Println("   memories, graph data, and specs stay local and out of version control.")
+				fmt.Println("   Private teams can opt in per project with:")
+				fmt.Println("     sv-memory configure set git_sync_enabled true --local")
+			}
 			fmt.Println()
+		} else if gitSyncEnabled {
+			fmt.Println("   Mode: Private Team Git Sync (git_sync_enabled = true)")
+			fmt.Println("   Commit shared memories & specs with: git add .sv-memory/ .gitignore")
+			fmt.Println("   Switch to local/public mode anytime: sv-memory configure set git_sync_enabled false --local")
+		} else {
+			fmt.Println("   Mode: Local-only / Public-safe (git_sync_enabled = false)")
+			fmt.Println("   Enable team Git sync (private repos): sv-memory configure set git_sync_enabled true --local")
 		}
 
 		// 1. Initialize SQLite Database
@@ -218,6 +259,7 @@ func init() {
 	initCmd.Flags().String("agents", "", "Comma-separated list of agents to target during init (e.g. claude-code,antigravity)")
 	initCmd.Flags().Bool("all", false, "Configure all supported AI assistant integrations during init")
 	initCmd.Flags().Bool("skip-setup", false, "Skip agent hook/skill/mcp setup during initialization")
+	initCmd.Flags().Bool("git-sync", false, "Enable Git synchronization (.sv-memory/ tracked in Git for private teams)")
 }
 
 var mcpCmd = &cobra.Command{

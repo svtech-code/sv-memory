@@ -2,7 +2,9 @@ package config
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -10,6 +12,12 @@ import (
 // repoDetectionTimeout bounds the best-effort public/private probe so init never
 // blocks on a slow network or a hung gh process.
 const repoDetectionTimeout = 5 * time.Second
+
+const (
+	gitignoreLocalComment   = "# sv-memory (local-only / public repo mode)"
+	gitignorePrivateComment = "# sv-memory (private team git-sync mode: ignore local runtime state)"
+	gitignoreRuntimeEntry   = ".sv-memory/context-injection-enabled"
+)
 
 // RepoVisibility reports, best-effort, whether the project's origin repository
 // is public. It returns "public", "private", or "unknown". It only probes
@@ -47,4 +55,133 @@ func RepoVisibility(projPath string) string {
 // supporting both SSH (git@github.com:owner/repo.git) and HTTPS forms.
 func isGitHubRemote(remote string) bool {
 	return strings.Contains(strings.ToLower(strings.TrimSpace(remote)), "github.com")
+}
+
+// HasGitOrGitignore reports whether projPath has a .git entry or an existing .gitignore file.
+func HasGitOrGitignore(projPath string) bool {
+	if _, err := os.Stat(filepath.Join(projPath, ".git")); err == nil {
+		return true
+	}
+	if _, err := os.Stat(filepath.Join(projPath, ".gitignore")); err == nil {
+		return true
+	}
+	return false
+}
+
+// isBlanketStoreIgnoreLine reports whether a trimmed .gitignore line ignores the entire .sv-memory directory.
+func isBlanketStoreIgnoreLine(trimmed string) bool {
+	switch trimmed {
+	case ".sv-memory", ".sv-memory/", "/.sv-memory", "/.sv-memory/", ".sv-memory/*":
+		return true
+	default:
+		return false
+	}
+}
+
+// isRuntimeIgnoreLine reports whether a trimmed .gitignore line ignores the local context-injection toggle file.
+func isRuntimeIgnoreLine(trimmed string) bool {
+	switch trimmed {
+	case ".sv-memory/context-injection-enabled", "/.sv-memory/context-injection-enabled":
+		return true
+	default:
+		return false
+	}
+}
+
+// EnsureGitignoreStore reconciles .gitignore in projPath according to ignoreStore:
+//   - When ignoreStore is true (git_sync_enabled=false, default local/public mode):
+//     ensures `.sv-memory/` is present in `.gitignore` so `.sv-memory/specs/` and chunks are not accidentally committed.
+//   - When ignoreStore is false (git_sync_enabled=true, private team mode):
+//     removes any blanket `.sv-memory/` ignore entry from `.gitignore` and ensures `.sv-memory/context-injection-enabled` is ignored.
+//
+// It returns true when `.gitignore` was created or modified.
+func EnsureGitignoreStore(projPath string, ignoreStore bool) (bool, error) {
+	gitignorePath := filepath.Join(projPath, ".gitignore")
+	raw, err := os.ReadFile(gitignorePath)
+	if err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+	original := string(raw)
+	var lines []string
+	if len(original) > 0 {
+		lines = strings.Split(strings.ReplaceAll(original, "\r\n", "\n"), "\n")
+	}
+
+	if ignoreStore {
+		hasBlanket := false
+		for _, line := range lines {
+			if isBlanketStoreIgnoreLine(strings.TrimSpace(line)) {
+				hasBlanket = true
+				break
+			}
+		}
+		if hasBlanket {
+			return false, nil
+		}
+
+		// Filter out private-mode runtime-only ignore lines before adding blanket .sv-memory/
+		filtered := make([]string, 0, len(lines)+3)
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == gitignorePrivateComment || trimmed == gitignoreLocalComment || isRuntimeIgnoreLine(trimmed) {
+				continue
+			}
+			filtered = append(filtered, line)
+		}
+		filtered = trimTrailingEmptyLines(filtered)
+		if len(filtered) > 0 {
+			filtered = append(filtered, "")
+		}
+		filtered = append(filtered, gitignoreLocalComment, ".sv-memory/", "")
+		updated := strings.Join(filtered, "\n")
+		if updated == original {
+			return false, nil
+		}
+		return true, os.WriteFile(gitignorePath, []byte(updated), 0644)
+	}
+
+	// ignoreStore == false (private team git-sync mode):
+	// Remove blanket .sv-memory/ ignore rules and ensure .sv-memory/context-injection-enabled is ignored.
+	filtered := make([]string, 0, len(lines)+3)
+	hasRuntimeIgnore := false
+	removedAny := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == gitignoreLocalComment || isBlanketStoreIgnoreLine(trimmed) {
+			removedAny = true
+			continue
+		}
+		if isRuntimeIgnoreLine(trimmed) {
+			hasRuntimeIgnore = true
+		}
+		filtered = append(filtered, line)
+	}
+
+	if !removedAny && hasRuntimeIgnore {
+		return false, nil
+	}
+
+	if !hasRuntimeIgnore {
+		filtered = trimTrailingEmptyLines(filtered)
+		if len(filtered) > 0 {
+			filtered = append(filtered, "")
+		}
+		filtered = append(filtered, gitignorePrivateComment, gitignoreRuntimeEntry, "")
+	} else {
+		filtered = trimTrailingEmptyLines(filtered)
+		filtered = append(filtered, "")
+	}
+
+	updated := strings.Join(filtered, "\n")
+	if updated == original {
+		return false, nil
+	}
+	return true, os.WriteFile(gitignorePath, []byte(updated), 0644)
+}
+
+func trimTrailingEmptyLines(lines []string) []string {
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
 }

@@ -282,9 +282,29 @@ Desde la interfaz TUI puedes:
 
 ---
 
-## 📌 Mejores Prácticas recomendadas para Equipos
+## 📌 Repositorios Públicos vs Privados y Mejores Prácticas para Equipos
 
-1. **Equipos privados: activa el sync con Git e incluye `.sv-memory/chunks/`.** El sync con Git está desactivado por defecto; actívalo con `sv-memory configure set git_sync_enabled true --local`. Así todo el equipo comparte las decisiones arquitectónicas; los IDs de memoria distintos nunca entran en conflicto al hacer merge. Si dos agentes editan la _misma_ memoria, resuelve los marcadores de conflicto de `{id}.json` y vuelve a ejecutar `sv-memory sync`. **Nunca commitees `.sv-memory/` en un repositorio público** — las memorias quedan visibles para todo el mundo al hacer push; `sv-memory init` avisa cuando detecta un repo público de GitHub.
-2. **Revisa los commits antes de subir:** `sv-memory` actualiza los JSON de memoria localmente, pero nunca ejecuta `git commit` o `git push` automáticamente.
-3. **Ejecuta `sv_mem_compact` periódicamente:** Si notas que un tema ha acumulado muchas revisiones, la IA o tú pueden ejecutar compactación para resumir el historial en una síntesis limpia.
-4. **Mantén los secretos fuera del grafo:** `.env`, claves y credenciales nunca se indexan, y el texto de las memorias se redacta al guardar/importar. Añade `SECRETS.md` y archivos similares a `.sv-memoryignore` para que tampoco se indexen.
+1. **Repositorios Públicos / Open-Source / Individuales (Por defecto — `git_sync_enabled: false`):**
+   - Ejecutar `sv-memory init` (sin `--git-sync`) añade automáticamente `.sv-memory/` a `.gitignore`.
+   - **Nunca commitees `.sv-memory/` en un repositorio público** — las decisiones, journals y specs quedan visibles para todo el mundo al hacer push.
+   - Si `.sv-memory/` fue commiteado por accidente anteriormente, pasa a modo solo-local y deja de trackearlo en Git sin borrar tus archivos locales:
+     ```bash
+     sv-memory configure set git_sync_enabled false --local
+     git rm -r --cached .sv-memory && git add .gitignore
+     git commit -m "chore(memory): keep .sv-memory local-only"
+     ```
+2. **Repositorios Privados de Equipo (Opt-in — `git_sync_enabled: true`):**
+   - Activa el sync con Git al inicializar (`sv-memory init --git-sync`) o en cualquier momento con:
+     ```bash
+     sv-memory configure set git_sync_enabled true --local
+     ```
+   - `sv-memory` quita automáticamente el ignore global de `.sv-memory/` en `.gitignore` (dejando ignorado solo `.sv-memory/context-injection-enabled`) para que tu equipo pueda versionar `.sv-memory/config.json`, `.sv-memory/chunks/*.json` y `.sv-memory/specs/`.
+   - Commitea el conocimiento compartido junto con tu código (o en un commit dedicado):
+     ```bash
+     git add .sv-memory/ .gitignore
+     git commit -m "chore(memory): sync architectural decisions and specs"
+     ```
+   - Los IDs de memoria distintos nunca entran en conflicto al hacer merge. Si dos agentes editan la _misma_ memoria, resuelve los marcadores de conflicto de `{id}.json` y vuelve a ejecutar `sv-memory sync`.
+3. **Revisa los commits antes de subir:** `sv-memory` actualiza los JSON de memoria localmente, pero nunca ejecuta `git commit` o `git push` automáticamente.
+4. **Ejecuta `sv_mem_compact` periódicamente:** Si notas que un tema ha acumulado muchas revisiones, la IA o tú pueden ejecutar compactación para resumir el historial en una síntesis limpia.
+5. **Mantén los secretos fuera del grafo:** `.env`, claves y credenciales nunca se indexan, y el texto de las memorias se redacta al guardar/importar. Añade `SECRETS.md` y archivos similares a `.sv-memoryignore` para que tampoco se indexen.

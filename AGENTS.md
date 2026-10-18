@@ -15,7 +15,7 @@ This project uses 'sv-memory' for persistent architectural memory, progress jour
 1. **Start:** Call 'sv_mem_session_start' at the beginning of work. It returns an **Auto-Boot Context Bundle** with the previous session summary, key architectural decisions, standards, recent bugfixes, last journals, and top graph hubs — read it and use it as your starting context.
    - **Auto-managed on OpenCode:** the sv-memory plugin auto-starts the session and injects this bundle into your first request (its header shows the session ID). If you already see that header, skip 'sv_mem_session_start' — do not start a second session.
 2. **Associate saves:** Pass 'session_id' to 'sv_mem_save' to group memories under the active session. If omitted, the active session is auto-detected.
-3. **Capture knowledge as you go:** Save journals, decisions, standards, and bugfixes with 'sv_mem_save' (see the Memory Capture Guidelines below). For evolving categories ('decision', 'standard', 'architecture', 'bugfix'), 'topic_key' is automatically derived if omitted to enable upsert semantics. Use 'sv_mem_capture_passive' for lightweight observations that do not need an explicit save decision.
+3. **Capture knowledge as you go:** Save journals, decisions, standards, and bugfixes with 'sv_mem_save' (see the Memory Capture Guidelines below). For evolving categories ('decision', 'standard', 'architecture', 'bugfix')', 'topic_key' is automatically derived if omitted to enable upsert semantics. Use 'sv_mem_capture_passive' for lightweight observations that do not need an explicit save decision.
 4. **End:** Call 'sv_mem_session_end(accomplished=...)' to save the summary and mark the session as completed in a single call (session_id is auto-detected if omitted). Alternatively, call 'sv_mem_session_summary' before 'sv_mem_session_end'.
 
 After a compaction or context reset, call 'sv_mem_context' to recover the last session state (goal, summary, associated memories).
@@ -69,7 +69,7 @@ Always persist design knowledge as structured memories with a topic_key, not jus
 
 The sv-memory graph is a pre-computed structural index of the project (source, call paths, blast radius you would otherwise re-derive by reading). For any symbol or path the graph has synced, prefer graph tools over a raw grep/read loop: one call returns line-numbered source, structure, and consequences in far fewer tokens and round-trips.
 
-- **Explore first (read-equivalent):** Call 'sv_graph_explore' BEFORE reading or grepping a file. Pass one or more comma-separated symbols/paths; it returns each symbol's structural role, a surgical line-numbered source snippet (treat it as already read), the shortest call path between them, blast radius, and linked memories. 'sv_mem_context_pack(path="<file|pkg>")' is the same contract for a single path plus active changes and capabilities.
+- **Explore first (read-equivalent):** Call 'sv_graph_explore' BEFORE reading or grepping a file. Pass one or more comma-separated symbols/paths; it returns each symbol's structural role, a surgical line-numbered source snippet (treat it as already read), the shortest call path between them, blast radius, and linked memories. 'sv_graph_explore(path="<file|pkg>")' is the same contract for a single path plus active changes and capabilities.
 - **Discover by pattern:** Call 'sv_graph_search(query="keyword")' to find nodes matching a text pattern across id/label/path when the exact symbol name is unknown. Then explore results with 'sv_graph_explore' or 'sv_graph_explain'.
 - **Orient before touching code:** Call 'sv_graph_god_nodes' to see the most-connected hub nodes — these are the architectural hotspots any change may ripple through.
 - **Understand a module:** Call 'sv_graph_explain(node=...)' before refactoring, deleting, or restructuring a file/module. It reports the node's role, community, centrality, fan-in/fan-out, neighbors, and suggested questions.
@@ -90,13 +90,13 @@ If the change touches behavior, contracts, APIs, or architecture — you MUST us
 
 
 **When to use what:**
-- **Retrospective/Small (1 tool call):** If you just fixed a bug, defined a coding standard, or made a minor design choice, use `sv_mem_save(category='decision'|'standard'|'bugfix')`.
+- **Retrospective/Small (1 tool call):** If you just fixed a bug, defined a coding standard, or made a minor design choice, use 'sv_mem_save(category='decision'|'standard'|'bugfix')'.
 - **Prospective/Major (5 tool calls):** If you are about to implement a *new feature*, refactor a core API, or change the architecture, you MUST use the Spec Cycle.
 
 **The loop (5 tools, one cycle):**
 
 1. **List pending work:** 'sv_spec_list()' shows active changes with status and task progress.
-2. **Consult context + Propose:** 'sv_mem_context_pack(path="<file>", include_changes="true")' for context, then 'sv_propose_spec(slug=..., title=..., what=..., where_path=..., requirements=..., tasks=..., capability_path=...)' registers the change with pre-flight check (BLOCK/WARN/PASS). The 'requirements' param carries OpenSpec-style deltas (## ADDED/MODIFIED/REMOVED/RENAMED Requirements, ### Requirement:, #### Scenario: with GIVEN/WHEN/THEN/AND steps).
+2. **Consult context + Propose:** 'sv_graph_explore(path="<file>", include_changes="true")' for context, then 'sv_propose_spec(slug=..., title=..., what=..., where_path=..., requirements=..., tasks=..., capability_path=...)' registers the change with pre-flight check (BLOCK/WARN/PASS). The 'requirements' param carries OpenSpec-style deltas (## ADDED/MODIFIED/REMOVED/RENAMED Requirements, ### Requirement:, #### Scenario: with GIVEN/WHEN/THEN/AND steps).
 3. **Get + Apply:** 'sv_spec_get(change_id="<slug>")' retrieves proposal/design/tasks. Implement code, then 'sv_update_spec(change_id=..., tasks=...)' marks completed checkboxes.
 4. **Validate:** 'sv_validate_decision(change_id=...)' re-checks after edits (PASS/WARN/BLOCK); validate delta requirements (RFC 2119, scenario consistency). 'semantic="true"' opts into agent re-ranking.
 5. **Commit:** 'sv_commit_spec(change_id=...)' promotes to durable decision memory, merges deltas into capability state (.sv-memory/specs/capabilities/ + graph spec nodes), stamps applied.

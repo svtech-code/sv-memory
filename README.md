@@ -352,25 +352,65 @@ platforms.
 
 ---
 
-## 🔄 Git Sync & Merge Conflicts
+## 🔄 Public vs Private Repositories & Git Sync Workflow
 
-**Git sync is opt-in (off by default).** sv-memory keeps memories local-only unless you
-enable sharing, which syncs your SQLite store (local per clone) with
-`.sv-memory/chunks/{id}.json` files committed to Git so a **private** team shares
-architectural context across clones. Enable it globally or per project:
+`sv-memory` adapts how `.sv-memory/` is handled in Git depending on whether your repository is **Public / Local-only** (default) or a **Private Team Repository** (opt-in):
+
+| Mode | Setting | `.gitignore` Behavior (Automatic) | What is Committed to Git? | Best For |
+| :--- | :--- | :--- | :--- | :--- |
+| **🔒 Public / Local-Only (Default)** | `git_sync_enabled: false` | Automatically adds `.sv-memory/` to `.gitignore` | **Nothing** in `.sv-memory/`. All memories, graph nodes, and spec mirrors stay 100% local on your machine. | Open-source / public repos, personal projects, or solo workflows where internal notes must not be published. |
+| **🤝 Private Team Git Sync (Opt-in)** | `git_sync_enabled: true` | Removes blanket `.sv-memory/` from `.gitignore`; ignores only `.sv-memory/context-injection-enabled` | `.sv-memory/config.json`, `.sv-memory/chunks/*.json` (memories), and `.sv-memory/specs/` (OpenSpec changes & capabilities). | Private company/team repos where developers and AI agents share architectural decisions and specs across clones. |
+
+### 1. Public or Local-Only Repositories (Default)
+
+When you run `sv-memory init` without `--git-sync`, `git_sync_enabled` defaults to `false` and `sv-memory` automatically ensures `.sv-memory/` is listed in your `.gitignore`.
 
 ```bash
-sv-memory configure set git_sync_enabled true            # global (all projects)
-sv-memory configure set git_sync_enabled true --local    # this project only
+# Initialize in local-only / public-safe mode (default)
+sv-memory init
 ```
 
-> ⚠️ **Public repositories:** do **not** commit `.sv-memory/`. Decisions, journals and
-> Q&A reasoning are world-readable once pushed. Keep `.sv-memory/` in `.gitignore`.
-> `sv-memory init` warns you when it detects a public GitHub repository.
+> ⚠️ **Why never commit `.sv-memory/` in a public repository?**
+> Memories (`decision`, `journal`, `bugfix`, `qa`) and spec proposals contain internal architectural reasoning and debugging history that become world-readable once pushed. `sv-memory init` and `sv-memory configure` detect public GitHub remotes via `gh` and warn you automatically.
+
+**If you previously committed `.sv-memory/` by accident and want to switch to Public / Local-only mode without losing your local memories:**
+
+```bash
+# 1. Disable Git sync for this project (automatically adds .sv-memory/ back to .gitignore)
+sv-memory configure set git_sync_enabled false --local
+
+# 2. Untrack .sv-memory/ from Git index while keeping your local files on disk
+git rm -r --cached .sv-memory
+git add .gitignore
+git commit -m "chore(memory): keep .sv-memory local-only"
+```
+
+### 2. Private Team Repositories (Sharing Memory & Specs via Git)
+
+In a **private** repository, enabling Git sync lets every teammate and AI agent inherit the team's architectural decisions, standards, bugfixes, and OpenSpec capabilities automatically.
+
+```bash
+# Option A: Enable directly during project initialization
+sv-memory init --git-sync
+
+# Option B: Enable on an already-initialized project
+sv-memory configure set git_sync_enabled true --local
+```
+
+**How to commit and sync in a Private Team repo:**
+
+1. **When saving decisions or specs:** As you work, `sv_mem_save` and `sv_commit_spec` automatically write per-memory chunks to `.sv-memory/chunks/{id}.json` and spec mirrors to `.sv-memory/specs/`.
+2. **When committing your work:** Include `.sv-memory/` in your commit (or as a dedicated commit):
+   ```bash
+   git add .sv-memory/ .gitignore
+   git commit -m "chore(memory): sync architectural decisions and specs"
+   ```
+3. **After `git pull` / `git merge`:** Starting the MCP server (`sv-memory mcp`), running `sv-memory init`, or running `sv-memory sync` automatically imports any new or updated team chunks into your local SQLite database.
+
+### 3. Handling Merge Conflicts in `.sv-memory/chunks/`
 
 The manual `sv-memory sync` command is an explicit user action and always runs, even
-when auto-sync is disabled. Because each memory lives in its own file, agents editing
-**different** memories never conflict.
+when auto-sync is disabled. Because each memory lives in its own `.sv-memory/chunks/{id}.json` file, teammates or agents editing **different** memories never conflict.
 
 **Same-memory edits are _not_ zero-conflict.** When two clones edit the _same_ memory
 ID (typically via topic-key upserts), Git produces conflict markers inside `{id}.json`:
@@ -389,12 +429,11 @@ What happens on `sv-memory sync` / auto-import:
   a warning**; the rest of the chunks still import. It does **not** abort the whole sync.
 - When a pulled chunk would overwrite a local version that is **newer** (higher
   `revision_count`) or **diverged at the same revision**, a last-writer-wins warning is
-  logged the git chunk wins, but the lost local edit is surfaced instead of silently
+  logged — the git chunk wins, but the lost local edit is surfaced instead of silently
   dropped.
 
 To resolve a conflicted chunk: edit `{id}.json` to the desired content (removing the
 `<<<<<<<`/`=======`/`>>>>>>>` markers), `git add` it, and re-run `sv-memory sync`.
-Run `sv-memory sync` after `git pull`/`git merge` so the server picks up team changes.
 
 ---
 
