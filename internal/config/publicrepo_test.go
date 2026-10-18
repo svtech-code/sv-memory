@@ -54,7 +54,7 @@ func TestEnsureGitignoreStoreLifecycle(t *testing.T) {
 		t.Fatalf("expected HasGitOrGitignore to be true when .gitignore exists")
 	}
 
-	// 1. Default local/public mode (ignoreStore = true) adds .sv-memory/
+	// 1. Default local/public mode (ignoreStore = true) adds .sv-memory/ and openspec/
 	changed, err := EnsureGitignoreStore(tempDir, true)
 	if err != nil {
 		t.Fatalf("EnsureGitignoreStore(true): %v", err)
@@ -64,8 +64,8 @@ func TestEnsureGitignoreStoreLifecycle(t *testing.T) {
 	}
 	raw, _ := os.ReadFile(gitignorePath)
 	content := string(raw)
-	if !containsLine(content, ".sv-memory/") || !containsLine(content, "node_modules/") {
-		t.Fatalf("expected .gitignore to contain .sv-memory/ and preserve node_modules/, got:\n%s", content)
+	if !containsLine(content, ".sv-memory/") || !containsLine(content, "openspec/") || !containsLine(content, "node_modules/") {
+		t.Fatalf("expected .gitignore to contain .sv-memory/, openspec/, and preserve node_modules/, got:\n%s", content)
 	}
 
 	// Idempotent second call in local/public mode
@@ -84,8 +84,8 @@ func TestEnsureGitignoreStoreLifecycle(t *testing.T) {
 	}
 	raw, _ = os.ReadFile(gitignorePath)
 	content = string(raw)
-	if containsLine(content, ".sv-memory/") {
-		t.Fatalf("expected blanket .sv-memory/ to be removed in private team mode, got:\n%s", content)
+	if containsLine(content, ".sv-memory/") || containsLine(content, "openspec/") {
+		t.Fatalf("expected blanket .sv-memory/ and openspec/ to be removed in private team mode, got:\n%s", content)
 	}
 	if !containsLine(content, ".sv-memory/context-injection-enabled") || !containsLine(content, "node_modules/") {
 		t.Fatalf("expected runtime state ignore and preserved node_modules/ in private team mode, got:\n%s", content)
@@ -104,8 +104,8 @@ func TestEnsureGitignoreStoreLifecycle(t *testing.T) {
 	}
 	raw, _ = os.ReadFile(gitignorePath)
 	content = string(raw)
-	if !containsLine(content, ".sv-memory/") || containsLine(content, ".sv-memory/context-injection-enabled") {
-		t.Fatalf("expected .sv-memory/ restored and runtime-only line cleaned up, got:\n%s", content)
+	if !containsLine(content, ".sv-memory/") || !containsLine(content, "openspec/") || containsLine(content, ".sv-memory/context-injection-enabled") {
+		t.Fatalf("expected .sv-memory/ and openspec/ restored and runtime-only line cleaned up, got:\n%s", content)
 	}
 }
 

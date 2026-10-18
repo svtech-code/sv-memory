@@ -78,6 +78,16 @@ func isBlanketStoreIgnoreLine(trimmed string) bool {
 	}
 }
 
+// isOpenSpecIgnoreLine reports whether a trimmed .gitignore line ignores the openspec mirror directory.
+func isOpenSpecIgnoreLine(trimmed string) bool {
+	switch trimmed {
+	case "openspec", "openspec/", "/openspec", "/openspec/", "openspec/*":
+		return true
+	default:
+		return false
+	}
+}
+
 // isRuntimeIgnoreLine reports whether a trimmed .gitignore line ignores the local context-injection toggle file.
 func isRuntimeIgnoreLine(trimmed string) bool {
 	switch trimmed {
@@ -90,9 +100,11 @@ func isRuntimeIgnoreLine(trimmed string) bool {
 
 // EnsureGitignoreStore reconciles .gitignore in projPath according to ignoreStore:
 //   - When ignoreStore is true (git_sync_enabled=false, default local/public mode):
-//     ensures `.sv-memory/` is present in `.gitignore` so `.sv-memory/specs/` and chunks are not accidentally committed.
+//     ensures `.sv-memory/` and `openspec/` are present in `.gitignore` so `.sv-memory/specs/`,
+//     `openspec/`, and memory chunks are not accidentally committed.
 //   - When ignoreStore is false (git_sync_enabled=true, private team mode):
-//     removes any blanket `.sv-memory/` ignore entry from `.gitignore` and ensures `.sv-memory/context-injection-enabled` is ignored.
+//     removes any blanket `.sv-memory/` and `openspec/` ignore entries from `.gitignore` and
+//     ensures `.sv-memory/context-injection-enabled` is ignored.
 //
 // It returns true when `.gitignore` was created or modified.
 func EnsureGitignoreStore(projPath string, ignoreStore bool) (bool, error) {
@@ -109,30 +121,43 @@ func EnsureGitignoreStore(projPath string, ignoreStore bool) (bool, error) {
 
 	if ignoreStore {
 		hasBlanket := false
+		hasOpenSpec := false
 		for _, line := range lines {
-			if isBlanketStoreIgnoreLine(strings.TrimSpace(line)) {
+			trimmed := strings.TrimSpace(line)
+			if isBlanketStoreIgnoreLine(trimmed) {
 				hasBlanket = true
-				break
+			}
+			if isOpenSpecIgnoreLine(trimmed) {
+				hasOpenSpec = true
 			}
 		}
-		if hasBlanket {
+		if hasBlanket && hasOpenSpec {
 			return false, nil
 		}
 
-		// Filter out private-mode runtime-only ignore lines before adding blanket .sv-memory/
-		filtered := make([]string, 0, len(lines)+3)
+		// Filter out private-mode runtime-only ignore lines before adding missing local/public entries
+		filtered := make([]string, 0, len(lines)+4)
 		for _, line := range lines {
 			trimmed := strings.TrimSpace(line)
-			if trimmed == gitignorePrivateComment || trimmed == gitignoreLocalComment || isRuntimeIgnoreLine(trimmed) {
+			if trimmed == gitignorePrivateComment || isRuntimeIgnoreLine(trimmed) {
+				continue
+			}
+			if !hasBlanket && trimmed == gitignoreLocalComment {
 				continue
 			}
 			filtered = append(filtered, line)
 		}
 		filtered = trimTrailingEmptyLines(filtered)
-		if len(filtered) > 0 {
-			filtered = append(filtered, "")
+		if !hasBlanket {
+			if len(filtered) > 0 {
+				filtered = append(filtered, "")
+			}
+			filtered = append(filtered, gitignoreLocalComment, ".sv-memory/")
 		}
-		filtered = append(filtered, gitignoreLocalComment, ".sv-memory/", "")
+		if !hasOpenSpec {
+			filtered = append(filtered, "openspec/")
+		}
+		filtered = append(filtered, "")
 		updated := strings.Join(filtered, "\n")
 		if updated == original {
 			return false, nil
@@ -141,13 +166,13 @@ func EnsureGitignoreStore(projPath string, ignoreStore bool) (bool, error) {
 	}
 
 	// ignoreStore == false (private team git-sync mode):
-	// Remove blanket .sv-memory/ ignore rules and ensure .sv-memory/context-injection-enabled is ignored.
+	// Remove blanket .sv-memory/ and openspec/ ignore rules and ensure .sv-memory/context-injection-enabled is ignored.
 	filtered := make([]string, 0, len(lines)+3)
 	hasRuntimeIgnore := false
 	removedAny := false
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == gitignoreLocalComment || isBlanketStoreIgnoreLine(trimmed) {
+		if trimmed == gitignoreLocalComment || isBlanketStoreIgnoreLine(trimmed) || isOpenSpecIgnoreLine(trimmed) {
 			removedAny = true
 			continue
 		}
