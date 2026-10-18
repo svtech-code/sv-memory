@@ -578,3 +578,67 @@ func TestContextPackExploreCallPathEmptyWithoutTwoSymbols(t *testing.T) {
 		t.Errorf("expected single-symbol resolve, got %+v", pack.Node)
 	}
 }
+
+func TestContextPackFileSkeletonAndPostCommitFilter(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := db.InitDB(filepath.Join(tempDir, "ctx_skeleton.db"))
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer database.Close()
+
+	projectID := "proj-ctx-skeleton"
+	if regErr := db.RegisterProject(database, projectID, "Skeleton Proj", tempDir); regErr != nil {
+		t.Fatalf("failed to register project: %v", regErr)
+	}
+
+	src := "package main\n\ntype ServiceConfig struct{}\n\nfunc StartServer() {}\nfunc StopServer() {}\n"
+	if err = os.WriteFile(filepath.Join(tempDir, "server.go"), []byte(src), 0644); err != nil {
+		t.Fatalf("failed writing server.go: %v", err)
+	}
+	if err = graph.SyncGraph(database, projectID, tempDir); err != nil {
+		t.Fatalf("failed syncing graph: %v", err)
+	}
+
+	// Save a high-signal decision and a noisy automatic post-commit journal for server.go.
+	if _, err = SaveMemory(database, &Memory{
+		ProjectID: projectID,
+		Category:  "decision",
+		What:      "Graceful shutdown on StopServer",
+		Why:       "Prevent dropped connections",
+		Learned:   "Always drain before closing",
+		WherePath: "server.go",
+	}); err != nil {
+		t.Fatalf("failed saving decision: %v", err)
+	}
+	if _, err = SaveMemory(database, &Memory{
+		ProjectID: projectID,
+		Category:  "journal",
+		What:      "git commit: chore(lint): format server.go",
+		Why:       "automatic post-commit capture for deadbeef1234",
+		Learned:   "Committed 1 file(s) to main",
+		WherePath: "server.go",
+	}); err != nil {
+		t.Fatalf("failed saving post-commit journal: %v", err)
+	}
+
+	pack, err := GetContextPack(database, projectID, "server.go", 5, false)
+	if err != nil {
+		t.Fatalf("GetContextPack failed: %v", err)
+	}
+	if !strings.Contains(pack.Snippet, "// AST Skeleton for server.go") {
+		t.Errorf("expected AST Skeleton header for file node, got:\n%s", pack.Snippet)
+	}
+	if !strings.Contains(pack.Snippet, "StartServer (function)") || !strings.Contains(pack.Snippet, "StopServer (function)") {
+		t.Errorf("expected functions in AST Skeleton, got:\n%s", pack.Snippet)
+	}
+
+	for _, m := range pack.Memories {
+		if strings.Contains(m.Why, "automatic post-commit capture for") {
+			t.Errorf("expected automatic post-commit capture journal to be filtered out, got: %+v", m)
+		}
+	}
+	if len(pack.Memories) != 1 || !strings.Contains(pack.Memories[0].What, "Graceful shutdown") {
+		t.Errorf("expected only high-signal decision memory, got: %+v", pack.Memories)
+	}
+}

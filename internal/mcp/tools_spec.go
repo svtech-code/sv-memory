@@ -290,6 +290,8 @@ func (s *Server) handleValidateDecision(ctx context.Context, req mcp.CallToolReq
 // handleSpecList lists active spec changes with their status, title, task
 // progress, and capability. Mirrors `openspec list` for MCP consumers — the
 // primary way agents discover what is pending without a raw CLI call.
+const maxDefaultAppliedSpecs = 5
+
 func (s *Server) handleSpecList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	status := req.GetString("status", "")
 
@@ -297,21 +299,49 @@ func (s *Server) handleSpecList(ctx context.Context, req mcp.CallToolRequest) (*
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to list changes: %v", err)), nil
 	}
-	if len(changes) == 0 {
+
+	var display []*memory.Change
+	hiddenApplied := 0
+	if status == "" {
+		var pending []*memory.Change
+		var applied []*memory.Change
+		for _, c := range changes {
+			switch c.Status {
+			case memory.ChangeStatusDraft, memory.ChangeStatusProposed, memory.ChangeStatusValidated:
+				pending = append(pending, c)
+			case memory.ChangeStatusApplied:
+				applied = append(applied, c)
+			}
+		}
+		display = append(display, pending...)
+		if len(applied) > maxDefaultAppliedSpecs {
+			display = append(display, applied[:maxDefaultAppliedSpecs]...)
+			hiddenApplied = len(applied) - maxDefaultAppliedSpecs
+		} else {
+			display = append(display, applied...)
+		}
+	} else {
+		display = changes
+	}
+
+	if len(display) == 0 {
 		return mcp.NewToolResultText("No active changes in this project. Create one with `sv_propose_spec`."), nil
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "## Active spec changes (%d)\n\n", len(changes))
+	fmt.Fprintf(&sb, "## Active spec changes (%d)\n\n", len(display))
 	fmt.Fprintf(&sb, "%-12s %-24s %-14s %s\n", "STATUS", "SLUG", "TASKS", "TITLE")
 
-	for _, c := range changes {
+	for _, c := range display {
 		tasksSummary := "-"
 		if prog := memory.ParseTaskProgress(c.Tasks); prog.Total > 0 {
 			tasksSummary = prog.Summary
 		}
 		fmt.Fprintf(&sb, "%-12s %-24s %-14s %s\n",
 			c.Status, c.Slug, tasksSummary, memory.TruncateText(c.Title, 50))
+	}
+	if hiddenApplied > 0 {
+		fmt.Fprintf(&sb, "\n*(+%d older applied changes omitted for token economy — pass `status=\"applied\"` to list all)*\n", hiddenApplied)
 	}
 	sb.WriteString("\nUse `sv_spec_get(change_id=\"<slug>\")` to inspect a specific change.")
 	return s.respond(req, sb.String()), nil

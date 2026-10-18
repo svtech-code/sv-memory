@@ -225,11 +225,14 @@ func GetContextPack(db *sql.DB, projectID, query string, maxMemories int, includ
 	var mems []ContextMemory
 
 	// 1. Memories whose where_path matches the query (path-scoped recall).
+	// Exclude automatic git post-commit capture logs so they don't displace
+	// high-signal architectural decisions, bugfixes, or agent journals.
 	pattern := "%" + sanitizePathFilter(primary) + "%"
 	pathRows, err := db.Query(`
 		SELECT id, category, what, COALESCE(why, ''), COALESCE(where_path, '')
 		FROM memories
 		WHERE project_id = ? AND deleted_at IS NULL
+		  AND COALESCE(why, '') NOT LIKE 'automatic post-commit capture for %'
 		  AND (where_path LIKE ? ESCAPE '\' OR where_path = ?)
 		ORDER BY created_at DESC
 		LIMIT ?`, projectID, pattern, primary, maxMemories)
@@ -259,6 +262,7 @@ func GetContextPack(db *sql.DB, projectID, query string, maxMemories int, includ
 			JOIN memories m ON m.id = e.source_id
 			WHERE e.project_id = ? AND e.relation_type = 'rationale_for' AND e.target_id = ?
 			  AND m.deleted_at IS NULL
+			  AND COALESCE(m.why, '') NOT LIKE 'automatic post-commit capture for %'
 			ORDER BY m.created_at DESC
 			LIMIT ?`, projectID, node.ID, maxMemories)
 		if err != nil {
@@ -500,15 +504,23 @@ func parseCommunityID(metadata string) int {
 // maxSnippetLines is the maximum number of source lines included in a surgical snippet.
 const maxSnippetLines = 60
 
-// extractFileSkeleton returns a structured AST skeleton (list of exported symbols)
-// for a file node by querying its outgoing 'contains' edges in the graph.
+// extractFileSkeleton returns a structured AST skeleton (list of symbols)
+// for a file node by querying file-scoped symbol nodes in graph_nodes and any
+// outgoing 'contains' edges in the graph.
 func extractFileSkeleton(db *sql.DB, projectID string, node *ContextNode, projPath string) (string, int) {
 	rows, err := db.Query(`
-		SELECT n.label, n.type 
-		FROM graph_edges e 
-		JOIN graph_nodes n ON e.target_id = n.id 
-		WHERE e.project_id = ? AND e.source_id = ? AND e.relation_type = 'contains'
-		ORDER BY n.label ASC`, projectID, node.ID)
+		SELECT DISTINCT n.label, n.node_type
+		FROM graph_nodes n
+		WHERE n.project_id = ?
+		  AND (
+		    (n.path = ? AND n.id != ? AND n.node_type NOT IN ('file', 'document', 'sql', 'route', 'concept', 'spec'))
+		    OR n.id IN (
+		      SELECT e.target_id
+		      FROM graph_edges e
+		      WHERE e.project_id = ? AND e.source_id = ? AND e.relation_type = 'contains'
+		    )
+		  )
+		ORDER BY n.label ASC`, projectID, node.Path, node.ID, projectID, node.ID)
 	if err != nil {
 		return extractSurgicalSnippet(projPath, node, maxSnippetLines)
 	}

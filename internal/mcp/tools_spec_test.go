@@ -844,6 +844,40 @@ func TestSpecListHandler(t *testing.T) {
 	if !strings.Contains(text, "1/2") {
 		t.Errorf("expected task progress 1/2, got: %s", text)
 	}
+
+	// Create 7 applied changes to verify the default cap (max 5 applied shown when status is omitted)
+	for i := 1; i <= 7; i++ {
+		slug := "applied-change-" + string(rune('0'+i))
+		c, cErr := memory.CreateChange(pool.Writer, cfg.ProjectID, slug, "Applied Title", "what", "", "", "", "")
+		if cErr != nil {
+			t.Fatalf("CreateChange %s failed: %v", slug, cErr)
+		}
+		if _, cErr = memory.UpdateChangeStatus(pool.Writer, cfg.ProjectID, c.ID, memory.ChangeStatusApplied); cErr != nil {
+			t.Fatalf("UpdateChangeStatus %s failed: %v", slug, cErr)
+		}
+	}
+
+	res, err = tool.Handler(ctx, req)
+	if err != nil {
+		t.Fatalf("sv_spec_list with applied cap failed: %v", err)
+	}
+	text = textContent(res.Content[0])
+	if !strings.Contains(text, "+2 older applied changes omitted") {
+		t.Errorf("expected omission notice for +2 older applied changes, got:\n%s", text)
+	}
+
+	// Explicit status="applied" must list all 7 applied changes
+	reqApplied := mcpgo.CallToolRequest{}
+	reqApplied.Params.Name = "sv_spec_list"
+	reqApplied.Params.Arguments = map[string]any{"status": "applied"}
+	resApplied, err := tool.Handler(ctx, reqApplied)
+	if err != nil {
+		t.Fatalf("sv_spec_list(status=applied) failed: %v", err)
+	}
+	textApplied := textContent(resApplied.Content[0])
+	if !strings.Contains(textApplied, "Active spec changes (7)") {
+		t.Errorf("expected all 7 applied changes when status='applied', got:\n%s", textApplied)
+	}
 }
 
 func TestSpecGetHandler(t *testing.T) {

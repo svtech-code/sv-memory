@@ -267,7 +267,8 @@ type bundleSection struct {
 var autoBootSections = []bundleSection{
 	{title: "Key Architectural Decisions", where: "category IN ('architecture', 'decision')", withWhy: true, cap: 3},
 	{title: "Standards & Conventions", where: "category = 'standard'", withWhy: false, cap: 2},
-	{title: "Recent Work & Known Issues", where: "category IN ('bugfix', 'journal')", withWhy: false, cap: 2},
+	{title: "Recent Work & Known Issues", where: "category IN ('bugfix', 'journal') AND COALESCE(why, '') NOT LIKE 'automatic post-commit capture for %'", withWhy: false, cap: 2},
+	{title: "Active Ideas", where: "category = 'idea' AND what NOT LIKE 'RESUELTO:%'", withWhy: false, cap: 2},
 	// Postmortems are the most reusable lesson (what went wrong and how to avoid
 	// it), so the single most relevant one is surfaced with its rationale.
 	{title: "Postmortems & Lessons Learned", where: "category = 'postmortem'", withWhy: true, cap: 1},
@@ -302,7 +303,7 @@ func GetAutoBootBundle(ctx context.Context, db *sql.DB, projectID string, opts A
 func collectShownAndSession(db *sql.DB, projectID string, sb *strings.Builder) map[string]bool {
 	shown := map[string]bool{}
 	sessCtx, err := GetSessionContext(db, projectID, 0)
-	if err != nil || sessCtx == "" || strings.HasPrefix(sessCtx, "No previous session") {
+	if err != nil || sessCtx == "" || strings.HasPrefix(sessCtx, "No previous session") || strings.HasPrefix(sessCtx, "No recorded sessions.") {
 		return shown
 	}
 	sb.WriteString(sessCtx)
@@ -332,8 +333,8 @@ func collectAutoBootCandidates(db *sql.DB, projectID string, opts AutoBootOption
 		limit := sec.cap
 		if opts.Goal != "" {
 			if opts.Semantic {
-				// 6 per section × 5 = 30, within SemanticRecallMaxCandidates.
-				limit = 6
+				// 5 per section × 6 = 30, within SemanticRecallMaxCandidates.
+				limit = 5
 			} else {
 				limit = 15
 			}
@@ -409,28 +410,43 @@ func renderConflictSection(sb *strings.Builder, db *sql.DB, projectID string) {
 	}
 }
 
-// renderActiveChangesSection surfaces in-flight spec changes with task progress.
+// renderActiveChangesSection surfaces in-flight spec changes with task progress,
+// and summarizes already-applied changes on a single line to avoid token bloat.
 func renderActiveChangesSection(sb *strings.Builder, db *sql.DB, projectID string) {
 	stats, err := ChangeStats(db, projectID)
 	if err != nil {
 		return
 	}
-	total := stats[ChangeStatusDraft] + stats[ChangeStatusProposed] + stats[ChangeStatusValidated] + stats[ChangeStatusApplied]
-	if total == 0 {
+	pendingCount := stats[ChangeStatusDraft] + stats[ChangeStatusProposed] + stats[ChangeStatusValidated]
+	appliedCount := stats[ChangeStatusApplied]
+	if pendingCount+appliedCount == 0 {
 		return
 	}
 	changes, cErr := ListChangesByStatus(db, projectID, "")
 	if cErr != nil || len(changes) == 0 {
-		fmt.Fprintf(sb, "\n**📋 Active changes:** %d\n", total)
+		fmt.Fprintf(sb, "\n**📋 Active changes:** %d\n", pendingCount+appliedCount)
+		return
+	}
+	var pending []*Change
+	for _, c := range changes {
+		if c.Status == ChangeStatusDraft || c.Status == ChangeStatusProposed || c.Status == ChangeStatusValidated {
+			pending = append(pending, c)
+		}
+	}
+	if len(pending) == 0 {
+		fmt.Fprintf(sb, "\n**📋 Active changes:** 0 pending (%d applied — use `sv_spec_list(status=\"applied\")` to inspect)\n", appliedCount)
 		return
 	}
 	sb.WriteString("\n**📋 Active changes:**\n")
-	for _, c := range changes {
+	for _, c := range pending {
 		tasksLine := ""
 		if prog := ParseTaskProgress(c.Tasks); prog.Total > 0 {
 			tasksLine = " — " + prog.Summary
 		}
 		fmt.Fprintf(sb, "- `%s` [%s] %s%s\n", c.Slug, c.Status, TruncateText(c.Title, 50), tasksLine)
+	}
+	if appliedCount > 0 {
+		fmt.Fprintf(sb, "- *(+%d applied changes — use `sv_spec_list(status=\"applied\")` to view)*\n", appliedCount)
 	}
 	sb.WriteString("\nUse `sv_spec_list` to see all changes, `sv_spec_get(change_id=\"<slug>\")` to inspect one.\n")
 }

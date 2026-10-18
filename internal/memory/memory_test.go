@@ -2801,3 +2801,100 @@ func TestCloseStaleSessions(t *testing.T) {
 		t.Fatalf("expected 0 on second call, got %d", closed2)
 	}
 }
+
+func TestAutoBootBundleSurfacesIdeasAndFiltersPostCommit(t *testing.T) {
+	tempDir := t.TempDir()
+	database, err := db.InitDB(filepath.Join(tempDir, "bundle_ideas.db"))
+	if err != nil {
+		t.Fatalf("InitDB error: %v", err)
+	}
+	defer database.Close()
+
+	const projectID = "proj-bundle-ideas"
+	if err = db.RegisterProject(database, projectID, "Bundle Ideas", tempDir); err != nil {
+		t.Fatalf("RegisterProject error: %v", err)
+	}
+
+	// 1. Save an unresolved idea and a resolved idea.
+	if _, err = SaveMemory(database, &Memory{
+		ProjectID: projectID,
+		Category:  "idea",
+		What:      "Add dark mode toggle to TUI",
+		Why:       "Requested by user during review",
+		Learned:   "Track UI ideas across sessions",
+	}); err != nil {
+		t.Fatalf("SaveMemory idea: %v", err)
+	}
+	if _, err = SaveMemory(database, &Memory{
+		ProjectID: projectID,
+		Category:  "idea",
+		What:      "RESUELTO: Old completed idea",
+		Why:       "Already done",
+		Learned:   "Resolved ideas are archived",
+	}); err != nil {
+		t.Fatalf("SaveMemory resolved idea: %v", err)
+	}
+
+	// 2. Save a real journal and a noisy post-commit journal.
+	if _, err = SaveMemory(database, &Memory{
+		ProjectID: projectID,
+		Category:  "journal",
+		What:      "Completed Phase 1 graph optimization",
+		Why:       "Reduced query latency",
+		Learned:   "Use indexed lookups",
+	}); err != nil {
+		t.Fatalf("SaveMemory real journal: %v", err)
+	}
+	if _, err = SaveMemory(database, &Memory{
+		ProjectID: projectID,
+		Category:  "journal",
+		What:      "git commit: fix(lint): whitespace",
+		Why:       "automatic post-commit capture for 999999",
+		Learned:   "Committed 1 file",
+	}); err != nil {
+		t.Fatalf("SaveMemory post-commit journal: %v", err)
+	}
+
+	// 3. Create an applied change and a proposed change.
+	cApplied, err := CreateChange(database, projectID, "old-applied-spec", "Old Applied Spec", "what", "", "", "", "")
+	if err != nil {
+		t.Fatalf("CreateChange applied: %v", err)
+	}
+	if _, err = UpdateChangeStatus(database, projectID, cApplied.ID, ChangeStatusApplied); err != nil {
+		t.Fatalf("UpdateChangeStatus applied: %v", err)
+	}
+	cProp, err := CreateChange(database, projectID, "pending-spec", "Pending Spec", "what", "", "", "", "- [ ] Task 1")
+	if err != nil {
+		t.Fatalf("CreateChange proposed: %v", err)
+	}
+	if _, err = UpdateChangeStatus(database, projectID, cProp.ID, ChangeStatusProposed); err != nil {
+		t.Fatalf("UpdateChangeStatus proposed: %v", err)
+	}
+
+	bundle, err := GetAutoBootBundle(context.Background(), database, projectID, AutoBootOptions{})
+	if err != nil {
+		t.Fatalf("GetAutoBootBundle: %v", err)
+	}
+
+	if !strings.Contains(bundle, "**Active Ideas:**") || !strings.Contains(bundle, "Add dark mode toggle to TUI") {
+		t.Errorf("expected unresolved idea in Auto-Boot bundle, got:\n%s", bundle)
+	}
+	if strings.Contains(bundle, "RESUELTO: Old completed idea") {
+		t.Errorf("expected resolved idea to be excluded from Auto-Boot bundle, got:\n%s", bundle)
+	}
+	if !strings.Contains(bundle, "Completed Phase 1 graph optimization") {
+		t.Errorf("expected real journal in Auto-Boot bundle, got:\n%s", bundle)
+	}
+	if strings.Contains(bundle, "git commit: fix(lint): whitespace") {
+		t.Errorf("expected post-commit journal excluded from Auto-Boot bundle, got:\n%s", bundle)
+	}
+	if !strings.Contains(bundle, "pending-spec") {
+		t.Errorf("expected pending spec in Active changes, got:\n%s", bundle)
+	}
+	if strings.Contains(bundle, "old-applied-spec") {
+		t.Errorf("expected applied spec slug to be summarized rather than itemized, got:\n%s", bundle)
+	}
+	if !strings.Contains(bundle, "+1 applied changes") {
+		t.Errorf("expected applied changes summary count, got:\n%s", bundle)
+	}
+}
