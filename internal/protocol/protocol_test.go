@@ -107,6 +107,24 @@ func TestProtocolTemplateContainsSpecDriven(t *testing.T) {
 	}
 }
 
+// TestProtocolTemplateTeachesToolNameResolution guards the injected template
+// against losing the tool-name resolution rule: each MCP client prefixes
+// sv-memory tool names with a server namespace, and weaker models (deepseek)
+// fail to map the canonical sv_* names to the prefixed tools, so the template
+// must teach suffix matching with concrete per-client examples.
+func TestProtocolTemplateTeachesToolNameResolution(t *testing.T) {
+	required := []string{
+		"Tool-name resolution",
+		"sv-memory_sv_graph_explore",
+		"mcp__sv-memory__sv_graph_explore",
+	}
+	for _, s := range required {
+		if !strings.Contains(protocolTemplate, s) {
+			t.Errorf("protocolTemplate is missing the tool-name resolution marker %q", s)
+		}
+	}
+}
+
 // TestProtocolTemplateGuidesGraphFirst guards the injected template against
 // losing the graph-exploration guidance: the graph is the agent's substitute
 // for grep/read on indexed code, so the template must lead with explore-first

@@ -8,6 +8,8 @@ This project uses **sv-memory**: persistent architectural memory plus a code
 dependency graph exposed as MCP tools (`sv_*`). The full workflow lives in the
 `sv-memory` skill (`.agents/skills/sv-memory/SKILL.md`). Follow these rules.
 
+> Tool names may be prefixed by the MCP server namespace — match by the `sv_*` suffix (e.g. `sv_graph_explore`, `sv_mem_search`).
+
 ## Before reading source
 
 1. Call `sv_graph_explore` (or `sv_graph_search` when the symbol name is unknown)

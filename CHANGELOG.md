@@ -5,6 +5,9 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+### Fixed
+- **MCP Tool-Name Resolution for Weak Models**: Added a cross-platform "tool name resolution" rule to the injected protocol (`internal/protocol/protocol.go`) and a client-specific prefix note to the OpenCode/Antigravity skill templates, teaching agents to match sv-memory tools by their `sv_*` suffix (e.g. `sv_graph_explore` → `sv-memory_sv_graph_explore` in OpenCode) so deepseek-class models invoke the tools instead of falling back to raw read/grep.
+
 ## [v0.26.0] - 2026-10-18
 
 ### Added

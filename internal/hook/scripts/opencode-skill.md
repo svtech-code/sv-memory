@@ -65,6 +65,8 @@ The top search result is already expanded inline — only drill further when nec
 
 ## Instructions
 
+> **Tool names in OpenCode:** the sv-memory MCP tools are exposed with a `sv-memory_` prefix. The names below refer to those tools by their `sv_*` suffix — e.g. `sv_graph_explore` → `sv-memory_sv_graph_explore`, `sv_mem_search` → `sv-memory_sv_mem_search`, `sv_spec_list` → `sv-memory_sv_spec_list`. Always match by the `sv_*` suffix.
+
 ### Before reading source files
 
 1. **ONE call to understand code:** Call `sv_graph_explore(path="file,symbol1,symbol2")` — resolves multiple symbols in one call, returns each symbol's structural role, surgical line-numbered source snippets, the call path between them, blast radius, and linked memories. This replaces manual `god_nodes` + `explain` + `query` + `path` chaining.

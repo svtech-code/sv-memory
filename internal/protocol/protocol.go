@@ -12,6 +12,7 @@ const protocolTemplate = `
 # SV-Memory Protocol Rules
 
 <CRITICAL_INSTRUCTIONS>
+- **Tool-name resolution:** Your MCP client prefixes sv-memory tool names with a server namespace. Match by the 'sv_*' suffix: 'sv_graph_explore' is exposed as 'sv-memory_sv_graph_explore' (OpenCode) or 'mcp__sv-memory__sv_graph_explore' (Claude Code); 'sv_mem_search' as 'sv-memory_sv_mem_search', etc. Always call the tool whose name ends with the referenced 'sv_*' name.
 - YOU MUST NEVER use native grep, find, cat, or read_file to understand codebase structure or search for symbols. YOU MUST ALWAYS use 'sv_graph_explore' or 'sv_graph_search' first. Native tools are ONLY for unindexed config/docs.
 - YOU MUST ALWAYS call 'sv_mem_save' immediately after making a design decision, fixing a complex bug, or establishing a convention. Do not wait for the user to ask.
 - YOU MUST ALWAYS initiate the Spec-Driven Decision Cycle ('sv_propose_spec') BEFORE writing code that changes behavior or architecture. NEVER skip this loop.

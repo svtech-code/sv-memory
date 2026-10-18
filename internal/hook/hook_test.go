@@ -646,6 +646,9 @@ func TestAntigravitySkillContent(t *testing.T) {
 	if !strings.Contains(content, "sv_graph_explore") {
 		t.Error("antigravity skill should emphasize sv_graph_explore")
 	}
+	if !strings.Contains(content, "Tool names in Antigravity") {
+		t.Error("antigravity skill should teach suffix-based tool-name resolution")
+	}
 }
 
 func TestAntigravityRuleContent(t *testing.T) {
@@ -656,7 +659,7 @@ func TestAntigravityRuleContent(t *testing.T) {
 	if !strings.Contains(content, "trigger: always_on") {
 		t.Error("antigravity rule should declare the always_on trigger")
 	}
-	for _, marker := range []string{"sv_graph_explore", "Spec-Driven Decision Cycle", "sv_propose_spec", "sv_commit_spec", "sv_mem_session_start"} {
+	for _, marker := range []string{"sv_graph_explore", "Spec-Driven Decision Cycle", "sv_propose_spec", "sv_commit_spec", "sv_mem_session_start", "match by the `sv_*` suffix"} {
 		if !strings.Contains(content, marker) {
 			t.Errorf("antigravity rule should mention %s", marker)
 		}
@@ -670,6 +673,12 @@ func TestHookScriptContentOpenCode(t *testing.T) {
 	content := mustHookScript(t, PlatformOpenCode, ModeSoft)
 	if !strings.Contains(content, "sv_mem_search") {
 		t.Error("opencode skill should contain sv_mem_search instructions")
+	}
+	if !strings.Contains(content, "Tool names in OpenCode") {
+		t.Error("opencode skill should teach the sv-memory_ tool-name prefix")
+	}
+	if !strings.Contains(content, "sv-memory_sv_graph_explore") {
+		t.Error("opencode skill should map sv_graph_explore to sv-memory_sv_graph_explore")
 	}
 }
 

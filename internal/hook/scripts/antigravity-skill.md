@@ -65,6 +65,8 @@ The top search result is already expanded inline — only drill further when nec
 
 ## Instructions
 
+> **Tool names in Antigravity:** sv-memory MCP tools are namespaced per client — match by their `sv_*` suffix (e.g. `sv_graph_explore`, `sv_mem_search`, `sv_spec_list`). Always call the tool whose name ends with the referenced `sv_*` name.
+
 ### Before reading source files
 
 1. **ONE call to understand code:** Call `sv_graph_explore(path="file,symbol1,symbol2")` — resolves multiple symbols in one call, returns each symbol's structural role, surgical line-numbered source snippets, the call path between them, blast radius, and linked memories. This replaces manual `god_nodes` + `explain` + `query` + `path` chaining.
