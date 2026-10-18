@@ -10,8 +10,8 @@ dependency graph exposed as MCP tools (`sv_*`). The full workflow lives in the
 
 ## Before reading source
 
-1. Call `sv_graph_explore` (or `sv_mem_context_pack`) for the file/symbol — one
-   call returns source, structure, blast radius and linked memories.
+1. Call `sv_graph_explore` (or `sv_graph_search` when the symbol name is unknown)
+   for the file/symbol — one call returns source, structure, blast radius and linked memories.
 2. Call `sv_mem_search` for past decisions, standards or bugfixes on the topic.
 3. Only then read raw files.
 
@@ -31,7 +31,9 @@ Config/docs-only changes are exempt.
 
 - Save decisions, standards and non-obvious bugfixes with `sv_mem_save`
   (`sv_mem_suggest_topic_key` gives a stable topic key).
-- After adding files or packages: `sv_graph_sync`.
+- Learn user workflow preferences per project: save as `standard/user-workflow-...`
+  and pin with `sv_mem_pin`; save deferred ideas with `category="idea"`.
+- Before asking the user to commit: run `sv_graph_diff(base_ref="HEAD")`.
 
 ## Session
 
