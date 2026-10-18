@@ -261,7 +261,6 @@ sv-memory tui
 - **`sv_mem_capture_passive`**: Registra entradas de diario ligeras automáticamente.
 - **`sv_mem_capture_prompt`**: Registra lo que pidió el usuario (paridad con `mem_save_prompt` de Engram) para que las futuras sesiones tengan contexto de los objetivos del usuario; recuperable vía `sv_mem_context` y contabilizado por `sv_mem_stats`. Solo local (sin git sync).
 - **`sv_mem_merge_projects`**: Fusiona variantes de proyecto en un proyecto canónico (admin) — mueve todas las memorias, sesiones, relaciones y datos del grafo de `from` a `to`, y luego borra el origen. Refleja `sv-memory projects consolidate`.
-- **`sv_mem_context_pack`**: Fusiona el rol del grafo + memorias vinculadas + las capabilities implementadas en una ruta en una sola llamada acotada; pasa `include_changes='true'` para listar también los spec changes activos que afectan la ruta (el puente grafo→memoria para contexto eficiente en tokens).
 - **`sv_mem_conflicts`**: Muestra conflictos de memoria con análisis de superposición semántica; `action=scan semantic=true` juzga los pares candidatos con LLM vía el CLI del agente (claude/opencode).
 - **`sv_mem_compact`**: Consolida revisiones históricas de topic keys en registros de síntesis unificados con monitoreo de salud y auto-compactación.
 
@@ -281,11 +280,10 @@ sv-memory tui
 
 ### 🕸️ Herramientas de Grafo
 
-- **`sv_graph_explore`**: Exploración unificada para entender código en una llamada acotada: pasa uno o varios símbolos/rutas separados por coma para obtener roles estructurales, fragmentos verbatim de código con números de línea, la ruta más corta de llamadas, blast radius y memorias vinculadas.
+- **`sv_graph_explore`**: Exploración unificada para entender código en una llamada acotada: pasa uno o varios símbolos/rutas separados por coma para obtener roles estructurales, fragmentos verbatim de código con números de línea, la ruta más corta de llamadas, blast radius, memorias vinculadas y spec changes activos (con refresco incremental automático del grafo).
 - **`sv_graph_diff`**: Compara diferencias estructurales de código (símbolos, llamadas, dependencias importadas, blast radius) entre una referencia base de Git y el árbol de trabajo actual.
 - **`sv_graph_query`**: Consulta BFS de dependencias con caché LRU sub-milisegundo. Devuelve diagrama Mermaid.
 - **`sv_graph_path`**: Ruta de dependencia más corta entre dos nodos.
-- **`sv_graph_sync`**: Sincronización incremental del grafo desde cambios de archivos.
 - **`sv_graph_explain`**: Información detallada de un nodo con métricas fan-in/fan-out y sugerencias accionables de refactor.
 - **`sv_graph_god_nodes`**: Identifica nodos centralizados / altamente conectados.
 - **`sv_graph_surprising_connections`**: Encuentra dependencias inesperadas o no obvias con resaltado de bridge score.

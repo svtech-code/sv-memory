@@ -15,7 +15,7 @@ This project uses 'sv-memory' for persistent architectural memory, progress jour
 1. **Start:** Call 'sv_mem_session_start' at the beginning of work. It returns an **Auto-Boot Context Bundle** with the previous session summary, key architectural decisions, standards, recent bugfixes, last journals, and top graph hubs — read it and use it as your starting context.
    - **Auto-managed on OpenCode:** the sv-memory plugin auto-starts the session and injects this bundle into your first request (its header shows the session ID). If you already see that header, skip 'sv_mem_session_start' — do not start a second session.
 2. **Associate saves:** Pass 'session_id' to 'sv_mem_save' to group memories under the active session. If omitted, the active session is auto-detected.
-3. **Capture knowledge as you go:** Save journals, decisions, standards, and bugfixes with 'sv_mem_save' (see the Memory Capture Guidelines below). For evolving categories ('decision', 'standard', 'architecture', 'bugfix')', 'topic_key' is automatically derived if omitted to enable upsert semantics. Use 'sv_mem_capture_passive' for lightweight observations that do not need an explicit save decision.
+3. **Capture knowledge as you go:** Save journals, decisions, standards, and bugfixes with 'sv_mem_save' (see the Memory Capture Guidelines below). For evolving categories ('decision', 'standard', 'architecture', 'bugfix'), 'topic_key' is automatically derived if omitted to enable upsert semantics. Use 'sv_mem_capture_passive' for lightweight observations that do not need an explicit save decision.
 4. **End:** Call 'sv_mem_session_end(accomplished=...)' to save the summary and mark the session as completed in a single call (session_id is auto-detected if omitted). Alternatively, call 'sv_mem_session_summary' before 'sv_mem_session_end'.
 
 After a compaction or context reset, call 'sv_mem_context' to recover the last session state (goal, summary, associated memories).
@@ -56,14 +56,18 @@ Always persist design knowledge as structured memories with a topic_key, not jus
 | Visual style / design system / CSS / Tailwind tokens | 'standard' | standard/design-system |
 | Reusable component or UI pattern | 'architecture' | architecture/component-card |
 | Workflow / methodology / build & dev process | 'standard' | standard/workflow-dev-process |
+| User workflow preference / collaboration style (per project) | 'standard' | standard/user-workflow-... |
 | Architectural decision made (and its rationale) | 'decision' | decision/... |
 | Code convention / naming / folder structure | 'standard' | standard/code-conventions |
 | Complex or non-obvious bug fixed | 'bugfix' | bugfix/... |
+| Future feature idea / deferred improvement | 'idea' | idea/... |
 | Relevant Q&A with lasting value | 'qa' | qa/... |
 | Rejected library or framework feature | 'decision' | decision/avoid-... |
 | Session progress checkpoint | 'journal' | journal/... |
 
 **Golden rule:** when you define, change, or reuse a style, component, methodology, or convention, save it as 'standard' or 'architecture' with a topic_key. A journal is not a substitute — journals document progress, 'standard'/'architecture'/'decision' preserve the "how" and the "why" for future sessions.
+- **Autonomous User Workflow Learning (per project):** When the user expresses or corrects how they prefer to work in this project (e.g., phase-by-phase execution, testing/linting gates before commits, language preferences, review cadence), save it as 'standard' with topic_key 'standard/user-workflow-...' and pin it with 'sv_mem_pin' so every future session in this project adapts to their workflow automatically.
+- **Idea Lifecycle (never lose ideas):** Save brainstormed ideas or deferred improvements with category 'idea'. Unresolved ideas automatically surface in the Auto-Boot Context Bundle; once implemented or discarded, prefix their title ('what') with 'RESUELTO:' via 'sv_mem_update'.
 
 ## Graph — use it instead of grep/read on synced code:
 
@@ -122,7 +126,7 @@ Before asking the user to commit your changes or finalizing a task, you MUST aut
 
 ## Tool Quick Reference:
 
-- **Graph:** sv_graph_explore, sv_graph_search, sv_graph_communities, sv_graph_query, sv_graph_diff, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync (sv_graph_explore = ONE-call explore: source + call path + blast radius)
+- **Graph:** sv_graph_explore, sv_graph_search, sv_graph_communities, sv_graph_query, sv_graph_diff, sv_graph_explain, sv_graph_god_nodes, sv_graph_path (sv_graph_explore = ONE-call explore: source + call path + blast radius)
 - **Spec Flow:** sv_spec_list, sv_spec_get, sv_propose_spec, sv_update_spec, sv_validate_decision, sv_commit_spec (list → get → propose → update → validate → commit cycle)
 - **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive | capabilities (human-readable Markdown projection of changes and capability state under .sv-memory/specs/ and openspec/)
 - **Session:** sv_mem_session_start, sv_mem_session_summary, sv_mem_session_end, sv_mem_context

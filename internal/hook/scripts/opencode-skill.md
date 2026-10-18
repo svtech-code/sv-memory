@@ -13,7 +13,7 @@ Persistent architectural memory and dependency graph for AI coding agents.
 
 sv-memory provides two complementary capabilities:
 - **sv_mem_search / sv_mem_get / sv_mem_timeline**: Retrieve past architectural decisions, bug fixes, standards, discussions, and progress journals from persistent memory.
-- **sv_graph_explore / sv_graph_search / sv_graph_query / sv_graph_explain / sv_graph_sync**: Query the project's code dependency graph to understand module structure, relationships, and community clusters.
+- **sv_graph_explore / sv_graph_search / sv_graph_query / sv_graph_explain / sv_graph_diff**: Query the project's code dependency graph to understand module structure, relationships, and community clusters.
 
 **Use graph tools before reading source files** to save tokens and get richer architectural awareness in fewer round-trips.
 
@@ -50,14 +50,18 @@ The top search result is already expanded inline — only drill further when nec
 | Visual style / design system / Tailwind tokens | `standard` | standard/design-system |
 | Reusable component or UI pattern | `architecture` | architecture/component-card |
 | Workflow / methodology / build process | `standard` | standard/workflow-dev-process |
+| User workflow preference / collaboration style (per project) | `standard` | standard/user-workflow-... |
 | Architectural decision (and rationale) | `decision` | decision/... |
 | Code convention / naming / folder structure | `standard` | standard/code-conventions |
 | Complex or non-obvious bug fixed | `bugfix` | bugfix/... |
+| Future feature idea / deferred improvement | `idea` | idea/... |
 | Relevant Q&A with lasting value | `qa` | qa/... |
 | Rejected library or framework feature | `decision` | decision/avoid-... |
 | Session progress checkpoint | `journal` | journal/... |
 
 **Golden rule:** when you define, change, or reuse a style, component, methodology, or convention, save it as `standard` or `architecture` with a topic_key — not just as a journal. Use `sv_mem_capture_passive` for lightweight observations that don't need an explicit save decision.
+- **Autonomous User Workflow Learning (per project):** When the user states or corrects how they prefer to work in this project (e.g., phase-by-phase execution, test/lint validation before commits, language preferences), save it as `category="standard"` with `topic_key="standard/user-workflow-..."` and pin it via `sv_mem_pin`.
+- **Idea Lifecycle:** Save future ideas with `category="idea"`. Active ideas surface in the Auto-Boot Bundle; mark completed or discarded ideas by prefixing `what` with `RESUELTO:` via `sv_mem_update`.
 
 ## Instructions
 
@@ -90,9 +94,9 @@ If the change touches behavior, contracts, APIs, or architecture, use this loop.
 4. **Validate:** `sv_validate_decision(change_id=...)` re-checks after edits (PASS/WARN/BLOCK); validate delta requirements (RFC 2119 presence, MODIFIED scenario drops).
 5. **Commit:** `sv_commit_spec(change_id=...)` promotes to durable decision memory, merges deltas into capability state, stamps applied.
 
-### After adding new files or packages
+### Before asking the user to commit (Architectural Self-Review)
 
-1. Call `sv_graph_sync` so the dependency graph reflects the new structure.
+1. Call `sv_graph_diff(base_ref="HEAD")` to inspect structural changes (added symbols, dependencies, blast radius). Note: the graph auto-syncs whenever `sv_graph_explore` runs.
 
 ### Periodic maintenance
 
@@ -103,10 +107,9 @@ If the change touches behavior, contracts, APIs, or architecture, use this loop.
 
 ## Tool Quick Reference
 
-- **Graph:** `sv_graph_explore` (ONE-call explore: multi-symbol + source + call path), `sv_graph_search` (discover nodes by pattern when name is unknown), `sv_graph_communities` (list top communities), `sv_graph_diff`, `sv_graph_query`, `sv_graph_explain`, `sv_graph_god_nodes`, `sv_graph_path`, `sv_graph_sync`
+- **Graph:** `sv_graph_explore` (ONE-call explore: multi-symbol + source + call path + linked memories + active changes), `sv_graph_search` (discover nodes by pattern when name is unknown), `sv_graph_communities` (list top communities), `sv_graph_diff`, `sv_graph_query`, `sv_graph_explain`, `sv_graph_god_nodes`, `sv_graph_path`
 - **Spec Flow:** `sv_spec_list`, `sv_spec_get`, `sv_propose_spec`, `sv_update_spec`, `sv_validate_decision`, `sv_commit_spec` (list → get → propose → update → validate → commit cycle)
 - **Spec Mirror (CLI):** `sv-memory specs export | import <slug> | list | archive | capabilities` (human-readable Markdown projection of changes and capability state under `.sv-memory/specs/` and `openspec/`)
-- **Context Pack:** `sv_graph_explore` (one bounded call: graph role + linked memories + active changes for a file/package/symbol)
 - **Session:** `sv_mem_session_start`, `sv_mem_session_summary`, `sv_mem_session_end`, `sv_mem_context`
 - **Memory CRUD:** `sv_mem_save`, `sv_mem_update`, `sv_mem_get`, `sv_mem_delete`, `sv_mem_search`, `sv_mem_timeline`
 - **Pin / Priority:** `sv_mem_pin` (action='unpin' to clear)

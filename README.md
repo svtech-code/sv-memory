@@ -262,7 +262,6 @@ sv-memory tui
 - **`sv_mem_capture_passive`**: Logs lightweight journal entries automatically.
 - **`sv_mem_capture_prompt`**: Records what the user asked (Engram `mem_save_prompt` parity) so future sessions have context about user goals; recoverable via `sv_mem_context` and counted by `sv_mem_stats`. Local-only (not git-synced).
 - **`sv_mem_merge_projects`**: Merges project variants into a canonical project (admin) — moves all memories, sessions, relations, and graph data from `from` into `to`, then deletes the source. Mirrors `sv-memory projects consolidate`.
-- **`sv_mem_context_pack`**: Fuses graph role + linked memories + the capabilities implemented at a path for one bounded call; pass `include_changes='true'` to also list active spec changes affecting the path (the graph→memory bridge for token-efficient context).
 - **`sv_mem_conflicts`**: Surfaces memory conflicts with semantic overlap analysis; `action=scan semantic=true` LLM-judges candidate pairs via the agent CLI (claude/opencode).
 - **`sv_mem_compact`**: Consolidates historical topic key revisions into unified summary records with health checks and auto-compaction.
 
@@ -282,11 +281,10 @@ sv-memory tui
 
 ### 🕸️ Graph Tools
 
-- **`sv_graph_explore`**: Unified explore for code understanding in one bounded call: pass one or more comma-separated symbols/paths to get structural roles, surgical line-numbered source snippets, shortest call path between them, blast radius, and linked memories.
+- **`sv_graph_explore`**: Unified explore for code understanding in one bounded call: pass one or more comma-separated symbols/paths to get structural roles, surgical line-numbered source snippets, shortest call path between them, blast radius, linked memories, and active spec changes (with automatic incremental graph refresh).
 - **`sv_graph_diff`**: Compares structural code elements (symbols, calls, imports, blast radius impact) between a Git base reference and the working tree.
 - **`sv_graph_query`**: BFS dependency query with sub-millisecond LRU cache. Returns Mermaid diagram.
 - **`sv_graph_path`**: Shortest dependency path between two nodes.
-- **`sv_graph_sync`**: Incrementally syncs dependency graph from file changes.
 - **`sv_graph_explain`**: Detailed node information with fan-in/fan-out metrics and actionable refactor suggestions.
 - **`sv_graph_god_nodes`**: Identifies highly-connected hub nodes.
 - **`sv_graph_surprising_connections`**: Finds unexpected or non-obvious dependencies with bridge-score highlights.
