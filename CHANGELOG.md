@@ -5,6 +5,27 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+## [v0.26.0] - 2026-10-18
+
+### Added
+- **Automatic `.gitignore` reconciliation for Public vs Private repositories (`EnsureGitignoreStore`)**: `sv-memory init` and `sv-memory configure set git_sync_enabled <true|false>` now automatically manage `.gitignore` entries for `.sv-memory/` and `openspec/`. In local-only / public mode (`git_sync_enabled: false`, default), `.sv-memory/` and `openspec/` are added to `.gitignore` to prevent accidental commits; in private team mode (`git_sync_enabled: true`), blanket ignores are removed while `.sv-memory/context-injection-enabled` stays ignored (`eaff1f2`, `0985ee1`).
+- **`sv-memory init --git-sync` flag**: Added `--git-sync` flag to `sv-memory init` so private team repositories can enable Git synchronization and configure `.gitignore` in a single initialization step, with explicit console commands for committing or untracking `.sv-memory/` (`eaff1f2`).
+- **Active Ideas in Auto-Boot Context Bundle**: `GetAutoBootBundle` now surfaces a dedicated **Active Ideas** section (`category = 'idea'` where `what` is not prefixed with `RESUELTO:`, capped at 2) so brainstormed ideas and deferred improvements persist across sessions (`85742e4`).
+- **Autonomous User Workflow Learning & Idea Lifecycle in Protocol/Skills**: Embedded project-scoped User Workflow Learning (`category='standard'`, `topic_key='standard/user-workflow-...'` + `sv_mem_pin`) and Idea Lifecycle rules into `internal/protocol/protocol.go`, Antigravity rules/skills, and OpenCode skills (`0c71aa4`).
+
+### Fixed
+- **File-node AST Skeletons in `sv_graph_explore` (`extractFileSkeleton`)**: Fixed broken SQL column reference (`n.type` → `n.node_type`) and expanded symbol lookup to match symbol nodes by file `path` (`n.path = ? AND n.id != ?`) in addition to `contains` edges, restoring compact AST skeletons (~80% token savings vs raw file dumps) (`85742e4`).
+- **Protocol, Skill & Hook Template Drift**: Fixed duplicate `sv_graph_explore / sv_graph_explore` text in `antigravity-rule.md` and `antigravity-preinvocation.sh`, fixed a stray quote in `protocolTemplate`, and removed obsolete `sv_mem_context_pack` and manual `sv_graph_sync` references (`0c71aa4`).
+
+### Changed
+- **High-Signal Context Packs & Auto-Boot Bundle**: Filtered noisy automatic Git post-commit capture journals (`automatic post-commit capture for <sha>`) from `GetContextPack` and `GetAutoBootBundle`, removed the uncategorized fallback dump when sessions exist, and condensed `applied` specs in Auto-Boot to a single summary line while itemizing pending (`draft`/`proposed`/`validated`) specs (`85742e4`).
+- **Bounded `sv_spec_list` Default Output**: When called without a `status` filter, `sv_spec_list` now orders pending changes (`draft`, `proposed`, `validated`) first and caps historical `applied` changes to 5 with a pointer to `status="applied"` (`85742e4`).
+- **Public Repository `.gitignore` Hygiene**: Added local AI assistant integration directories (`.agents/`, `.opencode/`, `.claude/`, `.cursor/`, `.windsurf/`, `.codex/`) and `openspec/` to `.gitignore` and untracked redundant local copies from the repository index (`0985ee1`).
+
+### Documentation
+- **Public vs Private `.sv-memory/` Workflow Guide (EN/ES)**: Added comparison tables and step-by-step Git commands for Public/Local-only vs Private Team repositories in `README.md`, `README_ES.md`, `documentation/getting_started_guide.md`, and `documentation/getting_started_guide_ES.md` (`eaff1f2`).
+- **Security Contact**: Updated vulnerability contact email in security documentation (`51a262c`).
+
 ## [v0.25.0] - 2026-09-27
 
 ### Added
