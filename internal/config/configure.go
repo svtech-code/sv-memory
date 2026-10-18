@@ -192,10 +192,10 @@ func ConfigureTargetTool(tool TargetTool) (bool, string, error) {
 			msg := fmt.Sprintf("Open the MCP plugin configuration you use (e.g. Cline or Roo Code):\n      * Add a new server with the Command: %s\n      * With the Arguments: [\"mcp\"]", execPath)
 			return false, msg, nil
 		case "pi":
-			msg := fmt.Sprintf("Run 'sv-memory setup pi' in the project to write the .pi/mcp.json MCP config and inject AGENTS.md.")
+			msg := "Run 'sv-memory setup pi' in the project to write the .pi/mcp.json MCP config and inject AGENTS.md."
 			return false, msg, nil
 		case "codex":
-			msg := fmt.Sprintf("Run 'sv-memory setup codex' in the project to write the .codex/config.toml MCP config and inject AGENTS.md.")
+			msg := "Run 'sv-memory setup codex' in the project to write the .codex/config.toml MCP config and inject AGENTS.md."
 			return false, msg, nil
 		default:
 			return false, "Manual configuration required in your editor.", nil

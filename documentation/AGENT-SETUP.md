@@ -9,10 +9,10 @@ style of Engram's `engram setup`.
 
 | Agent          | Command                  | What gets installed                                                                 |
 | :------------- | :----------------------- | :---------------------------------------------------------------------------------- |
-| Claude Code    | `sv-memory setup claude-code` | MCP server config, `PreToolUse` + lifecycle hooks (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`), `AGENTS.md` protocol, 43-tool permission allow-list |
+| Claude Code    | `sv-memory setup claude-code` | MCP server config, `PreToolUse` + lifecycle hooks (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`), `AGENTS.md` protocol, 42-tool permission allow-list |
 | OpenCode       | `sv-memory setup opencode`    | MCP server config, `SKILL.md` skill, MCP `instructions` injection, `AGENTS.md` protocol |
 | Cursor         | `sv-memory setup cursor`      | `.cursor/mcp.json` MCP config, `.cursorrules` protocol injection |
-| Antigravity CLI | `sv-memory setup antigravity` | MCP config, native skill (`.agents/skills/sv-memory/SKILL.md`), `PreToolUse` hooks (soft/strict), `AGENTS.md` protocol, 43-tool permission allow-list |
+| Antigravity CLI | `sv-memory setup antigravity` | MCP config, native skill (`.agents/skills/sv-memory/SKILL.md`), `PreToolUse` hooks (soft/strict), `AGENTS.md` protocol, 42-tool permission allow-list |
 | Codex          | `sv-memory setup codex`       | `.codex/config.toml` MCP config, `AGENTS.md` protocol, native MCP `instructions` |
 | Pi             | `sv-memory setup pi`          | `.pi/mcp.json` MCP config, `AGENTS.md` protocol (Pi reads AGENTS.md natively) |
 | Git            | `sv-memory hooks install --platform git` | `.git/hooks/post-commit` hook for automated passive commit capture |
@@ -83,7 +83,7 @@ Then restart your assistant so it reloads the MCP config and new tools. Verify w
   - `PreCompact` — fires right before context compaction and tells the agent to save a
     session summary first (context recovery).
   - `SubagentStop` — reminds the agent to persist durable findings from subagents.
-- **Permissions:** the 43 sv-memory tools are added to the `~/.claude/settings.json`
+- **Permissions:** the 42 sv-memory tools are added to the `~/.claude/settings.json`
   allow-list (`mcp__sv-memory__<tool>`) so the agent calls them without prompting.
 
 ### OpenCode
@@ -98,7 +98,7 @@ Then restart your assistant so it reloads the MCP config and new tools. Verify w
   save-after-decision / spec-cycle protocol plus the "start with `sv_mem_session_start`"
   reminder — no plugin required. No TypeScript plugin is installed.
 - **Protocol:** sv-memory rules are injected into `AGENTS.md`.
-- **Curated tool surface:** the MCP server registers **43 tools total, 36 core by default**. The 7 maintenance/admin tools (`sv_mem_diagnose`, `sv_mem_compare`, `sv_mem_merge_projects`, `sv_graph_report`, `sv_graph_viz`, `sv_graph_merge`, `sv_graph_surprising_connections`) are omitted by default to keep the per-request tool list small (token economy); set `SV_MEMORY_FULL_TOOLS=1` in the server environment to enable them.
+- **Curated tool surface:** the MCP server registers **42 tools total, 34 core by default**. The 8 non-core tools (`sv_mem_diagnose`, `sv_mem_compare`, `sv_mem_merge_projects`, `sv_graph_sync`, `sv_graph_report`, `sv_graph_viz`, `sv_graph_merge`, `sv_graph_surprising_connections`) are omitted by default to keep the per-request tool list small (token economy); set `SV_MEMORY_FULL_TOOLS=1` in the server environment to enable them.
 
 ### Cursor
 
@@ -125,7 +125,7 @@ Then restart your assistant so it reloads the MCP config and new tools. Verify w
 - **Rule:** a short always-on rule at `.agents/rules/sv-memory.md` (`trigger: always_on`)
   keeps the graph-first/spec-first protocol salient for models that dilute the large
   injected `AGENTS.md`.
-- **Permissions:** the 43 sv-memory tools are added to the Antigravity settings allow-list
+- **Permissions:** the 42 sv-memory tools are added to the Antigravity settings allow-list
   (`mcp(sv-memory/<tool>)`).
 
 ### Codex

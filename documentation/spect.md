@@ -208,7 +208,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 #### 2. `sv-memory mcp`
 
 - Starts the JSON-RPC MCP server over `stdio` for agent consumption.
-- Registers all 43 MCP tools.
+- Registers all 42 MCP tools.
 - Returns server-wide `instructions` in the initialize response (memory-first / graph-first / save-after-decision / spec-cycle guidance) so spec-compliant clients (e.g. OpenAI Codex) inject the protocol automatically without plugins or hooks.
 - Maintains an in-memory graph cache for zero-SQL BFS traversals.
 - Debounces Git sync writes (500ms coalescing).
@@ -241,7 +241,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 #### 9. `sv-memory configure`
 
 - Interactive wizard for automatic/manual configurations of editors (Cursor, VS Code, Zed) and CLIs (Claude Code, OpenCode, Codex, Antigravity, Pi).
-- **Phase 4 (MCP Permissions):** Lists the 43 sv-memory MCP tools with descriptions and grants the selected allow-list entries to the allow-listed platforms chosen earlier (Antigravity CLI, Claude Code).
+- **Phase 4 (MCP Permissions):** Lists the 42 sv-memory MCP tools with descriptions and grants the selected allow-list entries to the allow-listed platforms chosen earlier (Antigravity CLI, Claude Code).
 - **Sub-commands** for reading/writing configuration (YAML, global `~/.sv-memory/config.yaml` or local `.sv-memory/config.yaml`):
   - `sv-memory configure get <key>`: prints a single configuration value.
   - `sv-memory configure set <key> <value> [--local]`: writes a value globally (default) or project-locally.
@@ -249,7 +249,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 
 #### 10. `sv-memory permissions`
 
-- `list`: shows the 43 sv-memory MCP tools with human-readable descriptions.
+- `list`: shows the 42 sv-memory MCP tools with human-readable descriptions.
 - `grant --platform <p> [--all | --tool a,b] [--dry-run]`: writes allow-list entries (`mcp(sv-memory/<tool>)` for Antigravity, `mcp__sv-memory__<tool>` for Claude Code), preserving unrelated entries.
 - `revoke --platform <p> [--dry-run]`: removes sv-memory allow-list entries.
 - `status [--platform <p>]`: reports granted vs missing tools per platform.
@@ -263,10 +263,10 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - `sv-memory setup <agent>`: installs the agent end-to-end (idempotent).
 - `--all`: installs every supported agent.
 - `--strict`: installs strict hooks (Antigravity blocks the first raw file read of each conversation with a JSON `deny` + graph-first reason; Claude Code is nudge-only).
-- **Claude Code:** writes a project `.mcp.json` when the `claude` CLI is absent, installs `PreToolUse` + lifecycle hooks (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`) under `.claude/hooks/` and registers them in `.claude/settings.json`, injects the `AGENTS.md` protocol, and grants the 43-tool allow-list in `~/.claude/settings.json`.
+- **Claude Code:** writes a project `.mcp.json` when the `claude` CLI is absent, installs `PreToolUse` + lifecycle hooks (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`) under `.claude/hooks/` and registers them in `.claude/settings.json`, injects the `AGENTS.md` protocol, and grants the 42-tool allow-list in `~/.claude/settings.json`.
 - **OpenCode:** registers the MCP server in `opencode.json`, installs `SKILL.md`, and injects the `AGENTS.md` protocol. OpenCode natively injects the MCP server `instructions` into the system prompt; no TypeScript plugin is installed.
 - **Cursor:** writes `.cursor/mcp.json` and injects `.cursorrules`.
-- **Antigravity CLI:** registers the MCP server, installs `.agents/hooks.json` hooks (PreToolUse + `PreInvocation` auto-boot/nudge), writes the native skill (`.agents/skills/sv-memory/SKILL.md`) and a short always-on rule (`.agents/rules/sv-memory.md`), injects `AGENTS.md`, and grants the 43-tool allow-list.
+- **Antigravity CLI:** registers the MCP server, installs `.agents/hooks.json` hooks (PreToolUse + `PreInvocation` auto-boot/nudge), writes the native skill (`.agents/skills/sv-memory/SKILL.md`) and a short always-on rule (`.agents/rules/sv-memory.md`), injects `AGENTS.md`, and grants the 42-tool allow-list.
 - **Codex:** writes the `[mcp_servers.sv-memory]` block into the project `.codex/config.toml` and injects `AGENTS.md`. Codex reads the MCP `instructions` natively — no hook required.
 - **Pi:** writes `.pi/mcp.json` and injects `AGENTS.md`. Pi reads `AGENTS.md` and the MCP `mcpServers` config natively.
 
@@ -584,7 +584,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_relations_target ON memory_relations(proje
 
 ## 6. MCP Tools Definition
 
-`sv-memory` registers **43 MCP tools** for AI agents:
+`sv-memory` registers **42 MCP tools** for AI agents:
 
 ### 1. `sv_mem_save`
 
@@ -1180,7 +1180,7 @@ sv-memory/
 │   │   ├── extractor/           # tree-sitter extractor, regex fallback, markdown semantics
 │   │   └── schema/              # Node/Edge structs
 │   ├── hook/                    # PreToolUse hooks generation & templates
-│   ├── mcp/                     # MCP server + 43 tool handlers; reads from internal/graph LRU cache
+│   ├── mcp/                     # MCP server + 42 tool handlers; reads from internal/graph LRU cache
 │   ├── memory/                  # CRUD, sessions storage, dedup, conflicts, compaction,
 │   │                            # chunked git sync, Obsidian/Cypher export, stats
 │   ├── perm/                    # MCP tool allow-list management (antigravity/claude-code)

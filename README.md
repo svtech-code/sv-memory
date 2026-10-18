@@ -180,7 +180,7 @@ sv-memory hooks install --platform claude-code --context-injection
 Restart your AI assistant, then confirm everything is wired up:
 
 ```bash
-sv-memory permissions status --platform antigravity   # Granted: 43 / 43
+sv-memory permissions status --platform antigravity   # Granted: 42 / 42
 sv-memory hooks status                                # antigravity: ✅ installed
 sv-memory diagnose
 ```
@@ -323,10 +323,10 @@ approval on every unlisted MCP tool call. `sv-memory` can manage that allow-list
 for you, either from the `configure` wizard (Phase 4) or standalone:
 
 ```bash
-# Show the 43 tools with descriptions
+# Show the 42 tools with descriptions
 sv-memory permissions list
 
-# Grant all 43 tools to Antigravity CLI (dry-run first to preview)
+# Grant all 42 tools to Antigravity CLI (dry-run first to preview)
 sv-memory permissions grant --platform antigravity --all --dry-run
 sv-memory permissions grant --platform antigravity --all
 
@@ -344,7 +344,7 @@ sv-memory permissions revoke --platform antigravity
 - Unrelated entries (e.g. `command(npm run)`) are always preserved.
 - Restart your AI assistant after granting to load the new permissions.
 
-In the `sv-memory configure` wizard, **Phase 4** lists the 43 tools for you to choose
+In the `sv-memory configure` wizard, **Phase 4** lists the 42 tools for you to choose
 which to authorize (press `a` to select all and `x` to select none) on the configured
 platforms.
 

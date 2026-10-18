@@ -9,10 +9,10 @@ de integración de un solo comando de Engram (`engram setup`).
 
 | Agente          | Comando                      | Qué se instala                                                                                   |
 | :-------------- | :--------------------------- | :----------------------------------------------------------------------------------------------- |
-| Claude Code     | `sv-memory setup claude-code` | Config MCP, hooks `PreToolUse` + ciclo de vida (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`), protocolo en `AGENTS.md`, allow-list de las 43 herramientas |
+| Claude Code     | `sv-memory setup claude-code` | Config MCP, hooks `PreToolUse` + ciclo de vida (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`), protocolo en `AGENTS.md`, allow-list de las 42 herramientas |
 | OpenCode        | `sv-memory setup opencode`    | Config MCP, skill `SKILL.md`, inyección de `instructions` MCP, protocolo en `AGENTS.md` |
 | Cursor          | `sv-memory setup cursor`      | Config MCP `.cursor/mcp.json`, inyección de protocolo en `.cursorrules` |
-| Antigravity CLI | `sv-memory setup antigravity` | Config MCP, skill nativa (`.agents/skills/sv-memory/SKILL.md`), hooks `PreToolUse` (soft/strict), protocolo en `AGENTS.md`, allow-list de las 43 herramientas |
+| Antigravity CLI | `sv-memory setup antigravity` | Config MCP, skill nativa (`.agents/skills/sv-memory/SKILL.md`), hooks `PreToolUse` (soft/strict), protocolo en `AGENTS.md`, allow-list de las 42 herramientas |
 | Codex           | `sv-memory setup codex`       | Config MCP `.codex/config.toml`, protocolo en `AGENTS.md`, `instructions` MCP nativas |
 | Pi              | `sv-memory setup pi`          | Config MCP `.pi/mcp.json`, protocolo en `AGENTS.md` (Pi lee AGENTS.md nativamente) |
 | Git             | `sv-memory hooks install --platform git` | Hook `.git/hooks/post-commit` para captura pasiva automática de commits |
@@ -84,7 +84,7 @@ Luego reinicia tu asistente para que recargue la configuración MCP y las nuevas
   - `PreCompact` — se dispara justo antes de la compactación y le pide al agente guardar un
     resumen de sesión primero (recuperación de contexto).
   - `SubagentStop` — recuerda persistir hallazgos duraderos de los subagentes.
-- **Permisos:** las 43 herramientas sv-memory se añaden al allow-list de
+- **Permisos:** las 42 herramientas sv-memory se añaden al allow-list de
   `~/.claude/settings.json` (`mcp__sv-memory__<tool>`) para que el agente las llame sin
   pedir aprobación.
 
@@ -100,7 +100,7 @@ Luego reinicia tu asistente para que recargue la configuración MCP y las nuevas
   graph-first / save-after-decision / spec-cycle y el recordatorio de "empezar con
   `sv_mem_session_start`" — sin plugin. No se instala ningún plugin TypeScript.
 - **Protocolo:** las reglas sv-memory se inyectan en `AGENTS.md`.
-- **Superficie de tools curada:** el servidor MCP registra **43 herramientas en total, 36 core por defecto**. Las 7 herramientas de mantenimiento/admin (`sv_mem_diagnose`, `sv_mem_compare`, `sv_mem_merge_projects`, `sv_graph_report`, `sv_graph_viz`, `sv_graph_merge`, `sv_graph_surprising_connections`) se omiten por defecto para mantener pequeña la lista de tools por request (economía de tokens); define `SV_MEMORY_FULL_TOOLS=1` en el entorno del servidor para habilitarlas.
+- **Superficie de tools curada:** el servidor MCP registra **42 herramientas en total, 34 core por defecto**. Las 8 herramientas no-core (`sv_mem_diagnose`, `sv_mem_compare`, `sv_mem_merge_projects`, `sv_graph_sync`, `sv_graph_report`, `sv_graph_viz`, `sv_graph_merge`, `sv_graph_surprising_connections`) se omiten por defecto para mantener pequeña la lista de tools por request (economía de tokens); define `SV_MEMORY_FULL_TOOLS=1` en el entorno del servidor para habilitarlas.
 
 ### Cursor
 
@@ -128,7 +128,7 @@ Luego reinicia tu asistente para que recargue la configuración MCP y las nuevas
 - **Regla:** una regla corta always-on en `.agents/rules/sv-memory.md` (`trigger: always_on`)
   mantiene el protocolo graph-first/spec-first presente en modelos que diluyen el gran
   `AGENTS.md` inyectado.
-- **Permisos:** las 43 herramientas sv-memory se añaden al allow-list de Antigravity
+- **Permisos:** las 42 herramientas sv-memory se añaden al allow-list de Antigravity
   (`mcp(sv-memory/<tool>)`).
 
 ### Codex

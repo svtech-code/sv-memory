@@ -3,29 +3,27 @@
 All notable changes follow [Conventional Commits](https://www.conventionalcommits.org/).
 Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automatically.
 
-## [Unreleased]
+## [v0.27.0] - 2026-10-18
 
 ### Added
+- **MCP Server Instructions (`serverInstructions`)**: The MCP server now returns a self-contained `instructions` string in its initialize response, carrying the memory-first / graph-first / save-after-decision / spec-cycle protocol. Spec-compliant clients (notably OpenAI Codex and OpenCode) inject this automatically as server-wide guidance, so models get the protocol natively without any per-platform plugin or hook.
 - **Pi coding-agent integration**: `sv-memory setup pi` writes the project `.pi/mcp.json` MCP config and injects `AGENTS.md`, which Pi reads natively (global and project scope).
 
-### Removed
-- **Windsurf integration**: removed Windsurf support (MCP config, hook platform, `setup`/`init` wiring, configure wizard entry, and the `.windsurfrules` protocol target).
-- **Codex no-op hook**: removed the Codex `codex-noop.sh` hook and its install/uninstall/status. Codex is now a clean MCP-native integration (project `.codex/config.toml` + MCP `instructions` + `AGENTS.md`).
-
 ### Changed
+- **MCP server instructions — session-start reminder**: `serverInstructions` now leads with "start every session by calling `sv_mem_session_start` to load your Auto-Boot Context Bundle", so OpenCode and other spec-compliant clients guide the model through the session lifecycle natively.
 - **Codex MCP config is project-scoped**: `sv-memory setup codex` now writes `[mcp_servers.sv-memory]` to the project `.codex/config.toml` (instead of `~/.codex/config.toml`), consistent with Cursor/Pi and the per-project nature of sv-memory.
 
 ### Removed
 - **OpenCode TypeScript plugin**: Dropped `.opencode/plugin/sv-memory.ts` (and its soft/strict templates, `sv_memory_context` tool, and model-agnostic hook automation). OpenCode V1 and V2 natively inject the MCP server's `instructions` into the system prompt and auto-translate the V1 MCP config in memory, so the integration is now 100% Go via the MCP server + `AGENTS.md` + skill.
-
-### Changed
-- **MCP server instructions — session-start reminder**: `serverInstructions` now leads with "start every session by calling `sv_mem_session_start` to load your Auto-Boot Context Bundle", so OpenCode and other spec-compliant clients guide the model through the session lifecycle natively.
-
-### Added
-- **MCP Server Instructions (`serverInstructions`)**: The MCP server now returns a self-contained `instructions` string in its initialize response, carrying the memory-first / graph-first / save-after-decision / spec-cycle protocol. Spec-compliant clients (notably OpenAI Codex) inject this automatically as server-wide guidance, so models get the protocol natively without any per-platform plugin or hook.
+- **Codex no-op hook**: removed the Codex `codex-noop.sh` hook and its install/uninstall/status. Codex is now a clean MCP-native integration (project `.codex/config.toml` + MCP `instructions` + `AGENTS.md`).
+- **Windsurf integration**: removed Windsurf support (MCP config, hook platform, `setup`/`init` wiring, configure wizard entry, and the `.windsurfrules` protocol target).
 
 ### Fixed
 - **MCP Tool-Name Resolution for Weak Models**: Added a cross-platform "tool name resolution" rule to the injected protocol (`internal/protocol/protocol.go`) and a client-specific prefix note to the OpenCode/Antigravity skill templates, teaching agents to match sv-memory tools by their `sv_*` suffix (e.g. `sv_graph_explore` → `sv-memory_sv_graph_explore` in OpenCode) so deepseek-class models invoke the tools instead of falling back to raw read/grep.
+
+### Documentation
+- **Correct MCP tool count**: Fixed doc drift that stated 43 tools / 36 core / 7 non-core; the server exposes **42 tools total, 34 core, 8 non-core** (adding `sv_graph_sync` to the non-core list) across AGENT-SETUP, spect, README (EN/ES).
+- **README platform references synced**: Removed OpenCode from hook lists, added Codex/Pi to the client diagram, and reconciled the post-update step to `sv-memory init`.
 
 ## [v0.26.0] - 2026-10-18
 
