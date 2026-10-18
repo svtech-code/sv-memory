@@ -59,7 +59,7 @@
 ```mermaid
 flowchart TD
     subgraph Clientes["Clientes & Asistentes de IA"]
-        A1[Cursor / Windsurf / VS Code]
+        A1[Cursor / VS Code]
         A2[Claude Code / Antigravity CLI / OpenCode]
     end
 
@@ -206,7 +206,7 @@ sv-memory tui
 | `sv-memory tui`                    | **Interfaz**      | Inicia la interfaz interactiva de terminal para explorar memorias y diagnósticos.                     |
 | `sv-memory configure`              | **Instalación**   | Asistente interactivo en terminal para configurar Cursor, Claude Code, agy, Zed, etc.                 |
 | `sv-memory configure get/set/list` | **Instalación**   | Lee/escribe valores de configuración YAML global o por proyecto (`--local`).                          |
-| `sv-memory setup [agente]`         | **Instalación**   | Integración de agente en un solo comando (config MCP + hooks/plugins + protocolo + permisos) para claude-code, opencode, cursor, windsurf, antigravity, codex. `--all` configura todos; sin argumentos muestra el estado por agente. Ver [AGENT-SETUP_ES.md](documentation/AGENT-SETUP_ES.md). |
+| `sv-memory setup [agente]`         | **Instalación**   | Integración de agente en un solo comando (config MCP + hooks + protocolo + permisos) para claude-code, opencode, cursor, antigravity, codex, pi. `--all` configura todos; sin argumentos muestra el estado por agente. Ver [AGENT-SETUP_ES.md](documentation/AGENT-SETUP_ES.md). |
 | `sv-memory sync`                   | **Git Sync**      | Sincronización bidireccional entre la BD SQLite y `.sv-memory/chunks/*.json`.                         |
 | `sv-memory specs export/import/list/archive/capabilities` | **Mirror Spec** | Gestiona la proyección Markdown legible por humanos de los spec changes y el estado de capabilities bajo `.sv-memory/specs/` (escrita automáticamente por el sync; `import` reconcilia ediciones humanas de vuelta al store autoritativo; `capabilities` lista el estado actual de requirements). |
 | `sv-memory diagnose`               | **Diagnóstico**   | Verifica conexiones SQLite, integridad de esquema, permisos de escritura y rutas.                     |
@@ -297,7 +297,7 @@ sv-memory tui
 
 ## ⚙️ Configuración en Clientes de IA
 
-### Cursor / Claude Desktop / Windsurf
+### Cursor / Claude Desktop
 
 Añade el siguiente fragmento al archivo JSON de configuración MCP de tu cliente:
 

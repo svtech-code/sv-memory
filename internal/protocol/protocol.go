@@ -157,7 +157,7 @@ Before asking the user to commit your changes or finalizing a task, you MUST aut
 
 // InjectProtocol checks and injects sv-memory agent rules into target files.
 func InjectProtocol(projPath string) ([]string, error) {
-	targets := []string{"AGENTS.md", ".cursorrules", ".windsurfrules"}
+	targets := []string{"AGENTS.md", ".cursorrules"}
 	var injectedFiles []string
 	foundAny := false
 

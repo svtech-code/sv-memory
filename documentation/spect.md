@@ -8,7 +8,7 @@
 
 1. **Persistent Decision Memory:** Capturing non-obvious fixes, architectural decisions, coding standards, progress journals, discussions, Q&As, and ideas using SQLite + FTS5 full-text search.
 2. **Structural Knowledge Graph:** Mapping code entities (files, components, imports, dependencies) to provide structural context to LLM agents via directed dependency graphs.
-3. **Autonomous Agent Orchestration:** Injecting protocol rules into `AGENTS.md`, `.cursorrules`, or `.windsurfrules` so agents automatically query, record, and maintain context during coding sessions.
+3. **Autonomous Agent Orchestration:** Injecting protocol rules into `AGENTS.md` or `.cursorrules` so agents automatically query, record, and maintain context during coding sessions.
 4. **Team Collaboration:** Bidirectional Git-synced JSON (`.sv-memory/chunks/*.json`, one file per memory) so a private team shares context across clones. Opt-in: `git_sync_enabled` defaults to off, and `.sv-memory/` must not be committed in public repositories.
 
 Developed under the **SVTech** ecosystem as a free, open-source tool for the developer community.
@@ -19,7 +19,7 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 
 ```text
        ┌────────────────────────────────────────────────────────┐
-       │       AI Agent (Cursor / Windsurf / Claude Code /       │
+       │       AI Agent (Cursor / Claude Code /       │
        │        OpenCode / Codex / Antigravity / Zed / VS Code)  │
        └───────────────────────────┬────────────────────────────┘
                                    │  MCP Protocol via Stdio
@@ -77,7 +77,7 @@ Developed under the **SVTech** ecosystem as a free, open-source tool for the dev
 
 - Calculates a deterministic 16-char hex `project_id` (SHA256 of the Git root path).
 - Registers the project entry into the central SQLite database.
-- Checks for `AGENTS.md`, `.cursorrules`, or `.windsurfrules`:
+- Checks for `AGENTS.md` or `.cursorrules`:
   - If any exist: Injects or updates the `<!-- SV-MEMORY:START -->
 # SV-Memory Protocol Rules
 
@@ -240,7 +240,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 
 #### 9. `sv-memory configure`
 
-- Interactive wizard for automatic/manual configurations of editors (Cursor, VS Code, Zed, Windsurf, OpenCode) and CLIs (Claude Code, Codex, Antigravity).
+- Interactive wizard for automatic/manual configurations of editors (Cursor, VS Code, Zed) and CLIs (Claude Code, OpenCode, Codex, Antigravity, Pi).
 - **Phase 4 (MCP Permissions):** Lists the 43 sv-memory MCP tools with descriptions and grants the selected allow-list entries to the allow-listed platforms chosen earlier (Antigravity CLI, Claude Code).
 - **Sub-commands** for reading/writing configuration (YAML, global `~/.sv-memory/config.yaml` or local `.sv-memory/config.yaml`):
   - `sv-memory configure get <key>`: prints a single configuration value.
@@ -257,8 +257,8 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 
 #### 11. `sv-memory setup [agent]`
 
-- One-shot agent integration mirroring Engram's `engram setup <agent>`: wires MCP server config, hooks/skills/plugins, protocol injection (`AGENTS.md` / `.cursorrules` / `.windsurfrules`), and MCP tool permissions for one agent.
-- Supported agents: `claude-code`, `opencode`, `cursor`, `windsurf`, `antigravity`, `codex`.
+- One-shot agent integration mirroring Engram's `engram setup <agent>`: wires MCP server config, hooks/skills, protocol injection (`AGENTS.md` / `.cursorrules`), and MCP tool permissions for one agent.
+- Supported agents: `claude-code`, `opencode`, `cursor`, `antigravity`, `codex`, `pi`.
 - `sv-memory setup` (no args): read-only — prints per-agent install status.
 - `sv-memory setup <agent>`: installs the agent end-to-end (idempotent).
 - `--all`: installs every supported agent.
@@ -266,9 +266,9 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **Claude Code:** writes a project `.mcp.json` when the `claude` CLI is absent, installs `PreToolUse` + lifecycle hooks (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`) under `.claude/hooks/` and registers them in `.claude/settings.json`, injects the `AGENTS.md` protocol, and grants the 43-tool allow-list in `~/.claude/settings.json`.
 - **OpenCode:** registers the MCP server in `opencode.json`, installs `SKILL.md`, and injects the `AGENTS.md` protocol. OpenCode natively injects the MCP server `instructions` into the system prompt; no TypeScript plugin is installed.
 - **Cursor:** writes `.cursor/mcp.json` and injects `.cursorrules`.
-- **Windsurf:** writes `.windsurf/mcp_config.json` and injects `.windsurfrules`.
 - **Antigravity CLI:** registers the MCP server, installs `.agents/hooks.json` hooks (PreToolUse + `PreInvocation` auto-boot/nudge), writes the native skill (`.agents/skills/sv-memory/SKILL.md`) and a short always-on rule (`.agents/rules/sv-memory.md`), injects `AGENTS.md`, and grants the 43-tool allow-list.
-- **Codex:** writes the `[mcp_servers.sv-memory]` block into `~/.codex/config.toml`, installs a no-op hook, and injects `AGENTS.md`.
+- **Codex:** writes the `[mcp_servers.sv-memory]` block into the project `.codex/config.toml` and injects `AGENTS.md`. Codex reads the MCP `instructions` natively — no hook required.
+- **Pi:** writes `.pi/mcp.json` and injects `AGENTS.md`. Pi reads `AGENTS.md` and the MCP `mcpServers` config natively.
 
 #### 12. `sv-memory hooks`
 
@@ -1032,7 +1032,7 @@ The SQLite store lives outside the repository (`~/.config/sv-memory/storage.db`)
 
 ## 8. Agent Protocol Template
 
-When initialized, `sv-memory` injects the following protocol block into `AGENTS.md`, `.cursorrules`, or `.windsurfrules` (source of truth: `internal/protocol/protocol.go`):
+When initialized, `sv-memory` injects the following protocol block into `AGENTS.md` or `.cursorrules` (source of truth: `internal/protocol/protocol.go`):
 
 ```markdown
 <!-- SV-MEMORY:START -->

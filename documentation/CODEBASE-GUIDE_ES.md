@@ -10,14 +10,14 @@ conflictos) y dónde mirar al extender el proyecto. Complementa la especificaci�
 | Paquete | Responsabilidad | Puntos de entrada clave |
 | :--- | :--- | :--- |
 | `cmd/sv-memory/` | CLI Cobra: registro del comando raíz, `init`, `mcp`, `setup`, `configure`, `hooks`, `permissions`, `graph`, `conflicts`, `projects` | `main.go`, `cmd_init.go`, `cmd_setup.go` |
-| `internal/config/` | Rutas, config YAML viper, asistente `configure` + escritores de config MCP (cursor/windsurf/claude) | `config.go`, `configure.go` |
+| `internal/config/` | Rutas, config YAML viper, asistente `configure` + escritores de config MCP (cursor/pi/codex/claude/opencode/antigravity) | `config.go`, `configure.go` |
 | `internal/db/` | Apertura/ajuste de SQLite, migraciones, pool WAL lector/escritor | `db.go`, `pool.go`, `migrations.go` |
 | `internal/graph/` | Escáner, construcción del grafo de dependencias (incremental + completo), BFS, comunidades Leiden, betweenness, god nodes, aristas AST de llamadas | `graph.go`, `incremental.go`, `relations.go`, `communities.go`, `leiden.go`, `memory.go` |
 | `internal/graph/extractor/` | Extractor tree-sitter (símbolos, imports, refs AST de llamadas), fallback regex | `tree_sitter.go`, `regex.go`, `extractor.go` |
 | `internal/mcp/` | Servidor MCP stdio + 34 handlers de herramientas | `mcp.go` (núcleo + registro de tools), `server_sync.go`, `graph_load.go`, `respond.go`, `tools_*.go` |
 | `internal/memory/` | CRUD de memorias, sesiones, dedup, conflictos, compactación, git sync, context pack, stats | `memory.go`, `save.go`, `memory_session.go`, `conflicts.go`, `contextpack.go`, `sync.go`, `prompts.go` |
 | `internal/hook/` | Scripts/skills de hooks PreToolUse + ciclo de vida (Claude Code, OpenCode, Antigravity, Codex) | `hook.go`, `templates.go`, `scripts/` |
-| `internal/protocol/` | Inyección de protocolo en AGENTS.md / `.cursorrules` / `.windsurfrules` | `protocol.go` |
+| `internal/protocol/` | Inyección de protocolo en AGENTS.md / `.cursorrules` | `protocol.go` |
 | `internal/perm/` | Gestión de allow-lists de herramientas MCP (Antigravity, Claude Code) | `perm.go` |
 | `internal/security/` | Sanitizador regex de secretos (API keys, JWTs, PEM, credenciales) | `security.go` |
 | `internal/tui/` | Interfaz terminal interactiva (charmbracelet/huh + bubbletea) | `tui.go` |

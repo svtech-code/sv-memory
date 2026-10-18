@@ -12,9 +12,9 @@ de integración de un solo comando de Engram (`engram setup`).
 | Claude Code     | `sv-memory setup claude-code` | Config MCP, hooks `PreToolUse` + ciclo de vida (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`), protocolo en `AGENTS.md`, allow-list de las 43 herramientas |
 | OpenCode        | `sv-memory setup opencode`    | Config MCP, skill `SKILL.md`, inyección de `instructions` MCP, protocolo en `AGENTS.md` |
 | Cursor          | `sv-memory setup cursor`      | Config MCP `.cursor/mcp.json`, inyección de protocolo en `.cursorrules` |
-| Windsurf        | `sv-memory setup windsurf`    | Config MCP `.windsurf/mcp_config.json`, inyección de protocolo en `.windsurfrules` |
 | Antigravity CLI | `sv-memory setup antigravity` | Config MCP, skill nativa (`.agents/skills/sv-memory/SKILL.md`), hooks `PreToolUse` (soft/strict), protocolo en `AGENTS.md`, allow-list de las 43 herramientas |
-| Codex           | `sv-memory setup codex`       | Config MCP en `~/.codex/config.toml`, hooks, protocolo en `AGENTS.md` |
+| Codex           | `sv-memory setup codex`       | Config MCP `.codex/config.toml`, protocolo en `AGENTS.md`, `instructions` MCP nativas |
+| Pi              | `sv-memory setup pi`          | Config MCP `.pi/mcp.json`, protocolo en `AGENTS.md` (Pi lee AGENTS.md nativamente) |
 | Git             | `sv-memory hooks install --platform git` | Hook `.git/hooks/post-commit` para captura pasiva automática de commits |
 
 ## Inicio rápido
@@ -54,8 +54,8 @@ sv-memory init                  # 2. auto-reconcilia skills, hooks, AGENTS.md y 
 ```
 
 Por qué el paso 2 es recomendado:
-- `sv-memory init` re-escanea las herramientas actuales y **concede cualquier nueva herramienta MCP** en las listas de permisos (`~/.claude/settings.json`, `opencode.json`, `.cursor/mcp.json`, `.windsurf/mcp_config.json`, `mcp_config.json` de Antigravity).
-- **Re-inyecta el protocolo** (`AGENTS.md` / `.cursorrules` / `.windsurfrules`) y refresca las skills (`.agents/skills/sv-memory/SKILL.md`, `SKILL.md` de OpenCode), asegurando que las instrucciones del agente coincidan con la versión actualizada.
+- `sv-memory init` re-escanea las herramientas actuales y **concede cualquier nueva herramienta MCP** en las listas de permisos (`~/.claude/settings.json`, `opencode.json`, `.cursor/mcp.json`, `mcp_config.json` de Antigravity).
+- **Re-inyecta el protocolo** (`AGENTS.md` / `.cursorrules`) y refresca las skills (`.agents/skills/sv-memory/SKILL.md`, `SKILL.md` de OpenCode), asegurando que las instrucciones del agente coincidan con la versión actualizada.
 - Es **idempotente y no destructivo** — detecta los asistentes configurados y actualiza solo lo necesario.
 
 Luego reinicia tu asistente para que recargue la configuración MCP y las nuevas herramientas. Verifica con `sv-memory version` y `sv-memory setup` (tabla de estado de solo lectura).
@@ -108,11 +108,6 @@ Luego reinicia tu asistente para que recargue la configuración MCP y las nuevas
   lo lee automáticamente.
 - **Protocolo:** las reglas sv-memory se inyectan en `.cursorrules`.
 
-### Windsurf
-
-- **Config MCP:** se escribe `.windsurf/mcp_config.json` en la raíz del proyecto (fusionado).
-- **Protocolo:** las reglas sv-memory se inyectan en `.windsurfrules`.
-
 ### Antigravity CLI (agy)
 
 - **Config MCP:** se escribe en el `mcp_config.json` de Antigravity (fusionado).
@@ -138,15 +133,21 @@ Luego reinicia tu asistente para que recargue la configuración MCP y las nuevas
 
 ### Codex
 
-- **Config MCP:** se escribe el bloque `[mcp_servers.sv-memory]` en `~/.codex/config.toml`
-  (o se crea). Codex aprueba las llamadas de forma interactiva, por lo que no se escribe
-  ningún allow-list estático.
-- **Hooks:** `.codex/hooks.json` con un script no-op — `AGENTS.md` es el mecanismo siempre
-  activo en esta plataforma (Codex Desktop rechaza `additionalContext` en PreToolUse).
+- **Config MCP:** se escribe el bloque `[mcp_servers.sv-memory]` en el `.codex/config.toml`
+  del proyecto (o se crea). Codex lo lee para proyectos de confianza.
+- **Instrucciones nativas:** Codex lee el campo `instructions` del servidor MCP y lo inyecta
+  como guía de ámbito servidor, y el protocolo se inyecta en `AGENTS.md` — no se requiere hook.
+
+### Pi
+
+- **Config MCP:** se escribe `.pi/mcp.json` en la raíz del proyecto (fusionado). Pi lo lee
+  para servidores de proyecto una vez que el proyecto es de confianza.
+- **Protocolo:** las reglas sv-memory se inyectan en `AGENTS.md`, que Pi lee nativamente al
+  arrancar (ámbito global y de proyecto).
 
 ## Sobrevivir a la compactación
 
-El protocolo sv-memory (inyectado en `AGENTS.md` / `.cursorrules` / `.windsurfrules`)
+El protocolo sv-memory (inyectado en `AGENTS.md` / `.cursorrules`)
 indica al agente que, tras una compactación de contexto o reset:
 
 1. llame `sv_mem_session_summary` con el contenido del resumen compactado,

@@ -14,14 +14,14 @@ import (
 type TargetTool struct {
 	Name       string
 	Type       string // "editor" | "cli"
-	ID         string // "cursor" | "vscode" | "zed" | "windsurf" | "claude-code" | "opencode" | "codex" | "antigravity"
+	ID         string // "cursor" | "vscode" | "zed" | "claude-code" | "opencode" | "codex" | "antigravity" | "pi"
 	Auto       bool   // True if we can configure it automatically, False if manual instructions are needed
 	ConfigPath string
 }
 
 // writeMCPServersFile merges the sv-memory entry into a JSON file whose shape
 // is { "mcpServers": { <name>: {command, args} } }. Existing servers are
-// preserved. Used by configureClaude, configureCursor, and configureWindsurf.
+// preserved. Used by configureClaude, configureCursor, and configurePi.
 func writeMCPServersFile(configPath string, execPath string) error {
 	dir := filepath.Dir(configPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -77,12 +77,24 @@ func ConfigureCursor(projPath string, execPath string) (string, error) {
 	return configPath, nil
 }
 
-// ConfigureWindsurf writes the project-local Windsurf MCP config
-// (.windsurf/mcp_config.json) so the sv-memory server is registered
-// automatically.
-func ConfigureWindsurf(projPath string, execPath string) (string, error) {
-	configPath := filepath.Join(projPath, ".windsurf", "mcp_config.json")
+// ConfigurePi writes the project-local Pi coding-agent MCP config (.pi/mcp.json)
+// so the sv-memory server is registered automatically. Pi reads this file for
+// project-scoped servers (after the project is trusted) and reads AGENTS.md
+// natively.
+func ConfigurePi(projPath string, execPath string) (string, error) {
+	configPath := filepath.Join(projPath, ".pi", "mcp.json")
 	if err := writeMCPServersFile(configPath, execPath); err != nil {
+		return "", err
+	}
+	return configPath, nil
+}
+
+// ConfigureCodex writes the project-local Codex MCP config (.codex/config.toml)
+// so the sv-memory server is registered automatically. Codex reads project
+// config.toml for trusted projects and injects the MCP server instructions.
+func ConfigureCodex(projPath string, execPath string) (string, error) {
+	configPath := filepath.Join(projPath, ".codex", "config.toml")
+	if err := configureCodex(configPath, execPath); err != nil {
 		return "", err
 	}
 	return configPath, nil
@@ -116,10 +128,6 @@ func resolveConfigPath(toolID string) string {
 			filepath.Join(home, ".config", "antigravity-cli", "mcp_config.json"),
 			filepath.Join(home, ".antigravity-cli", "mcp_config.json"),
 		}
-	case "codex":
-		candidates = []string{
-			filepath.Join(home, ".codex", "config.toml"),
-		}
 	default:
 		return ""
 	}
@@ -152,7 +160,6 @@ func GetPredefinedEditors() []TargetTool {
 		{Name: "Cursor", Type: "editor", ID: "cursor", Auto: false},
 		{Name: "VS Code", Type: "editor", ID: "vscode", Auto: false},
 		{Name: "Zed Editor", Type: "editor", ID: "zed", Auto: true, ConfigPath: resolveConfigPath("zed")},
-		{Name: "Windsurf", Type: "editor", ID: "windsurf", Auto: false},
 	}
 }
 
@@ -161,8 +168,9 @@ func GetPredefinedCLIs() []TargetTool {
 	return []TargetTool{
 		{Name: "Claude Code", Type: "cli", ID: "claude-code", Auto: true},
 		{Name: "OpenCode", Type: "cli", ID: "opencode", Auto: true, ConfigPath: resolveConfigPath("opencode")},
-		{Name: "Codex", Type: "cli", ID: "codex", Auto: true, ConfigPath: resolveConfigPath("codex")},
 		{Name: "Antigravity CLI (agy)", Type: "cli", ID: "antigravity", Auto: true, ConfigPath: resolveConfigPath("antigravity")},
+		{Name: "Codex", Type: "cli", ID: "codex", Auto: false},
+		{Name: "Pi", Type: "cli", ID: "pi", Auto: false},
 	}
 }
 
@@ -183,8 +191,11 @@ func ConfigureTargetTool(tool TargetTool) (bool, string, error) {
 		case "vscode":
 			msg := fmt.Sprintf("Open the MCP plugin configuration you use (e.g. Cline or Roo Code):\n      * Add a new server with the Command: %s\n      * With the Arguments: [\"mcp\"]", execPath)
 			return false, msg, nil
-		case "windsurf":
-			msg := fmt.Sprintf("Open Windsurf settings -> MCP -> click 'Add New Server'.\n      * Name: sv-memory\n      * Type: command\n      * Command: %s mcp", execPath)
+		case "pi":
+			msg := fmt.Sprintf("Run 'sv-memory setup pi' in the project to write the .pi/mcp.json MCP config and inject AGENTS.md.")
+			return false, msg, nil
+		case "codex":
+			msg := fmt.Sprintf("Run 'sv-memory setup codex' in the project to write the .codex/config.toml MCP config and inject AGENTS.md.")
 			return false, msg, nil
 		default:
 			return false, "Manual configuration required in your editor.", nil
@@ -209,13 +220,6 @@ func ConfigureTargetTool(tool TargetTool) (bool, string, error) {
 
 	case "opencode":
 		err := configureOpenCode(tool.ConfigPath, execPath)
-		if err != nil {
-			return false, "", err
-		}
-		return true, "Configured automatically at " + tool.ConfigPath, nil
-
-	case "codex":
-		err := configureCodex(tool.ConfigPath, execPath)
 		if err != nil {
 			return false, "", err
 		}

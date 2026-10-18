@@ -2,7 +2,7 @@
 
 > **Idioma:** [English](getting_started_guide.md) | **Español**
 
-**sv-memory** es un sistema de memoria arquitectónica persistente y grafo de dependencias de código diseñado para eliminar la amnesia de contexto en agentes de IA (Cursor, Claude Code, Antigravity CLI, Windsurf, etc.).
+**sv-memory** es un sistema de memoria arquitectónica persistente y grafo de dependencias de código diseñado para eliminar la amnesia de contexto en agentes de IA (Cursor, Claude Code, Antigravity CLI, OpenCode, Codex, Pi, etc.).
 
 Esta guía explica paso a paso cómo instalar **sv-memory**, configurarlo en tu sistema y comenzar a usarlo en tus proyectos de desarrollo.
 
@@ -88,7 +88,7 @@ El comando busca la última release publicada en GitHub, la compara con tu versi
 
 ### Paso 2: Configuración Global de Editores y CLIs (`sv-memory configure`)
 
-Para que tu editor o asistente de terminal (Cursor, Claude Code, Windsurf, Antigravity CLI, OpenCode, etc.) reconozca el servidor MCP de `sv-memory` a nivel global, ejecuta el asistente interactivo una sola vez:
+Para que tu editor o asistente de terminal (Cursor, Claude Code, Antigravity CLI, OpenCode, Codex, Pi, etc.) reconozca el servidor MCP de `sv-memory` a nivel global, ejecuta el asistente interactivo una sola vez:
 
 ```bash
 sv-memory configure
@@ -98,7 +98,7 @@ sv-memory configure
 
 El asistente te guiará a través de fases interactivas en la terminal:
 
-1. **Fase 1 (Editores GUI):** Registra automáticamente el servidor MCP en archivos de configuración de usuario para **Cursor**, **VS Code**, **Zed** o **Windsurf**.
+1. **Fase 1 (Editores GUI):** Registra automáticamente el servidor MCP en archivos de configuración de usuario para **Cursor**, **VS Code** o **Zed**.
 2. **Fase 2 (Asistentes de Terminal):** Configura clientes CLI como **Claude Code**, **Antigravity CLI (agy)** u **OpenCode**.
 3. **Fase 3 (Confirmación y aplicación):** Muestra el resumen de herramientas seleccionadas y aplica las configuraciones.
 4. **Fase 4 (Permisos MCP):** Autoriza las **42 herramientas MCP de sv-memory** en las plataformas con allow-list estática.
@@ -124,7 +124,9 @@ sv-memory init
    - **Antigravity CLI:** Instala `.agents/skills/sv-memory/SKILL.md` (skill nativa on-demand) y `.agents/hooks/`.
    - **OpenCode:** Instala `.opencode/skills/sv-memory/SKILL.md` (las `instructions` MCP se inyectan de forma nativa).
    - **Claude Code:** Instala `.claude/hooks/` (`SessionStart`, `SessionEnd`, `PreCompact`, `PreToolUse`).
-   - **Cursor / Windsurf:** Escribe `.cursor/mcp.json` / `.windsurf/mcp_config.json`.
+   - **Cursor:** Escribe `.cursor/mcp.json`.
+   - **Codex:** Escribe `.codex/config.toml` (lee las `instructions` MCP y `AGENTS.md` nativamente).
+   - **Pi:** Escribe `.pi/mcp.json` (lee `AGENTS.md` nativamente).
 4. **Permisos MCP Automáticos:** Concede permisos para las 42 herramientas MCP sin necesidad de confirmaciones manuales repetitivas.
 5. **Sincronización Git:** Importa memorias compartidas desde `.sv-memory/memories.json` si existe.
 6. **Grafo de Dependencias:** Escanea el árbol de código y construye el grafo estructural (imports, nodos god, comunidades Leiden). Un observador de archivos en segundo plano (fsnotify, habilitado por defecto con `graph_watcher_enabled`) mantiene el grafo sincronizado al detectar cambios en el código fuente, con rebote configurable (`graph_watch_debounce_ms`).
@@ -173,9 +175,9 @@ cd /ruta/a/tu-proyecto
 sv-memory setup claude-code   # Claude Code (MCP + hooks PreToolUse y de ciclo de vida + allow-list)
 sv-memory setup opencode      # OpenCode (MCP + SKILL.md + instructions nativas)
 sv-memory setup cursor        # Cursor (.cursor/mcp.json + .cursorrules)
-sv-memory setup windsurf      # Windsurf (.windsurf/mcp_config.json + .windsurfrules)
 sv-memory setup antigravity   # Antigravity CLI (MCP + hooks + allow-list)
-sv-memory setup codex         # Codex (config MCP config.toml + hooks)
+sv-memory setup codex         # Codex (.codex/config.toml + AGENTS.md)
+sv-memory setup pi            # Pi (.pi/mcp.json + AGENTS.md)
 sv-memory setup --all         # todos los agentes
 sv-memory setup               # estado por agente (solo lectura)
 ```
@@ -207,7 +209,7 @@ Una vez completados los pasos anteriores, ya estás listo para trabajar.
 
 #### 🤖 1. Autonomía del Agente de IA (Transparente para ti)
 
-Al abrir tu editor (Cursor, Windsurf, Claude Code, etc.) y enviar cualquier mensaje o tarea a la IA:
+Al abrir tu editor (Cursor, Claude Code, Codex, Pi, etc.) y enviar cualquier mensaje o tarea a la IA:
 
 - **Arranque de Sesión (Auto-Boot Context Bundle):** El agente ejecuta de forma transparente `sv_mem_session_start`, recibiendo de inmediato las metas de la sesión anterior, los 3 principales hubs de código y los últimos postmortems / Q&A.
 - **Búsqueda Inteligente (FTS5 BM25 + Path Scoping + Graph Boost):** Cuando le haces una pregunta sobre un módulo o bug, la IA llama a `sv_mem_search` con filtrado por ruta para encontrar decisiones pasadas sin gastar miles de tokens. Con `graph_boost` (default activado), una búsqueda de módulo se expande a toda la comunidad del grafo en una sola llamada, anotando las filas de comunidad con un marcador `[graph]`.

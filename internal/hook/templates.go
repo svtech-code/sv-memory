@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-//go:embed scripts/claude-code-soft.sh scripts/claude-code-strict.sh scripts/claude-code-session-start.sh scripts/claude-code-precompact.sh scripts/claude-code-subagent-stop.sh scripts/claude-code-session-end.sh scripts/claude-code-user-prompt-submit.sh scripts/codex-noop.sh scripts/antigravity-soft.sh scripts/antigravity-strict.sh scripts/antigravity-preinvocation.sh scripts/antigravity-skill.md scripts/antigravity-rule.md scripts/opencode-skill.md scripts/git-post-commit.sh
+//go:embed scripts/claude-code-soft.sh scripts/claude-code-strict.sh scripts/claude-code-session-start.sh scripts/claude-code-precompact.sh scripts/claude-code-subagent-stop.sh scripts/claude-code-session-end.sh scripts/claude-code-user-prompt-submit.sh scripts/antigravity-soft.sh scripts/antigravity-strict.sh scripts/antigravity-preinvocation.sh scripts/antigravity-skill.md scripts/antigravity-rule.md scripts/opencode-skill.md scripts/git-post-commit.sh
 var hookScriptsFS embed.FS
 
 // gitPostCommitScript returns the embedded Git post-commit hook script source.
@@ -69,8 +69,6 @@ func hookScript(platform Platform, mode Mode) string {
 		} else {
 			filename = "scripts/claude-code-soft.sh"
 		}
-	case PlatformCodex:
-		filename = "scripts/codex-noop.sh"
 	case PlatformAntigravity:
 		if mode == ModeStrict {
 			filename = "scripts/antigravity-strict.sh"

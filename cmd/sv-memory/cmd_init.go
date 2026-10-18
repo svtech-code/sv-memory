@@ -231,9 +231,9 @@ func promptSelectAgents(preselected []string) ([]string, error) {
 		huh.NewOption("Claude Code (Hooks + MCP + Permissions)", "claude-code"),
 		huh.NewOption("Antigravity CLI / agy (Hooks + Skill + MCP + Permissions)", "antigravity"),
 		huh.NewOption("Cursor (.cursor/mcp.json)", "cursor"),
-		huh.NewOption("Windsurf (.windsurf/mcp_config.json)", "windsurf"),
-		huh.NewOption("OpenCode (Skill + TS Plugin + MCP)", "opencode"),
-		huh.NewOption("Codex (.codex/hooks.json + MCP)", "codex"),
+		huh.NewOption("OpenCode (Skill + MCP)", "opencode"),
+		huh.NewOption("Codex (config.toml + MCP)", "codex"),
+		huh.NewOption("Pi (~/.pi/agent/mcp.json + AGENTS.md)", "pi"),
 	}
 
 	form := huh.NewForm(

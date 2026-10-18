@@ -10,14 +10,14 @@ where to look when extending the project. It complements the specification
 | Package | Responsibility | Key entry points |
 | :--- | :--- | :--- |
 | `cmd/sv-memory/` | Cobra CLI: root command registration, `init`, `mcp`, `setup`, `configure`, `hooks`, `permissions`, `graph`, `conflicts`, `projects` | `main.go`, `cmd_init.go`, `cmd_setup.go` |
-| `internal/config/` | Paths, viper YAML config, `configure` wizard + MCP config writers (cursor/windsurf/claude) | `config.go`, `configure.go` |
+| `internal/config/` | Paths, viper YAML config, `configure` wizard + MCP config writers (cursor/pi/codex/claude/opencode/antigravity) | `config.go`, `configure.go` |
 | `internal/db/` | SQLite open/tuning, migrations, WAL reader/writer pool | `db.go`, `pool.go`, `migrations.go` |
 | `internal/graph/` | Scanner, dependency graph build (incremental + full), BFS query, Leiden communities, betweenness, god nodes, AST call edges, Framework routing edges | `graph.go`, `incremental.go`, `relations.go`, `routing.go`, `communities.go`, `leiden.go`, `memory.go` |
 | `internal/graph/extractor/` | tree-sitter extractor (symbols, imports, AST call refs), regex fallback | `tree_sitter.go`, `regex.go`, `extractor.go` |
 | `internal/mcp/` | MCP stdio server + 34 tool handlers | `mcp.go` (core + tool registration), `server_sync.go`, `graph_load.go`, `respond.go`, `tools_*.go` |
 | `internal/memory/` | Memory CRUD, sessions, dedup, conflicts, compaction, git sync, context pack, stats | `memory.go`, `save.go`, `memory_session.go`, `conflicts.go`, `contextpack.go`, `sync.go`, `prompts.go` |
 | `internal/hook/` | PreToolUse + lifecycle hook scripts/skills (Claude Code, OpenCode, Antigravity, Codex) | `hook.go`, `templates.go`, `scripts/` |
-| `internal/protocol/` | AGENTS.md / `.cursorrules` / `.windsurfrules` protocol injection | `protocol.go` |
+| `internal/protocol/` | AGENTS.md / `.cursorrules` protocol injection | `protocol.go` |
 | `internal/perm/` | MCP tool allow-list management (Antigravity, Claude Code) | `perm.go` |
 | `internal/security/` | Regex secrets sanitizer (API keys, JWTs, PEM, credentials) | `security.go` |
 | `internal/tui/` | Interactive terminal UI (charmbracelet/huh + bubbletea) | `tui.go` |

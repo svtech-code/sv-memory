@@ -12,9 +12,9 @@ style of Engram's `engram setup`.
 | Claude Code    | `sv-memory setup claude-code` | MCP server config, `PreToolUse` + lifecycle hooks (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`), `AGENTS.md` protocol, 43-tool permission allow-list |
 | OpenCode       | `sv-memory setup opencode`    | MCP server config, `SKILL.md` skill, MCP `instructions` injection, `AGENTS.md` protocol |
 | Cursor         | `sv-memory setup cursor`      | `.cursor/mcp.json` MCP config, `.cursorrules` protocol injection |
-| Windsurf       | `sv-memory setup windsurf`    | `.windsurf/mcp_config.json` MCP config, `.windsurfrules` protocol injection |
 | Antigravity CLI | `sv-memory setup antigravity` | MCP config, native skill (`.agents/skills/sv-memory/SKILL.md`), `PreToolUse` hooks (soft/strict), `AGENTS.md` protocol, 43-tool permission allow-list |
-| Codex          | `sv-memory setup codex`       | MCP config in `~/.codex/config.toml`, hooks, `AGENTS.md` protocol |
+| Codex          | `sv-memory setup codex`       | `.codex/config.toml` MCP config, `AGENTS.md` protocol, native MCP `instructions` |
+| Pi             | `sv-memory setup pi`          | `.pi/mcp.json` MCP config, `AGENTS.md` protocol (Pi reads AGENTS.md natively) |
 | Git            | `sv-memory hooks install --platform git` | `.git/hooks/post-commit` hook for automated passive commit capture |
 
 ## Quick start
@@ -54,8 +54,8 @@ sv-memory init                  # 2. auto-reconciles skills, hooks, AGENTS.md, a
 ```
 
 Why step 2 is recommended:
-- `sv-memory init` re-scans the current tool set and **grants any newly added MCP tools** to the static allow-lists (`~/.claude/settings.json`, `opencode.json`, `.cursor/mcp.json`, `.windsurf/mcp_config.json`, Antigravity `mcp_config.json`).
-- It **re-injects the protocol** (`AGENTS.md` / `.cursorrules` / `.windsurfrules`) and refreshes skills (`.agents/skills/sv-memory/SKILL.md`, OpenCode `SKILL.md`), ensuring agent instructions match the latest binary features.
+- `sv-memory init` re-scans the current tool set and **grants any newly added MCP tools** to the static allow-lists (`~/.claude/settings.json`, `opencode.json`, `.cursor/mcp.json`, Antigravity `mcp_config.json`).
+- It **re-injects the protocol** (`AGENTS.md` / `.cursorrules`) and refreshes skills (`.agents/skills/sv-memory/SKILL.md`, OpenCode `SKILL.md`), ensuring agent instructions match the latest binary features.
 - It is **idempotent and non-destructive** — it detects configured assistants and refreshes only what is needed.
 
 Then restart your assistant so it reloads the MCP config and new tools. Verify with `sv-memory version` and `sv-memory setup` (read-only status table).
@@ -106,11 +106,6 @@ Then restart your assistant so it reloads the MCP config and new tools. Verify w
   it automatically.
 - **Protocol:** sv-memory rules are injected into `.cursorrules`.
 
-### Windsurf
-
-- **MCP config:** `.windsurf/mcp_config.json` is written at the project root (merged).
-- **Protocol:** sv-memory rules are injected into `.windsurfrules`.
-
 ### Antigravity CLI (agy)
 
 - **MCP config:** written to the Antigravity `mcp_config.json` (merged).
@@ -135,15 +130,22 @@ Then restart your assistant so it reloads the MCP config and new tools. Verify w
 
 ### Codex
 
-- **MCP config:** the `[mcp_servers.sv-memory]` block is written into
-  `~/.codex/config.toml` (or created). Codex approves tool calls interactively, so no
-  static allow-list is written.
-- **Hooks:** `.codex/hooks.json` with a no-op script — `AGENTS.md` is the always-on nudge
-  on this platform (Codex Desktop rejects `additionalContext` on PreToolUse).
+- **MCP config:** the `[mcp_servers.sv-memory]` block is written into the project-local
+  `.codex/config.toml` (or created). Codex reads it for trusted projects.
+- **Native instructions:** Codex reads the MCP server's `instructions` field and injects it
+  as server-wide guidance, and the sv-memory protocol is injected into `AGENTS.md` — no hook
+  is required.
+
+### Pi
+
+- **MCP config:** `.pi/mcp.json` is written at the project root (merged). Pi reads it for
+  project-scoped servers once the project is trusted.
+- **Protocol:** sv-memory rules are injected into `AGENTS.md`, which Pi reads natively at
+  startup (global and project scope).
 
 ## Surviving compaction
 
-The sv-memory protocol (injected into `AGENTS.md` / `.cursorrules` / `.windsurfrules`)
+The sv-memory protocol (injected into `AGENTS.md` / `.cursorrules`)
 instructs the agent, after a context compaction or reset, to:
 
 1. call `sv_mem_session_summary` with the compacted summary content,

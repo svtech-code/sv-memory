@@ -51,24 +51,24 @@ func TestSetupCursorWritesConfig(t *testing.T) {
 	}
 }
 
-// TestSetupWindsurfWritesConfig verifies the windsurf project-local config.
-func TestSetupWindsurfWritesConfig(t *testing.T) {
+// TestSetupPiWritesConfig verifies the pi project-local config.
+func TestSetupPiWritesConfig(t *testing.T) {
 	tempDir := t.TempDir()
 	execPath := "/usr/local/bin/sv-memory"
 
-	path, err := config.ConfigureWindsurf(tempDir, execPath)
+	path, err := config.ConfigurePi(tempDir, execPath)
 	if err != nil {
-		t.Fatalf("ConfigureWindsurf failed: %v", err)
+		t.Fatalf("ConfigurePi failed: %v", err)
 	}
-	if path != filepath.Join(tempDir, ".windsurf", "mcp_config.json") {
+	if path != filepath.Join(tempDir, ".pi", "mcp.json") {
 		t.Errorf("unexpected path %s", path)
 	}
 	content := readTestFile(t, path)
 	if !strings.Contains(content, `"sv-memory"`) {
-		t.Error("expected sv-memory server entry in windsurf config")
+		t.Error("expected sv-memory server entry in pi config")
 	}
-	if !statusWindsurf(tempDir) {
-		t.Error("expected windsurf status installed after config write")
+	if !statusPi(tempDir) {
+		t.Error("expected pi status installed after config write")
 	}
 }
 
@@ -227,7 +227,7 @@ func TestConfigureTargetAgents(t *testing.T) {
 	if !statusCursor(tempDir) {
 		t.Error("expected cursor to be installed")
 	}
-	if statusClaudeCode(tempDir) || statusWindsurf(tempDir) || statusAntigravity(tempDir) || statusCodex(tempDir) {
+	if statusClaudeCode(tempDir) || statusAntigravity(tempDir) {
 		t.Error("expected other agents not to be installed")
 	}
 }
@@ -241,15 +241,15 @@ func TestInstalledAgentsDetection(t *testing.T) {
 		t.Errorf("expected 0 installed agents in fresh dir, got %v", installed)
 	}
 
-	// Install windsurf
-	_, err := config.ConfigureWindsurf(tempDir, "/usr/local/bin/sv-memory")
+	// Install pi
+	_, err := config.ConfigurePi(tempDir, "/usr/local/bin/sv-memory")
 	if err != nil {
-		t.Fatalf("ConfigureWindsurf failed: %v", err)
+		t.Fatalf("ConfigurePi failed: %v", err)
 	}
 
 	installed = installedAgents(tempDir)
-	if len(installed) != 1 || installed[0] != "windsurf" {
-		t.Errorf("expected [windsurf], got %v", installed)
+	if len(installed) != 1 || installed[0] != "pi" {
+		t.Errorf("expected [pi], got %v", installed)
 	}
 }
 

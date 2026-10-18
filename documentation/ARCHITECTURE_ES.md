@@ -30,8 +30,9 @@ Las sesiones rastrean el trabajo de codificación a través de interacciones del
 | Claude Code | Hook `SessionStart` (auto-start + inyecta bundle) | Hook `SessionEnd` (auto-close, idempotente) | Hook `UserPromptSubmit` |
 | OpenCode | `instructions` MCP + `AGENTS.md` | Protocolo (`AGENTS.md`) | ❌ |
 | Antigravity CLI | Hook `PreInvocation` (auto-start + inyección de bundle) | Protocolo (`AGENTS.md`) | ❌ |
-| Cursor / Windsurf | Protocolo (`AGENTS.md`) | Protocolo (`AGENTS.md`) | ❌ |
-| Codex | Hook no-op | Hook no-op | ❌ |
+| Cursor | Protocolo (`AGENTS.md`) | Protocolo (`AGENTS.md`) | ❌ |
+| Codex | `instructions` MCP + `AGENTS.md` | Protocolo (`AGENTS.md`) | ❌ |
+| Pi | `AGENTS.md` (nativo) | Protocolo (`AGENTS.md`) | ❌ |
 
 ### Auto-cierre de sesiones stale
 

@@ -59,7 +59,7 @@
 ```mermaid
 flowchart TD
     subgraph Clients["AI Clients & Assistants"]
-        A1[Cursor / Windsurf / VS Code]
+        A1[Cursor / VS Code]
         A2[Claude Code / Antigravity CLI / OpenCode]
     end
 
@@ -206,7 +206,7 @@ sv-memory tui
 | `sv-memory tui`                    | **Interface**   | Launches interactive terminal user interface for memories and graph diagnostics.         |
 | `sv-memory configure`              | **Setup**       | Interactive terminal wizard to configure Cursor, Claude Code, agy, Zed, etc.             |
 | `sv-memory configure get/set/list` | **Setup**       | Reads/writes YAML config values globally or project-locally (`--local`).                 |
-| `sv-memory setup [agent]`          | **Setup**       | One-shot agent integration (MCP config + hooks/plugins + protocol + permissions) for claude-code, opencode, cursor, windsurf, antigravity, codex. `--all` wires every agent; no args shows per-agent status. See [AGENT-SETUP.md](documentation/AGENT-SETUP.md). |
+| `sv-memory setup [agent]`          | **Setup**       | One-shot agent integration (MCP config + hooks + protocol + permissions) for claude-code, opencode, cursor, antigravity, codex, pi. `--all` wires every agent; no args shows per-agent status. See [AGENT-SETUP.md](documentation/AGENT-SETUP.md). |
 | `sv-memory sync`                   | **Git Sync**    | Manual bidirectional sync between SQLite DB and `.sv-memory/chunks/*.json`.              |
 | `sv-memory specs export/import/list/archive/capabilities` | **Spec Mirror** | Manages the human-readable Markdown projection of spec changes and capability state under `.sv-memory/specs/` (auto-written by sync; import reconciles human edits back into the authoritative store; capabilities lists the current requirement state). |
 | `sv-memory diagnose`               | **Diagnostics** | Verifies DB connections, schema integrity, write permissions, and paths.                 |
@@ -298,7 +298,7 @@ sv-memory tui
 
 ## ⚙️ AI Client Configuration Examples
 
-### Cursor / Claude Desktop / Windsurf
+### Cursor / Claude Desktop
 
 Add the following snippet to your client's MCP configuration JSON:
 

@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -18,7 +19,7 @@ import (
 
 // setupAgents lists every agent the unified `setup` command supports, matching
 // Engram's `engram setup <agent>` integration surface.
-var setupAgents = []string{"claude-code", "opencode", "cursor", "windsurf", "antigravity", "codex"}
+var setupAgents = []string{"claude-code", "opencode", "cursor", "antigravity", "codex", "pi"}
 
 // installedAgents detects which supported agents are already configured in cwd.
 func installedAgents(cwd string) []string {
@@ -32,14 +33,14 @@ func installedAgents(cwd string) []string {
 	if statusCursor(cwd) {
 		installed = append(installed, "cursor")
 	}
-	if statusWindsurf(cwd) {
-		installed = append(installed, "windsurf")
-	}
 	if statusOpenCode(cwd) {
 		installed = append(installed, "opencode")
 	}
 	if statusCodex(cwd) {
 		installed = append(installed, "codex")
+	}
+	if statusPi(cwd) {
+		installed = append(installed, "pi")
 	}
 	return installed
 }
@@ -79,12 +80,12 @@ func setupAgentWiringMode(agent string, mode hook.Mode) error {
 		return setupOpenCode(cwd, mode)
 	case "cursor":
 		return setupCursor(cwd, execPath)
-	case "windsurf":
-		return setupWindsurf(cwd, execPath)
 	case "antigravity":
 		return setupAntigravity(cwd, mode)
 	case "codex":
-		return setupCodex(cwd, mode)
+		return setupCodex(cwd, execPath)
+	case "pi":
+		return setupPi(cwd, execPath)
 	default:
 		return fmt.Errorf("unsupported agent %q (supported: %v)", agent, setupAgents)
 	}
@@ -184,16 +185,16 @@ func setupCursor(cwd, execPath string) error {
 	return nil
 }
 
-func setupWindsurf(cwd, execPath string) error {
-	path, err := config.ConfigureWindsurf(cwd, execPath)
+func setupPi(cwd string, execPath string) error {
+	path, err := config.ConfigurePi(cwd, execPath)
 	if err != nil {
-		return fmt.Errorf("windsurf MCP config failed: %w", err)
+		return fmt.Errorf("pi MCP config failed: %w", err)
 	}
-	fmt.Printf("✅ windsurf: wrote %s\n", path)
+	fmt.Printf("✅ pi: wrote %s\n", path)
 	if err := injectProtocol(cwd); err != nil {
 		return err
 	}
-	fmt.Println("✅ windsurf setup complete. Restart Windsurf to activate.")
+	fmt.Println("✅ pi setup complete. Pi reads .pi/mcp.json and AGENTS.md automatically.")
 	return nil
 }
 
@@ -233,25 +234,18 @@ func setupAntigravity(cwd string, mode hook.Mode) error {
 	return nil
 }
 
-func setupCodex(cwd string, mode hook.Mode) error {
-	tool := config.TargetTool{Name: "Codex", Type: "cli", ID: "codex", Auto: true, ConfigPath: predefinedCLI("codex")}
-	if isAuto, msg, err := config.ConfigureTargetTool(tool); err != nil {
+func setupCodex(cwd string, execPath string) error {
+	path, err := config.ConfigureCodex(cwd, execPath)
+	if err != nil {
 		return fmt.Errorf("codex MCP config failed: %w", err)
-	} else if isAuto {
-		fmt.Printf("✅ codex MCP: %s\n", msg)
 	}
-
-	eng := hook.New(cwd, mode)
-	results := eng.Install([]hook.Platform{hook.PlatformCodex})
-	if err := reportHookResults("codex", results); err != nil {
-		return err
-	}
+	fmt.Printf("✅ codex: wrote %s\n", path)
 
 	if err := injectProtocol(cwd); err != nil {
 		return err
 	}
 
-	fmt.Println("✅ codex setup complete. Restart Codex to activate.")
+	fmt.Println("✅ codex setup complete. Codex reads the MCP instructions and AGENTS.md automatically.")
 	return nil
 }
 
@@ -272,9 +266,9 @@ func setupStatus() error {
 		{"claude-code", statusClaudeCode(cwd)},
 		{"antigravity", statusAntigravity(cwd)},
 		{"cursor", statusCursor(cwd)},
-		{"windsurf", statusWindsurf(cwd)},
 		{"opencode", statusOpenCode(cwd)},
 		{"codex", statusCodex(cwd)},
+		{"pi", statusPi(cwd)},
 		{"git", statusGit(cwd)},
 	}
 	for _, s := range statuses {
@@ -299,20 +293,32 @@ func statusCursor(cwd string) bool {
 	return hook.New(cwd, hook.ModeSoft).Status([]hook.Platform{hook.PlatformCursor})[hook.PlatformCursor]
 }
 
-func statusWindsurf(cwd string) bool {
-	return hook.New(cwd, hook.ModeSoft).Status([]hook.Platform{hook.PlatformWindsurf})[hook.PlatformWindsurf]
-}
-
 func statusAntigravity(cwd string) bool {
 	return hook.New(cwd, hook.ModeSoft).Status([]hook.Platform{hook.PlatformAntigravity})[hook.PlatformAntigravity]
 }
 
 func statusCodex(cwd string) bool {
-	return hook.New(cwd, hook.ModeSoft).Status([]hook.Platform{hook.PlatformCodex})[hook.PlatformCodex]
+	return configFileContains(filepath.Join(cwd, ".codex", "config.toml"), "sv-memory")
+}
+
+func statusPi(cwd string) bool {
+	return configFileContains(filepath.Join(cwd, ".pi", "mcp.json"), "sv-memory")
 }
 
 func statusGit(cwd string) bool {
 	return hook.New(cwd, hook.ModeSoft).Status([]hook.Platform{hook.PlatformGit})[hook.PlatformGit]
+}
+
+// configFileContains reports whether the file at path exists and contains substr.
+func configFileContains(path, substr string) bool {
+	if path == "" {
+		return false
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(b), substr)
 }
 
 var setupCmd = &cobra.Command{

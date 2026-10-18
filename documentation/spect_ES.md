@@ -8,7 +8,7 @@
 
 1. **Memoria persistente de decisiones:** Captura correcciones no obvias, decisiones arquitectónicas, estándares de codificación, diarios de progreso, discusiones, Q&A e ideas mediante SQLite + búsqueda de texto completo FTS5.
 2. **Grafo de conocimiento estructural:** Mapea entidades de código (archivos, componentes, imports, dependencias) para proporcionar contexto estructural a los agentes LLM mediante grafos dirigidos de dependencias.
-3. **Orquestación autónoma de agentes:** Inyecta reglas de protocolo en `AGENTS.md`, `.cursorrules` o `.windsurfrules` para que los agentes consulten, registren y mantengan el contexto automáticamente durante las sesiones de codificación.
+3. **Orquestación autónoma de agentes:** Inyecta reglas de protocolo en `AGENTS.md` o `.cursorrules` para que los agentes consulten, registren y mantengan el contexto automáticamente durante las sesiones de codificación.
 4. **Colaboración en equipo:** Sincronización bidireccional con Git mediante JSON (`.sv-memory/chunks/*.json`, un archivo por memoria) para que un equipo privado comparta el contexto entre clones. Opt-in: `git_sync_enabled` está desactivado por defecto, y `.sv-memory/` no debe commitearse en repositorios públicos.
 
 Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de código abierto para la comunidad de desarrolladores.
@@ -19,7 +19,7 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 
 ```text
        ┌────────────────────────────────────────────────────────┐
-       │       AI Agent (Cursor / Windsurf / Claude Code /       │
+       │       AI Agent (Cursor / Claude Code /       │
        │        OpenCode / Codex / Antigravity / Zed / VS Code)  │
        └───────────────────────────┬────────────────────────────┘
                                    │  MCP Protocol via Stdio
@@ -77,7 +77,7 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 
 - Calcula un `project_id` hex determinista de 16 caracteres (SHA256 de la ruta raíz del repositorio Git).
 - Registra la entrada del proyecto en la base de datos central SQLite.
-- Verifica la existencia de `AGENTS.md`, `.cursorrules` o `.windsurfrules`:
+- Verifica la existencia de `AGENTS.md` o `.cursorrules`:
   - Si existe alguno: Inyecta o actualiza el bloque `<!-- SV-MEMORY:START -->
 # SV-Memory Protocol Rules
 
@@ -240,7 +240,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 
 #### 9. `sv-memory configure`
 
-- Asistente interactivo para configuraciones automáticas/manuales de editores (Cursor, VS Code, Zed, Windsurf, OpenCode) y CLIs (Claude Code, Codex, Antigravity).
+- Asistente interactivo para configuraciones automáticas/manuales de editores (Cursor, VS Code, Zed) y CLIs (Claude Code, OpenCode, Codex, Antigravity, Pi).
 - **Fase 4 (Permisos MCP):** Lista las 43 herramientas MCP de sv-memory con descripciones y otorga las entradas de allow-list seleccionadas a las plataformas con allow-list elegidas previamente (Antigravity CLI, Claude Code).
 - **Subcomandos** para leer/escribir configuración (YAML, global `~/.sv-memory/config.yaml` o local `.sv-memory/config.yaml`):
   - `sv-memory configure get <key>`: imprime un único valor de configuración.
@@ -257,8 +257,8 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 
 #### 11. `sv-memory setup [agente]`
 
-- Integración de un solo comando que replica `engram setup <agent>`: configura el servidor MCP, hooks/skills/plugins, inyección de protocolo (`AGENTS.md` / `.cursorrules` / `.windsurfrules`) y permisos de herramientas MCP para un agente.
-- Agentes soportados: `claude-code`, `opencode`, `cursor`, `windsurf`, `antigravity`, `codex`.
+- Integración de un solo comando que replica `engram setup <agent>`: configura el servidor MCP, hooks/skills, inyección de protocolo (`AGENTS.md` / `.cursorrules`) y permisos de herramientas MCP para un agente.
+- Agentes soportados: `claude-code`, `opencode`, `cursor`, `antigravity`, `codex`, `pi`.
 - `sv-memory setup` (sin argumentos): solo lectura — imprime el estado de instalación por agente.
 - `sv-memory setup <agente>`: instala el agente de extremo a extremo (idempotente).
 - `--all`: instala todos los agentes soportados.
@@ -266,9 +266,9 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - **Claude Code:** escribe un `.mcp.json` local del proyecto cuando el CLI `claude` no está, instala hooks `PreToolUse` + ciclo de vida (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`) en `.claude/hooks/` y los registra en `.claude/settings.json`, inyecta el protocolo en `AGENTS.md` y concede el allow-list de 43 herramientas en `~/.claude/settings.json`.
 - **OpenCode:** registra el servidor MCP en `opencode.json`, instala `SKILL.md` e inyecta el protocolo en `AGENTS.md`. OpenCode inyecta de forma nativa el campo `instructions` del servidor MCP en el system prompt; no se instala ningún plugin TypeScript.
 - **Cursor:** escribe `.cursor/mcp.json` e inyecta `.cursorrules`.
-- **Windsurf:** escribe `.windsurf/mcp_config.json` e inyecta `.windsurfrules`.
 - **Antigravity CLI:** registra el servidor MCP, instala los hooks de `.agents/hooks.json` (PreToolUse + `PreInvocation` de auto-boot/nudge), escribe la skill nativa (`.agents/skills/sv-memory/SKILL.md`) y una regla corta always-on (`.agents/rules/sv-memory.md`), inyecta `AGENTS.md` y concede el allow-list de 43 herramientas.
-- **Codex:** escribe el bloque `[mcp_servers.sv-memory]` en `~/.codex/config.toml`, instala un hook no-op e inyecta `AGENTS.md`.
+- **Codex:** escribe el bloque `[mcp_servers.sv-memory]` en el `.codex/config.toml` del proyecto e inyecta `AGENTS.md`. Codex lee las `instructions` MCP de forma nativa — sin hook.
+- **Pi:** escribe `.pi/mcp.json` e inyecta `AGENTS.md`. Pi lee `AGENTS.md` y la config `mcpServers` de forma nativa.
 
 #### 12. `sv-memory hooks`
 
@@ -1031,7 +1031,7 @@ El almacén SQLite vive fuera del repositorio (`~/.config/sv-memory/storage.db`)
 
 ## 8. Plantilla de Protocolo del Agente
 
-Al inicializarse, `sv-memory` inyecta el siguiente bloque de protocolo en `AGENTS.md`, `.cursorrules` o `.windsurfrules` (fuente de la verdad: `internal/protocol/protocol.go`):
+Al inicializarse, `sv-memory` inyecta el siguiente bloque de protocolo en `AGENTS.md` o `.cursorrules` (fuente de la verdad: `internal/protocol/protocol.go`):
 
 ```markdown
 <!-- SV-MEMORY:START -->

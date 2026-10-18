@@ -80,7 +80,7 @@ func TestInitExplicitSingleAgent(t *testing.T) {
 	if !statusCursor(tempDir) {
 		t.Error("expected cursor to be installed")
 	}
-	if statusClaudeCode(tempDir) || statusAntigravity(tempDir) || statusWindsurf(tempDir) {
+	if statusClaudeCode(tempDir) || statusAntigravity(tempDir) {
 		t.Error("expected other agents not to be installed")
 	}
 }
@@ -99,7 +99,7 @@ func TestInitExplicitMultipleAgents(t *testing.T) {
 	}
 
 	resetInitFlags()
-	rootCmd.SetArgs([]string{"init", "--agents", "cursor,windsurf"})
+	rootCmd.SetArgs([]string{"init", "--agents", "cursor,pi"})
 	if err = rootCmd.Execute(); err != nil {
 		t.Fatalf("rootCmd.Execute failed: %v", err)
 	}
@@ -107,10 +107,10 @@ func TestInitExplicitMultipleAgents(t *testing.T) {
 	if !statusCursor(tempDir) {
 		t.Error("expected cursor to be installed")
 	}
-	if !statusWindsurf(tempDir) {
-		t.Error("expected windsurf to be installed")
+	if !statusPi(tempDir) {
+		t.Error("expected pi to be installed")
 	}
-	if statusClaudeCode(tempDir) || statusAntigravity(tempDir) || statusCodex(tempDir) {
+	if statusClaudeCode(tempDir) || statusAntigravity(tempDir) {
 		t.Error("expected other agents not to be installed")
 	}
 }
@@ -136,7 +136,7 @@ func TestInitNonInteractiveFreshDir(t *testing.T) {
 	}
 
 	if statusClaudeCode(tempDir) || statusAntigravity(tempDir) || statusCursor(tempDir) ||
-		statusWindsurf(tempDir) || statusOpenCode(tempDir) || statusCodex(tempDir) {
+		statusOpenCode(tempDir) || statusPi(tempDir) {
 		t.Error("expected no AI assistants to be auto-installed on fresh directory without prompt")
 	}
 
@@ -176,7 +176,7 @@ func TestInitReconcilesExistingAgents(t *testing.T) {
 	if !statusAntigravity(tempDir) {
 		t.Error("expected antigravity to still be installed")
 	}
-	if statusClaudeCode(tempDir) || statusCursor(tempDir) || statusWindsurf(tempDir) {
+	if statusClaudeCode(tempDir) || statusCursor(tempDir) || statusPi(tempDir) {
 		t.Error("expected unconfigured agents not to be installed")
 	}
 }

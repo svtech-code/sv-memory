@@ -26,7 +26,7 @@ func BenchmarkHooksInstallAll(b *testing.B) {
 }
 
 func BenchmarkHooksInstallByPlatform(b *testing.B) {
-	platforms := []Platform{PlatformClaudeCode, PlatformCodex, PlatformAntigravity, PlatformOpenCode}
+	platforms := []Platform{PlatformClaudeCode, PlatformAntigravity, PlatformOpenCode}
 	for _, p := range platforms {
 		b.Run(string(p), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {

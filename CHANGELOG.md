@@ -5,6 +5,16 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+### Added
+- **Pi coding-agent integration**: `sv-memory setup pi` writes the project `.pi/mcp.json` MCP config and injects `AGENTS.md`, which Pi reads natively (global and project scope).
+
+### Removed
+- **Windsurf integration**: removed Windsurf support (MCP config, hook platform, `setup`/`init` wiring, configure wizard entry, and the `.windsurfrules` protocol target).
+- **Codex no-op hook**: removed the Codex `codex-noop.sh` hook and its install/uninstall/status. Codex is now a clean MCP-native integration (project `.codex/config.toml` + MCP `instructions` + `AGENTS.md`).
+
+### Changed
+- **Codex MCP config is project-scoped**: `sv-memory setup codex` now writes `[mcp_servers.sv-memory]` to the project `.codex/config.toml` (instead of `~/.codex/config.toml`), consistent with Cursor/Pi and the per-project nature of sv-memory.
+
 ### Removed
 - **OpenCode TypeScript plugin**: Dropped `.opencode/plugin/sv-memory.ts` (and its soft/strict templates, `sv_memory_context` tool, and model-agnostic hook automation). OpenCode V1 and V2 natively inject the MCP server's `instructions` into the system prompt and auto-translate the V1 MCP config in memory, so the integration is now 100% Go via the MCP server + `AGENTS.md` + skill.
 

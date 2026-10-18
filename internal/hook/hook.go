@@ -26,9 +26,7 @@ const (
 	PlatformClaudeCode  Platform = "claude-code"
 	PlatformAntigravity Platform = "antigravity"
 	PlatformCursor      Platform = "cursor"
-	PlatformWindsurf    Platform = "windsurf"
 	PlatformOpenCode    Platform = "opencode"
-	PlatformCodex       Platform = "codex"
 	PlatformGit         Platform = "git"
 )
 
@@ -36,9 +34,7 @@ var supportedPlatforms = []Platform{
 	PlatformClaudeCode,
 	PlatformAntigravity,
 	PlatformCursor,
-	PlatformWindsurf,
 	PlatformOpenCode,
-	PlatformCodex,
 	PlatformGit,
 }
 
@@ -116,12 +112,8 @@ func (e *HookEngine) Install(platforms []Platform) []InstallResult {
 			r.Files, r.Err = e.installAntigravity()
 		case PlatformCursor:
 			r.Files, r.Err = e.installCursor()
-		case PlatformWindsurf:
-			r.Files, r.Err = e.installWindsurf()
 		case PlatformOpenCode:
 			r.Files, r.Err = e.installOpenCodeSkill()
-		case PlatformCodex:
-			r.Files, r.Err = e.installCodex()
 		case PlatformGit:
 			r.Files, r.Err = e.installGit()
 		default:
@@ -148,12 +140,8 @@ func (e *HookEngine) Uninstall(platforms []Platform) []InstallResult {
 			r.Files, r.Err = e.uninstallAntigravity()
 		case PlatformCursor:
 			r.Files, r.Err = e.uninstallCursor()
-		case PlatformWindsurf:
-			r.Files, r.Err = e.uninstallWindsurf()
 		case PlatformOpenCode:
 			r.Files, r.Err = e.uninstallOpenCodeSkill()
-		case PlatformCodex:
-			r.Files, r.Err = e.uninstallCodex()
 		case PlatformGit:
 			r.Files, r.Err = e.uninstallGit()
 		default:
@@ -179,12 +167,8 @@ func (e *HookEngine) Status(platforms []Platform) map[Platform]bool {
 			status[p] = e.antigravityInstalled()
 		case PlatformCursor:
 			status[p] = e.cursorInstalled()
-		case PlatformWindsurf:
-			status[p] = e.windsurfInstalled()
 		case PlatformOpenCode:
 			status[p] = e.openCodeSkillInstalled()
-		case PlatformCodex:
-			status[p] = e.codexInstalled()
 		case PlatformGit:
 			status[p] = e.gitInstalled()
 		default:
@@ -471,98 +455,6 @@ func (e *HookEngine) claudeCodeInstalled() bool {
 		}
 	}
 	return false
-}
-
-// --- Codex ---
-
-func (e *HookEngine) codexHooksPath() string {
-	return filepath.Join(e.projPath, ".codex", "hooks.json")
-}
-
-func (e *HookEngine) installCodex() ([]string, error) {
-	var created []string
-
-	hooksPath := e.codexHooksPath()
-	hooksDir := filepath.Dir(hooksPath)
-	if err := os.MkdirAll(hooksDir, 0755); err != nil {
-		return created, fmt.Errorf("failed to create .codex dir: %w", err)
-	}
-
-	// Write a no-op hook config for Codex.
-	// On Codex Desktop, PreToolUse with additionalContext breaks Bash calls,
-	// so the hook script intentionally does nothing. The real mechanism is AGENTS.md.
-	hookConfig := map[string]interface{}{
-		"preToolUse": map[string]interface{}{
-			"script": filepath.Join(e.projPath, ".codex", "hooks", "sv-memory.sh"),
-		},
-	}
-
-	// Merge with existing hooks.json if it exists
-	var existingData map[string]interface{}
-	if b, err := os.ReadFile(hooksPath); err == nil {
-		_ = json.Unmarshal(b, &existingData)
-	}
-	if existingData == nil {
-		existingData = hookConfig
-	} else {
-		for k, v := range hookConfig {
-			existingData[k] = v
-		}
-	}
-
-	data, err := json.MarshalIndent(existingData, "", "  ")
-	if err != nil {
-		return created, fmt.Errorf("failed to marshal hooks.json: %w", err)
-	}
-	if err := os.WriteFile(hooksPath, data, 0644); err != nil {
-		return created, fmt.Errorf("failed to write hooks.json: %w", err)
-	}
-	created = append(created, hooksPath)
-
-	// Write the no-op script
-	scriptDir := filepath.Join(e.projPath, ".codex", "hooks")
-	if err := os.MkdirAll(scriptDir, 0755); err != nil {
-		return created, fmt.Errorf("failed to create .codex/hooks dir: %w", err)
-	}
-	scriptPath := filepath.Join(scriptDir, "sv-memory.sh")
-	if err := os.WriteFile(scriptPath, []byte(hookScript(PlatformCodex, e.mode)), 0755); err != nil {
-		return created, fmt.Errorf("failed to write codex hook script: %w", err)
-	}
-	created = append(created, scriptPath)
-
-	return created, nil
-}
-
-func (e *HookEngine) uninstallCodex() ([]string, error) {
-	var removed []string
-
-	// Remove hooks.json
-	hooksPath := e.codexHooksPath()
-	if err := os.Remove(hooksPath); err != nil && !os.IsNotExist(err) {
-		return removed, fmt.Errorf("failed to remove %s: %w", hooksPath, err)
-	}
-	if _, err := os.Stat(hooksPath); os.IsNotExist(err) {
-		removed = append(removed, hooksPath)
-	}
-
-	// Remove the no-op script
-	scriptPath := filepath.Join(e.projPath, ".codex", "hooks", "sv-memory.sh")
-	if err := os.Remove(scriptPath); err != nil && !os.IsNotExist(err) {
-		return removed, fmt.Errorf("failed to remove %s: %w", scriptPath, err)
-	}
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
-		removed = append(removed, scriptPath)
-	}
-
-	return removed, nil
-}
-
-func (e *HookEngine) codexInstalled() bool {
-	hooksPath := e.codexHooksPath()
-	if _, err := os.Stat(hooksPath); os.IsNotExist(err) {
-		return false
-	}
-	return true
 }
 
 // --- Antigravity CLI (agy) ---
@@ -975,54 +867,6 @@ func (e *HookEngine) uninstallCursor() ([]string, error) {
 
 func (e *HookEngine) cursorInstalled() bool {
 	_, err := os.Stat(e.cursorMCPPath())
-	return err == nil
-}
-
-// --- Windsurf ---
-
-func (e *HookEngine) windsurfMCPPath() string {
-	return filepath.Join(e.projPath, ".windsurf", "mcp_config.json")
-}
-
-func (e *HookEngine) installWindsurf() ([]string, error) {
-	var created []string
-	execPath, err := os.Executable()
-	if err != nil {
-		return created, err
-	}
-	execPath = filepath.Clean(execPath)
-
-	path, err := config.ConfigureWindsurf(e.projPath, execPath)
-	if err != nil {
-		return created, fmt.Errorf("windsurf config failed: %w", err)
-	}
-	created = append(created, path)
-
-	injected, err := protocol.InjectProtocol(e.projPath)
-	if err != nil {
-		return created, fmt.Errorf("protocol injection failed: %w", err)
-	}
-	for _, f := range injected {
-		created = append(created, f+" (protocol rules injected)")
-	}
-
-	return created, nil
-}
-
-func (e *HookEngine) uninstallWindsurf() ([]string, error) {
-	var removed []string
-	path := e.windsurfMCPPath()
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return removed, fmt.Errorf("failed to remove %s: %w", path, err)
-	}
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		removed = append(removed, path)
-	}
-	return removed, nil
-}
-
-func (e *HookEngine) windsurfInstalled() bool {
-	_, err := os.Stat(e.windsurfMCPPath())
 	return err == nil
 }
 

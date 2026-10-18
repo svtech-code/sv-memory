@@ -40,13 +40,6 @@ func TestHookScriptContentStrict(t *testing.T) {
 	}
 }
 
-func TestHookScriptContentCodex(t *testing.T) {
-	content := mustHookScript(t, PlatformCodex, ModeSoft)
-	if !strings.Contains(content, "no-op") {
-		t.Error("codex script should be a no-op")
-	}
-}
-
 func TestClaudeScriptsContainContextInjectionBlock(t *testing.T) {
 	for _, mode := range []Mode{ModeSoft, ModeStrict} {
 		content := mustHookScript(t, PlatformClaudeCode, mode)
@@ -327,41 +320,6 @@ func TestClaudeCodeHooksPreserveUserHooks(t *testing.T) {
 	}
 }
 
-func TestInstallCodex(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "sv-hook-codex-test")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	eng := New(tempDir, ModeSoft)
-	results := eng.Install([]Platform{PlatformCodex})
-
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-	if results[0].Err != nil {
-		t.Fatalf("install failed: %v", results[0].Err)
-	}
-
-	// Verify hooks.json exists
-	hooksPath := filepath.Join(tempDir, ".codex", "hooks.json")
-	if _, err := os.Stat(hooksPath); os.IsNotExist(err) {
-		t.Fatalf("hooks.json not created at %s", hooksPath)
-	}
-
-	// Verify noop script exists
-	scriptPath := filepath.Join(tempDir, ".codex", "hooks", "sv-memory.sh")
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
-		t.Fatalf("codex hook script not created at %s", scriptPath)
-	}
-
-	status := eng.Status([]Platform{PlatformCodex})
-	if !status[PlatformCodex] {
-		t.Error("expected codex status to be installed")
-	}
-}
-
 func TestUninstallClaudeCode(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "sv-hook-uninstall-test")
 	if err != nil {
@@ -393,31 +351,6 @@ func TestUninstallClaudeCode(t *testing.T) {
 	status := eng.Status([]Platform{PlatformClaudeCode})
 	if status[PlatformClaudeCode] {
 		t.Error("expected claude-code status to be not installed after uninstall")
-	}
-}
-
-func TestUninstallCodex(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "sv-hook-codex-uninstall")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	eng := New(tempDir, ModeSoft)
-
-	installResults := eng.Install([]Platform{PlatformCodex})
-	if installResults[0].Err != nil {
-		t.Fatalf("install failed: %v", installResults[0].Err)
-	}
-
-	uninstallResults := eng.Uninstall([]Platform{PlatformCodex})
-	if uninstallResults[0].Err != nil {
-		t.Fatalf("uninstall failed: %v", uninstallResults[0].Err)
-	}
-
-	hooksPath := filepath.Join(tempDir, ".codex", "hooks.json")
-	if _, err := os.Stat(hooksPath); !os.IsNotExist(err) {
-		t.Error("hooks.json should have been removed")
 	}
 }
 
@@ -755,17 +688,11 @@ func TestStatusNotInstalled(t *testing.T) {
 	if status[PlatformClaudeCode] {
 		t.Error("expected claude-code to not be installed in empty dir")
 	}
-	if status[PlatformCodex] {
-		t.Error("expected codex to not be installed in empty dir")
-	}
 	if status[PlatformAntigravity] {
 		t.Error("expected antigravity to not be installed in empty dir")
 	}
 	if status[PlatformCursor] {
 		t.Error("expected cursor to not be installed in empty dir")
-	}
-	if status[PlatformWindsurf] {
-		t.Error("expected windsurf to not be installed in empty dir")
 	}
 	if status[PlatformOpenCode] {
 		t.Error("expected opencode to not be installed in empty dir")
@@ -798,32 +725,6 @@ func TestInstallCursor(t *testing.T) {
 	}
 	if eng.Status([]Platform{PlatformCursor})[PlatformCursor] {
 		t.Error("expected cursor status to not be installed after uninstall")
-	}
-}
-
-func TestInstallWindsurf(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "sv-hook-windsurf-test")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	eng := New(tempDir, ModeSoft)
-	results := eng.Install([]Platform{PlatformWindsurf})
-	if len(results) != 1 || results[0].Err != nil {
-		t.Fatalf("install windsurf failed: %v", results)
-	}
-
-	if !eng.Status([]Platform{PlatformWindsurf})[PlatformWindsurf] {
-		t.Error("expected windsurf status to be installed")
-	}
-
-	uninst := eng.Uninstall([]Platform{PlatformWindsurf})
-	if len(uninst) != 1 || uninst[0].Err != nil {
-		t.Fatalf("uninstall windsurf failed: %v", uninst)
-	}
-	if eng.Status([]Platform{PlatformWindsurf})[PlatformWindsurf] {
-		t.Error("expected windsurf status to not be installed after uninstall")
 	}
 }
 
