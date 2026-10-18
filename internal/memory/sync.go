@@ -295,18 +295,7 @@ func syncToGit(db *sql.DB, projectID string, projPath string, forceJSON bool) er
 
 	// Chunks whose memory no longer exists (soft-deleted or pruned) must be
 	// removed so a deleted memory does not linger in the sync store.
-	activeIDs := make(map[string]bool, len(full))
-	for _, m := range full {
-		activeIDs[m.ID] = true
-	}
-	removedOrphan := false
-	for id := range existingChunks {
-		if !activeIDs[id] {
-			if rmErr := os.Remove(filepath.Join(chunkDir, id+".json")); rmErr == nil {
-				removedOrphan = true
-			}
-		}
-	}
+	removedOrphan := pruneOrphanChunks(chunkDir, existingChunks, full)
 
 	// Keep the human-readable spec mirror (.sv-memory/specs/) in sync with the
 	// authoritative change store. Written before the early-return below so a
@@ -329,26 +318,55 @@ func syncToGit(db *sql.DB, projectID string, projPath string, forceJSON bool) er
 	// flush, or every jsonSyncInterval syncs. Chunks are always current, so
 	// the monolithic file only needs periodic consistency.
 	nextJSON := info.jsonSyncCount + 1
-	writeJSON := forceJSON || info.lastSyncTime.IsZero() || nextJSON >= jsonSyncInterval
-	if writeJSON {
-		data, jErr := json.Marshal(full)
-		if jErr != nil {
-			return fmt.Errorf("failed to marshal memories JSON: %w", jErr)
-		}
-		if err := atomicWriteFile(syncFile, data); err != nil {
-			return fmt.Errorf("failed to write temp memories file: %w", err)
+	if forceJSON || info.lastSyncTime.IsZero() || nextJSON >= jsonSyncInterval {
+		if err := writeMonolithicJSON(syncFile, full); err != nil {
+			return err
 		}
 		nextJSON = 0
 	}
 
+	updateSyncCache(projectID, syncStartedAt, nextJSON)
+	return nil
+}
+
+// pruneOrphanChunks removes chunk files whose memory is no longer active,
+// reporting whether any orphan was removed.
+func pruneOrphanChunks(chunkDir string, existingChunks map[string]bool, full []*Memory) bool {
+	activeIDs := make(map[string]bool, len(full))
+	for _, m := range full {
+		activeIDs[m.ID] = true
+	}
+	removedOrphan := false
+	for id := range existingChunks {
+		if !activeIDs[id] {
+			if rmErr := os.Remove(filepath.Join(chunkDir, id+".json")); rmErr == nil {
+				removedOrphan = true
+			}
+		}
+	}
+	return removedOrphan
+}
+
+// writeMonolithicJSON rewrites the monolithic memories.json snapshot.
+func writeMonolithicJSON(syncFile string, full []*Memory) error {
+	data, jErr := json.Marshal(full)
+	if jErr != nil {
+		return fmt.Errorf("failed to marshal memories JSON: %w", jErr)
+	}
+	if err := atomicWriteFile(syncFile, data); err != nil {
+		return fmt.Errorf("failed to write temp memories file: %w", err)
+	}
+	return nil
+}
+
+// updateSyncCache records the sync watermark and JSON sync counter.
+func updateSyncCache(projectID string, syncStartedAt time.Time, jsonSyncCount int) {
 	syncCacheMu.Lock()
 	lastWriteInfo[projectID] = syncCacheEntry{
 		lastSyncTime:  syncStartedAt,
-		jsonSyncCount: nextJSON,
+		jsonSyncCount: jsonSyncCount,
 	}
 	syncCacheMu.Unlock()
-
-	return nil
 }
 
 func SyncFromGit(db *sql.DB, projectID string, projPath string) error {

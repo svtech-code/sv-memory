@@ -401,6 +401,30 @@ func SemanticRecall(ctx context.Context, db *sql.DB, projectID, query string, ca
 		limit = 5
 	}
 
+	items, byID := buildRecallItems(db, projectID, candidates)
+	if len(items) == 0 {
+		return candidates, nil, false
+	}
+
+	out, err := SemanticRunAgent(ctx, agent, semanticRecallPrompt(query, items))
+	if err != nil {
+		return candidates, nil, false // fail-open
+	}
+	ranks, err := parseSemanticRecall(out)
+	if err != nil {
+		return candidates, nil, false // fail-open
+	}
+
+	relevantIDs, reasons := collectRelevantRanks(ranks, byID)
+	if len(relevantIDs) == 0 {
+		return nil, reasons, true
+	}
+	return selectRecallResults(relevantIDs, byID, limit), reasons, true
+}
+
+// buildRecallItems builds the bounded agent prompt items and an id -> candidate
+// index, capping at SemanticRecallMaxCandidates.
+func buildRecallItems(db *sql.DB, projectID string, candidates []*MemorySearchResult) ([]recallItem, map[string]*MemorySearchResult) {
 	items := make([]recallItem, 0, len(candidates))
 	byID := make(map[string]*MemorySearchResult, len(candidates))
 	for _, c := range candidates {
@@ -421,19 +445,12 @@ func SemanticRecall(ctx context.Context, db *sql.DB, projectID, query string, ca
 			break
 		}
 	}
-	if len(items) == 0 {
-		return candidates, nil, false
-	}
+	return items, byID
+}
 
-	out, err := SemanticRunAgent(ctx, agent, semanticRecallPrompt(query, items))
-	if err != nil {
-		return candidates, nil, false // fail-open
-	}
-	ranks, err := parseSemanticRecall(out)
-	if err != nil {
-		return candidates, nil, false // fail-open
-	}
-
+// collectRelevantRanks dedupes the agent's relevant ids (restricted to known
+// candidates) and returns them with their truncated reasons.
+func collectRelevantRanks(ranks []SemanticRecallResult, byID map[string]*MemorySearchResult) ([]string, map[string]string) {
 	reasons := make(map[string]string, len(ranks))
 	seen := make(map[string]bool, len(ranks))
 	var relevantIDs []string
@@ -448,11 +465,11 @@ func SemanticRecall(ctx context.Context, db *sql.DB, projectID, query string, ca
 		relevantIDs = append(relevantIDs, r.ID)
 		reasons[r.ID] = TruncateText(strings.TrimSpace(r.Reason), semanticRecallReasonChars)
 	}
+	return relevantIDs, reasons
+}
 
-	if len(relevantIDs) == 0 {
-		return nil, reasons, true
-	}
-
+// selectRecallResults maps relevant ids back to candidates, capped at limit.
+func selectRecallResults(relevantIDs []string, byID map[string]*MemorySearchResult, limit int) []*MemorySearchResult {
 	results := make([]*MemorySearchResult, 0, len(relevantIDs))
 	for _, id := range relevantIDs {
 		results = append(results, byID[id])
@@ -460,5 +477,5 @@ func SemanticRecall(ctx context.Context, db *sql.DB, projectID, query string, ca
 			break
 		}
 	}
-	return results, reasons, true
+	return results
 }

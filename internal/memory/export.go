@@ -89,6 +89,17 @@ type obsidianRelPair struct {
 // format, along with codebase structural graph nodes and edges. vaultDir is the
 // target directory, already validated to stay inside the project, and is
 // created if it does not exist.
+// obsidianGraphData is the graph subset needed to render the Obsidian vault.
+type obsidianGraphData struct {
+	fileNodes         []exportObsidianNode
+	packageNodes      []exportObsidianNode
+	symbolNodesByFile map[string][]exportObsidianNode
+	nodesMap          map[string]exportObsidianNode
+	edgesBySource     map[string][]exportObsidianEdge
+	edgesByTarget     map[string][]exportObsidianEdge
+	allRels           map[string][]obsidianRelPair
+}
+
 func ExportObsidian(db *sql.DB, projectID, vaultDir string) error {
 	memories, err := SearchMemories(db, projectID, "", "", 0)
 	if err != nil {
@@ -99,88 +110,116 @@ func ExportObsidian(db *sql.DB, projectID, vaultDir string) error {
 		return fmt.Errorf("failed to create vault directory: %w", mkErr)
 	}
 
-	var fileNodes []exportObsidianNode
-	var packageNodes []exportObsidianNode
-	symbolNodesByFile := make(map[string][]exportObsidianNode)
-	nodesMap := make(map[string]exportObsidianNode)
-
-	nodeRows, err := db.Query("SELECT id, node_type, label, path, metadata FROM graph_nodes WHERE project_id = ?", projectID)
-	if err == nil {
-		defer nodeRows.Close()
-		for nodeRows.Next() {
-			var n exportObsidianNode
-			var pathVal, metaVal sql.NullString
-			if errScan := nodeRows.Scan(&n.id, &n.nodeType, &n.label, &pathVal, &metaVal); errScan == nil {
-				if pathVal.Valid {
-					n.path = pathVal.String
-				}
-				if metaVal.Valid {
-					n.metadata = metaVal.String
-				}
-				nodesMap[n.id] = n
-				switch n.nodeType {
-				case "file", "document":
-					fileNodes = append(fileNodes, n)
-				case "package":
-					packageNodes = append(packageNodes, n)
-				case "function", "class":
-					symbolNodesByFile[n.path] = append(symbolNodesByFile[n.path], n)
-				}
-			}
-		}
-	}
-
-	edgesBySource := make(map[string][]exportObsidianEdge)
-	edgesByTarget := make(map[string][]exportObsidianEdge)
-
-	edgeRows, err := db.Query("SELECT source_id, target_id, relation_type, confidence, source_location FROM graph_edges WHERE project_id = ?", projectID)
-	if err == nil {
-		defer edgeRows.Close()
-		for edgeRows.Next() {
-			var e exportObsidianEdge
-			if errScan := edgeRows.Scan(&e.sourceID, &e.targetID, &e.relType, &e.confidence, &e.sourceLoc); errScan == nil {
-				edgesBySource[e.sourceID] = append(edgesBySource[e.sourceID], e)
-				edgesByTarget[e.targetID] = append(edgesByTarget[e.targetID], e)
-			}
-		}
-	}
-
-	allRels := make(map[string][]obsidianRelPair)
-	relRows, err := db.Query("SELECT source_id, target_id FROM memory_relations WHERE project_id = ?", projectID)
-	if err == nil {
-		defer relRows.Close()
-		for relRows.Next() {
-			var s, t string
-			if relRows.Scan(&s, &t) == nil {
-				allRels[s] = append(allRels[s], obsidianRelPair{s, t})
-				allRels[t] = append(allRels[t], obsidianRelPair{s, t})
-			}
-		}
-	}
+	data := loadObsidianGraphData(db, projectID)
 
 	for _, mem := range memories {
-		if err := writeObsidianMemory(vaultDir, mem, allRels, edgesBySource, nodesMap); err != nil {
+		if err := writeObsidianMemory(vaultDir, mem, data.allRels, data.edgesBySource, data.nodesMap); err != nil {
 			return err
 		}
 	}
-
-	for _, fn := range fileNodes {
-		if err := writeObsidianCodeFile(vaultDir, fn, symbolNodesByFile, edgesBySource, edgesByTarget, nodesMap); err != nil {
+	for _, fn := range data.fileNodes {
+		if err := writeObsidianCodeFile(vaultDir, fn, data.symbolNodesByFile, data.edgesBySource, data.edgesByTarget, data.nodesMap); err != nil {
 			return err
 		}
 	}
-
-	for _, pn := range packageNodes {
-		if err := writeObsidianPackageFile(vaultDir, pn, edgesByTarget, nodesMap); err != nil {
+	for _, pn := range data.packageNodes {
+		if err := writeObsidianPackageFile(vaultDir, pn, data.edgesByTarget, data.nodesMap); err != nil {
 			return err
 		}
 	}
-
 	return nil
+}
+
+// loadObsidianGraphData loads nodes, edges, and memory relations for the vault.
+func loadObsidianGraphData(db *sql.DB, projectID string) *obsidianGraphData {
+	data := &obsidianGraphData{
+		symbolNodesByFile: make(map[string][]exportObsidianNode),
+		nodesMap:          make(map[string]exportObsidianNode),
+		edgesBySource:     make(map[string][]exportObsidianEdge),
+		edgesByTarget:     make(map[string][]exportObsidianEdge),
+		allRels:           make(map[string][]obsidianRelPair),
+	}
+	loadObsidianNodes(db, projectID, data)
+	loadObsidianEdges(db, projectID, data)
+	loadObsidianRelations(db, projectID, data)
+	return data
+}
+
+func loadObsidianNodes(db *sql.DB, projectID string, data *obsidianGraphData) {
+	nodeRows, err := db.Query("SELECT id, node_type, label, path, metadata FROM graph_nodes WHERE project_id = ?", projectID)
+	if err != nil {
+		return
+	}
+	defer nodeRows.Close()
+	for nodeRows.Next() {
+		var n exportObsidianNode
+		var pathVal, metaVal sql.NullString
+		if errScan := nodeRows.Scan(&n.id, &n.nodeType, &n.label, &pathVal, &metaVal); errScan != nil {
+			continue
+		}
+		if pathVal.Valid {
+			n.path = pathVal.String
+		}
+		if metaVal.Valid {
+			n.metadata = metaVal.String
+		}
+		data.nodesMap[n.id] = n
+		switch n.nodeType {
+		case "file", "document":
+			data.fileNodes = append(data.fileNodes, n)
+		case "package":
+			data.packageNodes = append(data.packageNodes, n)
+		case "function", "class":
+			data.symbolNodesByFile[n.path] = append(data.symbolNodesByFile[n.path], n)
+		}
+	}
+}
+
+func loadObsidianEdges(db *sql.DB, projectID string, data *obsidianGraphData) {
+	edgeRows, err := db.Query("SELECT source_id, target_id, relation_type, confidence, source_location FROM graph_edges WHERE project_id = ?", projectID)
+	if err != nil {
+		return
+	}
+	defer edgeRows.Close()
+	for edgeRows.Next() {
+		var e exportObsidianEdge
+		if errScan := edgeRows.Scan(&e.sourceID, &e.targetID, &e.relType, &e.confidence, &e.sourceLoc); errScan != nil {
+			continue
+		}
+		data.edgesBySource[e.sourceID] = append(data.edgesBySource[e.sourceID], e)
+		data.edgesByTarget[e.targetID] = append(data.edgesByTarget[e.targetID], e)
+	}
+}
+
+func loadObsidianRelations(db *sql.DB, projectID string, data *obsidianGraphData) {
+	relRows, err := db.Query("SELECT source_id, target_id FROM memory_relations WHERE project_id = ?", projectID)
+	if err != nil {
+		return
+	}
+	defer relRows.Close()
+	for relRows.Next() {
+		var s, t string
+		if relRows.Scan(&s, &t) == nil {
+			data.allRels[s] = append(data.allRels[s], obsidianRelPair{s, t})
+			data.allRels[t] = append(data.allRels[t], obsidianRelPair{s, t})
+		}
+	}
 }
 
 // writeObsidianMemory writes a single memory as an Obsidian markdown file.
 func writeObsidianMemory(vaultDir string, mem *Memory, allRels map[string][]obsidianRelPair, edgesBySource map[string][]exportObsidianEdge, nodesMap map[string]exportObsidianNode) error {
+	fm := memoryFrontmatter(mem)
+	body := memoryBody(mem)
+	body += relatedMemoriesSection(mem.ID, allRels)
+	body += linksToCodebaseSection(mem.ID, edgesBySource, nodesMap)
+	body += obsidianFooter()
+
+	writePath := filepath.Join(vaultDir, mem.ID+".md")
+	return os.WriteFile(writePath, []byte(fm+body), 0644)
+}
+
+// memoryFrontmatter renders the YAML frontmatter block for a memory file.
+func memoryFrontmatter(mem *Memory) string {
 	fm := fmt.Sprintf(`---
 id: "%s"
 category: "%s"
@@ -191,68 +230,81 @@ tags: [memory/%s]
 		mem.ID, mem.Category, mem.What, mem.CreatedAt.Format("2006-01-02"), mem.Category)
 
 	if mem.TopicKey != "" {
-		fm += fmt.Sprintf(`topic_key: "%s"
-revision: %d
-`, mem.TopicKey, mem.RevisionCount)
+		fm += fmt.Sprintf("topic_key: \"%s\"\nrevision: %d\n", mem.TopicKey, mem.RevisionCount)
 	}
 	if mem.WherePath != "" {
-		fm += fmt.Sprintf(`path: "%s"
-`, mem.WherePath)
+		fm += fmt.Sprintf("path: \"%s\"\n", mem.WherePath)
 	}
-	fm += "---\n\n"
+	return fm + "---\n\n"
+}
 
+// memoryBody renders the markdown body sections of a memory file.
+func memoryBody(mem *Memory) string {
 	body := fmt.Sprintf("# %s\n\n**Category:** `%s`\n\n", mem.What, mem.Category)
-	if mem.Why != "" {
-		body += fmt.Sprintf("## Why\n%s\n\n", mem.Why)
-	}
-	if mem.Learned != "" {
-		body += fmt.Sprintf("## Learned\n%s\n\n", mem.Learned)
-	}
+	body += optionalSection("Why", mem.Why)
+	body += optionalSection("Learned", mem.Learned)
 	if mem.WherePath != "" {
 		body += fmt.Sprintf("**Path:** [[code/%s|%s]]\n\n", mem.WherePath, mem.WherePath)
 	}
-	if mem.Impact != "" {
-		body += fmt.Sprintf("## Impact\n%s\n\n", mem.Impact)
-	}
-	if mem.ErrorsFaced != "" {
-		body += fmt.Sprintf("## Errors Faced\n%s\n\n", mem.ErrorsFaced)
-	}
-	if mem.NextSteps != "" {
-		body += fmt.Sprintf("## Next Steps\n%s\n\n", mem.NextSteps)
-	}
+	body += optionalSection("Impact", mem.Impact)
+	body += optionalSection("Errors Faced", mem.ErrorsFaced)
+	body += optionalSection("Next Steps", mem.NextSteps)
+	return body
+}
 
-	if rels, ok := allRels[mem.ID]; ok && len(rels) > 0 {
-		body += "## Related Memories\n"
-		for _, r := range rels {
-			otherID := r.target
-			if r.target == mem.ID {
-				otherID = r.source
-			}
-			body += fmt.Sprintf("- [[%s]]\n", otherID)
+// optionalSection renders a "## <title>\n<content>\n\n" block when content is
+// non-empty.
+func optionalSection(title, content string) string {
+	if content == "" {
+		return ""
+	}
+	return fmt.Sprintf("## %s\n%s\n\n", title, content)
+}
+
+// relatedMemoriesSection renders wikilinks to related memories.
+func relatedMemoriesSection(memID string, allRels map[string][]obsidianRelPair) string {
+	rels := allRels[memID]
+	if len(rels) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("## Related Memories\n")
+	for _, r := range rels {
+		otherID := r.target
+		if r.target == memID {
+			otherID = r.source
 		}
-		body += "\n"
+		fmt.Fprintf(&sb, "- [[%s]]\n", otherID)
 	}
+	sb.WriteString("\n")
+	return sb.String()
+}
 
-	if rationaleEdges, ok := edgesBySource[mem.ID]; ok && len(rationaleEdges) > 0 {
-		body += "## Links to Codebase\n"
-		for _, edge := range rationaleEdges {
-			if edge.relType == "rationale_for" {
-				if targetNode, exists := nodesMap[edge.targetID]; exists {
-					if targetNode.nodeType == "function" || targetNode.nodeType == "class" {
-						body += fmt.Sprintf("- [[code/%s#%s|%s (%s)]]\n", targetNode.path, targetNode.label, targetNode.label, targetNode.nodeType)
-					} else {
-						body += fmt.Sprintf("- [[code/%s|%s (%s)]]\n", targetNode.id, targetNode.id, targetNode.nodeType)
-					}
-				}
-			}
+// linksToCodebaseSection renders wikilinks from a memory to the code nodes it
+// is bound to via rationale_for edges.
+func linksToCodebaseSection(memID string, edgesBySource map[string][]exportObsidianEdge, nodesMap map[string]exportObsidianNode) string {
+	rationaleEdges := edgesBySource[memID]
+	if len(rationaleEdges) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("## Links to Codebase\n")
+	for _, edge := range rationaleEdges {
+		if edge.relType != "rationale_for" {
+			continue
 		}
-		body += "\n"
+		targetNode, exists := nodesMap[edge.targetID]
+		if !exists {
+			continue
+		}
+		if targetNode.nodeType == "function" || targetNode.nodeType == "class" {
+			fmt.Fprintf(&sb, "- [[code/%s#%s|%s (%s)]]\n", targetNode.path, targetNode.label, targetNode.label, targetNode.nodeType)
+		} else {
+			fmt.Fprintf(&sb, "- [[code/%s|%s (%s)]]\n", targetNode.id, targetNode.id, targetNode.nodeType)
+		}
 	}
-
-	body += obsidianFooter()
-
-	writePath := filepath.Join(vaultDir, mem.ID+".md")
-	return os.WriteFile(writePath, []byte(fm+body), 0644)
+	sb.WriteString("\n")
+	return sb.String()
 }
 
 func relativePrefixToRoot(filePath string) string {
@@ -286,14 +338,25 @@ func makeRelativeLink(sourceNodePath, targetNodePath, targetSymbol, label, relat
 }
 
 // writeObsidianCodeFile writes a file node as an Obsidian markdown file with its symbols and edges.
-//
-//nolint:gocyclo // many render branches per node kind; refactor later
 func writeObsidianCodeFile(vaultDir string, fn exportObsidianNode, symbolNodesByFile map[string][]exportObsidianNode, edgesBySource, edgesByTarget map[string][]exportObsidianEdge, nodesMap map[string]exportObsidianNode) error {
 	filePath := filepath.Join(vaultDir, "code", fn.id+".md")
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
 		return fmt.Errorf("failed to create code subfolders for %s: %w", fn.id, err)
 	}
 
+	fm := codeFileFrontmatter(fn)
+
+	body := fmt.Sprintf("# %s\n\n**Type:** `%s`\n\n", fn.label, fn.nodeType)
+	body += definedSymbolsSection(fn, symbolNodesByFile, edgesBySource, edgesByTarget, nodesMap)
+	body += edgeLinkSection(fn.id, edgesBySource[fn.id], nodesMap, "## Dependencies", false, true)
+	body += edgeLinkSection(fn.id, edgesByTarget[fn.id], nodesMap, "## Dependents", true, false)
+	body += associatedMemoriesSection(fn, symbolNodesByFile, edgesByTarget)
+	body += obsidianFooter()
+	return os.WriteFile(filePath, []byte(fm+body), 0644)
+}
+
+// codeFileFrontmatter renders the YAML frontmatter for a code-file note.
+func codeFileFrontmatter(fn exportObsidianNode) string {
 	fm := fmt.Sprintf(`---
 id: "%s"
 type: "%s"
@@ -301,152 +364,159 @@ label: "%s"
 path: "%s"
 `, fn.id, fn.nodeType, fn.label, fn.path)
 
-	var metaMap map[string]interface{}
 	if fn.metadata != "" {
+		var metaMap map[string]interface{}
 		_ = json.Unmarshal([]byte(fn.metadata), &metaMap)
-	}
-	for k, v := range metaMap {
-		if k != "line" && k != "exported" {
-			fm += fmt.Sprintf("%s: %v\n", k, v)
-		}
-	}
-	fm += "---\n\n"
-
-	body := fmt.Sprintf("# %s\n\n**Type:** `%s`\n\n", fn.label, fn.nodeType)
-
-	if symbols, ok := symbolNodesByFile[fn.id]; ok && len(symbols) > 0 {
-		body += "## Defined Symbols\n\n"
-		for _, sym := range symbols {
-			body += fmt.Sprintf("### %s\n", sym.label)
-			body += fmt.Sprintf("- **Type:** `%s`\n", sym.nodeType)
-
-			var symMeta map[string]interface{}
-			if sym.metadata != "" {
-				_ = json.Unmarshal([]byte(sym.metadata), &symMeta)
+		for k, v := range metaMap {
+			if k != "line" && k != "exported" {
+				fm += fmt.Sprintf("%s: %v\n", k, v)
 			}
-			if lineVal, ok := symMeta["line"]; ok {
-				body += fmt.Sprintf("- **Declared on:** Line %v\n", lineVal)
-			}
-
-			if symEdges, ok := edgesBySource[sym.id]; ok && len(symEdges) > 0 {
-				callsFound := false
-				for _, edge := range symEdges {
-					if edge.relType == "calls" {
-						if !callsFound {
-							body += "- **Calls:**\n"
-							callsFound = true
-						}
-						targetNode, exists := nodesMap[edge.targetID]
-						var sourceLocText string
-						if edge.sourceLoc.Valid {
-							sourceLocText = fmt.Sprintf(" (at %s)", edge.sourceLoc.String)
-						}
-						if exists {
-							body += fmt.Sprintf("  - %s%s\n", makeRelativeLink(fn.id, targetNode.path, targetNode.label, targetNode.label, "calls"), sourceLocText)
-						} else {
-							body += fmt.Sprintf("  - `%s` (unresolved)%s\n", edge.targetID, sourceLocText)
-						}
-					}
-				}
-			}
-
-			if symEdges, ok := edgesByTarget[sym.id]; ok && len(symEdges) > 0 {
-				callersFound := false
-				for _, edge := range symEdges {
-					if edge.relType == "calls" {
-						if !callersFound {
-							body += "- **Called by:**\n"
-							callersFound = true
-						}
-						sourceNode, exists := nodesMap[edge.sourceID]
-						var sourceLocText string
-						if edge.sourceLoc.Valid {
-							sourceLocText = fmt.Sprintf(" (at %s)", edge.sourceLoc.String)
-						}
-						if exists {
-							body += fmt.Sprintf("  - %s%s\n", makeRelativeLink(fn.id, sourceNode.path, sourceNode.label, sourceNode.label, "calls"), sourceLocText)
-						} else {
-							body += fmt.Sprintf("  - `%s` (unresolved)%s\n", edge.sourceID, sourceLocText)
-						}
-					}
-				}
-			}
-			body += "\n"
 		}
 	}
+	return fm + "---\n\n"
+}
 
-	if fileEdges, ok := edgesBySource[fn.id]; ok && len(fileEdges) > 0 {
-		importsFound := false
-		for _, edge := range fileEdges {
-			if edge.relType == "imports" || edge.relType == "depends_on" || edge.relType == "references" {
-				if !importsFound {
-					body += "## Dependencies\n"
-					importsFound = true
-				}
-				targetNode, exists := nodesMap[edge.targetID]
-				if exists {
-					body += fmt.Sprintf("- **%s**: %s\n", edge.relType, makeRelativeLink(fn.id, targetNode.id, "", targetNode.label, edge.relType))
-				} else {
-					body += fmt.Sprintf("- **%s**: `%s` (unresolved)\n", edge.relType, edge.targetID)
-				}
-			}
+// definedSymbolsSection renders the "Defined Symbols" block of a code-file note.
+func definedSymbolsSection(fn exportObsidianNode, symbolNodesByFile map[string][]exportObsidianNode, edgesBySource, edgesByTarget map[string][]exportObsidianEdge, nodesMap map[string]exportObsidianNode) string {
+	symbols := symbolNodesByFile[fn.id]
+	if len(symbols) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("## Defined Symbols\n\n")
+	for _, sym := range symbols {
+		writeSymbolBlock(&sb, fn.id, sym, edgesBySource[sym.id], edgesByTarget[sym.id], nodesMap)
+	}
+	return sb.String()
+}
+
+// writeSymbolBlock renders one symbol's heading, metadata, calls, and callers.
+func writeSymbolBlock(sb *strings.Builder, fileID string, sym exportObsidianNode, srcEdges, tgtEdges []exportObsidianEdge, nodesMap map[string]exportObsidianNode) {
+	fmt.Fprintf(sb, "### %s\n", sym.label)
+	fmt.Fprintf(sb, "- **Type:** `%s`\n", sym.nodeType)
+	if lineVal, ok := symbolMetaValue(sym.metadata, "line"); ok {
+		fmt.Fprintf(sb, "- **Declared on:** Line %v\n", lineVal)
+	}
+	writeCallSection(sb, fileID, srcEdges, nodesMap, "- **Calls:**\n", false)
+	writeCallSection(sb, fileID, tgtEdges, nodesMap, "- **Called by:**\n", true)
+}
+
+// writeCallSection renders a "calls" (useSource=false) or "called by"
+// (useSource=true) list for one symbol.
+func writeCallSection(sb *strings.Builder, fileID string, edges []exportObsidianEdge, nodesMap map[string]exportObsidianNode, header string, useSource bool) {
+	found := false
+	for _, edge := range edges {
+		if edge.relType != "calls" {
+			continue
 		}
-		if importsFound {
-			body += "\n"
+		if !found {
+			sb.WriteString(header)
+			found = true
+		}
+		otherID := edge.targetID
+		if useSource {
+			otherID = edge.sourceID
+		}
+		loc := ""
+		if edge.sourceLoc.Valid {
+			loc = fmt.Sprintf(" (at %s)", edge.sourceLoc.String)
+		}
+		if node, exists := nodesMap[otherID]; exists {
+			fmt.Fprintf(sb, "  - %s%s\n", makeRelativeLink(fileID, node.path, node.label, node.label, "calls"), loc)
+		} else {
+			fmt.Fprintf(sb, "  - `%s` (unresolved)%s\n", otherID, loc)
 		}
 	}
+}
 
-	if fileEdges, ok := edgesByTarget[fn.id]; ok && len(fileEdges) > 0 {
-		dependentsFound := false
-		for _, edge := range fileEdges {
-			if edge.relType == "imports" || edge.relType == "depends_on" || edge.relType == "references" {
-				if !dependentsFound {
-					body += "## Dependents\n"
-					dependentsFound = true
-				}
-				sourceNode, exists := nodesMap[edge.sourceID]
-				if exists {
-					body += fmt.Sprintf("- %s\n", makeRelativeLink(fn.id, sourceNode.id, "", sourceNode.label, edge.relType))
-				} else {
-					body += fmt.Sprintf("- `%s` (unresolved)\n", edge.sourceID)
-				}
-			}
+// symbolMetaValue extracts a single key from a node's JSON metadata.
+func symbolMetaValue(metadata, key string) (interface{}, bool) {
+	if metadata == "" {
+		return nil, false
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(metadata), &m); err != nil {
+		return nil, false
+	}
+	v, ok := m[key]
+	return v, ok
+}
+
+// edgeLinkSection renders an import/depends_on/references list from one side of
+// a node's edges. useSource selects the neighbour side; withRelTypePrefix
+// prefixes each line with the relation type.
+func edgeLinkSection(fnID string, edges []exportObsidianEdge, nodesMap map[string]exportObsidianNode, header string, useSource, withRelTypePrefix bool) string {
+	var sb strings.Builder
+	found := false
+	for _, edge := range edges {
+		if !isDependencyEdge(edge.relType) {
+			continue
 		}
-		if dependentsFound {
-			body += "\n"
+		otherID := edge.targetID
+		if useSource {
+			otherID = edge.sourceID
+		}
+		if !found {
+			sb.WriteString(header + "\n")
+			found = true
+		}
+		if node, exists := nodesMap[otherID]; exists {
+			link := makeRelativeLink(fnID, node.id, "", node.label, edge.relType)
+			if withRelTypePrefix {
+				fmt.Fprintf(&sb, "- **%s**: %s\n", edge.relType, link)
+			} else {
+				fmt.Fprintf(&sb, "- %s\n", link)
+			}
+			continue
+		}
+		if withRelTypePrefix {
+			fmt.Fprintf(&sb, "- **%s**: `%s` (unresolved)\n", edge.relType, otherID)
+		} else {
+			fmt.Fprintf(&sb, "- `%s` (unresolved)\n", otherID)
 		}
 	}
+	if found {
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
 
-	var referencingRationales []exportObsidianEdge
-	if rEdges, ok := edgesByTarget[fn.id]; ok {
-		for _, re := range rEdges {
+func isDependencyEdge(relType string) bool {
+	return relType == "imports" || relType == "depends_on" || relType == "references"
+}
+
+// associatedMemoriesSection renders the rationale_for memories bound to the file
+// or to any of its symbols.
+func associatedMemoriesSection(fn exportObsidianNode, symbolNodesByFile map[string][]exportObsidianNode, edgesByTarget map[string][]exportObsidianEdge) string {
+	rationales := collectReferencingRationales(fn, symbolNodesByFile, edgesByTarget)
+	if len(rationales) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("## Associated Memories / Decisions\n")
+	for _, re := range rationales {
+		fmt.Fprintf(&sb, "- %s\n", makeRelativeLink(fn.id, re.sourceID, "", re.sourceID, "rationale_for"))
+	}
+	sb.WriteString("\n")
+	return sb.String()
+}
+
+// collectReferencingRationales gathers rationale_for edges targeting the file and
+// each of its symbols.
+func collectReferencingRationales(fn exportObsidianNode, symbolNodesByFile map[string][]exportObsidianNode, edgesByTarget map[string][]exportObsidianEdge) []exportObsidianEdge {
+	var out []exportObsidianEdge
+	appendRationaleEdges := func(id string) {
+		for _, re := range edgesByTarget[id] {
 			if re.relType == "rationale_for" {
-				referencingRationales = append(referencingRationales, re)
+				out = append(out, re)
 			}
 		}
 	}
-	if symbols, ok := symbolNodesByFile[fn.id]; ok {
-		for _, sym := range symbols {
-			if rEdges, ok := edgesByTarget[sym.id]; ok {
-				for _, re := range rEdges {
-					if re.relType == "rationale_for" {
-						referencingRationales = append(referencingRationales, re)
-					}
-				}
-			}
-		}
+	appendRationaleEdges(fn.id)
+	for _, sym := range symbolNodesByFile[fn.id] {
+		appendRationaleEdges(sym.id)
 	}
-
-	if len(referencingRationales) > 0 {
-		body += "## Associated Memories / Decisions\n"
-		for _, re := range referencingRationales {
-			body += fmt.Sprintf("- %s\n", makeRelativeLink(fn.id, re.sourceID, "", re.sourceID, "rationale_for"))
-		}
-		body += "\n"
-	}
-
-	body += obsidianFooter()
-	return os.WriteFile(filePath, []byte(fm+body), 0644)
+	return out
 }
 
 // writeObsidianPackageFile writes a package node as an Obsidian markdown file.

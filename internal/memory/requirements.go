@@ -67,93 +67,113 @@ var scenarioStepKeywords = map[string]bool{
 // Parsing is lenient: unknown sections are skipped and malformed blocks are
 // dropped rather than failing the whole document, matching ParseChangeMarkdown.
 func ParseSpecDeltas(content string) []Delta {
-	lines := strings.Split(content, "\n")
-	var deltas []Delta
-	section := ""
-	var curReq *Requirement
-	var curScenario *Scenario
-	var pendingFrom string
+	p := &deltaParser{}
+	for _, line := range strings.Split(content, "\n") {
+		p.parseLine(strings.TrimSpace(line))
+	}
+	p.flushRequirement()
+	return p.deltas
+}
 
-	flushScenario := func() {
-		if curScenario == nil {
+// deltaParser holds the incremental state while scanning delta markdown.
+type deltaParser struct {
+	deltas      []Delta
+	section     string
+	curReq      *Requirement
+	curScenario *Scenario
+	pendingFrom string
+}
+
+// parseLine dispatches one trimmed line to the header, bullet, or body handler.
+func (p *deltaParser) parseLine(trimmed string) {
+	if trimmed == "" {
+		return
+	}
+	if level, text, ok := headerLine(trimmed); ok {
+		p.handleHeader(level, text)
+		return
+	}
+	if bullet, isBullet := trimBullet(trimmed); isBullet {
+		p.handleBullet(bullet)
+		return
+	}
+	// Plain prose: a requirement narrative before its first scenario.
+	if p.curScenario == nil && p.curReq != nil {
+		p.curReq.Body = appendBodyLine(p.curReq.Body, trimmed)
+	}
+}
+
+// handleHeader updates the parse state for a level 2/3/4 markdown header.
+func (p *deltaParser) handleHeader(level int, text string) {
+	switch level {
+	case 2:
+		p.flushRequirement()
+		p.pendingFrom = ""
+		p.section = deltaOpForHeader(text)
+	case 3:
+		p.flushRequirement()
+		if name, ok := strings.CutPrefix(text, "Requirement:"); ok {
+			if name = strings.TrimSpace(name); name != "" {
+				p.curReq = &Requirement{Name: name}
+			}
+		}
+	case 4:
+		if p.curReq == nil {
 			return
 		}
-		if curReq != nil {
-			curReq.Scenarios = append(curReq.Scenarios, *curScenario)
-		}
-		curScenario = nil
-	}
-	flushRequirement := func() {
-		flushScenario()
-		if curReq == nil {
-			return
-		}
-		appendRequirement(&deltas, section, *curReq)
-		curReq = nil
-	}
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-
-		if level, text, ok := headerLine(trimmed); ok {
-			switch level {
-			case 2:
-				flushRequirement()
-				pendingFrom = ""
-				section = deltaOpForHeader(text)
-			case 3:
-				flushRequirement()
-				if name, ok := strings.CutPrefix(text, "Requirement:"); ok {
-					name = strings.TrimSpace(name)
-					if name != "" {
-						curReq = &Requirement{Name: name}
-					}
-				}
-			case 4:
-				if curReq == nil {
-					continue
-				}
-				if name, ok := strings.CutPrefix(text, "Scenario:"); ok {
-					name = strings.TrimSpace(name)
-					if name != "" {
-						flushScenario()
-						curScenario = &Scenario{Name: name}
-					}
-				}
+		if name, ok := strings.CutPrefix(text, "Scenario:"); ok {
+			if name = strings.TrimSpace(name); name != "" {
+				p.flushScenario()
+				p.curScenario = &Scenario{Name: name}
 			}
-			continue
-		}
-
-		if bullet, isBullet := trimBullet(trimmed); isBullet {
-			switch {
-			case curScenario != nil:
-				if step, ok := parseScenarioStep(bullet); ok {
-					curScenario.Steps = append(curScenario.Steps, step)
-				}
-			case section == DeltaRenamed:
-				// RENAMED pairs a FROM bullet with a following TO bullet.
-				if from, ok := parseRenameToken(bullet, "FROM"); ok {
-					pendingFrom = from
-				} else if to, ok := parseRenameToken(bullet, "TO"); ok && pendingFrom != "" {
-					appendRequirement(&deltas, section, Requirement{Name: pendingFrom, RenameTo: to})
-					pendingFrom = ""
-				}
-			}
-			// Bullets outside a scenario/rename section are not body prose and
-			// are dropped.
-			continue
-		}
-
-		// Plain prose: a requirement narrative before its first scenario.
-		if curScenario == nil && curReq != nil {
-			curReq.Body = appendBodyLine(curReq.Body, trimmed)
 		}
 	}
-	flushRequirement()
-	return deltas
+}
+
+// handleBullet routes a bullet to the scenario-step or rename-pair handler.
+// Bullets outside a scenario/rename section are dropped.
+func (p *deltaParser) handleBullet(bullet string) {
+	switch {
+	case p.curScenario != nil:
+		if step, ok := parseScenarioStep(bullet); ok {
+			p.curScenario.Steps = append(p.curScenario.Steps, step)
+		}
+	case p.section == DeltaRenamed:
+		p.handleRenameBullet(bullet)
+	}
+}
+
+// handleRenameBullet pairs a FROM bullet with the following TO bullet.
+func (p *deltaParser) handleRenameBullet(bullet string) {
+	if from, ok := parseRenameToken(bullet, "FROM"); ok {
+		p.pendingFrom = from
+		return
+	}
+	if to, ok := parseRenameToken(bullet, "TO"); ok && p.pendingFrom != "" {
+		appendRequirement(&p.deltas, p.section, Requirement{Name: p.pendingFrom, RenameTo: to})
+		p.pendingFrom = ""
+	}
+}
+
+// flushScenario commits the in-progress scenario to its requirement.
+func (p *deltaParser) flushScenario() {
+	if p.curScenario == nil {
+		return
+	}
+	if p.curReq != nil {
+		p.curReq.Scenarios = append(p.curReq.Scenarios, *p.curScenario)
+	}
+	p.curScenario = nil
+}
+
+// flushRequirement commits the in-progress requirement to its delta section.
+func (p *deltaParser) flushRequirement() {
+	p.flushScenario()
+	if p.curReq == nil {
+		return
+	}
+	appendRequirement(&p.deltas, p.section, *p.curReq)
+	p.curReq = nil
 }
 
 // headerLine reports the heading level (2, 3, or 4) and text of a markdown

@@ -92,8 +92,6 @@ func MaybeAutoCompact(db *sql.DB, projectID string, threshold int) (*CompactionR
 
 // CompactMemories consolidates multiple entries or high-revision histories under the same topic_key
 // into clean, unified summary records, soft-deleting older historical entries.
-//
-//nolint:gocyclo // consolidation logic spans many merge branches; refactor later
 func CompactMemories(db *sql.DB, projectID string) (*CompactionReport, error) {
 	return compactMemoriesSince(db, projectID, time.Time{})
 }
@@ -126,16 +124,43 @@ func CompactMemoriesIncremental(db *sql.DB, projectID string) (*CompactionReport
 }
 
 func compactMemoriesSince(db *sql.DB, projectID string, since time.Time) (*CompactionReport, error) {
-	report := &CompactionReport{
-		ProjectID: projectID,
+	report := &CompactionReport{ProjectID: projectID}
+
+	// Find topic_keys with > 1 active memory entry. A single surviving row under
+	// a topic_key holds the consolidated truth (topic-key upserts overwrite
+	// content, they don't accumulate history), so merging it would only inflate
+	// revision_count with a near-duplicate synthesis. When `since` is set, only
+	// topic keys that changed afterwards are re-examined (incremental watermark).
+	topicKeysToCompact, err := topicKeysToCompact(db, projectID, since)
+	if err != nil {
+		return nil, err
+	}
+	if len(topicKeysToCompact) == 0 {
+		return report, nil
 	}
 
-	// 1. Find topic_keys with > 1 active memory entry. A single surviving row
-	// under a topic_key holds the consolidated truth (topic-key upserts
-	// overwrite content, they don't accumulate history), so merging it would
-	// only inflate revision_count with a near-duplicate synthesis.
-	// When `since` is set, only topic keys that changed afterwards are
-	// re-examined (incremental watermark).
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin compaction transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	for _, tk := range topicKeysToCompact {
+		if err := compactTopicKey(tx, projectID, tk, report); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed committing compaction transaction: %w", err)
+	}
+
+	return report, nil
+}
+
+// topicKeysToCompact returns topic keys with more than one active memory row,
+// optionally restricted to those with activity after since.
+func topicKeysToCompact(db *sql.DB, projectID string, since time.Time) ([]string, error) {
 	topicQuery := `
 	SELECT topic_key, COUNT(*) as cnt
 	FROM memories
@@ -152,159 +177,158 @@ func compactMemoriesSince(db *sql.DB, projectID string, since time.Time) (*Compa
 	if err != nil {
 		return nil, fmt.Errorf("failed querying topic keys for compaction: %w", err)
 	}
+	defer rows.Close()
 
-	var topicKeysToCompact []string
+	var keys []string
 	for rows.Next() {
 		var tk string
 		var cnt int
 		if scanErr := rows.Scan(&tk, &cnt); scanErr == nil && tk != "" {
-			topicKeysToCompact = append(topicKeysToCompact, tk)
+			keys = append(keys, tk)
 		}
 	}
-	rows.Close()
 	if rowsErr := rows.Err(); rowsErr != nil {
 		return nil, rowsErr
 	}
+	return keys, nil
+}
 
-	if len(topicKeysToCompact) == 0 {
-		return report, nil
-	}
-
-	tx, err := db.Begin()
+// compactTopicKey consolidates one topic key's memory group into a single
+// synthesis row and soft-deletes the originals.
+func compactTopicKey(tx *sql.Tx, projectID, tk string, report *CompactionReport) error {
+	group, err := loadCompactionGroup(tx, projectID, tk)
 	if err != nil {
-		return nil, fmt.Errorf("failed to begin compaction transaction: %w", err)
+		return err
 	}
-	defer tx.Rollback()
-
-	for _, tk := range topicKeysToCompact {
-		memQuery := `
-		SELECT id, category, what, why, learned, where_path, git_branch, git_commit,
-			author, impact, errors_faced, next_steps, session_id, revision_count, created_at,
-			last_seen_at, normalized_hash, review_after, pinned
-		FROM memories
-		WHERE project_id = ? AND topic_key = ? AND deleted_at IS NULL
-		ORDER BY created_at ASC`
-
-		memRows, mErr := tx.Query(memQuery, projectID, tk)
-		if mErr != nil {
-			continue
-		}
-
-		var group []*Memory
-		for memRows.Next() {
-			if m := scanCompactMemoryRow(memRows, tk); m != nil {
-				group = append(group, m)
-			}
-		}
-		memRows.Close()
-
-		if len(group) == 0 {
-			continue
-		}
-
-		latest := group[len(group)-1]
-		var whyParts []string
-		var learnedParts []string
-		maxRev := 0
-
-		for _, m := range group {
-			for _, part := range strings.Split(m.Why, " | ") {
-				p := strings.TrimSpace(part)
-				if p != "" && !containsStr(whyParts, p) {
-					whyParts = append(whyParts, p)
-				}
-			}
-			for _, part := range strings.Split(m.Learned, " | ") {
-				p := strings.TrimSpace(part)
-				if p != "" && !containsStr(learnedParts, p) {
-					learnedParts = append(learnedParts, p)
-				}
-			}
-			if m.RevisionCount > maxRev {
-				maxRev = m.RevisionCount
-			}
-		}
-
-		consolidatedWhy := strings.Join(whyParts, " | ")
-		consolidatedLearned := strings.Join(learnedParts, " | ")
-		newRev := maxRev + len(group)
-
-		// Pick the most recent entry that carries a session association so the
-		// consolidated memory keeps being discoverable by session context
-		// (sv_mem_context / Auto-Boot) after compaction. Falls back to the
-		// latest row when no entry has a session_id.
-		meta := latest
-		for _, m := range group {
-			if m.SessionID != "" {
-				meta = m
-			}
-		}
-
-		// Create clean unified memory, preserving session + metadata of the
-		// chosen source entry so session context recovery keeps working. The
-		// synthesized row keeps the source created_at for chronological
-		// continuity, recomputes the dedup hash from the consolidated content,
-		// and carries over last_seen_at/review_after/pinned so the row stays on
-		// the policy-review and dedup radar after compaction.
-		now := time.Now()
-		synth := &Memory{
-			ID:             newID(),
-			ProjectID:      projectID,
-			Category:       latest.Category,
-			What:           latest.What,
-			Why:            consolidatedWhy,
-			WherePath:      latest.WherePath,
-			Learned:        consolidatedLearned,
-			GitBranch:      meta.GitBranch,
-			GitCommit:      meta.GitCommit,
-			Author:         meta.Author,
-			Impact:         meta.Impact,
-			ErrorsFaced:    meta.ErrorsFaced,
-			NextSteps:      meta.NextSteps,
-			SessionID:      meta.SessionID,
-			TopicKey:       tk,
-			RevisionCount:  newRev,
-			DuplicateCount: len(group),
-			LastSeenAt:     meta.LastSeenAt,
-			NormalizedHash: computeHash(latest.What, consolidatedWhy, consolidatedLearned, latest.WherePath),
-			ReviewAfter:    meta.ReviewAfter,
-			Pinned:         meta.Pinned,
-			CreatedAt:      latest.CreatedAt,
-		}
-		if synth.CreatedAt.IsZero() {
-			synth.CreatedAt = now
-		}
-		if synth.ReviewAfter.IsZero() {
-			synth.ReviewAfter = now.Add(decayReviewAfter(synth.Category))
-		}
-
-		// Insert the synthesis FIRST so a failure aborts the transaction
-		// (defer tx.Rollback) and the older entries are never soft-deleted.
-		// Soft-deleting before the insert would silently lose every memory of
-		// the topic if the synthesis insert failed while the transaction
-		// still committed.
-		if _, insErr := tx.Exec(memoryInsertConflictQuery(), memoryInsertArgs(synth, synth.CreatedAt)...); insErr != nil {
-			return nil, fmt.Errorf("compaction: failed inserting synthesis for %s: %w", tk, insErr)
-		}
-
-		// Soft-delete older entries only after the synthesis is persisted.
-		for _, m := range group {
-			if _, e := tx.Exec("UPDATE memories SET deleted_at = ? WHERE id = ?", now, m.ID); e != nil {
-				return nil, fmt.Errorf("compaction: failed soft-deleting %s: %w", m.ID, e)
-			}
-		}
-
-		report.ProcessedTopics++
-		report.MemoriesCompacted += len(group)
-		report.NewSynthesesCreated++
-		report.TopicKeys = append(report.TopicKeys, tk)
+	if len(group) == 0 {
+		return nil
 	}
 
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("failed committing compaction transaction: %w", err)
+	synth, now := buildSynthesis(projectID, tk, group)
+
+	// Insert the synthesis FIRST so a failure aborts the transaction
+	// (defer tx.Rollback) and the older entries are never soft-deleted.
+	// Soft-deleting before the insert would silently lose every memory of the
+	// topic if the synthesis insert failed while the transaction still committed.
+	if _, insErr := tx.Exec(memoryInsertConflictQuery(), memoryInsertArgs(synth, synth.CreatedAt)...); insErr != nil {
+		return fmt.Errorf("compaction: failed inserting synthesis for %s: %w", tk, insErr)
 	}
 
-	return report, nil
+	// Soft-delete older entries only after the synthesis is persisted.
+	for _, m := range group {
+		if _, e := tx.Exec("UPDATE memories SET deleted_at = ? WHERE id = ?", now, m.ID); e != nil {
+			return fmt.Errorf("compaction: failed soft-deleting %s: %w", m.ID, e)
+		}
+	}
+
+	report.ProcessedTopics++
+	report.MemoriesCompacted += len(group)
+	report.NewSynthesesCreated++
+	report.TopicKeys = append(report.TopicKeys, tk)
+	return nil
+}
+
+// loadCompactionGroup loads the active memories under a topic key in creation
+// order. A query error yields an empty group so the caller skips the topic.
+func loadCompactionGroup(tx *sql.Tx, projectID, tk string) ([]*Memory, error) {
+	memQuery := `
+	SELECT id, category, what, why, learned, where_path, git_branch, git_commit,
+		author, impact, errors_faced, next_steps, session_id, revision_count, created_at,
+		last_seen_at, normalized_hash, review_after, pinned
+	FROM memories
+	WHERE project_id = ? AND topic_key = ? AND deleted_at IS NULL
+	ORDER BY created_at ASC`
+
+	memRows, mErr := tx.Query(memQuery, projectID, tk)
+	if mErr != nil {
+		return nil, nil
+	}
+	defer memRows.Close()
+
+	var group []*Memory
+	for memRows.Next() {
+		if m := scanCompactMemoryRow(memRows, tk); m != nil {
+			group = append(group, m)
+		}
+	}
+	return group, nil
+}
+
+// buildSynthesis constructs the consolidated memory from a topic-key group and
+// returns it with the timestamp used for the soft-delete.
+func buildSynthesis(projectID, tk string, group []*Memory) (*Memory, time.Time) {
+	latest := group[len(group)-1]
+	whyParts, learnedParts, maxRev := mergeGroupParts(group)
+
+	// Pick the most recent entry carrying a session association so the
+	// consolidated memory stays discoverable by session context (sv_mem_context
+	// / Auto-Boot) after compaction. Falls back to the latest row.
+	meta := latest
+	for _, m := range group {
+		if m.SessionID != "" {
+			meta = m
+		}
+	}
+
+	now := time.Now()
+	consolidatedWhy := strings.Join(whyParts, " | ")
+	consolidatedLearned := strings.Join(learnedParts, " | ")
+	synth := &Memory{
+		ID:             newID(),
+		ProjectID:      projectID,
+		Category:       latest.Category,
+		What:           latest.What,
+		Why:            consolidatedWhy,
+		WherePath:      latest.WherePath,
+		Learned:        consolidatedLearned,
+		GitBranch:      meta.GitBranch,
+		GitCommit:      meta.GitCommit,
+		Author:         meta.Author,
+		Impact:         meta.Impact,
+		ErrorsFaced:    meta.ErrorsFaced,
+		NextSteps:      meta.NextSteps,
+		SessionID:      meta.SessionID,
+		TopicKey:       tk,
+		RevisionCount:  maxRev + len(group),
+		DuplicateCount: len(group),
+		LastSeenAt:     meta.LastSeenAt,
+		NormalizedHash: computeHash(latest.What, consolidatedWhy, consolidatedLearned, latest.WherePath),
+		ReviewAfter:    meta.ReviewAfter,
+		Pinned:         meta.Pinned,
+		CreatedAt:      latest.CreatedAt,
+	}
+	if synth.CreatedAt.IsZero() {
+		synth.CreatedAt = now
+	}
+	if synth.ReviewAfter.IsZero() {
+		synth.ReviewAfter = now.Add(decayReviewAfter(synth.Category))
+	}
+	return synth, now
+}
+
+// mergeGroupParts dedupes Why/Learned fragments across a group and finds the
+// highest revision count.
+func mergeGroupParts(group []*Memory) (whyParts, learnedParts []string, maxRev int) {
+	for _, m := range group {
+		whyParts = appendUniqueParts(whyParts, m.Why)
+		learnedParts = appendUniqueParts(learnedParts, m.Learned)
+		if m.RevisionCount > maxRev {
+			maxRev = m.RevisionCount
+		}
+	}
+	return whyParts, learnedParts, maxRev
+}
+
+// appendUniqueParts splits a " | "-joined string, trims each fragment, and
+// appends the non-empty, not-yet-present fragments to dst.
+func appendUniqueParts(dst []string, joined string) []string {
+	for _, part := range strings.Split(joined, " | ") {
+		p := strings.TrimSpace(part)
+		if p != "" && !containsStr(dst, p) {
+			dst = append(dst, p)
+		}
+	}
+	return dst
 }
 
 // scanCompactMemoryRow reads one compaction group row (the extended column set:

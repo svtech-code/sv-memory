@@ -163,73 +163,95 @@ func GetSessionContext(db *sql.DB, projectID string, limit int) (string, error) 
 		return "", err
 	}
 	if session == nil {
-		mems, searchErr := SearchMemories(db, projectID, "", "", limit)
-		if searchErr != nil {
-			return "", searchErr
-		}
-		if len(mems) == 0 {
-			return "No previous session context found for this project.", nil
-		}
-		var sb strings.Builder
-		sb.WriteString("No recorded sessions. Most recent memories:\n\n")
-		for _, m := range mems {
-			fmt.Fprintf(&sb, "- [%s] **%s** (ID: %s, %s)\n",
-				strings.ToUpper(m.Category), m.What, m.ID, m.CreatedAt.Format("2006-01-02"))
-		}
-		return sb.String(), nil
+		return noSessionContext(db, projectID, limit)
 	}
 
 	var sb strings.Builder
-	sb.WriteString("## Previous Session Context\n\n")
-	fmt.Fprintf(&sb, "**Session ID:** %s\n", session.ID)
-	fmt.Fprintf(&sb, "**Started:** %s\n", session.StartedAt.Format("2006-01-02 15:04"))
-	if !session.EndedAt.IsZero() {
-		fmt.Fprintf(&sb, "**Ended:** %s\n", session.EndedAt.Format("2006-01-02 15:04"))
-	}
-	if session.Goal != "" {
-		fmt.Fprintf(&sb, "**Goal:** %s\n", security.SanitizeText(session.Goal))
-	}
-	if session.Summary != "" {
-		fmt.Fprintf(&sb, "**Summary:** %s\n", security.SanitizeText(session.Summary))
-	}
+	renderSessionHeader(&sb, session)
 
 	mems, err := SearchMemoriesBySessionCompact(db, projectID, session.ID, limit)
 	if err != nil {
 		return "", err
 	}
-	if len(mems) > 0 {
-		fmt.Fprintf(&sb, "\n**Memories saved (%d):**\n", len(mems))
-		for _, m := range mems {
-			fmt.Fprintf(&sb, "- [%s] **%s** (ID: %s)\n",
-				strings.ToUpper(m.Category), m.What, m.ID)
-		}
-	}
+	renderSessionMemories(&sb, mems)
+	renderUserPrompts(&sb, db, projectID, session.ID)
+	renderPinnedSection(&sb, db, projectID)
+	return sb.String(), nil
+}
 
-	// Recent user prompts surface the user's intent for the session, so after
-	// compaction the agent can recover what was being asked (sv_mem_capture_prompt).
-	prompts, perr := RecentPrompts(db, projectID, session.ID, 5)
-	if perr == nil && len(prompts) > 0 {
-		fmt.Fprintf(&sb, "\n**User prompts (%d):**\n", len(prompts))
-		for _, p := range prompts {
-			preview := strings.ReplaceAll(p.Content, "\n", " ")
-			if len(preview) > 140 {
-				preview = preview[:140] + "…"
-			}
-			fmt.Fprintf(&sb, "- %s\n", security.SanitizeText(preview))
-		}
+// noSessionContext renders the fallback when no completed session exists.
+func noSessionContext(db *sql.DB, projectID string, limit int) (string, error) {
+	mems, searchErr := SearchMemories(db, projectID, "", "", limit)
+	if searchErr != nil {
+		return "", searchErr
 	}
-
-	// Pinned memories surface first so key decisions stay visible regardless
-	// of session recency (sv_mem_pin with action='pin' / 'unpin').
-	pinned, perr := SearchPinnedMemories(db, projectID, 5)
-	if perr == nil && len(pinned) > 0 {
-		fmt.Fprintf(&sb, "\n**📌 Pinned memories (%d):**\n", len(pinned))
-		for _, m := range pinned {
-			fmt.Fprintf(&sb, "- [%s] **%s** (ID: %s)\n",
-				strings.ToUpper(m.Category), m.What, m.ID)
-		}
+	if len(mems) == 0 {
+		return "No previous session context found for this project.", nil
+	}
+	var sb strings.Builder
+	sb.WriteString("No recorded sessions. Most recent memories:\n\n")
+	for _, m := range mems {
+		fmt.Fprintf(&sb, "- [%s] **%s** (ID: %s, %s)\n",
+			strings.ToUpper(m.Category), m.What, m.ID, m.CreatedAt.Format("2006-01-02"))
 	}
 	return sb.String(), nil
+}
+
+// renderSessionHeader writes the previous-session heading and metadata.
+func renderSessionHeader(sb *strings.Builder, session *Session) {
+	sb.WriteString("## Previous Session Context\n\n")
+	fmt.Fprintf(sb, "**Session ID:** %s\n", session.ID)
+	fmt.Fprintf(sb, "**Started:** %s\n", session.StartedAt.Format("2006-01-02 15:04"))
+	if !session.EndedAt.IsZero() {
+		fmt.Fprintf(sb, "**Ended:** %s\n", session.EndedAt.Format("2006-01-02 15:04"))
+	}
+	if session.Goal != "" {
+		fmt.Fprintf(sb, "**Goal:** %s\n", security.SanitizeText(session.Goal))
+	}
+	if session.Summary != "" {
+		fmt.Fprintf(sb, "**Summary:** %s\n", security.SanitizeText(session.Summary))
+	}
+}
+
+// renderSessionMemories writes the memories saved during the session.
+func renderSessionMemories(sb *strings.Builder, mems []*MemorySearchResult) {
+	if len(mems) == 0 {
+		return
+	}
+	fmt.Fprintf(sb, "\n**Memories saved (%d):**\n", len(mems))
+	for _, m := range mems {
+		fmt.Fprintf(sb, "- [%s] **%s** (ID: %s)\n", strings.ToUpper(m.Category), m.What, m.ID)
+	}
+}
+
+// renderUserPrompts surfaces the session's recent prompts so intent survives
+// compaction (sv_mem_capture_prompt).
+func renderUserPrompts(sb *strings.Builder, db *sql.DB, projectID, sessionID string) {
+	prompts, err := RecentPrompts(db, projectID, sessionID, 5)
+	if err != nil || len(prompts) == 0 {
+		return
+	}
+	fmt.Fprintf(sb, "\n**User prompts (%d):**\n", len(prompts))
+	for _, p := range prompts {
+		preview := strings.ReplaceAll(p.Content, "\n", " ")
+		if len(preview) > 140 {
+			preview = preview[:140] + "…"
+		}
+		fmt.Fprintf(sb, "- %s\n", security.SanitizeText(preview))
+	}
+}
+
+// renderPinnedSection surfaces pinned memories first so key decisions stay
+// visible regardless of session recency (sv_mem_pin).
+func renderPinnedSection(sb *strings.Builder, db *sql.DB, projectID string) {
+	pinned, err := SearchPinnedMemories(db, projectID, 5)
+	if err != nil || len(pinned) == 0 {
+		return
+	}
+	fmt.Fprintf(sb, "\n**📌 Pinned memories (%d):**\n", len(pinned))
+	for _, m := range pinned {
+		fmt.Fprintf(sb, "- [%s] **%s** (ID: %s)\n", strings.ToUpper(m.Category), m.What, m.ID)
+	}
 }
 
 // AutoBootOptions controls how the Auto-Boot context bundle is assembled. When

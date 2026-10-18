@@ -202,56 +202,89 @@ func ConsolidateProjects(db *sql.DB, sourceID, targetID string) (movedMemories i
 	return movedMemories, movedSessions, nil
 }
 
+// diagAdd records a single diagnostic result.
+type diagAdd func(check, status, msg string)
+
 // RunDiagnostics performs read-only health checks on the project setup.
 // Returns a list of check results with status pass/warn/fail.
 func RunDiagnostics(db *sql.DB, projectID, projPath, dbPath string) []DiagnosticsResult {
 	var results []DiagnosticsResult
-
 	add := func(check, status, msg string) {
 		results = append(results, DiagnosticsResult{Check: check, Status: status, Message: msg})
 	}
 
-	if _, err := os.Stat(dbPath); err == nil {
-		add("database_file", "pass", fmt.Sprintf("Database file found at %s", dbPath))
-	} else {
-		add("database_file", "fail", fmt.Sprintf("Database file not found at %s: %v", dbPath, err))
+	if !checkDatabaseFile(add, dbPath) {
 		return results
 	}
+	if !checkDatabaseConnection(add, db) {
+		return results
+	}
+	checkRequiredTables(add, db)
+	checkRequiredTriggers(add, db)
+	checkProjectRegistered(add, db, projectID)
+	checkProjectWritable(add, projPath)
+	checkChunkDirectory(add, projPath)
+	checkFTS5(add, db)
+	checkCompactionHealth(add, db, projectID)
+	return results
+}
 
+// checkDatabaseFile verifies the database file exists; false aborts subsequent checks.
+func checkDatabaseFile(add diagAdd, dbPath string) bool {
+	if _, err := os.Stat(dbPath); err != nil {
+		add("database_file", "fail", fmt.Sprintf("Database file not found at %s: %v", dbPath, err))
+		return false
+	}
+	add("database_file", "pass", fmt.Sprintf("Database file found at %s", dbPath))
+	return true
+}
+
+// checkDatabaseConnection pings the database; false aborts subsequent checks.
+func checkDatabaseConnection(add diagAdd, db *sql.DB) bool {
 	if err := db.Ping(); err != nil {
 		add("database_connection", "fail", fmt.Sprintf("Cannot ping database: %v", err))
-		return results
+		return false
 	}
 	add("database_connection", "pass", "Database connection is alive")
+	return true
+}
 
+// checkRequiredTables verifies every required table (including FTS virtual tables).
+func checkRequiredTables(add diagAdd, db *sql.DB) {
 	requiredTables := []string{
 		"projects", "memories", "memories_fts",
 		"sessions", "memory_relations",
 		"graph_nodes", "graph_edges", "graph_files_meta",
 	}
 	for _, table := range requiredTables {
-		var found int
-		err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&found)
-		if err != nil {
-			add("table_"+table, "fail", fmt.Sprintf("Error checking table %s: %v", table, err))
-			continue
-		}
-		if found == 0 {
-			err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE name=?", table).Scan(&found)
-			if err != nil {
-				add("table_"+table, "fail", fmt.Sprintf("Error checking virtual table %s: %v", table, err))
-				continue
-			}
-		}
-		if found > 0 {
-			add("table_"+table, "pass", fmt.Sprintf("Table %s exists", table))
-		} else {
-			add("table_"+table, "fail", fmt.Sprintf("Table %s is missing", table))
+		checkTable(add, db, table)
+	}
+}
+
+// checkTable verifies one table exists, falling back to a name-only lookup for
+// FTS virtual tables.
+func checkTable(add diagAdd, db *sql.DB, table string) {
+	var found int
+	if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&found); err != nil {
+		add("table_"+table, "fail", fmt.Sprintf("Error checking table %s: %v", table, err))
+		return
+	}
+	if found == 0 {
+		if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE name=?", table).Scan(&found); err != nil {
+			add("table_"+table, "fail", fmt.Sprintf("Error checking virtual table %s: %v", table, err))
+			return
 		}
 	}
+	if found > 0 {
+		add("table_"+table, "pass", fmt.Sprintf("Table %s exists", table))
+	} else {
+		add("table_"+table, "fail", fmt.Sprintf("Table %s is missing", table))
+	}
+}
 
-	requiredTriggers := []string{"memories_ai", "memories_ad", "memories_au"}
-	for _, trig := range requiredTriggers {
+// checkRequiredTriggers verifies the FTS5 sync triggers exist.
+func checkRequiredTriggers(add diagAdd, db *sql.DB) {
+	for _, trig := range []string{"memories_ai", "memories_ad", "memories_au"} {
 		var found int
 		if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name=?", trig).Scan(&found); err != nil {
 			add("trigger_"+trig, "fail", fmt.Sprintf("Error checking trigger %s: %v", trig, err))
@@ -263,7 +296,10 @@ func RunDiagnostics(db *sql.DB, projectID, projPath, dbPath string) []Diagnostic
 			add("trigger_"+trig, "warn", fmt.Sprintf("Trigger %s is missing — FTS5 sync may be incomplete", trig))
 		}
 	}
+}
 
+// checkProjectRegistered verifies the project row exists.
+func checkProjectRegistered(add diagAdd, db *sql.DB, projectID string) {
 	var projCount int
 	if err := db.QueryRow("SELECT COUNT(*) FROM projects WHERE id=?", projectID).Scan(&projCount); err != nil {
 		add("project_registered", "fail", fmt.Sprintf("Error querying project: %v", err))
@@ -272,17 +308,24 @@ func RunDiagnostics(db *sql.DB, projectID, projPath, dbPath string) []Diagnostic
 	} else {
 		add("project_registered", "fail", "Project is not registered — run 'sv-memory init'")
 	}
+}
 
+// checkProjectWritable verifies the project path accepts a write.
+func checkProjectWritable(add diagAdd, projPath string) {
 	tmpFile := filepath.Join(projPath, ".sv-memory-write-test")
 	if err := os.WriteFile(tmpFile, []byte{}, 0644); err != nil {
 		add("project_path_writable", "fail", fmt.Sprintf("Project path is not writable: %v", err))
-	} else {
-		os.Remove(tmpFile)
-		add("project_path_writable", "pass", "Project path is writable")
+		return
 	}
+	os.Remove(tmpFile)
+	add("project_path_writable", "pass", "Project path is writable")
+}
 
+// checkChunkDirectory reports the state of the git-synced chunk directory.
+func checkChunkDirectory(add diagAdd, projPath string) {
 	chunkDir := filepath.Join(projPath, ".sv-memory", "chunks")
-	if fi, err := os.Stat(chunkDir); err == nil {
+	fi, err := os.Stat(chunkDir)
+	if err == nil {
 		if fi.IsDir() {
 			entries, _ := os.ReadDir(chunkDir)
 			jsonCount := 0
@@ -293,30 +336,37 @@ func RunDiagnostics(db *sql.DB, projectID, projPath, dbPath string) []Diagnostic
 			}
 			add("chunk_directory", "pass", fmt.Sprintf("Chunk directory exists with %d JSON files", jsonCount))
 		}
-	} else if os.IsNotExist(err) {
+		return
+	}
+	if os.IsNotExist(err) {
 		if _, legacyErr := os.Stat(filepath.Join(projPath, ".sv-memory", "memories.json")); legacyErr == nil {
 			add("chunk_directory", "warn", "Using legacy memories.json (no chunk directory)")
 		} else {
 			add("chunk_directory", "warn", "No sync directory found — run 'sv-memory sync' after first save")
 		}
-	} else {
-		add("chunk_directory", "warn", fmt.Sprintf("Cannot stat chunk directory: %v", err))
+		return
 	}
+	add("chunk_directory", "warn", fmt.Sprintf("Cannot stat chunk directory: %v", err))
+}
 
+// checkFTS5 verifies the full-text index is queryable.
+func checkFTS5(add diagAdd, db *sql.DB) {
 	var ftsCount int
 	if err := db.QueryRow("SELECT COUNT(*) FROM memories_fts").Scan(&ftsCount); err != nil {
 		add("fts5_healthy", "fail", fmt.Sprintf("FTS5 query failed: %v", err))
-	} else {
-		add("fts5_healthy", "pass", fmt.Sprintf("FTS5 is healthy (%d indexed rows)", ftsCount))
+		return
 	}
+	add("fts5_healthy", "pass", fmt.Sprintf("FTS5 is healthy (%d indexed rows)", ftsCount))
+}
 
-	if health, _, chkErr := CheckCompactionHealth(db, projectID, DefaultCompactionThreshold); chkErr != nil {
+// checkCompactionHealth reports topic-key fragmentation status.
+func checkCompactionHealth(add diagAdd, db *sql.DB, projectID string) {
+	health, _, chkErr := CheckCompactionHealth(db, projectID, DefaultCompactionThreshold)
+	if chkErr != nil {
 		add("compaction_health", "warn", fmt.Sprintf("Error checking compaction health: %v", chkErr))
 	} else if health.NeedsCompaction {
 		add("compaction_health", "warn", fmt.Sprintf("%d fragmented topic keys detected (%d candidate memories) — run 'sv-memory compact' or 'sv_mem_compact'", health.FragmentedTopics, health.TotalFragmentedMemories))
 	} else {
 		add("compaction_health", "pass", fmt.Sprintf("Memory compaction health is good (%d fragmented topics, threshold %d)", health.FragmentedTopics, health.Threshold))
 	}
-
-	return results
 }

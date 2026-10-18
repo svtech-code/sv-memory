@@ -184,19 +184,15 @@ func GetContextPack(db *sql.DB, projectID, query string, maxMemories int, includ
 		maxMemories = 20
 	}
 
-	// 0. Auto-freshness check: refresh graph incrementally if project files changed on disk.
-	var projPath string
-	_ = db.QueryRow("SELECT path FROM projects WHERE id = ?", projectID).Scan(&projPath)
-	if projPath == "" {
-		projPath, _ = os.Getwd()
-	}
+	// Auto-freshness check: refresh graph incrementally if project files changed on disk.
+	projPath := resolveProjectPath(db, projectID)
 	if projPath != "" {
 		_, _ = graph.SyncGraphIfHasChanges(db, projectID, projPath)
 	}
 
-	// 0b. Split the query into at most 3 symbols when commas are present so the
-	// pack turns into a unified explore call (multi-symbol + call path). A
-	// single symbol falls through to the exact existing single-node flow.
+	// Split the query into at most 3 symbols when commas are present so the pack
+	// turns into a unified explore call (multi-symbol + call path). A single
+	// symbol falls through to the exact existing single-node flow.
 	primary, extraSnippets, callPath := resolveExploreSymbols(db, projectID, projPath, query)
 
 	node, err := ResolveContextNode(db, projectID, primary)
@@ -204,31 +200,101 @@ func GetContextPack(db *sql.DB, projectID, query string, maxMemories int, includ
 		return nil, err
 	}
 
-	pack := &ContextPack{Node: node}
+	pack := &ContextPack{Node: node, ExtraSnippets: extraSnippets, CallPath: callPath}
+	applyNodeSnippetAndBlast(db, projectID, projPath, node, pack)
 
-	// 1. Extract surgical source code snippet and blast radius for the resolved node if available.
+	mems, err := gatherContextMemories(db, projectID, primary, node, maxMemories)
+	if err != nil {
+		return nil, err
+	}
+	pack.Memories = mems
+
 	if node != nil {
-		if node.Path != "" && projPath != "" {
-			if node.Type == schema.NodeTypeFile {
-				pack.Snippet, pack.SnippetLine = extractFileSkeleton(db, projectID, node, projPath)
-			} else {
-				pack.Snippet, pack.SnippetLine = extractSurgicalSnippet(projPath, node, maxSnippetLines)
-			}
+		// Direct neighbors (dependents/dependencies), excluding rationale_for
+		// edges so memory document nodes don't appear as code dependents.
+		if pack.Dependents, err = contextNeighbors(db, projectID, node.ID, "target_id", 5); err != nil {
+			return nil, err
 		}
-		pack.BlastRadius, _ = graph.CalculateBlastRadius(db, projectID, node.ID, 3, 10)
+		if pack.Dependencies, err = contextNeighbors(db, projectID, node.ID, "source_id", 5); err != nil {
+			return nil, err
+		}
+		// Capabilities this node implements (spec nodes reached via
+		// 'implements' edges), each with a bounded requirement summary.
+		if pack.Capabilities, err = capabilitiesForNode(db, projectID, node.ID); err != nil {
+			return nil, err
+		}
 	}
 
-	pack.ExtraSnippets = extraSnippets
-	pack.CallPath = callPath
+	if includeChanges {
+		if changes, err := changesForPath(db, projectID, primary); err == nil {
+			pack.Changes = changes
+		}
+	}
+	return pack, nil
+}
+
+// resolveProjectPath returns the project's workspace path, falling back to the
+// current working directory when the project row has none.
+func resolveProjectPath(db *sql.DB, projectID string) string {
+	var projPath string
+	_ = db.QueryRow("SELECT path FROM projects WHERE id = ?", projectID).Scan(&projPath)
+	if projPath == "" {
+		projPath, _ = os.Getwd()
+	}
+	return projPath
+}
+
+// applyNodeSnippetAndBlast fills the snippet and blast-radius fields for the
+// resolved node. A nil node leaves both empty.
+func applyNodeSnippetAndBlast(db *sql.DB, projectID, projPath string, node *ContextNode, pack *ContextPack) {
+	if node == nil {
+		return
+	}
+	if node.Path != "" && projPath != "" {
+		if node.Type == schema.NodeTypeFile {
+			pack.Snippet, pack.SnippetLine = extractFileSkeleton(db, projectID, node, projPath)
+		} else {
+			pack.Snippet, pack.SnippetLine = extractSurgicalSnippet(projPath, node, maxSnippetLines)
+		}
+	}
+	pack.BlastRadius, _ = graph.CalculateBlastRadius(db, projectID, node.ID, 3, 10)
+}
+
+// gatherContextMemories collects path-scoped and rationale_for memories,
+// deduplicating by id (path-scoped first) and capping at maxMemories.
+func gatherContextMemories(db *sql.DB, projectID, primary string, node *ContextNode, maxMemories int) ([]ContextMemory, error) {
+	pathMems, err := loadPathScopedMemories(db, projectID, primary, maxMemories)
+	if err != nil {
+		return nil, err
+	}
+	var rationaleMems []ContextMemory
+	if node != nil {
+		if rationaleMems, err = loadRationaleMemories(db, projectID, node.ID, maxMemories); err != nil {
+			return nil, err
+		}
+	}
 
 	seen := map[string]bool{}
 	var mems []ContextMemory
+	for _, m := range append(pathMems, rationaleMems...) {
+		if seen[m.ID] {
+			continue
+		}
+		seen[m.ID] = true
+		mems = append(mems, m)
+	}
+	if len(mems) > maxMemories {
+		mems = mems[:maxMemories]
+	}
+	return mems, nil
+}
 
-	// 1. Memories whose where_path matches the query (path-scoped recall).
-	// Exclude automatic git post-commit capture logs so they don't displace
-	// high-signal architectural decisions, bugfixes, or agent journals.
+// loadPathScopedMemories loads memories whose where_path matches the query
+// (path-scoped recall), excluding automatic post-commit capture logs so they
+// don't displace high-signal decisions, bugfixes, or journals.
+func loadPathScopedMemories(db *sql.DB, projectID, primary string, maxMemories int) ([]ContextMemory, error) {
 	pattern := "%" + sanitizePathFilter(primary) + "%"
-	pathRows, err := db.Query(`
+	rows, err := db.Query(`
 		SELECT id, category, what, COALESCE(why, ''), COALESCE(where_path, '')
 		FROM memories
 		WHERE project_id = ? AND deleted_at IS NULL
@@ -239,80 +305,42 @@ func GetContextPack(db *sql.DB, projectID, query string, maxMemories int, includ
 	if err != nil {
 		return nil, fmt.Errorf("failed querying path memories: %w", err)
 	}
-	for pathRows.Next() {
+	defer rows.Close()
+
+	return scanContextMemories(rows, "where_path")
+}
+
+// loadRationaleMemories loads memories linked through a rationale_for edge to
+// the resolved node (memory document node -> code node).
+func loadRationaleMemories(db *sql.DB, projectID, nodeID string, maxMemories int) ([]ContextMemory, error) {
+	rows, err := db.Query(`
+		SELECT m.id, m.category, m.what, COALESCE(m.why, ''), COALESCE(m.where_path, '')
+		FROM graph_edges e
+		JOIN memories m ON m.id = e.source_id
+		WHERE e.project_id = ? AND e.relation_type = 'rationale_for' AND e.target_id = ?
+		  AND m.deleted_at IS NULL
+		  AND COALESCE(m.why, '') NOT LIKE 'automatic post-commit capture for %'
+		ORDER BY m.created_at DESC
+		LIMIT ?`, projectID, nodeID, maxMemories)
+	if err != nil {
+		return nil, fmt.Errorf("failed querying rationale memories: %w", err)
+	}
+	defer rows.Close()
+
+	return scanContextMemories(rows, "rationale_for")
+}
+
+// scanContextMemories reads memory rows into ContextMemory values, tagging the
+// recall source. Unreadable rows are skipped.
+func scanContextMemories(rows *sql.Rows, source string) ([]ContextMemory, error) {
+	var mems []ContextMemory
+	for rows.Next() {
 		var id, category, what, why, wherePath string
-		if scanErr := pathRows.Scan(&id, &category, &what, &why, &wherePath); scanErr == nil {
-			if !seen[id] {
-				seen[id] = true
-				mems = append(mems, ContextMemory{ID: id, Category: category, What: what, Why: why, WherePath: wherePath, Source: "where_path"})
-			}
+		if scanErr := rows.Scan(&id, &category, &what, &why, &wherePath); scanErr == nil {
+			mems = append(mems, ContextMemory{ID: id, Category: category, What: what, Why: why, WherePath: wherePath, Source: source})
 		}
 	}
-	pathRows.Close()
-	if rowsErr := pathRows.Err(); rowsErr != nil {
-		return nil, rowsErr
-	}
-
-	// 2. Memories linked through a rationale_for edge to the resolved node
-	// (memory document node -> code node). This is the graph-native recall.
-	if node != nil {
-		edgeRows, err := db.Query(`
-			SELECT m.id, m.category, m.what, COALESCE(m.why, ''), COALESCE(m.where_path, '')
-			FROM graph_edges e
-			JOIN memories m ON m.id = e.source_id
-			WHERE e.project_id = ? AND e.relation_type = 'rationale_for' AND e.target_id = ?
-			  AND m.deleted_at IS NULL
-			  AND COALESCE(m.why, '') NOT LIKE 'automatic post-commit capture for %'
-			ORDER BY m.created_at DESC
-			LIMIT ?`, projectID, node.ID, maxMemories)
-		if err != nil {
-			return nil, fmt.Errorf("failed querying rationale memories: %w", err)
-		}
-		for edgeRows.Next() {
-			var id, category, what, why, wherePath string
-			if scanErr := edgeRows.Scan(&id, &category, &what, &why, &wherePath); scanErr == nil {
-				if !seen[id] {
-					seen[id] = true
-					mems = append(mems, ContextMemory{ID: id, Category: category, What: what, Why: why, WherePath: wherePath, Source: "rationale_for"})
-				}
-			}
-		}
-		edgeRows.Close()
-		if rowsErr := edgeRows.Err(); rowsErr != nil {
-			return nil, rowsErr
-		}
-
-		// 3. Direct neighbors (dependents/dependencies), excluding rationale_for
-		// edges so memory document nodes don't appear as code dependents.
-		pack.Dependents, err = contextNeighbors(db, projectID, node.ID, "target_id", 5)
-		if err != nil {
-			return nil, err
-		}
-		pack.Dependencies, err = contextNeighbors(db, projectID, node.ID, "source_id", 5)
-		if err != nil {
-			return nil, err
-		}
-
-		// 4. Capabilities this node implements (spec nodes reached via
-		// 'implements' edges), each with a bounded requirement summary.
-		pack.Capabilities, err = capabilitiesForNode(db, projectID, node.ID)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if len(mems) > maxMemories {
-		mems = mems[:maxMemories]
-	}
-	pack.Memories = mems
-
-	if includeChanges {
-		changes, err := changesForPath(db, projectID, primary)
-		if err == nil {
-			pack.Changes = changes
-		}
-	}
-	return pack, nil
+	return mems, rows.Err()
 }
 
 // capabilitiesForNode lists the capabilities (spec nodes) that node implements,
@@ -446,38 +474,48 @@ func CommunityPathSet(db *sql.DB, projectID string, node *ContextNode) (map[stri
 		set[node.Path] = true
 	}
 	if node.CommunityID > 0 {
-		rows, err := db.Query(`SELECT path, COALESCE(metadata, '') FROM graph_nodes WHERE project_id = ? AND node_type != 'document'`, projectID)
-		if err != nil {
-			return set, fmt.Errorf("failed querying community nodes: %w", err)
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var p, meta string
-			if scanErr := rows.Scan(&p, &meta); scanErr == nil && p != "" && parseCommunityID(meta) == node.CommunityID {
-				set[p] = true
-			}
-		}
-		return set, rows.Err()
+		return communityPaths(db, projectID, node.CommunityID, set)
 	}
 
 	// Fallback before communities are computed: same-directory nodes are a
 	// cheap structural proxy for the module.
 	dir := path.Dir(node.Path)
 	if dir != "." && dir != "" && dir != "/" {
-		rows, err := db.Query(`SELECT path FROM graph_nodes WHERE project_id = ? AND node_type != 'document' AND path LIKE ? ESCAPE '\'`, projectID, dir+"/%")
-		if err != nil {
-			return set, fmt.Errorf("failed querying directory nodes: %w", err)
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var p string
-			if scanErr := rows.Scan(&p); scanErr == nil && p != "" {
-				set[p] = true
-			}
-		}
-		return set, rows.Err()
+		return directoryPaths(db, projectID, dir, set)
 	}
 	return set, nil
+}
+
+// communityPaths adds every node in the given community to set.
+func communityPaths(db *sql.DB, projectID string, communityID int, set map[string]bool) (map[string]bool, error) {
+	rows, err := db.Query(`SELECT path, COALESCE(metadata, '') FROM graph_nodes WHERE project_id = ? AND node_type != 'document'`, projectID)
+	if err != nil {
+		return set, fmt.Errorf("failed querying community nodes: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p, meta string
+		if scanErr := rows.Scan(&p, &meta); scanErr == nil && p != "" && parseCommunityID(meta) == communityID {
+			set[p] = true
+		}
+	}
+	return set, rows.Err()
+}
+
+// directoryPaths adds every node under dir to set.
+func directoryPaths(db *sql.DB, projectID, dir string, set map[string]bool) (map[string]bool, error) {
+	rows, err := db.Query(`SELECT path FROM graph_nodes WHERE project_id = ? AND node_type != 'document' AND path LIKE ? ESCAPE '\'`, projectID, dir+"/%")
+	if err != nil {
+		return set, fmt.Errorf("failed querying directory nodes: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p string
+		if scanErr := rows.Scan(&p); scanErr == nil && p != "" {
+			set[p] = true
+		}
+	}
+	return set, rows.Err()
 }
 
 // parseCommunityID extracts the persisted community_id from a graph node's
@@ -619,90 +657,109 @@ func RenderContextPack(p *ContextPack, whyChars int) string {
 	var sb strings.Builder
 
 	if p.Node != nil {
-		n := p.Node
-		fmt.Fprintf(&sb, "## Context Pack: `%s` (`%s`)\n", n.Label, n.ID)
-		fmt.Fprintf(&sb, "- **Type:** `%s`", n.Type)
-		if n.Path != "" {
-			fmt.Fprintf(&sb, " · **Path:** `%s`", n.Path)
-		}
-		sb.WriteString("\n")
-		fmt.Fprintf(&sb, "- **Fan-in (dependents):** %d · **Fan-out (dependencies):** %d · **Degree:** %d\n", n.FanIn, n.FanOut, n.Degree)
-		community := "none"
-		if n.CommunityID > 0 {
-			community = fmt.Sprintf("ID %d", n.CommunityID)
-		}
-		fmt.Fprintf(&sb, "- **Community:** %s\n", community)
-		if n.Degree > 10 {
-			sb.WriteString("- **Hub:** ⚠️ high connectivity — changes ripple; use `sv_graph_explain` before refactoring\n")
-		}
+		renderNodeHeader(&sb, p.Node)
 	}
-
 	if p.Snippet != "" {
-		ext := "text"
-		if p.Node != nil && p.Node.Path != "" {
-			cleanExt := strings.TrimPrefix(filepath.Ext(p.Node.Path), ".")
-			if cleanExt != "" {
-				ext = cleanExt
-			}
-		}
-		fmt.Fprintf(&sb, "\n### Source Code Snippet (L%d):\n```%s\n%s\n```\n", p.SnippetLine, ext, p.Snippet)
+		renderSnippet(&sb, p)
 	}
-
 	if len(p.CallPath) > 0 {
 		renderCallPath(&sb, p.CallPath)
 	}
-
 	if len(p.ExtraSnippets) > 0 {
 		renderExtraSnippets(&sb, p.ExtraSnippets)
 	}
-
 	if len(p.Memories) > 0 {
 		renderMemories(&sb, p.Memories, whyChars)
 	}
-
 	if len(p.Dependents) > 0 {
-		sb.WriteString("\n### Direct dependents (who imports/calls this):\n")
-		for _, d := range p.Dependents {
-			fmt.Fprintf(&sb, "- `%s` (%s, %s)\n", d.Label, d.RelationType, strings.ToLower(d.Confidence))
-		}
+		renderNeighbors(&sb, "\n### Direct dependents (who imports/calls this):\n", p.Dependents)
 	}
 	if len(p.BlastRadius) > 0 {
-		sb.WriteString("\n### 💥 Transitive blast radius (affected upstream consumers):\n")
-		for _, b := range p.BlastRadius {
-			hubTag := ""
-			if b.IsHub {
-				hubTag = " ⚠️ Hub"
-			}
-			fmt.Fprintf(&sb, "- `%s` (hop %d, %s)%s\n", b.ID, b.Depth, b.RelationType, hubTag)
-		}
+		renderBlastRadius(&sb, p.BlastRadius)
 	}
 	if len(p.Dependencies) > 0 {
-		sb.WriteString("\n### Direct dependencies (what this imports/calls):\n")
-		for _, d := range p.Dependencies {
-			fmt.Fprintf(&sb, "- `%s` (%s, %s)\n", d.Label, d.RelationType, strings.ToLower(d.Confidence))
-		}
+		renderNeighbors(&sb, "\n### Direct dependencies (what this imports/calls):\n", p.Dependencies)
 	}
-
 	if len(p.Changes) > 0 {
 		renderChanges(&sb, p.Changes)
 	}
-
 	if len(p.Capabilities) > 0 {
-		sb.WriteString("\n### Capabilities implemented here:\n")
-		for _, cap := range p.Capabilities {
-			fmt.Fprintf(&sb, "- **%s** (%d requirement%s)", cap.CapabilityPath, cap.RequirementCount, plural(cap.RequirementCount))
-			if len(cap.Requirements) > 0 {
-				sb.WriteString(": " + strings.Join(cap.Requirements, ", "))
-			}
-			sb.WriteString("\n")
-		}
-		sb.WriteString("\n*Full spec: `.sv-memory/specs/capabilities/<cap>/spec.md` — drill down with `sv_graph_explore` or `sv_graph_query`.*\n")
+		renderCapabilities(&sb, p.Capabilities)
 	}
 
-	if p.Node == nil && len(p.Memories) == 0 && len(p.Changes) == 0 && len(p.Capabilities) == 0 && len(p.ExtraSnippets) == 0 {
+	if contextPackEmpty(p) {
 		return "No context found: no matching graph node and no path-scoped memories for the given path."
 	}
 	return strings.TrimSpace(sb.String())
+}
+
+// contextPackEmpty reports whether the pack carries nothing worth rendering.
+func contextPackEmpty(p *ContextPack) bool {
+	return p.Node == nil && len(p.Memories) == 0 && len(p.Changes) == 0 &&
+		len(p.Capabilities) == 0 && len(p.ExtraSnippets) == 0
+}
+
+// renderNodeHeader writes the node summary header (type, path, degree, hub warning).
+func renderNodeHeader(sb *strings.Builder, n *ContextNode) {
+	fmt.Fprintf(sb, "## Context Pack: `%s` (`%s`)\n", n.Label, n.ID)
+	fmt.Fprintf(sb, "- **Type:** `%s`", n.Type)
+	if n.Path != "" {
+		fmt.Fprintf(sb, " · **Path:** `%s`", n.Path)
+	}
+	sb.WriteString("\n")
+	fmt.Fprintf(sb, "- **Fan-in (dependents):** %d · **Fan-out (dependencies):** %d · **Degree:** %d\n", n.FanIn, n.FanOut, n.Degree)
+	community := "none"
+	if n.CommunityID > 0 {
+		community = fmt.Sprintf("ID %d", n.CommunityID)
+	}
+	fmt.Fprintf(sb, "- **Community:** %s\n", community)
+	if n.Degree > 10 {
+		sb.WriteString("- **Hub:** ⚠️ high connectivity — changes ripple; use `sv_graph_explain` before refactoring\n")
+	}
+}
+
+// renderSnippet writes the fenced source-code snippet with its language tag.
+func renderSnippet(sb *strings.Builder, p *ContextPack) {
+	ext := "text"
+	if p.Node != nil && p.Node.Path != "" {
+		if cleanExt := strings.TrimPrefix(filepath.Ext(p.Node.Path), "."); cleanExt != "" {
+			ext = cleanExt
+		}
+	}
+	fmt.Fprintf(sb, "\n### Source Code Snippet (L%d):\n```%s\n%s\n```\n", p.SnippetLine, ext, p.Snippet)
+}
+
+// renderNeighbors writes a neighbor list under the given header.
+func renderNeighbors(sb *strings.Builder, header string, neighbors []ContextNeighbor) {
+	sb.WriteString(header)
+	for _, d := range neighbors {
+		fmt.Fprintf(sb, "- `%s` (%s, %s)\n", d.Label, d.RelationType, strings.ToLower(d.Confidence))
+	}
+}
+
+// renderBlastRadius writes the transitive blast-radius list.
+func renderBlastRadius(sb *strings.Builder, nodes []graph.BlastRadiusNode) {
+	sb.WriteString("\n### 💥 Transitive blast radius (affected upstream consumers):\n")
+	for _, b := range nodes {
+		hubTag := ""
+		if b.IsHub {
+			hubTag = " ⚠️ Hub"
+		}
+		fmt.Fprintf(sb, "- `%s` (hop %d, %s)%s\n", b.ID, b.Depth, b.RelationType, hubTag)
+	}
+}
+
+// renderCapabilities writes the implemented-capabilities section.
+func renderCapabilities(sb *strings.Builder, caps []ContextCapability) {
+	sb.WriteString("\n### Capabilities implemented here:\n")
+	for _, cap := range caps {
+		fmt.Fprintf(sb, "- **%s** (%d requirement%s)", cap.CapabilityPath, cap.RequirementCount, plural(cap.RequirementCount))
+		if len(cap.Requirements) > 0 {
+			sb.WriteString(": " + strings.Join(cap.Requirements, ", "))
+		}
+		sb.WriteString("\n")
+	}
+	sb.WriteString("\n*Full spec: `.sv-memory/specs/capabilities/<cap>/spec.md` — drill down with `sv_graph_explore` or `sv_graph_query`.*\n")
 }
 
 func plural(n int) string {

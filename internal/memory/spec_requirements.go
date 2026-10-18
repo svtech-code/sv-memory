@@ -214,66 +214,91 @@ func mergeDeltasInTx(tx *sql.Tx, projectID, capabilityPath string, deltas []Delt
 func mergeRequirement(tx *sql.Tx, projectID, capabilityPath, op, name, renameTo, body string, scenarios []Scenario, now time.Time) error {
 	switch op {
 	case DeltaRenamed:
-		if name == "" || renameTo == "" || name == renameTo {
-			return fmt.Errorf("invalid rename %q -> %q", name, renameTo)
-		}
-		res, err := tx.Exec(`
-			UPDATE spec_capabilities SET requirement = ?, updated_at = ?
-			WHERE project_id = ? AND capability_path = ? AND requirement = ?`,
-			renameTo, now, projectID, capabilityPath, name)
-		if err != nil {
-			if strings.Contains(err.Error(), "UNIQUE") {
-				return fmt.Errorf("cannot rename %q: a requirement %q already exists in capability %q", name, renameTo, capabilityPath)
-			}
-			return fmt.Errorf("failed to rename requirement %q: %w", name, err)
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return fmt.Errorf("cannot rename %q: no such requirement in capability %q", name, capabilityPath)
-		}
+		return mergeRenamedRequirement(tx, projectID, capabilityPath, name, renameTo, now)
 	case DeltaAdded:
-		if name == "" {
-			return fmt.Errorf("added requirement name cannot be empty")
-		}
-		var count int
-		if err := tx.QueryRow(`
-			SELECT COUNT(*) FROM spec_capabilities
-			WHERE project_id = ? AND capability_path = ? AND requirement = ?`,
-			projectID, capabilityPath, name).Scan(&count); err != nil {
-			return fmt.Errorf("failed to check requirement existence: %w", err)
-		}
-		if count > 0 {
-			return fmt.Errorf("requirement %q already exists in capability %q — use MODIFIED", name, capabilityPath)
-		}
-		if _, err := tx.Exec(`
-			INSERT INTO spec_capabilities (id, project_id, capability_path, requirement, body, rfc2119, scenarios, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			newID(), projectID, capabilityPath, name, nullString(body),
-			marshalRFC2119(ExtractRFC2119(body)), marshalScenarios(scenarios), now); err != nil {
-			return fmt.Errorf("failed to add requirement %q: %w", name, err)
-		}
+		return mergeAddedRequirement(tx, projectID, capabilityPath, name, body, scenarios, now)
 	case DeltaModified:
-		if name == "" {
-			return fmt.Errorf("modified requirement name cannot be empty")
-		}
-		if _, err := tx.Exec(`
-			INSERT INTO spec_capabilities (id, project_id, capability_path, requirement, body, rfc2119, scenarios, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(project_id, capability_path, requirement) DO UPDATE SET
-				body = excluded.body,
-				rfc2119 = excluded.rfc2119,
-				scenarios = excluded.scenarios,
-				updated_at = excluded.updated_at`,
-			newID(), projectID, capabilityPath, name, nullString(body),
-			marshalRFC2119(ExtractRFC2119(body)), marshalScenarios(scenarios), now); err != nil {
-			return fmt.Errorf("failed to modify requirement %q: %w", name, err)
-		}
+		return mergeModifiedRequirement(tx, projectID, capabilityPath, name, body, scenarios, now)
 	case DeltaRemoved:
-		if _, err := tx.Exec(`
-			DELETE FROM spec_capabilities
-			WHERE project_id = ? AND capability_path = ? AND requirement = ?`,
-			projectID, capabilityPath, name); err != nil {
-			return fmt.Errorf("failed to remove requirement %q: %w", name, err)
+		return mergeRemovedRequirement(tx, projectID, capabilityPath, name)
+	}
+	return nil
+}
+
+// mergeRenamedRequirement renames a requirement, erroring on an invalid pair, a
+// name collision, or a missing source requirement.
+func mergeRenamedRequirement(tx *sql.Tx, projectID, capabilityPath, name, renameTo string, now time.Time) error {
+	if name == "" || renameTo == "" || name == renameTo {
+		return fmt.Errorf("invalid rename %q -> %q", name, renameTo)
+	}
+	res, err := tx.Exec(`
+		UPDATE spec_capabilities SET requirement = ?, updated_at = ?
+		WHERE project_id = ? AND capability_path = ? AND requirement = ?`,
+		renameTo, now, projectID, capabilityPath, name)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			return fmt.Errorf("cannot rename %q: a requirement %q already exists in capability %q", name, renameTo, capabilityPath)
 		}
+		return fmt.Errorf("failed to rename requirement %q: %w", name, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("cannot rename %q: no such requirement in capability %q", name, capabilityPath)
+	}
+	return nil
+}
+
+// mergeAddedRequirement inserts a new requirement, erroring when it already exists.
+func mergeAddedRequirement(tx *sql.Tx, projectID, capabilityPath, name, body string, scenarios []Scenario, now time.Time) error {
+	if name == "" {
+		return fmt.Errorf("added requirement name cannot be empty")
+	}
+	var count int
+	if err := tx.QueryRow(`
+		SELECT COUNT(*) FROM spec_capabilities
+		WHERE project_id = ? AND capability_path = ? AND requirement = ?`,
+		projectID, capabilityPath, name).Scan(&count); err != nil {
+		return fmt.Errorf("failed to check requirement existence: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("requirement %q already exists in capability %q — use MODIFIED", name, capabilityPath)
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO spec_capabilities (id, project_id, capability_path, requirement, body, rfc2119, scenarios, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		newID(), projectID, capabilityPath, name, nullString(body),
+		marshalRFC2119(ExtractRFC2119(body)), marshalScenarios(scenarios), now); err != nil {
+		return fmt.Errorf("failed to add requirement %q: %w", name, err)
+	}
+	return nil
+}
+
+// mergeModifiedRequirement upserts a requirement, replacing its whole block.
+func mergeModifiedRequirement(tx *sql.Tx, projectID, capabilityPath, name, body string, scenarios []Scenario, now time.Time) error {
+	if name == "" {
+		return fmt.Errorf("modified requirement name cannot be empty")
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO spec_capabilities (id, project_id, capability_path, requirement, body, rfc2119, scenarios, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(project_id, capability_path, requirement) DO UPDATE SET
+			body = excluded.body,
+			rfc2119 = excluded.rfc2119,
+			scenarios = excluded.scenarios,
+			updated_at = excluded.updated_at`,
+		newID(), projectID, capabilityPath, name, nullString(body),
+		marshalRFC2119(ExtractRFC2119(body)), marshalScenarios(scenarios), now); err != nil {
+		return fmt.Errorf("failed to modify requirement %q: %w", name, err)
+	}
+	return nil
+}
+
+// mergeRemovedRequirement deletes a requirement, lenient on an already-absent one.
+func mergeRemovedRequirement(tx *sql.Tx, projectID, capabilityPath, name string) error {
+	if _, err := tx.Exec(`
+		DELETE FROM spec_capabilities
+		WHERE project_id = ? AND capability_path = ? AND requirement = ?`,
+		projectID, capabilityPath, name); err != nil {
+		return fmt.Errorf("failed to remove requirement %q: %w", name, err)
 	}
 	return nil
 }
@@ -449,44 +474,70 @@ func ValidateChangeRequirements(db *sql.DB, projectID, changeID string) ([]Requi
 		return issues, nil
 	}
 
-	current, err := CapabilityRequirements(db, projectID, c.CapabilityPath)
+	currentScenarios, err := currentScenarioNames(db, projectID, c.CapabilityPath)
 	if err != nil {
 		return nil, err
 	}
-	currentScenarios := map[string][]string{}
+	return validateDeltaRequirements(deltas, currentScenarios), nil
+}
+
+// currentScenarioNames maps each current capability requirement to its scenario
+// names, for the MODIFIED scenario-drop check.
+func currentScenarioNames(db *sql.DB, projectID, capabilityPath string) (map[string][]string, error) {
+	current, err := CapabilityRequirements(db, projectID, capabilityPath)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string][]string{}
 	for _, r := range current {
-		var names []string
+		names := make([]string, 0, len(r.Scenarios))
 		for _, sc := range r.Scenarios {
 			names = append(names, sc.Name)
 		}
-		currentScenarios[r.Requirement] = names
+		out[r.Requirement] = names
 	}
+	return out, nil
+}
 
+// validateDeltaRequirements flags ADDED/MODIFIED bodies without RFC 2119
+// keywords and MODIFIED blocks that drop a scenario still present in the state.
+func validateDeltaRequirements(deltas []Delta, currentScenarios map[string][]string) []RequirementIssue {
+	var issues []RequirementIssue
 	for _, d := range deltas {
-		switch d.Op {
-		case DeltaAdded, DeltaModified:
-			for _, r := range d.Requirements {
-				body := strings.TrimSpace(r.Body)
-				if body != "" && len(ExtractRFC2119(body)) == 0 {
-					issues = append(issues, RequirementIssue{
-						Level:   "warn",
-						Message: fmt.Sprintf("Requirement %q has a body without RFC 2119 keywords (SHALL/MUST).", r.Name),
-					})
-				}
-				if d.Op == DeltaModified {
-					for _, name := range currentScenarios[r.Name] {
-						if !scenarioNamed(r.Scenarios, name) {
-							issues = append(issues, RequirementIssue{
-								Level:   "warn",
-								Message: fmt.Sprintf("MODIFIED %q drops scenario %q from the current capability state.", r.Name, name),
-							})
-						}
-					}
-				}
-			}
+		if d.Op != DeltaAdded && d.Op != DeltaModified {
+			continue
+		}
+		for _, r := range d.Requirements {
+			issues = append(issues, validateRequirementEdits(d.Op, r, currentScenarios[r.Name])...)
 		}
 	}
-	return issues, nil
+	return issues
+}
+
+// validateRequirementEdits returns the issues for a single ADDED/MODIFIED
+// requirement. The scenario-drop check applies only to MODIFIED and is silent
+// when the header is absent from the current state.
+func validateRequirementEdits(op string, r Requirement, currentNames []string) []RequirementIssue {
+	var issues []RequirementIssue
+	body := strings.TrimSpace(r.Body)
+	if body != "" && len(ExtractRFC2119(body)) == 0 {
+		issues = append(issues, RequirementIssue{
+			Level:   "warn",
+			Message: fmt.Sprintf("Requirement %q has a body without RFC 2119 keywords (SHALL/MUST).", r.Name),
+		})
+	}
+	if op != DeltaModified {
+		return issues
+	}
+	for _, name := range currentNames {
+		if !scenarioNamed(r.Scenarios, name) {
+			issues = append(issues, RequirementIssue{
+				Level:   "warn",
+				Message: fmt.Sprintf("MODIFIED %q drops scenario %q from the current capability state.", r.Name, name),
+			})
+		}
+	}
+	return issues
 }
 
 // scenarioNamed reports whether any scenario in the list carries the given name.

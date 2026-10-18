@@ -165,30 +165,9 @@ func MarkMemoryReviewed(db *sql.DB, projectID, id string) error {
 // candidates rather than the most recently created memories.
 func ReviewMemories(db *sql.DB, projectID string, limit int) ([]*MemoryReviewItem, error) {
 	// Relation counts in one grouped query (avoids an N+1 COUNT per memory).
-	// The rows must be fully consumed and closed before the next query on a
-	// single-connection DB (the writer pool has MaxOpenConns=1).
-	relCounts := make(map[string]int)
-	relRows, err := db.Query(`
-		SELECT mem_id, COUNT(*)
-		FROM (
-			SELECT source_id AS mem_id FROM memory_relations WHERE project_id = ?
-			UNION ALL
-			SELECT target_id AS mem_id FROM memory_relations WHERE project_id = ?
-		)
-		GROUP BY mem_id`, projectID, projectID)
+	relCounts, err := relationCountsByMemory(db, projectID)
 	if err != nil {
 		return nil, err
-	}
-	for relRows.Next() {
-		var mid string
-		var n int
-		if scanErr := relRows.Scan(&mid, &n); scanErr == nil {
-			relCounts[mid] = n
-		}
-	}
-	relRows.Close()
-	if rowsErr := relRows.Err(); rowsErr != nil {
-		return nil, rowsErr
 	}
 
 	rows, err := db.Query(`
@@ -205,78 +184,137 @@ func ReviewMemories(db *sql.DB, projectID string, limit int) ([]*MemoryReviewIte
 	now := time.Now()
 	var items []*MemoryReviewItem
 	for rows.Next() {
-		var r MemoryReviewItem
-		var createdAtStr string
-		var lastSeenAtStr, reviewAfterStr sql.NullString
-		var topicKey sql.NullString
-		var revisionCount, duplicateCount sql.NullInt64
-
-		r.Memory = &MemorySearchResult{}
-		err := rows.Scan(&r.Memory.ID, &r.Memory.Category, &r.Memory.What, &topicKey, &revisionCount, &duplicateCount, &createdAtStr, &lastSeenAtStr, &reviewAfterStr)
-		if err != nil {
-			return nil, err
+		item, scanErr := scanReviewRow(rows, relCounts, now)
+		if scanErr != nil {
+			return nil, scanErr
 		}
-		r.Memory.TopicKey = topicKey.String
-		if revisionCount.Valid {
-			r.RevisionCount = int(revisionCount.Int64)
-			r.Memory.RevisionCount = r.RevisionCount
-		}
-		if duplicateCount.Valid {
-			r.DuplicateCount = int(duplicateCount.Int64)
-			r.Memory.DuplicateCount = r.DuplicateCount
-		}
-		if t, err := parseTime(createdAtStr); err == nil {
-			r.Memory.CreatedAt = t
-			r.AgeDays = int(now.Sub(t).Hours() / 24)
-		}
-		if lastSeenAtStr.Valid && lastSeenAtStr.String != "" {
-			if t, err := parseTime(lastSeenAtStr.String); err == nil {
-				r.LastSeenDays = int(now.Sub(t).Hours() / 24)
-			}
-		}
-		if reviewAfterStr.Valid && reviewAfterStr.String != "" {
-			if t, err := parseTime(reviewAfterStr.String); err == nil {
-				r.NeedsReview = now.After(t)
-				r.ReviewDueDays = int(now.Sub(t).Hours() / 24)
-			}
-		}
-
-		r.RelationCount = relCounts[r.Memory.ID]
-
-		var reasons []string
-		if r.NeedsReview {
-			if r.ReviewDueDays > 0 {
-				reasons = append(reasons, fmt.Sprintf("due for review (policy, %d days overdue)", r.ReviewDueDays))
-			} else {
-				reasons = append(reasons, "due for review (policy)")
-			}
-		}
-		if r.AgeDays > 30 {
-			reasons = append(reasons, fmt.Sprintf("old (%d days)", r.AgeDays))
-		}
-		if r.LastSeenDays > 60 {
-			reasons = append(reasons, fmt.Sprintf("stale (last seen %d days ago)", r.LastSeenDays))
-		}
-		if r.DuplicateCount > 3 {
-			reasons = append(reasons, fmt.Sprintf("high duplicates (%d)", r.DuplicateCount))
-		}
-		if r.RevisionCount > 5 {
-			reasons = append(reasons, fmt.Sprintf("many revisions (%d)", r.RevisionCount))
-			r.NeedsConsolidation = true
-		}
-		if len(reasons) == 0 {
-			reasons = append(reasons, "recent and healthy")
-		}
-		r.Reason = strings.Join(reasons, "; ")
-		items = append(items, &r)
+		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
-	// Prioritize memories that actually need attention (policy review first,
-	// then stale/duplicate/consolidation candidates), then by age, so the
-	// limited output surfaces the most actionable items first.
+	sortReviewItems(items)
+	if limit > 0 && len(items) > limit {
+		items = items[:limit]
+	}
+	return items, nil
+}
+
+// relationCountsByMemory counts relation endpoints per memory in one grouped
+// query. The rows must be fully consumed and closed before the next query on a
+// single-connection DB (the writer pool has MaxOpenConns=1).
+func relationCountsByMemory(db *sql.DB, projectID string) (map[string]int, error) {
+	relCounts := make(map[string]int)
+	relRows, err := db.Query(`
+		SELECT mem_id, COUNT(*)
+		FROM (
+			SELECT source_id AS mem_id FROM memory_relations WHERE project_id = ?
+			UNION ALL
+			SELECT target_id AS mem_id FROM memory_relations WHERE project_id = ?
+		)
+		GROUP BY mem_id`, projectID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer relRows.Close()
+	for relRows.Next() {
+		var mid string
+		var n int
+		if scanErr := relRows.Scan(&mid, &n); scanErr == nil {
+			relCounts[mid] = n
+		}
+	}
+	if rowsErr := relRows.Err(); rowsErr != nil {
+		return nil, rowsErr
+	}
+	return relCounts, nil
+}
+
+// scanReviewRow reads one review row into a MemoryReviewItem, deriving ages,
+// review status, relation count, and the attention reason.
+func scanReviewRow(rows *sql.Rows, relCounts map[string]int, now time.Time) (*MemoryReviewItem, error) {
+	var r MemoryReviewItem
+	var createdAtStr string
+	var lastSeenAtStr, reviewAfterStr sql.NullString
+	var topicKey sql.NullString
+	var revisionCount, duplicateCount sql.NullInt64
+
+	r.Memory = &MemorySearchResult{}
+	if err := rows.Scan(&r.Memory.ID, &r.Memory.Category, &r.Memory.What, &topicKey, &revisionCount, &duplicateCount, &createdAtStr, &lastSeenAtStr, &reviewAfterStr); err != nil {
+		return nil, err
+	}
+	r.Memory.TopicKey = topicKey.String
+	if revisionCount.Valid {
+		r.RevisionCount = int(revisionCount.Int64)
+		r.Memory.RevisionCount = r.RevisionCount
+	}
+	if duplicateCount.Valid {
+		r.DuplicateCount = int(duplicateCount.Int64)
+		r.Memory.DuplicateCount = r.DuplicateCount
+	}
+	applyReviewTimes(&r, createdAtStr, lastSeenAtStr, reviewAfterStr, now)
+	r.RelationCount = relCounts[r.Memory.ID]
+	r.Reason = strings.Join(reviewReasons(&r), "; ")
+	return &r, nil
+}
+
+// applyReviewTimes fills the age/last-seen/review-due fields from raw timestamps.
+func applyReviewTimes(r *MemoryReviewItem, createdAtStr string, lastSeenAt, reviewAfter sql.NullString, now time.Time) {
+	if t, err := parseTime(createdAtStr); err == nil {
+		r.Memory.CreatedAt = t
+		r.AgeDays = daysSince(now, t)
+	}
+	if lastSeenAt.Valid && lastSeenAt.String != "" {
+		if t, err := parseTime(lastSeenAt.String); err == nil {
+			r.LastSeenDays = daysSince(now, t)
+		}
+	}
+	if reviewAfter.Valid && reviewAfter.String != "" {
+		if t, err := parseTime(reviewAfter.String); err == nil {
+			r.NeedsReview = now.After(t)
+			r.ReviewDueDays = daysSince(now, t)
+		}
+	}
+}
+
+// daysSince returns the whole-day distance from t to now.
+func daysSince(now, t time.Time) int {
+	return int(now.Sub(t).Hours() / 24)
+}
+
+// reviewReasons computes the human-readable attention reasons for a review item.
+func reviewReasons(r *MemoryReviewItem) []string {
+	var reasons []string
+	if r.NeedsReview {
+		if r.ReviewDueDays > 0 {
+			reasons = append(reasons, fmt.Sprintf("due for review (policy, %d days overdue)", r.ReviewDueDays))
+		} else {
+			reasons = append(reasons, "due for review (policy)")
+		}
+	}
+	if r.AgeDays > 30 {
+		reasons = append(reasons, fmt.Sprintf("old (%d days)", r.AgeDays))
+	}
+	if r.LastSeenDays > 60 {
+		reasons = append(reasons, fmt.Sprintf("stale (last seen %d days ago)", r.LastSeenDays))
+	}
+	if r.DuplicateCount > 3 {
+		reasons = append(reasons, fmt.Sprintf("high duplicates (%d)", r.DuplicateCount))
+	}
+	if r.RevisionCount > 5 {
+		reasons = append(reasons, fmt.Sprintf("many revisions (%d)", r.RevisionCount))
+		r.NeedsConsolidation = true
+	}
+	if len(reasons) == 0 {
+		reasons = append(reasons, "recent and healthy")
+	}
+	return reasons
+}
+
+// sortReviewItems orders review-worthy items first (needs-attention, then
+// policy-review), then by age, so a limited output surfaces the most actionable.
+func sortReviewItems(items []*MemoryReviewItem) {
 	sort.SliceStable(items, func(i, j int) bool {
 		ineed := items[i].Reason != "recent and healthy"
 		jneed := items[j].Reason != "recent and healthy"
@@ -288,11 +326,6 @@ func ReviewMemories(db *sql.DB, projectID string, limit int) ([]*MemoryReviewIte
 		}
 		return items[i].AgeDays > items[j].AgeDays
 	})
-
-	if limit > 0 && len(items) > limit {
-		items = items[:limit]
-	}
-	return items, nil
 }
 
 // transientCategories are safe to prune when stale: journals, Q&A, discussions,
@@ -318,21 +351,7 @@ func PruneStaleMemories(db *sql.DB, projectID string, olderThanDays int, categor
 	}
 	cutoff := time.Now().Add(-time.Duration(olderThanDays) * 24 * time.Hour)
 
-	cats := transientCategories
-	if trimmed := strings.TrimSpace(category); trimmed != "" {
-		cats = map[string]bool{}
-		for _, c := range strings.Split(trimmed, ",") {
-			if c = strings.TrimSpace(c); c != "" {
-				cats[c] = true
-			}
-		}
-	}
-	catList := make([]string, 0, len(cats))
-	for c := range cats {
-		catList = append(catList, c)
-	}
-	sort.Strings(catList)
-
+	catList := pruneCategoryList(category)
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(catList)), ",")
 	args := []interface{}{projectID}
 	for _, c := range catList {
@@ -352,6 +371,43 @@ func PruneStaleMemories(db *sql.DB, projectID string, olderThanDays int, categor
 	}
 	defer rows.Close()
 
+	items, err := scanStaleMemoryRows(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	if apply && len(items) > 0 {
+		if err := softDeleteMemories(db, projectID, items); err != nil {
+			return nil, err
+		}
+	}
+	return items, nil
+}
+
+// pruneCategoryList resolves the category filter to a sorted list: the default
+// transient set when category is empty, otherwise the explicit (comma-separated)
+// categories.
+func pruneCategoryList(category string) []string {
+	cats := transientCategories
+	if trimmed := strings.TrimSpace(category); trimmed != "" {
+		cats = map[string]bool{}
+		for _, c := range strings.Split(trimmed, ",") {
+			if c = strings.TrimSpace(c); c != "" {
+				cats[c] = true
+			}
+		}
+	}
+	list := make([]string, 0, len(cats))
+	for c := range cats {
+		list = append(list, c)
+	}
+	sort.Strings(list)
+	return list
+}
+
+// scanStaleMemoryRows reads stale-memory rows (best-effort; unreadable rows are
+// skipped).
+func scanStaleMemoryRows(rows *sql.Rows) ([]*MemorySearchResult, error) {
 	var items []*MemorySearchResult
 	for rows.Next() {
 		var r MemorySearchResult
@@ -371,23 +427,22 @@ func PruneStaleMemories(db *sql.DB, projectID string, olderThanDays int, categor
 		r.CreatedAt = parseTimeOrNow(createdAtStr)
 		items = append(items, &r)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
+	return items, rows.Err()
+}
 
-	if apply && len(items) > 0 {
-		ids := make([]interface{}, 0, len(items))
-		idPlaceholders := make([]string, 0, len(items))
-		for _, m := range items {
-			idPlaceholders = append(idPlaceholders, "?")
-			ids = append(ids, m.ID)
-		}
-		query := "UPDATE memories SET deleted_at = ? WHERE project_id = ? AND id IN (" +
-			strings.Join(idPlaceholders, ",") + ")"
-		execArgs := append([]interface{}{time.Now(), projectID}, ids...)
-		if _, err := db.Exec(query, execArgs...); err != nil {
-			return nil, fmt.Errorf("failed to soft-delete stale memories: %w", err)
-		}
+// softDeleteMemories soft-deletes the given memories by ID.
+func softDeleteMemories(db *sql.DB, projectID string, items []*MemorySearchResult) error {
+	idPlaceholders := make([]string, 0, len(items))
+	ids := make([]interface{}, 0, len(items))
+	for _, m := range items {
+		idPlaceholders = append(idPlaceholders, "?")
+		ids = append(ids, m.ID)
 	}
-	return items, nil
+	query := "UPDATE memories SET deleted_at = ? WHERE project_id = ? AND id IN (" +
+		strings.Join(idPlaceholders, ",") + ")"
+	execArgs := append([]interface{}{time.Now(), projectID}, ids...)
+	if _, err := db.Exec(query, execArgs...); err != nil {
+		return fmt.Errorf("failed to soft-delete stale memories: %w", err)
+	}
+	return nil
 }

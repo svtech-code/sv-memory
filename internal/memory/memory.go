@@ -421,40 +421,40 @@ func DeleteSession(db *sql.DB, id string) error {
 
 func DeleteProject(db *sql.DB, id string, hard bool) error {
 	if hard {
-		tx, err := db.Begin()
-		if err != nil {
-			return err
-		}
-		defer tx.Rollback()
-
-		if _, err := tx.Exec("DELETE FROM memory_relations WHERE project_id=?", id); err != nil {
-			return fmt.Errorf("failed to delete relations: %w", err)
-		}
-		if _, err := tx.Exec("DELETE FROM graph_edges WHERE project_id=?", id); err != nil {
-			return fmt.Errorf("failed to delete graph edges: %w", err)
-		}
-		if _, err := tx.Exec("DELETE FROM graph_nodes WHERE project_id=?", id); err != nil {
-			return fmt.Errorf("failed to delete graph nodes: %w", err)
-		}
-		if _, err := tx.Exec("DELETE FROM graph_files_meta WHERE project_id=?", id); err != nil {
-			return fmt.Errorf("failed to delete file meta: %w", err)
-		}
-		if _, err := tx.Exec("DELETE FROM sessions WHERE project_id=?", id); err != nil {
-			return fmt.Errorf("failed to delete sessions: %w", err)
-		}
-		if _, err := tx.Exec("DELETE FROM memories WHERE project_id=?", id); err != nil {
-			return fmt.Errorf("failed to delete memories: %w", err)
-		}
-		if _, err := tx.Exec("DELETE FROM projects WHERE id=?", id); err != nil {
-			return fmt.Errorf("failed to delete project: %w", err)
-		}
-		return tx.Commit()
+		return hardDeleteProject(db, id)
 	}
+	return softDeleteProject(db, id)
+}
 
-	// Soft delete: mark memories as deleted and clean the derived data
-	// (sessions, relations, graph) in one transaction so a failure cannot leave
-	// the project partially cleaned. The graph is rebuildable via sync, so it
-	// is removed for consistency with the hard-delete path.
+// hardDeleteProject permanently removes the project and all derived data in one
+// transaction.
+func hardDeleteProject(db *sql.DB, id string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := deleteRelationsAndGraph(tx, id); err != nil {
+		return err
+	}
+	if err := deleteSessions(tx, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM memories WHERE project_id=?", id); err != nil {
+		return fmt.Errorf("failed to delete memories: %w", err)
+	}
+	if _, err := tx.Exec("DELETE FROM projects WHERE id=?", id); err != nil {
+		return fmt.Errorf("failed to delete project: %w", err)
+	}
+	return tx.Commit()
+}
+
+// softDeleteProject soft-deletes the memories and cleans derived data (sessions,
+// relations, graph) in one transaction so a failure cannot leave the project
+// partially cleaned. The graph is rebuildable via sync, so it is removed for
+// consistency with the hard-delete path.
+func softDeleteProject(db *sql.DB, id string) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -472,9 +472,25 @@ func DeleteProject(db *sql.DB, id string, hard bool) error {
 	if _, err := tx.Exec("UPDATE memories SET deleted_at=? WHERE project_id=? AND deleted_at IS NULL", time.Now(), id); err != nil {
 		return fmt.Errorf("failed to soft-delete memories: %w", err)
 	}
+	if err := deleteSessions(tx, id); err != nil {
+		return err
+	}
+	if err := deleteRelationsAndGraph(tx, id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// deleteSessions removes the project's sessions.
+func deleteSessions(tx *sql.Tx, id string) error {
 	if _, err := tx.Exec("DELETE FROM sessions WHERE project_id=?", id); err != nil {
 		return fmt.Errorf("failed to delete sessions: %w", err)
 	}
+	return nil
+}
+
+// deleteRelationsAndGraph removes the project's memory relations and graph data.
+func deleteRelationsAndGraph(tx *sql.Tx, id string) error {
 	if _, err := tx.Exec("DELETE FROM memory_relations WHERE project_id=?", id); err != nil {
 		return fmt.Errorf("failed to delete relations: %w", err)
 	}
@@ -487,7 +503,7 @@ func DeleteProject(db *sql.DB, id string, hard bool) error {
 	if _, err := tx.Exec("DELETE FROM graph_files_meta WHERE project_id=?", id); err != nil {
 		return fmt.Errorf("failed to delete graph file metadata: %w", err)
 	}
-	return tx.Commit()
+	return nil
 }
 
 func DeleteMemory(db *sql.DB, projectID, id string, hard bool) error {

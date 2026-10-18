@@ -144,71 +144,104 @@ func WriteSpecMirror(db *sql.DB, projectID, projPath string) error {
 		return fmt.Errorf("failed to create specs/archive dir: %w", err)
 	}
 
-	// Index of live mirror files so orphaned (deleted) changes are removed.
-	live := map[string]bool{}
-
-	for _, c := range all {
-		body := ChangeToMarkdown(c)
-		if deltas, dErr := LoadChangeDeltas(db, projectID, c.ID); dErr == nil && len(deltas) > 0 {
-			body += "\n\n" + DeltasToMarkdown(deltas)
-		}
-		body = security.SanitizeText(body)
-		if c.Status == ChangeStatusArchived || c.Status == ChangeStatusRejected {
-			// Move to archive with a date prefix for chronological ordering.
-			fileName := fmt.Sprintf("%s-%s.md", c.CreatedAt.Format("2006-01-02"), c.Slug)
-			if err = writeMirrorFile(filepath.Join(archiveDir, fileName), body); err != nil {
-				return err
-			}
-			continue
-		}
-		live[c.Slug+".md"] = true
-		if err = writeMirrorFile(filepath.Join(changesDir, c.Slug+".md"), body); err != nil {
-			return err
-		}
+	live, err := writeChangeMirrors(db, projectID, all, changesDir, archiveDir)
+	if err != nil {
+		return err
 	}
 
-	// If openspec/changes exists, also synchronize modular OpenSpec files
-	openSpecChangesDir := filepath.Join(projPath, "openspec", "changes")
-	if fi, sErr := os.Stat(openSpecChangesDir); sErr == nil && fi.IsDir() {
-		for _, c := range all {
-			if c.Status == ChangeStatusArchived || c.Status == ChangeStatusRejected {
-				continue
-			}
-			modDir := filepath.Join(openSpecChangesDir, c.Slug)
-			if mErr := os.MkdirAll(modDir, 0755); mErr == nil {
-				_ = writeMirrorFile(filepath.Join(modDir, "proposal.md"), ChangeToMarkdown(c))
-				if c.Design != "" {
-					_ = writeMirrorFile(filepath.Join(modDir, "design.md"), c.Design)
-				}
-				if c.Tasks != "" {
-					_ = writeMirrorFile(filepath.Join(modDir, "tasks.md"), c.Tasks)
-				}
-				if deltas, dErr := LoadChangeDeltas(db, projectID, c.ID); dErr == nil && len(deltas) > 0 {
-					_ = writeMirrorFile(filepath.Join(modDir, "specs.md"), DeltasToMarkdown(deltas))
-				}
-			}
-		}
-	}
+	syncOpenSpecChanges(db, projectID, projPath, all)
 
 	// Remove mirrors of changes that no longer exist (soft-deleted projects /
 	// cleaned stores) so the mirror never lags behind the authoritative DB.
-	entries, err := os.ReadDir(changesDir)
-	if err == nil {
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-				continue
-			}
-			if !live[e.Name()] {
-				_ = os.Remove(filepath.Join(changesDir, e.Name()))
-			}
-		}
-	}
+	removeOrphanMirrors(changesDir, live)
 
 	// Project the materialized current state per capability.
 	if err = writeCapabilityMirrors(db, projectID, projPath); err != nil {
 		return err
 	}
 	return nil
+}
+
+// writeChangeMirrors writes every change mirror (active under changesDir,
+// terminal under archiveDir) and returns the index of live mirror filenames.
+func writeChangeMirrors(db *sql.DB, projectID string, all []*Change, changesDir, archiveDir string) (map[string]bool, error) {
+	live := map[string]bool{}
+	for _, c := range all {
+		body := changeMirrorBody(db, projectID, c)
+		if c.Status == ChangeStatusArchived || c.Status == ChangeStatusRejected {
+			// Move to archive with a date prefix for chronological ordering.
+			fileName := fmt.Sprintf("%s-%s.md", c.CreatedAt.Format("2006-01-02"), c.Slug)
+			if err := writeMirrorFile(filepath.Join(archiveDir, fileName), body); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		live[c.Slug+".md"] = true
+		if err := writeMirrorFile(filepath.Join(changesDir, c.Slug+".md"), body); err != nil {
+			return nil, err
+		}
+	}
+	return live, nil
+}
+
+// changeMirrorBody renders a change plus its delta requirements as sanitized markdown.
+func changeMirrorBody(db *sql.DB, projectID string, c *Change) string {
+	body := ChangeToMarkdown(c)
+	if deltas, err := LoadChangeDeltas(db, projectID, c.ID); err == nil && len(deltas) > 0 {
+		body += "\n\n" + DeltasToMarkdown(deltas)
+	}
+	return security.SanitizeText(body)
+}
+
+// syncOpenSpecChanges mirrors active changes into modular openspec/changes/<slug>/
+// files when that directory exists.
+func syncOpenSpecChanges(db *sql.DB, projectID, projPath string, all []*Change) {
+	openSpecChangesDir := filepath.Join(projPath, "openspec", "changes")
+	fi, sErr := os.Stat(openSpecChangesDir)
+	if sErr != nil || !fi.IsDir() {
+		return
+	}
+	for _, c := range all {
+		if c.Status == ChangeStatusArchived || c.Status == ChangeStatusRejected {
+			continue
+		}
+		writeOpenSpecChangeDir(db, projectID, openSpecChangesDir, c)
+	}
+}
+
+// writeOpenSpecChangeDir writes the modular proposal/design/tasks/specs files for
+// one change under the OpenSpec changes directory.
+func writeOpenSpecChangeDir(db *sql.DB, projectID, openSpecChangesDir string, c *Change) {
+	modDir := filepath.Join(openSpecChangesDir, c.Slug)
+	if mErr := os.MkdirAll(modDir, 0755); mErr != nil {
+		return
+	}
+	_ = writeMirrorFile(filepath.Join(modDir, "proposal.md"), ChangeToMarkdown(c))
+	if c.Design != "" {
+		_ = writeMirrorFile(filepath.Join(modDir, "design.md"), c.Design)
+	}
+	if c.Tasks != "" {
+		_ = writeMirrorFile(filepath.Join(modDir, "tasks.md"), c.Tasks)
+	}
+	if deltas, dErr := LoadChangeDeltas(db, projectID, c.ID); dErr == nil && len(deltas) > 0 {
+		_ = writeMirrorFile(filepath.Join(modDir, "specs.md"), DeltasToMarkdown(deltas))
+	}
+}
+
+// removeOrphanMirrors deletes mirror files whose change no longer exists.
+func removeOrphanMirrors(changesDir string, live map[string]bool) {
+	entries, err := os.ReadDir(changesDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		if !live[e.Name()] {
+			_ = os.Remove(filepath.Join(changesDir, e.Name()))
+		}
+	}
 }
 
 // writeMirrorFile writes a spec mirror file atomically (tmp + rename).
@@ -402,32 +435,28 @@ func readSingleFileSpecChange(projPath, slug string) (*Change, []Delta, bool, er
 }
 
 func buildChangeUpdate(existing, parsed *Change) (ChangeUpdate, bool) {
-	upd := ChangeUpdate{}
-	if parsed.Title != "" && parsed.Title != existing.Title {
-		upd.Title = &parsed.Title
-	}
-	if parsed.What != "" && parsed.What != existing.What {
-		upd.What = &parsed.What
-	}
-	if parsed.Goal != "" && parsed.Goal != existing.Goal {
-		upd.Goal = &parsed.Goal
-	}
-	if parsed.WherePath != "" && parsed.WherePath != existing.WherePath {
-		upd.WherePath = &parsed.WherePath
-	}
-	if parsed.CapabilityPath != "" && parsed.CapabilityPath != existing.CapabilityPath {
-		upd.CapabilityPath = &parsed.CapabilityPath
-	}
-	if parsed.Design != "" && parsed.Design != existing.Design {
-		upd.Design = &parsed.Design
-	}
-	if parsed.Tasks != "" && parsed.Tasks != existing.Tasks {
-		upd.Tasks = &parsed.Tasks
+	upd := ChangeUpdate{
+		Title:          changedField(existing.Title, parsed.Title),
+		What:           changedField(existing.What, parsed.What),
+		Goal:           changedField(existing.Goal, parsed.Goal),
+		WherePath:      changedField(existing.WherePath, parsed.WherePath),
+		CapabilityPath: changedField(existing.CapabilityPath, parsed.CapabilityPath),
+		Design:         changedField(existing.Design, parsed.Design),
+		Tasks:          changedField(existing.Tasks, parsed.Tasks),
 	}
 
 	changed := upd.Title != nil || upd.What != nil || upd.Goal != nil ||
 		upd.WherePath != nil || upd.CapabilityPath != nil || upd.Design != nil || upd.Tasks != nil
 	return upd, changed
+}
+
+// changedField returns a pointer to val when it is non-empty and differs from
+// current, signalling an overwrite during reconciliation; otherwise nil.
+func changedField(current, val string) *string {
+	if val != "" && val != current {
+		return &val
+	}
+	return nil
 }
 
 // stripDeltaSections removes everything from the first delta section header

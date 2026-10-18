@@ -17,55 +17,63 @@ func extractSubwords(text string) SubwordVector {
 	if text == "" {
 		return vec
 	}
+	accumulateSubwordWeights(vec, tokenizeSubwords(strings.ToLower(text)))
+	l2Normalize(vec)
+	return vec
+}
 
-	text = strings.ToLower(text)
+// tokenizeSubwords splits text into word tokens made of letters/digits plus
+// '-'/'_'; every other rune is a separator.
+func tokenizeSubwords(text string) []string {
 	var current strings.Builder
 	var words []string
-
 	for _, r := range text {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' {
 			current.WriteRune(r)
-		} else {
-			if current.Len() > 0 {
-				words = append(words, current.String())
-				current.Reset()
-			}
+			continue
+		}
+		if current.Len() > 0 {
+			words = append(words, current.String())
+			current.Reset()
 		}
 	}
 	if current.Len() > 0 {
 		words = append(words, current.String())
 	}
+	return words
+}
 
+// accumulateSubwordWeights adds word-unigram and character-3-gram weights to vec,
+// skipping stop words.
+func accumulateSubwordWeights(vec SubwordVector, words []string) {
 	for _, w := range words {
 		if stopWords[w] {
 			continue
 		}
-		// Word unigram weight
+		// Word unigram weight.
 		vec["w:"+w] += 2.0
 
-		// Character 3-grams for substring and morphological similarity
+		// Character 3-grams for substring and morphological similarity.
 		runes := []rune(w)
-		if len(runes) >= 3 {
-			for i := 0; i <= len(runes)-3; i++ {
-				gram := string(runes[i : i+3])
-				vec["g:"+gram] += 0.5
-			}
+		for i := 0; i+3 <= len(runes); i++ {
+			vec["g:"+string(runes[i:i+3])] += 0.5
 		}
 	}
+}
 
-	// L2 Normalize
+// l2Normalize normalizes vec in place to unit L2 length.
+func l2Normalize(vec SubwordVector) {
 	var sumSq float64
 	for _, val := range vec {
 		sumSq += val * val
 	}
-	if sumSq > 0 {
-		norm := math.Sqrt(sumSq)
-		for k, val := range vec {
-			vec[k] = val / norm
-		}
+	if sumSq <= 0 {
+		return
 	}
-
-	return vec
+	norm := math.Sqrt(sumSq)
+	for k, val := range vec {
+		vec[k] = val / norm
+	}
 }
 
 // CosineSimilarity computes the cosine similarity between two normalized SubwordVectors (0.0 to 1.0).
