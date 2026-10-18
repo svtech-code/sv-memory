@@ -46,62 +46,79 @@ func (t *TreeSitterExtractor) Extract(content []byte, relPath, ext string) ([]Sy
 	}
 
 	root := tree.RootNode()
-	var symbols []Symbol
-	var imports []string
-
-	switch ext {
-	case ".go":
-		symbols, imports = parseGo(root, lang, content)
-	case ".py":
-		symbols, imports = parsePython(root, lang, content)
-	case ".js", ".jsx", ".ts", ".tsx":
-		symbols, imports = parseJavascript(root, lang, content)
-	case ".php":
-		symbols, imports = parsePhp(root, lang, content)
-	case ".rs":
-		symbols, imports = parseRust(root, lang, content)
-	case ".rb":
-		symbols, imports = parseRuby(root, lang, content)
-	case ".java":
-		symbols, imports = parseJava(root, lang, content)
-	case ".html":
-		symbols, imports = parseHtml(root, lang, content)
-	case ".css":
-		symbols, imports = parseCss(root, lang, content)
-	default:
+	symbols, imports := parseDispatch(root, lang, content, ext)
+	if symbols == nil && imports == nil {
 		return t.regexFallback.Extract(content, relPath, ext)
 	}
 
-	// Global rationale comment extraction pass
-	traverse(root, func(n *gotreesitter.Node) {
-		nodeType := n.Type(lang)
-		if strings.Contains(nodeType, "comment") {
-			text := n.Text(content)
-			cleanText := strings.TrimLeft(text, "/#* \t")
-			cleanText = strings.TrimRight(cleanText, "*/ \t\r\n")
-
-			upperClean := strings.ToUpper(cleanText)
-			prefixes := []string{"NOTE:", "WHY:", "HACK:", "TODO:", "FIXME:"}
-			hasPrefix := false
-			for _, p := range prefixes {
-				if strings.HasPrefix(upperClean, p) {
-					hasPrefix = true
-					break
-				}
-			}
-
-			if hasPrefix {
-				symbols = append(symbols, Symbol{
-					Name:     cleanText,
-					Type:     schema.NodeTypeRationale,
-					Line:     int(n.StartPoint().Row) + 1,
-					Exported: false,
-				})
-			}
-		}
-	})
+	symbols = append(symbols, extractRationaleComments(root, lang, content)...)
 
 	return symbols, imports, nil
+}
+
+// parseDispatch routes the parsed root node to the language-specific symbol and
+// import extractor. It returns (nil, nil) when the extension is unsupported so
+// the caller can fall back to the regex extractor.
+func parseDispatch(root *gotreesitter.Node, lang *gotreesitter.Language, content []byte, ext string) ([]Symbol, []string) {
+	switch ext {
+	case ".go":
+		return parseGo(root, lang, content)
+	case ".py":
+		return parsePython(root, lang, content)
+	case ".js", ".jsx", ".ts", ".tsx":
+		return parseJavascript(root, lang, content)
+	case ".php":
+		return parsePhp(root, lang, content)
+	case ".rs":
+		return parseRust(root, lang, content)
+	case ".rb":
+		return parseRuby(root, lang, content)
+	case ".java":
+		return parseJava(root, lang, content)
+	case ".html":
+		return parseHtml(root, lang, content)
+	case ".css":
+		return parseCss(root, lang, content)
+	}
+	return nil, nil
+}
+
+// rationaleTagPrefixes are the comment markers that promote a comment into a
+// rationale symbol.
+var rationaleTagPrefixes = []string{"NOTE:", "WHY:", "HACK:", "TODO:", "FIXME:"}
+
+// extractRationaleComments walks the tree and turns tagged comments
+// (NOTE/WHY/HACK/TODO/FIXME) into rationale symbols.
+func extractRationaleComments(root *gotreesitter.Node, lang *gotreesitter.Language, content []byte) []Symbol {
+	var symbols []Symbol
+	traverse(root, func(n *gotreesitter.Node) {
+		if !strings.Contains(n.Type(lang), "comment") {
+			return
+		}
+		if text, ok := rationaleText(n.Text(content)); ok {
+			symbols = append(symbols, Symbol{
+				Name:     text,
+				Type:     schema.NodeTypeRationale,
+				Line:     nodeLine(n),
+				Exported: false,
+			})
+		}
+	})
+	return symbols
+}
+
+// rationaleText trims comment decoration and reports whether the text carries a
+// rationale tag prefix.
+func rationaleText(raw string) (string, bool) {
+	clean := strings.TrimLeft(raw, "/#* \t")
+	clean = strings.TrimRight(clean, "*/ \t\r\n")
+	upper := strings.ToUpper(clean)
+	for _, p := range rationaleTagPrefixes {
+		if strings.HasPrefix(upper, p) {
+			return clean, true
+		}
+	}
+	return "", false
 }
 
 // ExtractCallRefs returns AST-precision call sites (callee + 1-based
@@ -161,19 +178,19 @@ func callCallee(n *gotreesitter.Node, lang *gotreesitter.Language, content []byt
 		return ""
 	}
 
-	// Find the callee: the function/field name at the head of the call.
-	// Walk children for identifier/property_identifier/field_identifier/name
-	// nodes, taking the LAST one (deepest/member access).
+	return lastCalleeChild(n, lang, content)
+}
+
+// lastCalleeChild walks the direct children of a call node and returns the
+// trailing identifier/member name (deepest member access wins).
+func lastCalleeChild(n *gotreesitter.Node, lang *gotreesitter.Language, content []byte) string {
 	var callee string
 	for i := 0; i < n.ChildCount(); i++ {
 		child := n.Child(i)
-		ct := child.Type(lang)
-		switch ct {
+		switch child.Type(lang) {
 		case "identifier", "property_identifier", "field_identifier", "name", "method":
 			callee = child.Text(content)
 		case "scoped_identifier", "member_expression", "attribute":
-			// foo.bar(...) / Class.method(...): drill into the object to get
-			// the trailing field name.
 			callee = memberCallee(child, lang, content)
 		}
 	}
@@ -189,8 +206,7 @@ func memberCallee(n *gotreesitter.Node, lang *gotreesitter.Language, content []b
 	var last string
 	for i := 0; i < n.ChildCount(); i++ {
 		child := n.Child(i)
-		ct := child.Type(lang)
-		switch ct {
+		switch child.Type(lang) {
 		case "property_identifier", "field_identifier", "identifier", "name":
 			last = child.Text(content)
 		case "member_expression", "scoped_identifier":
@@ -238,609 +254,4 @@ func traverse(node *gotreesitter.Node, visitor func(*gotreesitter.Node)) {
 	for i := 0; i < count; i++ {
 		traverse(node.Child(i), visitor)
 	}
-}
-
-func parseGo(root *gotreesitter.Node, lang *gotreesitter.Language, content []byte) ([]Symbol, []string) {
-	var symbols []Symbol
-	var imports []string
-
-	traverse(root, func(n *gotreesitter.Node) {
-		nodeType := n.Type(lang)
-		switch nodeType {
-		case "function_declaration":
-			var name string
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				if child.Type(lang) == "identifier" {
-					name = child.Text(content)
-					break
-				}
-			}
-			if name != "" && name != "init" && name != "main" {
-				exported := name[0] >= 'A' && name[0] <= 'Z'
-				symbols = append(symbols, Symbol{
-					Name:     name,
-					Type:     "function",
-					Line:     int(n.StartPoint().Row) + 1,
-					Exported: exported,
-				})
-			}
-
-		case "method_declaration":
-			var name string
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				if child.Type(lang) == "field_identifier" || child.Type(lang) == "identifier" {
-					name = child.Text(content)
-				}
-			}
-			if name != "" {
-				exported := name[0] >= 'A' && name[0] <= 'Z'
-				symbols = append(symbols, Symbol{
-					Name:     name,
-					Type:     "function",
-					Line:     int(n.StartPoint().Row) + 1,
-					Exported: exported,
-				})
-			}
-
-		case "type_spec":
-			isStruct := false
-			var name string
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				switch t := child.Type(lang); t {
-				case "type_identifier":
-					name = child.Text(content)
-				case "struct_type", "interface_type":
-					isStruct = true
-				}
-			}
-			if name != "" && isStruct {
-				exported := name[0] >= 'A' && name[0] <= 'Z'
-				symbols = append(symbols, Symbol{
-					Name:     name,
-					Type:     "class",
-					Line:     int(n.StartPoint().Row) + 1,
-					Exported: exported,
-				})
-			}
-
-		case "import_spec":
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				t := child.Type(lang)
-				if t == "import_path" || t == "string_literal" || t == "interpreted_string_literal" || t == "raw_string_literal" {
-					path := child.Text(content)
-					path = strings.Trim(path, `"`+"`")
-					if path != "" {
-						imports = append(imports, path)
-					}
-				}
-			}
-		}
-	})
-
-	return symbols, imports
-}
-
-func parsePython(root *gotreesitter.Node, lang *gotreesitter.Language, content []byte) ([]Symbol, []string) {
-	var symbols []Symbol
-	var imports []string
-
-	traverse(root, func(n *gotreesitter.Node) {
-		nodeType := n.Type(lang)
-		switch nodeType {
-		case "function_definition":
-			var name string
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				if child.Type(lang) == "identifier" {
-					name = child.Text(content)
-					break
-				}
-			}
-			if name != "" {
-				symbols = append(symbols, Symbol{
-					Name:     name,
-					Type:     "function",
-					Line:     int(n.StartPoint().Row) + 1,
-					Exported: true,
-				})
-			}
-
-		case "class_definition":
-			var name string
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				if child.Type(lang) == "identifier" {
-					name = child.Text(content)
-					break
-				}
-			}
-			if name != "" {
-				symbols = append(symbols, Symbol{
-					Name:     name,
-					Type:     "class",
-					Line:     int(n.StartPoint().Row) + 1,
-					Exported: true,
-				})
-			}
-
-		case "import_statement":
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				if child.Type(lang) == "dotted_name" || child.Type(lang) == "aliased_import" {
-					text := child.Text(content)
-					if child.Type(lang) == "aliased_import" {
-						for j := 0; j < child.ChildCount(); j++ {
-							if child.Child(j).Type(lang) == "dotted_name" {
-								text = child.Child(j).Text(content)
-								break
-							}
-						}
-					}
-					imports = append(imports, text)
-				}
-			}
-
-		case "import_from_statement":
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				if child.Type(lang) == "dotted_name" || child.Type(lang) == "relative_import" {
-					imports = append(imports, child.Text(content))
-					break
-				}
-			}
-		}
-	})
-
-	return symbols, imports
-}
-
-//nolint:gocyclo // large AST dispatch for JS/TS; refactor later
-func parseJavascript(root *gotreesitter.Node, lang *gotreesitter.Language, content []byte) ([]Symbol, []string) {
-	var symbols []Symbol
-	var imports []string
-
-	traverse(root, func(n *gotreesitter.Node) {
-		nodeType := n.Type(lang)
-		switch nodeType {
-		case "function_declaration":
-			var name string
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				if child.Type(lang) == "identifier" {
-					name = child.Text(content)
-					break
-				}
-			}
-			if name != "" {
-				exported := false
-				if parent := n.Parent(); parent != nil {
-					pType := parent.Type(lang)
-					if pType == "export_statement" || pType == "export_specifier" {
-						exported = true
-					}
-				}
-				symbols = append(symbols, Symbol{
-					Name:     name,
-					Type:     "function",
-					Line:     int(n.StartPoint().Row) + 1,
-					Exported: exported,
-				})
-			}
-
-		case "class_declaration":
-			var name string
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				if child.Type(lang) == "identifier" {
-					name = child.Text(content)
-					break
-				}
-			}
-			if name != "" {
-				exported := false
-				if parent := n.Parent(); parent != nil {
-					pType := parent.Type(lang)
-					if pType == "export_statement" || pType == "export_specifier" {
-						exported = true
-					}
-				}
-				symbols = append(symbols, Symbol{
-					Name:     name,
-					Type:     "class",
-					Line:     int(n.StartPoint().Row) + 1,
-					Exported: exported,
-				})
-			}
-
-		case "method_definition":
-			var name string
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				t := child.Type(lang)
-				if t == "property_identifier" || t == "private_property_identifier" {
-					name = child.Text(content)
-					break
-				}
-			}
-			if name != "" {
-				symbols = append(symbols, Symbol{
-					Name:     name,
-					Type:     "function",
-					Line:     int(n.StartPoint().Row) + 1,
-					Exported: false,
-				})
-			}
-
-		case "import_statement":
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				if child.Type(lang) == "string" {
-					path := child.Text(content)
-					path = strings.Trim(path, `"'`)
-					if path != "" {
-						imports = append(imports, path)
-					}
-				}
-			}
-
-		case "call_expression":
-			var isRequire bool
-			var path string
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				t := child.Type(lang)
-				if t == "identifier" && child.Text(content) == "require" {
-					isRequire = true
-				} else if t == "arguments" {
-					for j := 0; j < child.ChildCount(); j++ {
-						arg := child.Child(j)
-						if arg.Type(lang) == "string" {
-							path = strings.Trim(arg.Text(content), `"'`)
-						}
-					}
-				}
-			}
-			if isRequire && path != "" {
-				imports = append(imports, path)
-			}
-		}
-	})
-
-	return symbols, imports
-}
-
-func parsePhp(root *gotreesitter.Node, lang *gotreesitter.Language, content []byte) ([]Symbol, []string) {
-	var symbols []Symbol
-	var imports []string
-
-	traverse(root, func(n *gotreesitter.Node) {
-		nodeType := n.Type(lang)
-		switch nodeType {
-		case "function_definition":
-			var name string
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				if child.Type(lang) == "name" || child.Type(lang) == "identifier" {
-					name = child.Text(content)
-					break
-				}
-			}
-			if name != "" {
-				symbols = append(symbols, Symbol{
-					Name:     name,
-					Type:     "function",
-					Line:     int(n.StartPoint().Row) + 1,
-					Exported: true,
-				})
-			}
-
-		case "class_declaration":
-			var name string
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				if child.Type(lang) == "name" || child.Type(lang) == "identifier" {
-					name = child.Text(content)
-					break
-				}
-			}
-			if name != "" {
-				symbols = append(symbols, Symbol{
-					Name:     name,
-					Type:     "class",
-					Line:     int(n.StartPoint().Row) + 1,
-					Exported: true,
-				})
-			}
-
-		case "include_expression", "require_expression", "include_once_expression", "require_once_expression":
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				if child.Type(lang) == "string" {
-					path := strings.Trim(child.Text(content), `"'`)
-					if path != "" {
-						imports = append(imports, path)
-					}
-				}
-			}
-
-		case "namespace_use_declaration":
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				if child.Type(lang) == "namespace_use_clause" {
-					for j := 0; j < child.ChildCount(); j++ {
-						clauseChild := child.Child(j)
-						if clauseChild.Type(lang) == "name" || clauseChild.Type(lang) == "qualified_name" {
-							imports = append(imports, clauseChild.Text(content))
-						}
-					}
-				}
-			}
-		}
-	})
-
-	return symbols, imports
-}
-
-func parseRust(root *gotreesitter.Node, lang *gotreesitter.Language, content []byte) ([]Symbol, []string) {
-	var symbols []Symbol
-	var imports []string
-
-	traverse(root, func(n *gotreesitter.Node) {
-		nodeType := n.Type(lang)
-		switch nodeType {
-		case "function_item":
-			var name string
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				if child.Type(lang) == "identifier" {
-					name = child.Text(content)
-					break
-				}
-			}
-			if name != "" {
-				symbols = append(symbols, Symbol{
-					Name:     name,
-					Type:     "function",
-					Line:     int(n.StartPoint().Row) + 1,
-					Exported: true,
-				})
-			}
-
-		case "struct_item", "enum_item", "trait_item":
-			var name string
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				if child.Type(lang) == "type_identifier" {
-					name = child.Text(content)
-					break
-				}
-			}
-			if name != "" {
-				symbols = append(symbols, Symbol{
-					Name:     name,
-					Type:     "class",
-					Line:     int(n.StartPoint().Row) + 1,
-					Exported: true,
-				})
-			}
-
-		case "use_declaration":
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				if child.Type(lang) == "use_path" || child.Type(lang) == "scoped_identifier" {
-					imports = append(imports, child.Text(content))
-				}
-			}
-		}
-	})
-
-	return symbols, imports
-}
-
-func parseRuby(root *gotreesitter.Node, lang *gotreesitter.Language, content []byte) ([]Symbol, []string) {
-	var symbols []Symbol
-	var imports []string
-
-	traverse(root, func(n *gotreesitter.Node) {
-		nodeType := n.Type(lang)
-		switch nodeType {
-		case "method":
-			var name string
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				if child.Type(lang) == "identifier" {
-					name = child.Text(content)
-					break
-				}
-			}
-			if name != "" {
-				symbols = append(symbols, Symbol{
-					Name:     name,
-					Type:     "function",
-					Line:     int(n.StartPoint().Row) + 1,
-					Exported: true,
-				})
-			}
-
-		case "class", "module":
-			var name string
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				t := child.Type(lang)
-				if t == "constant" || t == "identifier" {
-					name = child.Text(content)
-					break
-				}
-			}
-			if name != "" {
-				symbols = append(symbols, Symbol{
-					Name:     name,
-					Type:     "class",
-					Line:     int(n.StartPoint().Row) + 1,
-					Exported: true,
-				})
-			}
-
-		case "call":
-			var isRequire bool
-			var path string
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				t := child.Type(lang)
-				if t == "identifier" && (child.Text(content) == "require" || child.Text(content) == "require_relative") {
-					isRequire = true
-				} else if t == "argument_list" {
-					for j := 0; j < child.ChildCount(); j++ {
-						arg := child.Child(j)
-						if arg.Type(lang) == "string" {
-							path = strings.Trim(arg.Text(content), `"'`)
-						}
-					}
-				}
-			}
-			if isRequire && path != "" {
-				imports = append(imports, path)
-			}
-		}
-	})
-
-	return symbols, imports
-}
-
-func parseJava(root *gotreesitter.Node, lang *gotreesitter.Language, content []byte) ([]Symbol, []string) {
-	var symbols []Symbol
-	var imports []string
-
-	traverse(root, func(n *gotreesitter.Node) {
-		nodeType := n.Type(lang)
-		switch nodeType {
-		case "method_declaration":
-			var name string
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				if child.Type(lang) == "identifier" {
-					name = child.Text(content)
-					break
-				}
-			}
-			if name != "" {
-				symbols = append(symbols, Symbol{
-					Name:     name,
-					Type:     "function",
-					Line:     int(n.StartPoint().Row) + 1,
-					Exported: true,
-				})
-			}
-
-		case "class_declaration", "interface_declaration", "record_declaration", "enum_declaration":
-			var name string
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				if child.Type(lang) == "identifier" {
-					name = child.Text(content)
-					break
-				}
-			}
-			if name != "" {
-				symbols = append(symbols, Symbol{
-					Name:     name,
-					Type:     "class",
-					Line:     int(n.StartPoint().Row) + 1,
-					Exported: true,
-				})
-			}
-
-		case "import_declaration":
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				if child.Type(lang) == "scoped_identifier" || child.Type(lang) == "identifier" {
-					imports = append(imports, child.Text(content))
-				}
-			}
-		}
-	})
-
-	return symbols, imports
-}
-
-func parseHtml(root *gotreesitter.Node, lang *gotreesitter.Language, content []byte) ([]Symbol, []string) {
-	var symbols []Symbol
-	var imports []string
-
-	traverse(root, func(n *gotreesitter.Node) {
-		nodeType := n.Type(lang)
-		if nodeType == "attribute" {
-			var isImportAttr bool
-			var val string
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				t := child.Type(lang)
-				if t == "attribute_name" && (child.Text(content) == "src" || child.Text(content) == "href") {
-					isImportAttr = true
-				} else if t == "attribute_value" {
-					val = strings.Trim(child.Text(content), `"'`)
-				}
-			}
-			if isImportAttr && val != "" {
-				imports = append(imports, val)
-			}
-		}
-	})
-
-	return symbols, imports
-}
-
-func parseCss(root *gotreesitter.Node, lang *gotreesitter.Language, content []byte) ([]Symbol, []string) {
-	var symbols []Symbol
-	var imports []string
-
-	traverse(root, func(n *gotreesitter.Node) {
-		nodeType := n.Type(lang)
-		switch nodeType {
-		case "import_statement":
-			for i := 0; i < n.ChildCount(); i++ {
-				child := n.Child(i)
-				switch t := child.Type(lang); t {
-				case "string_value", "string":
-					path := strings.Trim(child.Text(content), `"'()`)
-					if path != "" {
-						imports = append(imports, path)
-					}
-				case "call_expression":
-					for j := 0; j < child.ChildCount(); j++ {
-						arg := child.Child(j)
-						if arg.Type(lang) == "arguments" {
-							for k := 0; k < arg.ChildCount(); k++ {
-								param := arg.Child(k)
-								if param.Type(lang) == "string_value" || param.Type(lang) == "string" {
-									path := strings.Trim(param.Text(content), `"'()`)
-									if path != "" {
-										imports = append(imports, path)
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-
-		case "class_selector":
-			// We can capture class names in CSS as class symbols!
-			name := strings.TrimPrefix(n.Text(content), ".")
-			if name != "" {
-				symbols = append(symbols, Symbol{
-					Name:     name,
-					Type:     "class",
-					Line:     int(n.StartPoint().Row) + 1,
-					Exported: true,
-				})
-			}
-		}
-	})
-
-	return symbols, imports
 }

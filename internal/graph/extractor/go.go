@@ -18,81 +18,89 @@ func parseGoSource(content []byte, filename string) ([]Symbol, []string, error) 
 	}
 
 	var symbols []Symbol
-	var imports []string
+	symbols = append(symbols, goDeclSymbols(fset, file)...)
+	symbols = append(symbols, goRationaleComments(fset, file)...)
+	return symbols, goImportPathsAST(file), nil
+}
 
-	// 1. Imports
+func goImportPathsAST(file *ast.File) []string {
+	var imports []string
 	for _, imp := range file.Imports {
-		if imp.Path != nil {
-			path := strings.Trim(imp.Path.Value, `"`+"`")
-			if path != "" {
-				imports = append(imports, path)
-			}
+		if imp.Path == nil {
+			continue
+		}
+		if path := strings.Trim(imp.Path.Value, "\"`"); path != "" {
+			imports = append(imports, path)
 		}
 	}
+	return imports
+}
 
-	// 2. Declarations (functions, methods, types)
+func goDeclSymbols(fset *token.FileSet, file *ast.File) []Symbol {
+	var symbols []Symbol
 	for _, decl := range file.Decls {
 		switch d := decl.(type) {
 		case *ast.FuncDecl:
-			if d.Name != nil && d.Name.Name != "" && d.Name.Name != "init" && d.Name.Name != "main" {
-				pos := fset.Position(d.Pos())
-				symbols = append(symbols, Symbol{
-					Name:     d.Name.Name,
-					Type:     schema.NodeTypeFunction,
-					Line:     pos.Line,
-					Exported: d.Name.IsExported(),
-				})
+			if sym, ok := goFuncSymbol(fset, d); ok {
+				symbols = append(symbols, sym)
 			}
 		case *ast.GenDecl:
-			if d.Tok == token.TYPE {
-				for _, spec := range d.Specs {
-					if ts, ok := spec.(*ast.TypeSpec); ok && ts.Name != nil {
-						switch ts.Type.(type) {
-						case *ast.StructType, *ast.InterfaceType:
-							pos := fset.Position(ts.Pos())
-							symbols = append(symbols, Symbol{
-								Name:     ts.Name.Name,
-								Type:     schema.NodeTypeClass,
-								Line:     pos.Line,
-								Exported: ts.Name.IsExported(),
-							})
-						}
-					}
-				}
-			}
+			symbols = append(symbols, goTypeSymbols(fset, d)...)
 		}
 	}
+	return symbols
+}
 
-	// 3. Rationale comments (NOTE:, WHY:, HACK:, TODO:, FIXME:)
+func goFuncSymbol(fset *token.FileSet, d *ast.FuncDecl) (Symbol, bool) {
+	if d.Name == nil || d.Name.Name == "" || d.Name.Name == "init" || d.Name.Name == "main" {
+		return Symbol{}, false
+	}
+	return Symbol{
+		Name:     d.Name.Name,
+		Type:     schema.NodeTypeFunction,
+		Line:     fset.Position(d.Pos()).Line,
+		Exported: d.Name.IsExported(),
+	}, true
+}
+
+func goTypeSymbols(fset *token.FileSet, d *ast.GenDecl) []Symbol {
+	if d.Tok != token.TYPE {
+		return nil
+	}
+	var symbols []Symbol
+	for _, spec := range d.Specs {
+		ts, ok := spec.(*ast.TypeSpec)
+		if !ok || ts.Name == nil {
+			continue
+		}
+		switch ts.Type.(type) {
+		case *ast.StructType, *ast.InterfaceType:
+			symbols = append(symbols, Symbol{
+				Name:     ts.Name.Name,
+				Type:     schema.NodeTypeClass,
+				Line:     fset.Position(ts.Pos()).Line,
+				Exported: ts.Name.IsExported(),
+			})
+		}
+	}
+	return symbols
+}
+
+func goRationaleComments(fset *token.FileSet, file *ast.File) []Symbol {
+	var symbols []Symbol
 	for _, cg := range file.Comments {
 		for _, comment := range cg.List {
-			text := comment.Text
-			cleanText := strings.TrimLeft(text, "/#* \t")
-			cleanText = strings.TrimRight(cleanText, "*/ \t\r\n")
-
-			upperClean := strings.ToUpper(cleanText)
-			prefixes := []string{"NOTE:", "WHY:", "HACK:", "TODO:", "FIXME:"}
-			hasPrefix := false
-			for _, p := range prefixes {
-				if strings.HasPrefix(upperClean, p) {
-					hasPrefix = true
-					break
-				}
-			}
-
-			if hasPrefix {
-				pos := fset.Position(comment.Pos())
+			if text, ok := rationaleText(comment.Text); ok {
 				symbols = append(symbols, Symbol{
-					Name:     cleanText,
+					Name:     text,
 					Type:     schema.NodeTypeRationale,
-					Line:     pos.Line,
+					Line:     fset.Position(comment.Pos()).Line,
 					Exported: false,
 				})
 			}
 		}
 	}
-
-	return symbols, imports, nil
+	return symbols
 }
 
 // extractGoCallRefsAST extracts call sites from Go source using the standard go/parser.
