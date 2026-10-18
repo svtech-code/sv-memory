@@ -60,6 +60,15 @@ func fullToolsEnabled() bool {
 	return true
 }
 
+// serverInstructions is the server-wide guidance returned in the MCP initialize
+// response. Spec-compliant clients (notably OpenAI Codex) inject this string
+// automatically as server-level instructions, so the memory-first / graph-first /
+// save-after-decision / spec-cycle protocol reaches the model without any
+// per-platform plugin or hook. Keep the opening sentences self-contained: some
+// clients surface only the first ~512 characters when deciding how to use the
+// server's tools.
+const serverInstructions = "sv-memory provides persistent architectural memory and a code dependency graph. Workflow: (1) search memory first — call sv_mem_search before answering project questions or proposing solutions; (2) explore the graph before reading source — call sv_graph_explore or sv_graph_search instead of grep/read; (3) save knowledge immediately — call sv_mem_save after design decisions, complex bugfixes, or new standards; (4) for behavior or architecture changes, follow the Spec-Driven Decision Cycle (sv_spec_list -> sv_propose_spec -> sv_update_spec -> sv_validate_decision -> sv_commit_spec). Match tools by their sv_* suffix: your client may prefix tool names with a server namespace (e.g. sv-memory_sv_graph_explore)."
+
 // Tool describes a single MCP tool exposed by the sv-memory server.
 // AllTools is the single source of truth for the tool surface, reused by the
 // permission manager (sv-memory permissions / configure wizard) so the granted
@@ -249,7 +258,7 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	s := &Server{pool: pool, cfg: cfg}
 
-	ms := server.NewMCPServer("sv-memory", "1.0.0")
+	ms := server.NewMCPServer("sv-memory", "1.0.0", server.WithInstructions(serverInstructions))
 
 	cleanupMu.Lock()
 	shutdownCleanup = s.flushPendingSync

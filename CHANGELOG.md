@@ -5,6 +5,9 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+### Added
+- **MCP Server Instructions (`serverInstructions`)**: The MCP server now returns a self-contained `instructions` string in its initialize response, carrying the memory-first / graph-first / save-after-decision / spec-cycle protocol. Spec-compliant clients (notably OpenAI Codex) inject this automatically as server-wide guidance, so models get the protocol natively without any per-platform plugin or hook.
+
 ### Fixed
 - **MCP Tool-Name Resolution for Weak Models**: Added a cross-platform "tool name resolution" rule to the injected protocol (`internal/protocol/protocol.go`) and a client-specific prefix note to the OpenCode/Antigravity skill templates, teaching agents to match sv-memory tools by their `sv_*` suffix (e.g. `sv_graph_explore` → `sv-memory_sv_graph_explore` in OpenCode) so deepseek-class models invoke the tools instead of falling back to raw read/grep.
 

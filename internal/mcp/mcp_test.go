@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -1047,5 +1048,43 @@ func TestToolDescriptionBudget(t *testing.T) {
 	}
 	if total >= 10000 {
 		t.Errorf("tool description budget exceeded: %d chars (max 10000) — trim verbose descriptions", total)
+	}
+}
+
+// TestServerInstructionsGuardsProtocolGuidance verifies that sv-memory's MCP
+// initialize response carries server-wide instructions (the memory-first /
+// graph-first / save-after-decision / spec-cycle protocol) so spec-compliant
+// clients (notably OpenAI Codex) guide their models without per-platform
+// plugins or hooks.
+func TestServerInstructionsGuardsProtocolGuidance(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	srv := NewServer(pool, cfg)
+
+	raw, err := json.Marshal(mcpgo.JSONRPCRequest{
+		JSONRPC: "2.0",
+		ID:      mcpgo.NewRequestId(int64(1)),
+		Request: mcpgo.Request{Method: "initialize"},
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal initialize request: %v", err)
+	}
+
+	msg := srv.HandleMessage(context.Background(), raw)
+	resp, ok := msg.(mcpgo.JSONRPCResponse)
+	if !ok {
+		t.Fatalf("expected JSONRPCResponse, got %T", msg)
+	}
+
+	initResult, ok := resp.Result.(mcpgo.InitializeResult)
+	if !ok {
+		t.Fatalf("expected InitializeResult, got %T", resp.Result)
+	}
+
+	for _, marker := range []string{"sv_mem_search", "sv_graph_explore", "sv_mem_save", "sv_spec_list", "sv_commit_spec", "sv_* suffix"} {
+		if !strings.Contains(initResult.Instructions, marker) {
+			t.Errorf("initialize instructions missing marker %q", marker)
+		}
 	}
 }

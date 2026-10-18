@@ -209,6 +209,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 
 - Starts the JSON-RPC MCP server over `stdio` for agent consumption.
 - Registers all 43 MCP tools.
+- Returns server-wide `instructions` in the initialize response (memory-first / graph-first / save-after-decision / spec-cycle guidance) so spec-compliant clients (e.g. OpenAI Codex) inject the protocol automatically without plugins or hooks.
 - Maintains an in-memory graph cache for zero-SQL BFS traversals.
 - Debounces Git sync writes (500ms coalescing).
 
