@@ -122,7 +122,7 @@ sv-memory init
 2. **Protocol Rules Injection (`AGENTS.md` / `.cursorrules`):** Injects the operating rules so AI agents know how to consult graph context and save decisions.
 3. **Automatic Assistant Integrations (Skills & Hooks):**
    - **Antigravity CLI:** Installs `.agents/skills/sv-memory/SKILL.md` (progressive on-demand skill) and `.agents/hooks/`.
-   - **OpenCode:** Installs `.opencode/skills/sv-memory/SKILL.md` and native TypeScript plugin (`sv_memory_context`).
+   - **OpenCode:** Installs `.opencode/skills/sv-memory/SKILL.md` (MCP `instructions` are injected natively).
    - **Claude Code:** Installs `.claude/hooks/` (`SessionStart`, `SessionEnd`, `PreCompact`, `PreToolUse`).
    - **Cursor / Windsurf:** Writes `.cursor/mcp.json` / `.windsurf/mcp_config.json`.
 4. **Automatic MCP Tool Permissions:** Automatically grants permissions for the 42 MCP tools so the agent never asks for repetitive manual approvals.
@@ -140,7 +140,7 @@ tool permissions) in one command, use `sv-memory setup`:
 ```bash
 cd /path/to/your-project
 sv-memory setup claude-code   # Claude Code (MCP + PreToolUse & lifecycle hooks + allow-list)
-sv-memory setup opencode      # OpenCode (MCP + SKILL.md + native TS plugin)
+sv-memory setup opencode      # OpenCode (MCP + SKILL.md + native instructions)
 sv-memory setup cursor        # Cursor (.cursor/mcp.json + .cursorrules)
 sv-memory setup windsurf      # Windsurf (.windsurf/mcp_config.json + .windsurfrules)
 sv-memory setup antigravity   # Antigravity CLI (MCP + hooks + allow-list)

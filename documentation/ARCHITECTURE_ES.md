@@ -28,7 +28,7 @@ Las sesiones rastrean el trabajo de codificación a través de interacciones del
 | Agente | Inicio | Fin | Captura de prompts |
 | :--- | :--- | :--- | :--- |
 | Claude Code | Hook `SessionStart` (auto-start + inyecta bundle) | Hook `SessionEnd` (auto-close, idempotente) | Hook `UserPromptSubmit` |
-| OpenCode | Plugin `chat.messages.transform` | ❌ Sin hook de salida | Plugin `chat.message` |
+| OpenCode | `instructions` MCP + `AGENTS.md` | Protocolo (`AGENTS.md`) | ❌ |
 | Antigravity CLI | Hook `PreInvocation` (auto-start + inyección de bundle) | Protocolo (`AGENTS.md`) | ❌ |
 | Cursor / Windsurf | Protocolo (`AGENTS.md`) | Protocolo (`AGENTS.md`) | ❌ |
 | Codex | Hook no-op | Hook no-op | ❌ |

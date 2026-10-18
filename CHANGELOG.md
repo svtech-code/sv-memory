@@ -5,6 +5,12 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+### Removed
+- **OpenCode TypeScript plugin**: Dropped `.opencode/plugin/sv-memory.ts` (and its soft/strict templates, `sv_memory_context` tool, and model-agnostic hook automation). OpenCode V1 and V2 natively inject the MCP server's `instructions` into the system prompt and auto-translate the V1 MCP config in memory, so the integration is now 100% Go via the MCP server + `AGENTS.md` + skill.
+
+### Changed
+- **MCP server instructions — session-start reminder**: `serverInstructions` now leads with "start every session by calling `sv_mem_session_start` to load your Auto-Boot Context Bundle", so OpenCode and other spec-compliant clients guide the model through the session lifecycle natively.
+
 ### Added
 - **MCP Server Instructions (`serverInstructions`)**: The MCP server now returns a self-contained `instructions` string in its initialize response, carrying the memory-first / graph-first / save-after-decision / spec-cycle protocol. Spec-compliant clients (notably OpenAI Codex) inject this automatically as server-wide guidance, so models get the protocol natively without any per-platform plugin or hook.
 

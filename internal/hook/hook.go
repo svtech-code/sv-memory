@@ -812,11 +812,11 @@ func (e *HookEngine) antigravityInstalled() bool {
 	return hasEntry
 }
 
-// --- OpenCode Skill + Plugin ---
+// --- OpenCode Skill ---
 // OpenCode does not support PreToolUse hooks natively. Instead, it uses a
-// Skills system (SKILL.md) loaded via the `skill` tool plus a native TypeScript
-// plugin (sv-memory.ts) that registers the sv_memory_context tool. We install
-// both so OpenCode gets the nudge AND a first-class context-pack tool.
+// Skills system (SKILL.md) loaded via the `skill` tool, and it natively injects
+// the MCP server's `instructions` into the system prompt (V1 and V2). We install
+// the skill and inject the AGENTS.md protocol; no TypeScript plugin is needed.
 
 func (e *HookEngine) openCodeSkillDir() string {
 	return filepath.Join(e.projPath, ".opencode", "skills", "sv-memory")
@@ -824,10 +824,6 @@ func (e *HookEngine) openCodeSkillDir() string {
 
 func (e *HookEngine) openCodeSkillPath() string {
 	return filepath.Join(e.openCodeSkillDir(), "SKILL.md")
-}
-
-func (e *HookEngine) openCodePluginPath() string {
-	return filepath.Join(e.projPath, ".opencode", "plugin", "sv-memory.ts")
 }
 
 func (e *HookEngine) installOpenCodeSkill() ([]string, error) {
@@ -842,20 +838,6 @@ func (e *HookEngine) installOpenCodeSkill() ([]string, error) {
 		return created, fmt.Errorf("failed to write opencode skill: %w", err)
 	}
 	created = append(created, skillPath)
-
-	// Native TypeScript plugin: registers the sv_memory_context tool.
-	pluginPath := e.openCodePluginPath()
-	if err := os.MkdirAll(filepath.Dir(pluginPath), 0755); err != nil {
-		return created, fmt.Errorf("failed to create .opencode/plugin dir: %w", err)
-	}
-	pluginContent := opencodePluginScript(e.mode)
-	if pluginContent == "" {
-		return created, fmt.Errorf("missing opencode plugin template")
-	}
-	if err := os.WriteFile(pluginPath, []byte(pluginContent), 0644); err != nil {
-		return created, fmt.Errorf("failed to write opencode plugin: %w", err)
-	}
-	created = append(created, pluginPath)
 
 	// Also inject sv-memory protocol rules into AGENTS.md so that OpenCode
 	// always has the instructions in context without requiring @skill.
@@ -878,14 +860,6 @@ func (e *HookEngine) uninstallOpenCodeSkill() ([]string, error) {
 	}
 	if _, err := os.Stat(skillDir); os.IsNotExist(err) {
 		removed = append(removed, skillDir)
-	}
-
-	pluginPath := e.openCodePluginPath()
-	if err := os.Remove(pluginPath); err != nil && !os.IsNotExist(err) {
-		return removed, fmt.Errorf("failed to remove opencode plugin: %w", err)
-	}
-	if _, err := os.Stat(pluginPath); os.IsNotExist(err) {
-		removed = append(removed, pluginPath)
 	}
 	return removed, nil
 }

@@ -125,10 +125,11 @@ func TestSetupClaudeCodeWritesHooksAndLifecycle(t *testing.T) {
 	}
 }
 
-// TestSetupOpenCodeWritesPlugin verifies the opencode hook install writes the
-// native TS plugin and the skill. MCP config (home-scoped) is not part of this
-// unit test so the developer's real opencode.json is never touched.
-func TestSetupOpenCodeWritesPlugin(t *testing.T) {
+// TestSetupOpenCodeWritesSkill verifies the opencode hook install writes the
+// skill (and no longer writes a TypeScript plugin, since OpenCode natively
+// injects the MCP server instructions). MCP config (home-scoped) is not part
+// of this unit test so the developer's real opencode.json is never touched.
+func TestSetupOpenCodeWritesSkill(t *testing.T) {
 	tempDir := t.TempDir()
 
 	eng := hook.New(tempDir, hook.ModeSoft)
@@ -137,15 +138,11 @@ func TestSetupOpenCodeWritesPlugin(t *testing.T) {
 		t.Fatalf("opencode install failed: %v", results)
 	}
 
-	if !fileExists(filepath.Join(tempDir, ".opencode", "plugin", "sv-memory.ts")) {
-		t.Error("expected opencode plugin sv-memory.ts")
-	}
 	if !fileExists(filepath.Join(tempDir, ".opencode", "skills", "sv-memory", "SKILL.md")) {
 		t.Error("expected opencode skill SKILL.md")
 	}
-	plugin := readTestFile(t, filepath.Join(tempDir, ".opencode", "plugin", "sv-memory.ts"))
-	if !strings.Contains(plugin, "sv_memory_context") {
-		t.Error("expected sv_memory_context tool in plugin")
+	if fileExists(filepath.Join(tempDir, ".opencode", "plugin", "sv-memory.ts")) {
+		t.Error("expected no opencode plugin sv-memory.ts (replaced by MCP instructions)")
 	}
 }
 

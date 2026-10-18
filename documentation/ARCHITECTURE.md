@@ -28,7 +28,7 @@ Sessions track coding work across agent interactions. Every session starts `acti
 | Agent | Start | End | Prompt capture |
 | :--- | :--- | :--- | :--- |
 | Claude Code | Hook `SessionStart` (auto-start + bundle inject) | Hook `SessionEnd` (auto-close, idempotent) | Hook `UserPromptSubmit` |
-| OpenCode | Plugin `chat.messages.transform` | ❌ No exit hook | Plugin `chat.message` |
+| OpenCode | MCP `instructions` + `AGENTS.md` | Protocol (`AGENTS.md`) | ❌ |
 | Antigravity CLI | Hook `PreInvocation` (auto-start + bundle inject) | Protocol (`AGENTS.md`) | ❌ |
 | Cursor / Windsurf | Protocol (`AGENTS.md`) | Protocol (`AGENTS.md`) | ❌ |
 | Codex | No-op hook | No-op hook | ❌ |

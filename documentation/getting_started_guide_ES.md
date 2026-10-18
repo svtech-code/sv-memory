@@ -122,7 +122,7 @@ sv-memory init
 2. **Inyección de Reglas de Protocolo (`AGENTS.md` / `.cursorrules`):** Inyecta las instrucciones operativas para que cualquier agente de IA sepa consultar el grafo y guardar decisiones.
 3. **Integración Automática de Asistentes (Skills y Hooks):**
    - **Antigravity CLI:** Instala `.agents/skills/sv-memory/SKILL.md` (skill nativa on-demand) y `.agents/hooks/`.
-   - **OpenCode:** Instala `.opencode/skills/sv-memory/SKILL.md` y plugin nativo TypeScript (`sv_memory_context`).
+   - **OpenCode:** Instala `.opencode/skills/sv-memory/SKILL.md` (las `instructions` MCP se inyectan de forma nativa).
    - **Claude Code:** Instala `.claude/hooks/` (`SessionStart`, `SessionEnd`, `PreCompact`, `PreToolUse`).
    - **Cursor / Windsurf:** Escribe `.cursor/mcp.json` / `.windsurf/mcp_config.json`.
 4. **Permisos MCP Automáticos:** Concede permisos para las 42 herramientas MCP sin necesidad de confirmaciones manuales repetitivas.
@@ -171,7 +171,7 @@ inyección de protocolo + permisos de herramientas) en un solo comando, usa
 ```bash
 cd /ruta/a/tu-proyecto
 sv-memory setup claude-code   # Claude Code (MCP + hooks PreToolUse y de ciclo de vida + allow-list)
-sv-memory setup opencode      # OpenCode (MCP + SKILL.md + plugin nativo TS)
+sv-memory setup opencode      # OpenCode (MCP + SKILL.md + instructions nativas)
 sv-memory setup cursor        # Cursor (.cursor/mcp.json + .cursorrules)
 sv-memory setup windsurf      # Windsurf (.windsurf/mcp_config.json + .windsurfrules)
 sv-memory setup antigravity   # Antigravity CLI (MCP + hooks + allow-list)

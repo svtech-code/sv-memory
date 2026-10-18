@@ -10,7 +10,7 @@ de integración de un solo comando de Engram (`engram setup`).
 | Agente          | Comando                      | Qué se instala                                                                                   |
 | :-------------- | :--------------------------- | :----------------------------------------------------------------------------------------------- |
 | Claude Code     | `sv-memory setup claude-code` | Config MCP, hooks `PreToolUse` + ciclo de vida (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`), protocolo en `AGENTS.md`, allow-list de las 43 herramientas |
-| OpenCode        | `sv-memory setup opencode`    | Config MCP, skill `SKILL.md`, plugin nativo TypeScript (tool `sv_memory_context`), protocolo en `AGENTS.md` |
+| OpenCode        | `sv-memory setup opencode`    | Config MCP, skill `SKILL.md`, inyección de `instructions` MCP, protocolo en `AGENTS.md` |
 | Cursor          | `sv-memory setup cursor`      | Config MCP `.cursor/mcp.json`, inyección de protocolo en `.cursorrules` |
 | Windsurf        | `sv-memory setup windsurf`    | Config MCP `.windsurf/mcp_config.json`, inyección de protocolo en `.windsurfrules` |
 | Antigravity CLI | `sv-memory setup antigravity` | Config MCP, skill nativa (`.agents/skills/sv-memory/SKILL.md`), hooks `PreToolUse` (soft/strict), protocolo en `AGENTS.md`, allow-list de las 43 herramientas |
@@ -95,17 +95,10 @@ Luego reinicia tu asistente para que recargue la configuración MCP y las nuevas
 - **Skill:** `SKILL.md` se instala en `.opencode/skills/sv-memory/` para que el agente cargue
   el flujo sv-memory con la herramienta `skill`. Contiene el flujo completo: ciclo de sesión,
   exploración graph-first, spec cycle, topic keys, tabla de cuándo guardar, y mantenimiento.
-- **Plugin nativo:** `.opencode/plugin/sv-memory.ts` registra el tool `sv_memory_context` —
-  una forma de primera clase de obtener un context pack para un archivo/paquete/símbolo
-  invocando `sv-memory context <ruta>`, sin necesitar aprobación MCP.
-- **Automatización determinista (agnóstica al modelo):** el plugin arranca la sesión
-  automáticamente e inyecta el Auto-Boot Context Bundle en tu primer request, captura cada
-  prompt del usuario (`sv-memory capture prompt`), re-orienta al modelo con las specs activas
-  cuando cambias de modelo a mitad de sesión, hace un nudge del flujo de specs tras un edit
-  que omitió `sv_spec_list`, y recuerda guardar el resumen de sesión antes de que opencode
-  compacte. Todo fail-open y con disparo único, de modo que el comportamiento no depende de
-  que el modelo elija llamar a las tools. Opt-out con `SV_MEMORY_STRICT_DISABLE=1` (también
-  desactiva la redirección del primer read).
+- **Instrucciones MCP (nativas):** OpenCode (V1 y V2) inyecta automáticamente el campo
+  `instructions` del servidor MCP en el system prompt. Esto lleva el protocolo memory-first /
+  graph-first / save-after-decision / spec-cycle y el recordatorio de "empezar con
+  `sv_mem_session_start`" — sin plugin. No se instala ningún plugin TypeScript.
 - **Protocolo:** las reglas sv-memory se inyectan en `AGENTS.md`.
 - **Superficie de tools curada:** el servidor MCP registra **43 herramientas en total, 36 core por defecto**. Las 7 herramientas de mantenimiento/admin (`sv_mem_diagnose`, `sv_mem_compare`, `sv_mem_merge_projects`, `sv_graph_report`, `sv_graph_viz`, `sv_graph_merge`, `sv_graph_surprising_connections`) se omiten por defecto para mantener pequeña la lista de tools por request (economía de tokens); define `SV_MEMORY_FULL_TOOLS=1` en el entorno del servidor para habilitarlas.
 

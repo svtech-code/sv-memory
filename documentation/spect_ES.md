@@ -264,7 +264,7 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 - `--all`: instala todos los agentes soportados.
 - `--strict`: instala hooks estrictos (Antigravity bloquea la primera lectura cruda de cada conversación con una decisión JSON `deny` + motivo graph-first; Claude Code es solo nudge).
 - **Claude Code:** escribe un `.mcp.json` local del proyecto cuando el CLI `claude` no está, instala hooks `PreToolUse` + ciclo de vida (`SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStop`) en `.claude/hooks/` y los registra en `.claude/settings.json`, inyecta el protocolo en `AGENTS.md` y concede el allow-list de 43 herramientas en `~/.claude/settings.json`.
-- **OpenCode:** registra el servidor MCP en `opencode.json`, instala `SKILL.md` más el plugin nativo TypeScript `.opencode/plugin/sv-memory.ts` (añade el tool `sv_memory_context`) e inyecta el protocolo en `AGENTS.md`.
+- **OpenCode:** registra el servidor MCP en `opencode.json`, instala `SKILL.md` e inyecta el protocolo en `AGENTS.md`. OpenCode inyecta de forma nativa el campo `instructions` del servidor MCP en el system prompt; no se instala ningún plugin TypeScript.
 - **Cursor:** escribe `.cursor/mcp.json` e inyecta `.cursorrules`.
 - **Windsurf:** escribe `.windsurf/mcp_config.json` e inyecta `.windsurfrules`.
 - **Antigravity CLI:** registra el servidor MCP, instala los hooks de `.agents/hooks.json` (PreToolUse + `PreInvocation` de auto-boot/nudge), escribe la skill nativa (`.agents/skills/sv-memory/SKILL.md`) y una regla corta always-on (`.agents/rules/sv-memory.md`), inyecta `AGENTS.md` y concede el allow-list de 43 herramientas.
