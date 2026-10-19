@@ -100,7 +100,7 @@ func CreateChange(db *sql.DB, projectID, slug, title, what, goal, wherePath, des
 		id, projectID, slug, title, what, goal, wherePath, capabilityPath, design, tasks, now); err != nil {
 		// Surface the UNIQUE(project_id, slug) violation clearly so the caller
 		// can offer an upsert/continue instead of a cryptic constraint error.
-		if strings.Contains(err.Error(), "UNIQUE") {
+		if isUniqueViolation(err) {
 			return nil, fmt.Errorf("a change with slug %q already exists in this project", slug)
 		}
 		return nil, fmt.Errorf("failed to create change: %w", err)

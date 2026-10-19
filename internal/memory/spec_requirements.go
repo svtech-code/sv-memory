@@ -236,7 +236,7 @@ func mergeRenamedRequirement(tx *sql.Tx, projectID, capabilityPath, name, rename
 		WHERE project_id = ? AND capability_path = ? AND requirement = ?`,
 		renameTo, now, projectID, capabilityPath, name)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE") {
+		if isUniqueViolation(err) {
 			return fmt.Errorf("cannot rename %q: a requirement %q already exists in capability %q", name, renameTo, capabilityPath)
 		}
 		return fmt.Errorf("failed to rename requirement %q: %w", name, err)

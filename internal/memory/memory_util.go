@@ -2,6 +2,7 @@ package memory
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"modernc.org/sqlite"
 
 	"github.com/svtech-code/sv-memory/internal/security"
 )
@@ -151,6 +153,21 @@ func nullTime(t time.Time) interface{} {
 		return nil
 	}
 	return t
+}
+
+// sqliteConstraintUnique is SQLITE_CONSTRAINT_UNIQUE, the extended result code
+// the SQLite driver reports when an INSERT/UPDATE violates a UNIQUE constraint.
+// modernc.org/sqlite exposes the code through (*sqlite.Error).Code but does not
+// export a sentinel error for it, so constraint detection inspects the typed
+// result code instead of pattern-matching the driver's message text (which is
+// not part of the driver's stable contract).
+const sqliteConstraintUnique = 2067
+
+// isUniqueViolation reports whether err is a SQLite UNIQUE constraint violation.
+// It unwraps the error chain so wrapped driver errors are still recognized.
+func isUniqueViolation(err error) bool {
+	var serr *sqlite.Error
+	return errors.As(err, &serr) && serr.Code() == sqliteConstraintUnique
 }
 
 // sqlExecer is the minimal interface shared by *sql.DB and *sql.Tx so the
