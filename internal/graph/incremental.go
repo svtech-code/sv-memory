@@ -190,13 +190,6 @@ func trySyncGraphIncrementalFiltered(db *sql.DB, projectID string, projPath stri
 	return true, nil
 }
 
-// fileChangeSet is the outcome of comparing a fresh scan against the persisted
-// file metadata.
-type fileChangeSet struct {
-	toParse []string
-	deleted []string
-}
-
 // classifyFileChanges splits the scanned files into those needing (re)parsing
 // (new or mtime/size-changed) and those deleted since the last sync.
 func classifyFileChanges(wr *walkResult, oldMeta map[string]fileMetaEntry) (toParse, deleted []string) {

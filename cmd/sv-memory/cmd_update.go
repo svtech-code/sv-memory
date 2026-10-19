@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,6 +29,10 @@ const (
 	downloadTimeout   = 90 * time.Second
 	updateUserAgent   = "sv-memory-updater"
 )
+
+// errUpdateAborted signals a user-facing early return where manual update is
+// recommended; runUpdate maps it to a nil error.
+var errUpdateAborted = errors.New("update aborted")
 
 type releaseInfo struct {
 	TagName string `json:"tag_name"`
@@ -188,46 +193,52 @@ func compareReleaseVersions(current, latest string) (int, error) {
 	}
 
 	for _, pair := range [][2]int{{left.major, right.major}, {left.minor, right.minor}, {left.patch, right.patch}} {
-		if pair[0] < pair[1] {
-			return -1, nil
-		}
-		if pair[0] > pair[1] {
-			return 1, nil
+		if cmp := compareInts(pair[0], pair[1]); cmp != 0 {
+			return cmp, nil
 		}
 	}
+	return comparePreRelease(left.preRelease, right.preRelease), nil
+}
 
-	if len(left.preRelease) == 0 && len(right.preRelease) > 0 {
-		return 1, nil
+func compareInts(a, b int) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	default:
+		return 0
 	}
-	if len(left.preRelease) > 0 && len(right.preRelease) == 0 {
-		return -1, nil
+}
+
+func comparePreRelease(left, right []string) int {
+	if len(left) == 0 && len(right) > 0 {
+		return 1
 	}
-	for i := 0; i < len(left.preRelease) && i < len(right.preRelease); i++ {
-		leftID, rightID := left.preRelease[i], right.preRelease[i]
-		leftNum, leftErr := strconv.Atoi(leftID)
-		rightNum, rightErr := strconv.Atoi(rightID)
-		switch {
-		case leftErr == nil && rightErr == nil && leftNum < rightNum:
-			return -1, nil
-		case leftErr == nil && rightErr == nil && leftNum > rightNum:
-			return 1, nil
-		case leftErr == nil && rightErr != nil:
-			return -1, nil
-		case leftErr != nil && rightErr == nil:
-			return 1, nil
-		case leftID < rightID:
-			return -1, nil
-		case leftID > rightID:
-			return 1, nil
+	if len(left) > 0 && len(right) == 0 {
+		return -1
+	}
+	for i := 0; i < len(left) && i < len(right); i++ {
+		if cmp := comparePreReleaseIdentifier(left[i], right[i]); cmp != 0 {
+			return cmp
 		}
 	}
-	if len(left.preRelease) < len(right.preRelease) {
-		return -1, nil
+	return compareInts(len(left), len(right))
+}
+
+func comparePreReleaseIdentifier(leftID, rightID string) int {
+	leftNum, leftErr := strconv.Atoi(leftID)
+	rightNum, rightErr := strconv.Atoi(rightID)
+	switch {
+	case leftErr == nil && rightErr == nil && leftNum != rightNum:
+		return compareInts(leftNum, rightNum)
+	case leftErr == nil && rightErr != nil:
+		return -1
+	case leftErr != nil && rightErr == nil:
+		return 1
+	default:
+		return strings.Compare(leftID, rightID)
 	}
-	if len(left.preRelease) > len(right.preRelease) {
-		return 1, nil
-	}
-	return 0, nil
 }
 
 // extractTarBinary copies the single regular file of a tarball to dest.
@@ -314,11 +325,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	// The auto-updater only makes sense for release binaries. Local dev builds
 	// report "dev" and cannot compare against release tags.
 	if version == "dev" || version == "" {
-		fmt.Println("Current version: dev (built from source)")
-		fmt.Println()
-		fmt.Println("The auto-updater works with release binaries installed via install.sh / install.ps1.")
-		fmt.Println("To update a source build, use:")
-		fmt.Println("  go install github.com/svtech-code/sv-memory/cmd/sv-memory@latest")
+		printDevUpdateNotice()
 		return nil
 	}
 
@@ -326,8 +333,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 	rel, err := fetchLatestRelease()
 	if err != nil {
-		fmt.Printf("\nCould not check for updates (%v).\n", err)
-		fmt.Println("You can manually check at: https://github.com/svtech-code/sv-memory/releases")
+		printUpdateCheckFailure(err)
 		return nil
 	}
 
@@ -344,11 +350,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	asset := updateAssetName()
-	fmt.Printf("\nUpdate to %s? (y/N): ", rel.TagName)
-	reader := bufio.NewReader(os.Stdin)
-	answer, _ := reader.ReadString('\n')
-	answer = strings.TrimSpace(strings.ToLower(answer))
-	if answer != "y" && answer != "yes" {
+	if !confirmUpdate(rel.TagName) {
 		fmt.Println("Update cancelled.")
 		return nil
 	}
@@ -361,25 +363,64 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Fetch and verify the expected checksum BEFORE installing anything.
-	expectedHash, err := fetchExpectedChecksum(rel.TagName, asset)
+	archivePath, err := downloadVerifiedRelease(rel.TagName, asset, tmpDir)
+	if errors.Is(err, errUpdateAborted) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	newBin, err := extractUpdateBinary(archivePath, tmpDir)
+	if err != nil {
+		return err
+	}
+	return installUpdateBinary(newBin, rel.TagName)
+}
+
+func printDevUpdateNotice() {
+	fmt.Println("Current version: dev (built from source)")
+	fmt.Println()
+	fmt.Println("The auto-updater works with release binaries installed via install.sh / install.ps1.")
+	fmt.Println("To update a source build, use:")
+	fmt.Println("  go install github.com/svtech-code/sv-memory/cmd/sv-memory@latest")
+}
+
+func printUpdateCheckFailure(err error) {
+	fmt.Printf("\nCould not check for updates (%v).\n", err)
+	fmt.Println("You can manually check at: https://github.com/svtech-code/sv-memory/releases")
+}
+
+// confirmUpdate asks the user for confirmation and reports whether to proceed.
+func confirmUpdate(tagName string) bool {
+	fmt.Printf("\nUpdate to %s? (y/N): ", tagName)
+	reader := bufio.NewReader(os.Stdin)
+	answer, _ := reader.ReadString('\n')
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	return answer == "y" || answer == "yes"
+}
+
+// downloadVerifiedRelease downloads the release asset and verifies its
+// checksum before returning the archive path.
+func downloadVerifiedRelease(tagName, asset, tmpDir string) (string, error) {
+	expectedHash, err := fetchExpectedChecksum(tagName, asset)
 	if err != nil {
 		fmt.Printf("⚠️  Could not verify checksum: %v\n", err)
 		fmt.Println("Manual update recommended: https://github.com/svtech-code/sv-memory/releases")
-		return nil
+		return "", errUpdateAborted
 	}
 
-	downloadURL := fmt.Sprintf("%s/%s/%s", updateDownloadURL, rel.TagName, asset)
+	downloadURL := fmt.Sprintf("%s/%s/%s", updateDownloadURL, tagName, asset)
 	archivePath := filepath.Join(tmpDir, asset)
 	if dlErr := downloadFile(downloadURL, archivePath); dlErr != nil {
 		fmt.Printf("⚠️  Download failed: %v\n", dlErr)
 		fmt.Println("Manual update recommended: https://github.com/svtech-code/sv-memory/releases")
-		return nil
+		return "", errUpdateAborted
 	}
 
 	actualHash, err := sha256File(archivePath)
 	if err != nil {
-		return fmt.Errorf("could not hash downloaded file: %w", err)
+		return "", fmt.Errorf("could not hash downloaded file: %w", err)
 	}
 	if actualHash != expectedHash {
 		fmt.Println("⚠️  Checksum mismatch!")
@@ -387,25 +428,31 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  got:      %s\n", actualHash)
 		fmt.Println("Update aborted to protect your system. Manual update recommended:")
 		fmt.Println("  https://github.com/svtech-code/sv-memory/releases")
-		return nil
+		return "", errUpdateAborted
 	}
 	fmt.Println("Checksum verified ✓")
+	return archivePath, nil
+}
 
-	// Extract the new binary.
+// extractUpdateBinary extracts the new binary from the downloaded archive.
+func extractUpdateBinary(archivePath, tmpDir string) (string, error) {
 	newBin := filepath.Join(tmpDir, "sv-memory")
 	if runtime.GOOS == "windows" {
 		newBin += ".exe"
-	}
-	if runtime.GOOS == "windows" {
-		if zipErr := extractZipBinary(archivePath, newBin); zipErr != nil {
-			return fmt.Errorf("could not extract archive: %w", zipErr)
+		if err := extractZipBinary(archivePath, newBin); err != nil {
+			return "", fmt.Errorf("could not extract archive: %w", err)
 		}
-	} else {
-		if tarErr := extractTarBinary(archivePath, newBin); tarErr != nil {
-			return fmt.Errorf("could not extract archive: %w", tarErr)
-		}
+		return newBin, nil
 	}
+	if err := extractTarBinary(archivePath, newBin); err != nil {
+		return "", fmt.Errorf("could not extract archive: %w", err)
+	}
+	return newBin, nil
+}
 
+// installUpdateBinary atomically replaces the running executable, or prints
+// manual instructions when that is not possible.
+func installUpdateBinary(newBin, tagName string) error {
 	exe, err := currentExecutablePath()
 	if err != nil {
 		return fmt.Errorf("could not locate current executable: %w", err)
@@ -428,7 +475,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	fmt.Printf("\n✓ Updated to %s!\n", rel.TagName)
+	fmt.Printf("\n✓ Updated to %s!\n", tagName)
 	fmt.Println("Run 'sv-memory version' to confirm.")
 	fmt.Println()
 	fmt.Println("ℹ️  To update hooks, skills, and MCP tool permissions in your existing projects, simply run:")

@@ -183,67 +183,65 @@ func ConfigureTargetTool(tool TargetTool) (bool, string, error) {
 	execPath = filepath.Clean(execPath)
 
 	if !tool.Auto {
-		// Return manual instructions
-		switch tool.ID {
-		case "cursor":
-			msg := fmt.Sprintf("Open Cursor -> Features -> MCP -> click 'Add New MCP Server'.\n      * Name: sv-memory\n      * Type: command\n      * Command: %s mcp", execPath)
-			return false, msg, nil
-		case "vscode":
-			msg := fmt.Sprintf("Open the MCP plugin configuration you use (e.g. Cline or Roo Code):\n      * Add a new server with the Command: %s\n      * With the Arguments: [\"mcp\"]", execPath)
-			return false, msg, nil
-		case "pi":
-			msg := "Run 'sv-memory setup pi' in the project to write the .pi/mcp.json MCP config and inject AGENTS.md."
-			return false, msg, nil
-		case "codex":
-			msg := "Run 'sv-memory setup codex' in the project to write the .codex/config.toml MCP config and inject AGENTS.md."
-			return false, msg, nil
-		default:
-			return false, "Manual configuration required in your editor.", nil
-		}
+		return false, manualTargetInstructions(tool.ID, execPath), nil
 	}
+	return autoConfigureTarget(tool, execPath)
+}
 
-	// Automatic configurations
+// manualTargetInstructions returns the manual setup guidance for a tool that
+// cannot be configured automatically.
+func manualTargetInstructions(toolID, execPath string) string {
+	switch toolID {
+	case "cursor":
+		return fmt.Sprintf("Open Cursor -> Features -> MCP -> click 'Add New MCP Server'.\n      * Name: sv-memory\n      * Type: command\n      * Command: %s mcp", execPath)
+	case "vscode":
+		return fmt.Sprintf("Open the MCP plugin configuration you use (e.g. Cline or Roo Code):\n      * Add a new server with the Command: %s\n      * With the Arguments: [\"mcp\"]", execPath)
+	case "pi":
+		return "Run 'sv-memory setup pi' in the project to write the .pi/mcp.json MCP config and inject AGENTS.md."
+	case "codex":
+		return "Run 'sv-memory setup codex' in the project to write the .codex/config.toml MCP config and inject AGENTS.md."
+	default:
+		return "Manual configuration required in your editor."
+	}
+}
+
+// autoConfigureTarget writes the MCP configuration for an auto-configurable tool.
+func autoConfigureTarget(tool TargetTool, execPath string) (bool, string, error) {
 	switch tool.ID {
 	case "zed":
-		err := configureZed(tool.ConfigPath, execPath)
-		if err != nil {
-			return false, "", err
-		}
-		return true, "Configured automatically at " + tool.ConfigPath, nil
-
+		return configuredResult(configureZed(tool.ConfigPath, execPath), tool.ConfigPath)
 	case "antigravity":
-		err := configureClaude(tool.ConfigPath, execPath)
-		if err != nil {
-			return false, "", err
-		}
-		return true, "Configured automatically at " + tool.ConfigPath, nil
-
+		return configuredResult(configureClaude(tool.ConfigPath, execPath), tool.ConfigPath)
 	case "opencode":
-		err := configureOpenCode(tool.ConfigPath, execPath)
-		if err != nil {
-			return false, "", err
-		}
-		return true, "Configured automatically at " + tool.ConfigPath, nil
-
+		return configuredResult(configureOpenCode(tool.ConfigPath, execPath), tool.ConfigPath)
 	case "claude-code":
-		// Check if 'claude' command is available in PATH
-		_, lookErr := exec.LookPath("claude")
-		if lookErr != nil {
-			// Not installed globally or not in PATH, output manual fallback instructions
-			msg := fmt.Sprintf("Claude Code was not detected in your PATH. Add it manually by running:\n      claude mcp add sv-memory --scope user --transport stdio -- %s mcp", execPath)
-			return false, msg, nil
-		}
+		return configureClaudeCodeCLI(execPath)
+	default:
+		return false, "", fmt.Errorf("unknown auto-configuration ID: %s", tool.ID)
+	}
+}
 
-		// Run the command
-		cmd := exec.Command("claude", "mcp", "add", "sv-memory", "--scope", "user", "--transport", "stdio", "--", execPath, "mcp")
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			return false, "", fmt.Errorf("failed executing claude command (%s): %w", string(output), err)
-		}
-		return true, "Configured automatically via the 'claude mcp add' command", nil
+func configuredResult(err error, configPath string) (bool, string, error) {
+	if err != nil {
+		return false, "", err
+	}
+	return true, "Configured automatically at " + configPath, nil
+}
+
+// configureClaudeCodeCLI registers the MCP server through `claude mcp add` when
+// the Claude CLI is available, falling back to manual instructions otherwise.
+func configureClaudeCodeCLI(execPath string) (bool, string, error) {
+	if _, lookErr := exec.LookPath("claude"); lookErr != nil {
+		msg := fmt.Sprintf("Claude Code was not detected in your PATH. Add it manually by running:\n      claude mcp add sv-memory --scope user --transport stdio -- %s mcp", execPath)
+		return false, msg, nil
 	}
 
-	return false, "", fmt.Errorf("unknown auto-configuration ID: %s", tool.ID)
+	cmd := exec.Command("claude", "mcp", "add", "sv-memory", "--scope", "user", "--transport", "stdio", "--", execPath, "mcp")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, "", fmt.Errorf("failed executing claude command (%s): %w", string(output), err)
+	}
+	return true, "Configured automatically via the 'claude mcp add' command", nil
 }
 
 func configureClaude(configPath string, execPath string) error {
@@ -298,73 +296,91 @@ func configureZed(configPath string, execPath string) error {
 }
 
 func stripComments(input string) string {
-	var sb strings.Builder
-	inString := false
-	inLineComment := false
-	inBlockComment := false
-
+	cs := &commentStripper{}
 	runes := []rune(input)
 	for i := 0; i < len(runes); i++ {
-		r := runes[i]
-
-		if inLineComment {
-			if r == '\n' {
-				inLineComment = false
-				sb.WriteRune(r)
-			}
-			continue
-		}
-
-		if inBlockComment {
-			if r == '*' && i+1 < len(runes) && runes[i+1] == '/' {
-				inBlockComment = false
-				i++ // skip '/'
-			}
-			continue
-		}
-
-		if inString {
-			if r == '"' {
-				// check if escaped
-				escaped := false
-				for j := sb.Len() - 1; j >= 0; j-- {
-					if sb.String()[j] == '\\' {
-						escaped = !escaped
-					} else {
-						break
-					}
-				}
-				if !escaped {
-					inString = false
-				}
-			}
-			sb.WriteRune(r)
-			continue
-		}
-
-		if r == '"' {
-			inString = true
-			sb.WriteRune(r)
-			continue
-		}
-
-		if r == '/' && i+1 < len(runes) {
-			next := runes[i+1]
-			if next == '/' {
-				inLineComment = true
-				i++
-				continue
-			} else if next == '*' {
-				inBlockComment = true
-				i++
-				continue
-			}
-		}
-
-		sb.WriteRune(r)
+		i = cs.step(runes, i)
 	}
+	return cs.out.String()
+}
 
-	return sb.String()
+// commentStripper removes // line and /* */ block comments outside JSON strings.
+type commentStripper struct {
+	out            strings.Builder
+	inString       bool
+	inLineComment  bool
+	inBlockComment bool
+}
+
+// step consumes runes[i] and returns the index of the last rune consumed, so the
+// caller can skip characters such as the second rune of a comment delimiter.
+func (cs *commentStripper) step(runes []rune, i int) int {
+	switch {
+	case cs.inLineComment:
+		cs.stepLineComment(runes[i])
+		return i
+	case cs.inBlockComment:
+		return cs.stepBlockComment(runes, i)
+	case cs.inString:
+		cs.stepString(runes[i])
+		return i
+	default:
+		return cs.stepNormal(runes, i)
+	}
+}
+
+func (cs *commentStripper) stepLineComment(r rune) {
+	if r == '\n' {
+		cs.inLineComment = false
+		cs.out.WriteRune(r)
+	}
+}
+
+func (cs *commentStripper) stepBlockComment(runes []rune, i int) int {
+	if runes[i] == '*' && i+1 < len(runes) && runes[i+1] == '/' {
+		cs.inBlockComment = false
+		return i + 1
+	}
+	return i
+}
+
+func (cs *commentStripper) stepString(r rune) {
+	if r == '"' && !cs.escaped() {
+		cs.inString = false
+	}
+	cs.out.WriteRune(r)
+}
+
+// escaped reports whether the last written character is preceded by an odd
+// number of backslashes.
+func (cs *commentStripper) escaped() bool {
+	s := cs.out.String()
+	escaped := false
+	for j := len(s) - 1; j >= 0 && s[j] == '\\'; j-- {
+		escaped = !escaped
+	}
+	return escaped
+}
+
+func (cs *commentStripper) stepNormal(runes []rune, i int) int {
+	r := runes[i]
+	if r == '"' {
+		cs.inString = true
+		cs.out.WriteRune(r)
+		return i
+	}
+	if r == '/' && i+1 < len(runes) {
+		switch runes[i+1] {
+		case '/':
+			cs.inLineComment = true
+			return i + 1
+		case '*':
+			cs.inBlockComment = true
+			return i + 1
+		}
+	}
+	cs.out.WriteRune(r)
+	return i
 }
 
 func configureOpenCode(configPath string, execPath string) error {

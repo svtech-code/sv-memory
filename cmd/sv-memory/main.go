@@ -56,6 +56,18 @@ var versionCmd = &cobra.Command{
 }
 
 func init() {
+	registerGraphCommands()
+	registerCoreCommands()
+	registerDeleteCommands()
+	registerProjectCommands()
+	registerSyncAndExportCommands()
+	registerConflictCommands()
+	registerHookCommands()
+	registerPermissionCommands()
+	registerConfigCommands()
+}
+
+func registerGraphCommands() {
 	graphCmd.AddCommand(rebuildCmd)
 	graphCmd.AddCommand(graphPathCmd)
 	graphCmd.AddCommand(graphExplainCmd)
@@ -74,7 +86,9 @@ func init() {
 	graphVizCmd.Flags().Bool("open", true, "Open the visualization in the default browser automatically")
 	graphDiffCmd.Flags().Bool("blast-radius", true, "Include blast radius risk analysis for changed files")
 	graphCmd.AddCommand(graphDiffCmd)
+}
 
+func registerCoreCommands() {
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(updateCmd)
@@ -93,19 +107,28 @@ func init() {
 	rootCmd.AddCommand(captureCmd)
 	rootCmd.AddCommand(sessionCmd)
 	captureCmd.AddCommand(capturePromptCmd)
+}
 
+func registerDeleteCommands() {
 	deleteCmd.AddCommand(deleteSessionCmd)
 	deleteCmd.AddCommand(deleteProjectCmd)
 	deleteProjectCmd.Flags().Bool("hard", false, "Permanently remove all associated data instead of soft-deleting")
+}
 
+func registerProjectCommands() {
 	projectsCmd.AddCommand(projectsListCmd)
 	projectsCmd.AddCommand(projectsPruneCmd)
 	projectsCmd.AddCommand(projectsConsolidateCmd)
+}
+
+func registerSyncAndExportCommands() {
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(configureCmd)
 	rootCmd.AddCommand(obsidianExportCmd)
 	obsidianExportCmd.Flags().StringP("output", "o", ".obsidian-sv-memory", "Output directory for the Obsidian vault")
+}
 
+func registerConflictCommands() {
 	conflictsCmd.AddCommand(conflictsListCmd)
 	conflictsCmd.AddCommand(conflictsStatsCmd)
 	conflictsCmd.AddCommand(conflictsScanCmd)
@@ -118,7 +141,9 @@ func init() {
 	conflictsScanCmd.Flags().Bool("dry-run", false, "Do not save scanned potential conflicts to database (default)")
 	conflictsScanCmd.Flags().Int("max-insert", 100, "Maximum number of conflicts to save")
 	conflictsScanCmd.Flags().Float64("threshold", 0.45, "Jaccard similarity threshold for descriptions")
+}
 
+func registerHookCommands() {
 	hooksInstallCmd.Flags().Bool("strict", false, "accepted for backward compatibility (strict is now the default)")
 	hooksInstallCmd.Flags().Bool("soft", false, "Install soft hooks (nudge-only, no graph-first redirect)")
 	hooksInstallCmd.Flags().Bool("context-injection", false, "Enable silent context injection (Claude Code first-read context packs)")
@@ -130,7 +155,9 @@ func init() {
 	hooksCmd.AddCommand(hooksUninstallCmd)
 	hooksCmd.AddCommand(hooksStatusCmd)
 	rootCmd.AddCommand(hooksCmd)
+}
 
+func registerPermissionCommands() {
 	permissionsCmd.AddCommand(permissionsListCmd)
 	permissionsCmd.AddCommand(permissionsStatusCmd)
 	permissionsCmd.AddCommand(permissionsGrantCmd)
@@ -143,7 +170,9 @@ func init() {
 	permissionsRevokeCmd.Flags().String("platform", "", "Target platform (antigravity, claude-code, opencode, codex)")
 	permissionsRevokeCmd.Flags().Bool("dry-run", false, "Show what would be revoked without writing")
 	permissionsStatusCmd.Flags().String("platform", "", "Show status for a single platform (default: all)")
+}
 
+func registerConfigCommands() {
 	configureCmd.AddCommand(configGetCmd)
 	configureCmd.AddCommand(configSetCmd)
 	configureCmd.AddCommand(configListCmd)

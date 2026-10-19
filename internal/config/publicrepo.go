@@ -114,59 +114,82 @@ func EnsureGitignoreStore(projPath string, ignoreStore bool) (bool, error) {
 		return false, err
 	}
 	original := string(raw)
-	var lines []string
-	if len(original) > 0 {
-		lines = strings.Split(strings.ReplaceAll(original, "\r\n", "\n"), "\n")
-	}
+	lines := splitGitignoreLines(original)
 
+	var updated string
 	if ignoreStore {
-		hasBlanket := false
-		hasOpenSpec := false
-		for _, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			if isBlanketStoreIgnoreLine(trimmed) {
-				hasBlanket = true
-			}
-			if isOpenSpecIgnoreLine(trimmed) {
-				hasOpenSpec = true
-			}
-		}
-		if hasBlanket && hasOpenSpec {
-			return false, nil
-		}
+		updated = localIgnoreContent(lines, original)
+	} else {
+		updated = teamIgnoreContent(lines, original)
+	}
+	if updated == original {
+		return false, nil
+	}
+	return true, os.WriteFile(gitignorePath, []byte(updated), 0644)
+}
 
-		// Filter out private-mode runtime-only ignore lines before adding missing local/public entries
-		filtered := make([]string, 0, len(lines)+4)
-		for _, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			if trimmed == gitignorePrivateComment || isRuntimeIgnoreLine(trimmed) {
-				continue
-			}
-			if !hasBlanket && trimmed == gitignoreLocalComment {
-				continue
-			}
-			filtered = append(filtered, line)
-		}
-		filtered = trimTrailingEmptyLines(filtered)
-		if !hasBlanket {
-			if len(filtered) > 0 {
-				filtered = append(filtered, "")
-			}
-			filtered = append(filtered, gitignoreLocalComment, ".sv-memory/")
-		}
-		if !hasOpenSpec {
-			filtered = append(filtered, "openspec/")
-		}
-		filtered = append(filtered, "")
-		updated := strings.Join(filtered, "\n")
-		if updated == original {
-			return false, nil
-		}
-		return true, os.WriteFile(gitignorePath, []byte(updated), 0644)
+// splitGitignoreLines splits .gitignore content into lines, normalizing CRLF.
+func splitGitignoreLines(content string) []string {
+	if content == "" {
+		return nil
+	}
+	return strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+}
+
+// localIgnoreContent builds the local/public-mode .gitignore: it ensures the
+// blanket `.sv-memory/` and `openspec/` ignores are present. It returns original
+// unchanged when both are already set.
+func localIgnoreContent(lines []string, original string) string {
+	hasBlanket, hasOpenSpec := scanGitignoreFlags(lines)
+	if hasBlanket && hasOpenSpec {
+		return original
 	}
 
-	// ignoreStore == false (private team git-sync mode):
-	// Remove blanket .sv-memory/ and openspec/ ignore rules and ensure .sv-memory/context-injection-enabled is ignored.
+	// Filter out private-mode runtime-only ignore lines before adding missing local/public entries.
+	filtered := make([]string, 0, len(lines)+4)
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == gitignorePrivateComment || isRuntimeIgnoreLine(trimmed) {
+			continue
+		}
+		if !hasBlanket && trimmed == gitignoreLocalComment {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	filtered = trimTrailingEmptyLines(filtered)
+	if !hasBlanket {
+		if len(filtered) > 0 {
+			filtered = append(filtered, "")
+		}
+		filtered = append(filtered, gitignoreLocalComment, ".sv-memory/")
+	}
+	if !hasOpenSpec {
+		filtered = append(filtered, "openspec/")
+	}
+	filtered = append(filtered, "")
+	return strings.Join(filtered, "\n")
+}
+
+// scanGitignoreFlags reports whether the blanket store and openspec ignores are
+// already present.
+func scanGitignoreFlags(lines []string) (hasBlanket, hasOpenSpec bool) {
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if isBlanketStoreIgnoreLine(trimmed) {
+			hasBlanket = true
+		}
+		if isOpenSpecIgnoreLine(trimmed) {
+			hasOpenSpec = true
+		}
+	}
+	return hasBlanket, hasOpenSpec
+}
+
+// teamIgnoreContent builds the private team git-sync-mode .gitignore: it removes
+// blanket store/openspec ignores and ensures the runtime toggle is ignored. It
+// returns original unchanged when no rewrite is needed.
+func teamIgnoreContent(lines []string, original string) string {
 	filtered := make([]string, 0, len(lines)+3)
 	hasRuntimeIgnore := false
 	removedAny := false
@@ -183,7 +206,7 @@ func EnsureGitignoreStore(projPath string, ignoreStore bool) (bool, error) {
 	}
 
 	if !removedAny && hasRuntimeIgnore {
-		return false, nil
+		return original
 	}
 
 	if !hasRuntimeIgnore {
@@ -191,17 +214,11 @@ func EnsureGitignoreStore(projPath string, ignoreStore bool) (bool, error) {
 		if len(filtered) > 0 {
 			filtered = append(filtered, "")
 		}
-		filtered = append(filtered, gitignorePrivateComment, gitignoreRuntimeEntry, "")
-	} else {
-		filtered = trimTrailingEmptyLines(filtered)
-		filtered = append(filtered, "")
+		filtered = append(filtered, gitignorePrivateComment, gitignoreRuntimeEntry)
 	}
-
-	updated := strings.Join(filtered, "\n")
-	if updated == original {
-		return false, nil
-	}
-	return true, os.WriteFile(gitignorePath, []byte(updated), 0644)
+	filtered = trimTrailingEmptyLines(filtered)
+	filtered = append(filtered, "")
+	return strings.Join(filtered, "\n")
 }
 
 func trimTrailingEmptyLines(lines []string) []string {

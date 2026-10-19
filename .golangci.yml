@@ -14,11 +14,18 @@ linters:
     - unused
     - ineffassign
     - gocyclo
+    - gocognit
+    - funlen
     - revive
 
   settings:
     gocyclo:
-      min-complexity: 30
+      min-complexity: 15
+    gocognit:
+      min-complexity: 25
+    funlen:
+      lines: 100
+      statements: 60
     errcheck:
       exclude-functions:
         - io.Closer.Close
@@ -46,10 +53,13 @@ linters:
 
   exclusions:
     rules:
-      # Exclude cyclo complexity, errcheck, and revive checks on tests as they are more relaxed
+      # Exclude cyclo/cognitive complexity and function length checks on tests
+      # as they are more relaxed.
       - path: _test\.go
         linters:
           - gocyclo
+          - gocognit
+          - funlen
           - errcheck
           - revive
 
