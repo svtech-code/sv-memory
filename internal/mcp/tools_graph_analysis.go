@@ -14,7 +14,7 @@ import (
 )
 
 func (s *Server) handleGodNodes(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	topN := positiveInt(req.GetString("top_n", "10"), 10)
+	topN := positiveInt(req.GetString("top_n", strconv.Itoa(graph.DefaultTopCommunities)), graph.DefaultTopCommunities)
 	if topN > 100 {
 		topN = 100
 	}
@@ -213,7 +213,7 @@ func (s *Server) handleGraphCommunities(ctx context.Context, req mcp.CallToolReq
 	if commIDStr := req.GetString("community_id", ""); commIDStr != "" {
 		return s.renderCommunityDetail(req, g, members, commIDStr, commLabels)
 	}
-	return s.renderCommunityList(req, g, members, commLabels, positiveInt(req.GetString("top_n", "10"), 10))
+	return s.renderCommunityList(req, g, members, commLabels, positiveInt(req.GetString("top_n", strconv.Itoa(graph.DefaultTopCommunities)), graph.DefaultTopCommunities))
 }
 
 // renderCommunityDetail renders a single community's member table.

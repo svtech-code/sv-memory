@@ -69,7 +69,7 @@ func (s *Server) handleGraphPath(ctx context.Context, req mcp.CallToolRequest) (
 	if err != nil {
 		return mcp.NewToolResultError("missing required field: target"), nil
 	}
-	maxHops := clampRange(req.GetString("max_hops", "10"), 10, 1, 20)
+	maxHops := clampRange(req.GetString("max_hops", strconv.Itoa(graph.DefaultMaxHops)), graph.DefaultMaxHops, 1, 20)
 
 	g, err := s.getOrLoadGraph()
 	if err != nil {

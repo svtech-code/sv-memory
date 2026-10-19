@@ -87,7 +87,7 @@ func (s *Server) conflictsList(req mcp.CallToolRequest) (*mcp.CallToolResult, er
 
 func (s *Server) conflictsScan(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	apply := req.GetString("apply", "false") == "true"
-	found, err := memory.ScanConflicts(s.pool.Writer, s.cfg.ProjectID, apply, 100, s.scanThreshold(req))
+	found, err := memory.ScanConflicts(s.pool.Writer, s.cfg.ProjectID, apply, memory.DefaultScanLimit, s.scanThreshold(req))
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to scan conflicts: %v", err)), nil
 	}

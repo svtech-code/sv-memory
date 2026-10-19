@@ -142,6 +142,11 @@ type conflictScanConfig struct {
 	maxInsert int
 }
 
+// DefaultScanLimit caps how many candidate conflict relations a scan persists
+// when apply=true. Shared by the CLI (`conflicts scan --max-insert`) and the MCP
+// tool (`sv_mem_conflicts action=scan`) so their defaults agree.
+const DefaultScanLimit = 100
+
 // ScanConflicts performs pairwise Jaccard similarity analysis on project
 // memories. If similarity exceeds the threshold and no prior relation exists, it
 // flags it as 'conflicts_with'.

@@ -14,6 +14,15 @@ import (
 	"github.com/svtech-code/sv-memory/internal/security"
 )
 
+// DefaultMaxHops bounds the shortest-path search in both the CLI
+// (`sv-memory graph path`) and the MCP tool (`sv_graph_path`), so the two
+// surfaces agree without duplicating the literal.
+const DefaultMaxHops = 10
+
+// DefaultTopCommunities is the default number of communities listed by the CLI
+// and MCP graph community surfaces (sv_graph_communities / `graph communities`).
+const DefaultTopCommunities = 10
+
 // Node represents a vertex in the code dependency graph.
 type Node = schema.Node
 

@@ -10,6 +10,8 @@ import (
 
 	"github.com/svtech-code/sv-memory/internal/config"
 	"github.com/svtech-code/sv-memory/internal/db"
+	"github.com/svtech-code/sv-memory/internal/graph"
+	"github.com/svtech-code/sv-memory/internal/memory"
 )
 
 // version and commit are injected at build time via -ldflags
@@ -85,6 +87,7 @@ func registerGraphCommands() {
 	graphVizCmd.Flags().StringP("output", "o", "graph.html", "Output HTML file path")
 	graphVizCmd.Flags().Bool("open", true, "Open the visualization in the default browser automatically")
 	graphDiffCmd.Flags().Bool("blast-radius", true, "Include blast radius risk analysis for changed files")
+	graphPathCmd.Flags().IntVar(&graphPathMaxHops, "max-hops", graph.DefaultMaxHops, "Maximum number of hops for the shortest-path search")
 	graphCmd.AddCommand(graphDiffCmd)
 }
 
@@ -139,8 +142,8 @@ func registerConflictCommands() {
 	conflictsListCmd.Flags().String("project", "", "Filter by project ID")
 	conflictsScanCmd.Flags().Bool("apply", false, "Save scanned potential conflicts to database")
 	conflictsScanCmd.Flags().Bool("dry-run", false, "Do not save scanned potential conflicts to database (default)")
-	conflictsScanCmd.Flags().Int("max-insert", 100, "Maximum number of conflicts to save")
-	conflictsScanCmd.Flags().Float64("threshold", 0.45, "Jaccard similarity threshold for descriptions")
+	conflictsScanCmd.Flags().Int("max-insert", memory.DefaultScanLimit, "Maximum number of conflicts to save")
+	conflictsScanCmd.Flags().Float64("threshold", config.DefaultConflictThreshold, "Jaccard similarity threshold for descriptions")
 }
 
 func registerHookCommands() {

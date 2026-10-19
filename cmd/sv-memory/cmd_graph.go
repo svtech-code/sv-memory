@@ -23,6 +23,10 @@ var graphCmd = &cobra.Command{
 	Short: "Manage the project dependency graph",
 }
 
+// graphPathMaxHops is the --max-hops flag for `graph path`, defaulting to the
+// shared graph.DefaultMaxHops so the CLI matches the MCP sv_graph_path tool.
+var graphPathMaxHops int
+
 var graphPathCmd = &cobra.Command{
 	Use:   "path <source> <target>",
 	Short: "Find the shortest path between two nodes in the dependency graph",
@@ -44,7 +48,7 @@ var graphPathCmd = &cobra.Command{
 				return nil
 			}
 
-			path := g.ShortestPath(startNode, endNode, 10)
+			path := g.ShortestPath(startNode, endNode, graphPathMaxHops)
 			if len(path) == 0 {
 				fmt.Printf("No path found between %s and %s.\n", args[0], args[1])
 				return nil
