@@ -105,7 +105,7 @@ El motor de grafo analiza dependencias del código fuente. Para añadir soporte 
 
 Para registrar una nueva herramienta de Model Context Protocol (MCP):
 
-1.  **Definir la Herramienta:** Abre [mcp.go](internal/mcp/mcp.go). `NewServer` delega el registro en funciones `register*Tools` por dominio (por ejemplo `registerCoreMemoryTools`, `registerGraphQueryTools`). Añade tu herramienta dentro de la función correspondiente usando `mcp.NewTool` y registra su handler:
+1.  **Definir la Herramienta:** Abre [mcp_tools_list.go](internal/mcp/mcp_tools_list.go). `NewServer` (en `mcp_server.go`) delega el registro en funciones `register*Tools` por dominio (por ejemplo `registerCoreMemoryTools`, `registerGraphQueryTools`). Añade tu herramienta dentro de la función correspondiente usando `mcp.NewTool` y registra su handler:
     ```go
     newTool := mcp.NewTool("sv_tool_name",
         mcp.WithDescription("Tool description"),
@@ -114,7 +114,7 @@ Para registrar una nueva herramienta de Model Context Protocol (MCP):
 
     ms.AddTool(newTool, s.handleToolName)
     ```
-    Las definiciones de herramientas deben permanecer en `mcp.go`: los tests de guardia (`TestAllToolsMatchesRegisteredTools`, `TestToolDescriptionBudget`) parsean ese archivo directamente.
+    Las definiciones de herramientas deben permanecer en `mcp_tools_list.go`: los tests de guardia (`TestAllToolsMatchesRegisteredTools`, `TestToolDescriptionBudget`) escanean los fuentes del paquete directamente.
     Añade el método handler `handleToolName` (junto a los demás handlers en el struct `*Server`) con la firma `func (s *Server) handleToolName(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error)`:
     ```go
     func (s *Server) handleToolName(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

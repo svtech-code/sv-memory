@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -13,6 +14,30 @@ import (
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 )
+
+// packageSource concatenates the non-test Go sources of the current package so
+// guard tests can scan tool registrations/descriptions regardless of which file
+// a given split places them in.
+func packageSource(t *testing.T) string {
+	t.Helper()
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("failed to glob package sources: %v", err)
+	}
+	var sb strings.Builder
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		b, rerr := os.ReadFile(f)
+		if rerr != nil {
+			t.Fatalf("failed to read %s: %v", f, rerr)
+		}
+		sb.Write(b)
+		sb.WriteByte('\n')
+	}
+	return sb.String()
+}
 
 func TestDebounceTimerRace(t *testing.T) {
 	tempDir, pool, cfg := setupTestEnv(t)
@@ -49,18 +74,15 @@ func TestDebounceTimerRace(t *testing.T) {
 }
 
 // TestAllToolsMatchesRegisteredTools is the guard test for the single source
-// of truth: every tool registered via NewTool/AddTool in NewServer MUST have a
-// matching entry in AllTools (used by the permission manager). It parses the
-// mcp.go source to collect the registered names instead of relying on a server
+// of truth: every tool registered via NewTool/AddTool MUST have a matching
+// entry in AllTools (used by the permission manager). It scans the package
+// sources to collect the registered names instead of relying on a server
 // instance, keeping the test lightweight and independent of DB setup.
 func TestAllToolsMatchesRegisteredTools(t *testing.T) {
-	src, err := os.ReadFile("mcp.go")
-	if err != nil {
-		t.Fatalf("failed to read mcp.go: %v", err)
-	}
+	src := packageSource(t)
 
 	registered := map[string]bool{}
-	for _, line := range strings.Split(string(src), "\n") {
+	for _, line := range strings.Split(src, "\n") {
 		idx := strings.Index(line, `mcp.NewTool("`)
 		if idx == -1 {
 			continue
@@ -77,7 +99,7 @@ func TestAllToolsMatchesRegisteredTools(t *testing.T) {
 	}
 
 	if len(registered) == 0 {
-		t.Fatal("no registered tools found in mcp.go — guard test is broken")
+		t.Fatal("no registered tools found in package sources — guard test is broken")
 	}
 
 	allTools := map[string]bool{}
@@ -144,13 +166,10 @@ func TestFullToolsModeRegistersAllTools(t *testing.T) {
 // length of LLM-visible tool descriptions must stay under 9500 chars so the
 // tool list does not crowd out model context on every request.
 func TestToolDescriptionBudget(t *testing.T) {
-	src, err := os.ReadFile("mcp.go")
-	if err != nil {
-		t.Fatalf("failed to read mcp.go: %v", err)
-	}
+	src := packageSource(t)
 	re := regexp.MustCompile(`mcp\.WithDescription\("((?:[^"\\]|\\.)*)"\)`)
 	total := 0
-	for _, m := range re.FindAllStringSubmatch(string(src), -1) {
+	for _, m := range re.FindAllStringSubmatch(src, -1) {
 		total += len(m[1])
 	}
 	if total >= 10000 {

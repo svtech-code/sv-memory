@@ -12,10 +12,10 @@ where to look when extending the project. It complements the specification
 | `cmd/sv-memory/` | Cobra CLI: root command registration, `init`, `mcp`, `setup`, `configure`, `hooks`, `permissions`, `graph`, `conflicts`, `projects` | `main.go`, `cmd_init.go`, `cmd_setup.go` |
 | `internal/config/` | Paths, viper YAML config, `configure` wizard + MCP config writers (cursor/pi/codex/claude/opencode/antigravity) | `config.go`, `configure.go` |
 | `internal/db/` | SQLite open/tuning, migrations, WAL reader/writer pool | `db.go`, `pool.go`, `migrations.go` |
-| `internal/graph/` | Scanner, dependency graph build (incremental + full), BFS query, Leiden communities, betweenness, god nodes, AST call edges, Framework routing edges | `graph.go`, `incremental.go`, `relations.go`, `routing.go`, `communities.go`, `leiden.go`, `memory.go` |
+| `internal/graph/` | Scanner, dependency graph build (incremental + full), BFS query, Leiden communities, betweenness, god nodes, AST call edges, Framework routing edges | `graph.go`, `incremental.go`, `relations.go` (+ `relations_calls.go`, `relations_markdown.go`), `routing.go`, `communities.go`, `leiden.go`, `memory.go` |
 | `internal/graph/extractor/` | tree-sitter extractor (symbols, imports, AST call refs), per-language regex fallbacks | `extractor.go`, `tree_sitter.go`, `lang_*.go`, `regex_*.go`, `patterns.go` |
-| `internal/mcp/` | MCP stdio server + 42 tool handlers | `mcp.go` (core + `register*Tools` registration), `tools_graph*.go`, `tools_spec*.go`, `tools_search.go`, `server_sync.go`, `respond.go` |
-| `internal/memory/` | Memory CRUD, sessions, dedup, conflicts, compaction, git sync, context pack, stats | `memory.go`, `save.go`, `memory_session.go`, `conflicts.go`, `contextpack.go`, `sync.go`, `prompts.go` |
+| `internal/mcp/` | MCP stdio server + 42 tool handlers | `mcp_server.go` (core + lifecycle), `mcp_tools_list.go` (`Tool`/`AllTools` + `register*Tools`), `tools_graph*.go`, `tools_spec*.go`, `tools_search.go`, `server_sync.go`, `respond.go` |
+| `internal/memory/` | Memory CRUD, sessions, dedup, conflicts, compaction, git sync, context pack, stats | `memory.go`, `save.go`, `memory_session.go`, `conflicts.go`, `contextpack.go` (+ `contextpack_explore.go`, `contextpack_render.go`), `sync.go`, `prompts.go` |
 | `internal/hook/` | PreToolUse + lifecycle hook scripts/skills (Claude Code, OpenCode, Antigravity, Codex) | `hook.go` (core), `claude_code.go`, `antigravity.go`, `platforms.go`, `templates.go`, `scripts/` |
 | `internal/protocol/` | AGENTS.md / `.cursorrules` protocol injection | `protocol.go` |
 | `internal/perm/` | MCP tool allow-list management (Antigravity, Claude Code) | `perm.go` |
@@ -107,7 +107,7 @@ internal/graph/incremental.go
 ```
 
 **Call edge precision (AST vs heuristic):** `extractCallEdges` in
-`relations.go` now prefers tree-sitter `ExtractCallRefs` per file — edges get
+`relations_calls.go` now prefers tree-sitter `ExtractCallRefs` per file — edges get
 confidence `EXTRACTED` with a `L<line>:<col>` location. Files without AST call
 coverage (Go, Lua, Markdown, shell, Vue/Svelte/Astro) keep the tokenize
 heuristic (`INFERRED`). See [spect.md §14](spect.md).
@@ -164,7 +164,7 @@ The graph→memory bridge in one bounded call. Passing `include_changes="true"` 
 sv_graph_explore(path, [include_changes])
    │
    ▼
-internal/memory/contextpack.go  GetContextPack
+internal/memory/contextpack_explore.go  GetContextPack
    │  resolve the path to a graph node (ResolveContextNode)
    │  node role: type, fan-in/fan-out, community, hub flag
    │  linked memories via where_path ∪ rationale_for edges
@@ -231,8 +231,9 @@ graph wiring: `internal/graph/spec_link.go`.
 
 1. Register the handler in `internal/mcp/tools_*.go` (a `Server` method).
 2. Register the tool in the matching `register*Tools` function inside
-   `NewServer` (`internal/mcp/mcp.go`) with `mcp.NewTool`. Tool definitions must
-   stay in `mcp.go`; the guard tests parse that file directly.
+   `NewServer` (`internal/mcp/mcp_server.go`) with `mcp.NewTool`. Tool definitions
+   must stay in `mcp_tools_list.go`; the guard tests scan the package sources
+   directly.
 3. Add a matching entry to `AllTools` (same file) — the guard test
    `TestAllToolsMatchesRegisteredTools` enforces the pairing.
 4. Add the store function in `internal/memory/` (or `internal/graph/`).
@@ -243,7 +244,7 @@ graph wiring: `internal/graph/spec_link.go`.
 ## Where to add a new language to the graph
 
 1. Add the extension→language mapping in `languageFromExt` (`graph.go`) and
-   `getLanguageGroup` (`relations.go`).
+   `getLanguageGroup` (`relations_calls.go`).
 2. Add the tree-sitter grammar to `GetLanguage` (`extractor/tree_sitter.go`)
    and a `parseX` symbol extractor; implement `ExtractCallRefs` for AST calls.
 3. Add the extension to the scanner's supported set (`.sv-memoryignore` aware)
