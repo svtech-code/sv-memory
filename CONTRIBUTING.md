@@ -70,6 +70,11 @@ We use a standard `Makefile` to manage development workflows. Ensure Go (v1.26+)
     ```bash
     make vet
     ```
+*   **Run the linter (enforces complexity gates):**
+    ```bash
+    make lint
+    ```
+    The gates are `gocyclo <= 15`, `gocognit <= 25`, and `funlen <= 100 lines / 60 statements` (test files are exempt). Prefer small, focused functions and split files by responsibility.
 
 ---
 
@@ -90,7 +95,7 @@ The graph engine parses source code dependencies. To add support for a new progr
     }
     ```
 3.  **Implement Parse Extractor:** In `parseSymbols` or `parseResult` routines, implement the extractor or pattern matching to capture imports and declarations (e.g. using regex or AST parsers).
-4.  **Write Tests:** Add test cases to [graph_test.go](internal/graph/graph_test.go) verifying that file scanning correctly registers nodes and import edges for the new language.
+4.  **Write Tests:** Add test cases to the relevant file under [internal/graph](internal/graph) (e.g. `parsing_test.go` for symbol parsing, `sync_test.go` for graph sync) verifying that file scanning correctly registers nodes and import edges for the new language.
 
 ---
 
@@ -98,7 +103,7 @@ The graph engine parses source code dependencies. To add support for a new progr
 
 To register a new Model Context Protocol (MCP) tool:
 
-1.  **Define and Register the Tool:** Open [mcp.go](internal/mcp/mcp.go). Inside the `NewServer` function, define your new tool using `mcp.NewTool` and register its handler with the MCP server (`ms := server.NewMCPServer(...)`):
+1.  **Define the Tool:** Open [mcp.go](internal/mcp/mcp.go). `NewServer` delegates registration to per-domain `register*Tools` functions (for example `registerCoreMemoryTools`, `registerGraphQueryTools`). Add your tool inside the matching function using `mcp.NewTool`, then register its handler:
     ```go
     newTool := mcp.NewTool("sv_tool_name",
         mcp.WithDescription("Tool description"),
@@ -107,6 +112,7 @@ To register a new Model Context Protocol (MCP) tool:
 
     ms.AddTool(newTool, s.handleToolName)
     ```
+    Tool definitions must stay in `mcp.go`: the guard tests (`TestAllToolsMatchesRegisteredTools`, `TestToolDescriptionBudget`) parse that file directly.
     Add the handler method `handleToolName` (alongside the other handlers on the `*Server` struct) with the signature `func (s *Server) handleToolName(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error)`:
     ```go
     func (s *Server) handleToolName(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -119,4 +125,4 @@ To register a new Model Context Protocol (MCP) tool:
     }
     ```
 2.  **Document the Tool:** Update the MCP tools list in [spect.md](documentation/spect.md) (or its [Spanish version](documentation/spect_ES.md)) with details on parameters and return formats.
-3.  **Write Integration Tests:** Open [mcp_test.go](internal/mcp/mcp_test.go) and add a test case retrieving your tool and verifying its response for valid and invalid parameters.
+3.  **Write Integration Tests:** Add a test in the matching focused test file under `internal/mcp` (e.g. `handlers_memory_test.go`, `tools_graph_features_test.go`, or `server_registration_test.go`) retrieving your tool and verifying its response for valid and invalid parameters.

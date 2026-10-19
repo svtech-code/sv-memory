@@ -3,6 +3,16 @@
 All notable changes follow [Conventional Commits](https://www.conventionalcommits.org/).
 Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automatically.
 
+## [Unreleased]
+
+### Changed
+- **Enforced complexity gates (`gocyclo <= 15`, `gocognit <= 25`, `funlen <= 100 lines / 60 statements`)**: `.golangci.yml` now treats these as errors for production code (test files are exempt), replacing the previous narrow per-function exclusions. The offending functions were decomposed into focused helpers across the graph, memory, MCP, hook, config, db and CLI packages; no behavior or public contract changed.
+- **Split monolithic files by responsibility**: `internal/mcp/mcp.go` registration now delegates to per-domain `register*Tools` functions; `hook.go` was split into `claude_code.go`, `antigravity.go` and `platforms.go`; `graph.ExportHTML` moved its template into `viz_template.go`; `graph_test.go`, `mcp_test.go`, `tools_spec_test.go`, `tools_features_test.go`, `hook_test.go` and `memory_test.go` were split into focused per-concern test files.
+- **Documentation**: updated the package map and extension guides (`CODEBASE-GUIDE`, `CONTRIBUTING`, EN/ES) to reflect the new files and the lint thresholds.
+
+### Removed
+- Unused `fileChangeSet` helper in `internal/graph/incremental.go`.
+
 ## [v0.27.0] - 2026-10-18
 
 ### Added

@@ -72,6 +72,11 @@ Usamos un `Makefile` estándar para gestionar los flujos de trabajo de desarroll
     ```bash
     make vet
     ```
+*   **Ejecutar el linter (aplica las puertas de complejidad):**
+    ```bash
+    make lint
+    ```
+    Los umbrales son `gocyclo <= 15`, `gocognit <= 25` y `funlen <= 100 líneas / 60 statements` (los archivos de test están exentos). Prefiere funciones pequeñas y enfocadas, y divide archivos por responsabilidad.
 
 ---
 
@@ -92,7 +97,7 @@ El motor de grafo analiza dependencias del código fuente. Para añadir soporte 
     }
     ```
 3.  **Implementar el Extractor de Parseo:** En las rutinas `parseSymbols` o `parseResult`, implementa el extractor o el pattern matching para capturar imports y declaraciones (p. ej., usando regex o parsers AST).
-4.  **Escribir Tests:** Añade casos de test a [graph_test.go](internal/graph/graph_test.go) que verifiquen que el escaneo de archivos registra correctamente nodos y aristas de import para el nuevo lenguaje.
+4.  **Escribir Tests:** Añade casos de test al archivo correspondiente bajo [internal/graph](internal/graph) (p. ej. `parsing_test.go` para parseo de símbolos, `sync_test.go` para sincronización del grafo) que verifiquen que el escaneo de archivos registra correctamente nodos y aristas de import para el nuevo lenguaje.
 
 ---
 
@@ -100,7 +105,7 @@ El motor de grafo analiza dependencias del código fuente. Para añadir soporte 
 
 Para registrar una nueva herramienta de Model Context Protocol (MCP):
 
-1.  **Definir y Registrar la Herramienta:** Abre [mcp.go](internal/mcp/mcp.go). Dentro de la función `NewServer`, define tu nueva herramienta usando `mcp.NewTool` y registra su handler con el servidor MCP (`ms := server.NewMCPServer(...)`):
+1.  **Definir la Herramienta:** Abre [mcp.go](internal/mcp/mcp.go). `NewServer` delega el registro en funciones `register*Tools` por dominio (por ejemplo `registerCoreMemoryTools`, `registerGraphQueryTools`). Añade tu herramienta dentro de la función correspondiente usando `mcp.NewTool` y registra su handler:
     ```go
     newTool := mcp.NewTool("sv_tool_name",
         mcp.WithDescription("Tool description"),
@@ -109,6 +114,7 @@ Para registrar una nueva herramienta de Model Context Protocol (MCP):
 
     ms.AddTool(newTool, s.handleToolName)
     ```
+    Las definiciones de herramientas deben permanecer en `mcp.go`: los tests de guardia (`TestAllToolsMatchesRegisteredTools`, `TestToolDescriptionBudget`) parsean ese archivo directamente.
     Añade el método handler `handleToolName` (junto a los demás handlers en el struct `*Server`) con la firma `func (s *Server) handleToolName(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error)`:
     ```go
     func (s *Server) handleToolName(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -121,4 +127,4 @@ Para registrar una nueva herramienta de Model Context Protocol (MCP):
     }
     ```
 2.  **Documentar la Herramienta:** Actualiza la lista de herramientas MCP en [spect.md](documentation/spect.md) (o su versión en [español](documentation/spect_ES.md)) con los detalles de los parámetros y los formatos de retorno.
-3.  **Escribir Tests de Integración:** Abre [mcp_test.go](internal/mcp/mcp_test.go) y añade un caso de test que recupere tu herramienta y verifique su respuesta para parámetros válidos e inválidos.
+3.  **Escribir Tests de Integración:** Añade un test en el archivo enfocado correspondiente bajo `internal/mcp` (p. ej. `handlers_memory_test.go`, `tools_graph_features_test.go` o `server_registration_test.go`) que recupere tu herramienta y verifique su respuesta para parámetros válidos e inválidos.

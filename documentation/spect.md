@@ -1198,7 +1198,7 @@ sv-memory/
 ├── SECURITY.md                  # Vulnerability reporting policy
 ├── CODE_OF_CONDUCT.md           # Community code of conduct
 ├── Makefile                     # build/test/lint/vet/install targets
-├── .golangci.yml                # Linter configuration
+├── .golangci.yml                # Linter configuration (gocyclo 15, gocognit 25, funlen 100/60)
 ├── .github/workflows/           # CI + release pipelines
 ├── install.sh                   # Unix setup script
 ├── install.ps1                  # Windows setup script

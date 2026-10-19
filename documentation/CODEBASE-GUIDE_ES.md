@@ -13,10 +13,10 @@ conflictos) y dónde mirar al extender el proyecto. Complementa la especificaci�
 | `internal/config/` | Rutas, config YAML viper, asistente `configure` + escritores de config MCP (cursor/pi/codex/claude/opencode/antigravity) | `config.go`, `configure.go` |
 | `internal/db/` | Apertura/ajuste de SQLite, migraciones, pool WAL lector/escritor | `db.go`, `pool.go`, `migrations.go` |
 | `internal/graph/` | Escáner, construcción del grafo de dependencias (incremental + completo), BFS, comunidades Leiden, betweenness, god nodes, aristas AST de llamadas | `graph.go`, `incremental.go`, `relations.go`, `communities.go`, `leiden.go`, `memory.go` |
-| `internal/graph/extractor/` | Extractor tree-sitter (símbolos, imports, refs AST de llamadas), fallback regex | `tree_sitter.go`, `regex.go`, `extractor.go` |
-| `internal/mcp/` | Servidor MCP stdio + 34 handlers de herramientas | `mcp.go` (núcleo + registro de tools), `server_sync.go`, `graph_load.go`, `respond.go`, `tools_*.go` |
-| `internal/memory/` | CRUD de memorias, sesiones, dedup, conflictos, compactación, git sync, context pack, stats | `memory.go`, `save.go`, `memory_session.go`, `conflicts.go`, `contextpack.go`, `sync.go`, `prompts.go` |
-| `internal/hook/` | Scripts/skills de hooks PreToolUse + ciclo de vida (Claude Code, OpenCode, Antigravity, Codex) | `hook.go`, `templates.go`, `scripts/` |
+| `internal/graph/extractor/` | Extractor tree-sitter (símbolos, imports, refs AST de llamadas), fallbacks regex por lenguaje | `extractor.go`, `tree_sitter.go`, `lang_*.go`, `regex_*.go`, `patterns.go` |
+| `internal/mcp/` | Servidor MCP stdio + 42 handlers de herramientas | `mcp.go` (núcleo + registro `register*Tools`), `tools_graph*.go`, `tools_spec*.go`, `tools_search.go`, `server_sync.go`, `respond.go` |
+| `internal/memory/` | Memory CRUD, sesiones, dedup, conflictos, compactación, sync git, context pack, stats | `memory.go`, `save.go`, `memory_session.go`, `conflicts.go`, `contextpack.go`, `sync.go`, `prompts.go` |
+| `internal/hook/` | Scripts/skills de hooks PreToolUse + ciclo de vida (Claude Code, OpenCode, Antigravity, Codex) | `hook.go` (núcleo), `claude_code.go`, `antigravity.go`, `platforms.go`, `templates.go`, `scripts/` |
 | `internal/protocol/` | Inyección de protocolo en AGENTS.md / `.cursorrules` | `protocol.go` |
 | `internal/perm/` | Gestión de allow-lists de herramientas MCP (Antigravity, Claude Code) | `perm.go` |
 | `internal/security/` | Sanitizador regex de secretos (API keys, JWTs, PEM, credenciales) | `security.go` |
@@ -231,7 +231,10 @@ wiring al grafo: `internal/graph/spec_link.go`.
 ## Dónde añadir una nueva herramienta MCP
 
 1. Registra el handler en `internal/mcp/tools_*.go` (un método de `Server`).
-2. Registra la herramienta en `NewServer` (`internal/mcp/mcp.go`) con `mcp.NewTool`.
+2. Registra la herramienta en la función `register*Tools` correspondiente dentro
+   de `NewServer` (`internal/mcp/mcp.go`) con `mcp.NewTool`. Las definiciones de
+   herramientas deben permanecer en `mcp.go`; los tests de guardia parsean ese
+   archivo directamente.
 3. Añade una entrada correspondiente en `AllTools` (mismo archivo) — el test
    guardián `TestAllToolsMatchesRegisteredTools` exige el emparejamiento.
 4. Añade la función de store en `internal/memory/` (o `internal/graph/`).

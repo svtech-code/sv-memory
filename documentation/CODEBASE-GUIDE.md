@@ -13,10 +13,10 @@ where to look when extending the project. It complements the specification
 | `internal/config/` | Paths, viper YAML config, `configure` wizard + MCP config writers (cursor/pi/codex/claude/opencode/antigravity) | `config.go`, `configure.go` |
 | `internal/db/` | SQLite open/tuning, migrations, WAL reader/writer pool | `db.go`, `pool.go`, `migrations.go` |
 | `internal/graph/` | Scanner, dependency graph build (incremental + full), BFS query, Leiden communities, betweenness, god nodes, AST call edges, Framework routing edges | `graph.go`, `incremental.go`, `relations.go`, `routing.go`, `communities.go`, `leiden.go`, `memory.go` |
-| `internal/graph/extractor/` | tree-sitter extractor (symbols, imports, AST call refs), regex fallback | `tree_sitter.go`, `regex.go`, `extractor.go` |
-| `internal/mcp/` | MCP stdio server + 34 tool handlers | `mcp.go` (core + tool registration), `server_sync.go`, `graph_load.go`, `respond.go`, `tools_*.go` |
+| `internal/graph/extractor/` | tree-sitter extractor (symbols, imports, AST call refs), per-language regex fallbacks | `extractor.go`, `tree_sitter.go`, `lang_*.go`, `regex_*.go`, `patterns.go` |
+| `internal/mcp/` | MCP stdio server + 42 tool handlers | `mcp.go` (core + `register*Tools` registration), `tools_graph*.go`, `tools_spec*.go`, `tools_search.go`, `server_sync.go`, `respond.go` |
 | `internal/memory/` | Memory CRUD, sessions, dedup, conflicts, compaction, git sync, context pack, stats | `memory.go`, `save.go`, `memory_session.go`, `conflicts.go`, `contextpack.go`, `sync.go`, `prompts.go` |
-| `internal/hook/` | PreToolUse + lifecycle hook scripts/skills (Claude Code, OpenCode, Antigravity, Codex) | `hook.go`, `templates.go`, `scripts/` |
+| `internal/hook/` | PreToolUse + lifecycle hook scripts/skills (Claude Code, OpenCode, Antigravity, Codex) | `hook.go` (core), `claude_code.go`, `antigravity.go`, `platforms.go`, `templates.go`, `scripts/` |
 | `internal/protocol/` | AGENTS.md / `.cursorrules` protocol injection | `protocol.go` |
 | `internal/perm/` | MCP tool allow-list management (Antigravity, Claude Code) | `perm.go` |
 | `internal/security/` | Regex secrets sanitizer (API keys, JWTs, PEM, credentials) | `security.go` |
@@ -230,7 +230,9 @@ graph wiring: `internal/graph/spec_link.go`.
 ## Where to add a new MCP tool
 
 1. Register the handler in `internal/mcp/tools_*.go` (a `Server` method).
-2. Register the tool in `NewServer` (`internal/mcp/mcp.go`) with `mcp.NewTool`.
+2. Register the tool in the matching `register*Tools` function inside
+   `NewServer` (`internal/mcp/mcp.go`) with `mcp.NewTool`. Tool definitions must
+   stay in `mcp.go`; the guard tests parse that file directly.
 3. Add a matching entry to `AllTools` (same file) — the guard test
    `TestAllToolsMatchesRegisteredTools` enforces the pairing.
 4. Add the store function in `internal/memory/` (or `internal/graph/`).
