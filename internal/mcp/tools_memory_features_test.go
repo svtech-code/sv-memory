@@ -7,6 +7,7 @@ import (
 	"time"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
+	"github.com/svtech-code/sv-memory/internal/config"
 	"github.com/svtech-code/sv-memory/internal/memory"
 )
 
@@ -107,11 +108,18 @@ func TestSearchMatchModeHandler(t *testing.T) {
 	}
 }
 
-func TestConfiguredCharsFallback(t *testing.T) {
-	// With no config key set, the compiled-in default is returned so existing
-	// truncation behavior is preserved when viper has no value.
-	if got := configuredInt("no_such_config_key_anywhere", 123); got != 123 {
-		t.Errorf("expected fallback 123, got %d", got)
+func TestDefaultSettingsPreserveTruncation(t *testing.T) {
+	// With no config loaded, DefaultSettings provides the compiled-in limits so
+	// the historical truncation behavior is preserved without touching viper.
+	s := config.DefaultSettings()
+	if s.MaxFieldChars != config.DefaultMaxFieldChars {
+		t.Errorf("MaxFieldChars = %d, want %d", s.MaxFieldChars, config.DefaultMaxFieldChars)
+	}
+	if s.MaxResponseTokens != config.DefaultMaxResponseTokens {
+		t.Errorf("MaxResponseTokens = %d, want %d", s.MaxResponseTokens, config.DefaultMaxResponseTokens)
+	}
+	if s.TimelineWhyChars != config.DefaultTimelineWhyChars {
+		t.Errorf("TimelineWhyChars = %d, want %d", s.TimelineWhyChars, config.DefaultTimelineWhyChars)
 	}
 }
 

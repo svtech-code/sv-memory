@@ -61,6 +61,7 @@ func BenchmarkToolResponseTokens(b *testing.B) {
 		ProjectID: "bench-resp-proj",
 		ProjName:  "Bench Response",
 		ProjPath:  tempDir,
+		Settings:  config.DefaultSettings(),
 	}
 	if err := db.RegisterProject(pool.Writer, cfg.ProjectID, cfg.ProjName, cfg.ProjPath); err != nil {
 		b.Fatalf("failed to register project: %v", err)

@@ -47,7 +47,7 @@ func TestPreflightCheckPass(t *testing.T) {
 	database, projectID := newPreflightDB(t)
 	saveRule(t, database, projectID, "standard", "Database migrations must be backward compatible", false)
 
-	result, err := PreflightCheck(database, projectID, "Add session-based auth", "Introduce server-side sessions with JWT refresh tokens")
+	result, err := PreflightCheck(database, projectID, "Add session-based auth", "Introduce server-side sessions with JWT refresh tokens", 0.45)
 	if err != nil {
 		t.Fatalf("failed preflight: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestPreflightCheckWarnOnOverlap(t *testing.T) {
 	database, projectID := newPreflightDB(t)
 	saveRule(t, database, projectID, "standard", "Authentication uses stateless JWT with server-side sessions support", false)
 
-	result, err := PreflightCheck(database, projectID, "Implement session-based auth", "Authentication using stateless JWT with server-side sessions")
+	result, err := PreflightCheck(database, projectID, "Implement session-based auth", "Authentication using stateless JWT with server-side sessions", 0.45)
 	if err != nil {
 		t.Fatalf("failed preflight: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestPreflightCheckBlockOnPinnedInvariant(t *testing.T) {
 	database, projectID := newPreflightDB(t)
 	ruleID := saveRule(t, database, projectID, "architecture", "Stateless JWT authentication with server-side sessions is a pinned invariant", true)
 
-	result, err := PreflightCheck(database, projectID, "Implement session-based auth", "Authentication using stateless JWT with server-side sessions")
+	result, err := PreflightCheck(database, projectID, "Implement session-based auth", "Authentication using stateless JWT with server-side sessions", 0.45)
 	if err != nil {
 		t.Fatalf("failed preflight: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestPreflightCheckBlockDominatesWarn(t *testing.T) {
 	saveRule(t, database, projectID, "standard", "Authentication with stateless JWT server-side sessions", false)
 	saveRule(t, database, projectID, "standard", "Stateless JWT authentication with server-side sessions is a pinned invariant", true)
 
-	result, err := PreflightCheck(database, projectID, "Session auth", "Authentication using stateless JWT with server-side sessions")
+	result, err := PreflightCheck(database, projectID, "Session auth", "Authentication using stateless JWT with server-side sessions", 0.45)
 	if err != nil {
 		t.Fatalf("failed preflight: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestPreflightCheckIgnoresJournalCategory(t *testing.T) {
 	database, projectID := newPreflightDB(t)
 	saveRule(t, database, projectID, "journal", "Stateless JWT authentication with server-side sessions notes for later review", false)
 
-	result, err := PreflightCheck(database, projectID, "Implement session-based auth", "Authentication using stateless JWT with server-side sessions")
+	result, err := PreflightCheck(database, projectID, "Implement session-based auth", "Authentication using stateless JWT with server-side sessions", 0.45)
 	if err != nil {
 		t.Fatalf("failed preflight: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestPreflightCheckEmptyTokensPasses(t *testing.T) {
 	database, projectID := newPreflightDB(t)
 	saveRule(t, database, projectID, "standard", "Some unrelated rule", false)
 
-	result, err := PreflightCheck(database, projectID, "", "")
+	result, err := PreflightCheck(database, projectID, "", "", 0.45)
 	if err != nil {
 		t.Fatalf("failed preflight: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestPreflightCheckFilterByProject(t *testing.T) {
 	}
 	saveRule(t, database, pA, "architecture", "Stateless JWT authentication with server-side sessions is a pinned invariant", true)
 
-	result, err := PreflightCheck(database, pB, "Implement session-based auth", "Authentication using stateless JWT with server-side sessions")
+	result, err := PreflightCheck(database, pB, "Implement session-based auth", "Authentication using stateless JWT with server-side sessions", 0.45)
 	if err != nil {
 		t.Fatalf("failed preflight: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestSemanticPreflightFailsOpen(t *testing.T) {
 		return "", errors.New("agent unavailable")
 	}
 
-	result, err := SemanticPreflight(context.Background(), database, projectID, "Implement session-based auth", "Authentication using stateless JWT with server-side sessions", "")
+	result, err := SemanticPreflight(context.Background(), database, projectID, "Implement session-based auth", "Authentication using stateless JWT with server-side sessions", "", 0.45)
 	if err != nil {
 		t.Fatalf("failed semantic preflight: %v", err)
 	}

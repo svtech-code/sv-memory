@@ -11,7 +11,6 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/svtech-code/sv-memory/internal/config"
 	"github.com/svtech-code/sv-memory/internal/db"
@@ -40,7 +39,7 @@ var initCmd = &cobra.Command{
 		fmt.Printf("Initializing project: %s (ID: %s)\n", cfg.ProjName, cfg.ProjectID)
 		fmt.Printf("Workspace root: %s\n", cfg.ProjPath)
 
-		gitSyncEnabled := viper.GetBool("git_sync_enabled")
+		gitSyncEnabled := cfg.Settings.GitSyncEnabled
 		if cmd.Flags().Changed("git-sync") {
 			gitSyncFlag, _ := cmd.Flags().GetBool("git-sync")
 			if writeErr := config.WriteConfigKey(cfg.ProjPath, "git_sync_enabled", gitSyncFlag, true); writeErr != nil {

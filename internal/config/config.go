@@ -20,6 +20,125 @@ type Config struct {
 	ProjectID string
 	ProjName  string
 	ProjPath  string
+
+	// Settings is the typed snapshot of the tunable configuration, loaded once
+	// per process by LoadConfig. Consumers read the fields directly (fallbacks
+	// are already applied), so no package outside this one imports viper.
+	Settings Settings
+}
+
+// Compiled-in defaults for the tunable settings. They mirror the viper
+// SetDefault values (see LoadGlobalAndLocalConfig) and the historical
+// per-consumer fallbacks, and are the single source of truth for
+// DefaultSettings.
+const (
+	DefaultMaxResponseTokens      = 4000
+	DefaultMaxFieldChars          = 1000
+	DefaultSearchExpandChars      = 300
+	DefaultTimelineWhyChars       = 200
+	DefaultBundleWhyChars         = 300
+	DefaultContextPackMaxMemories = 5
+	DefaultConflictThreshold      = 0.45
+	DefaultCompactionIntervalMin  = 60
+	DefaultGraphWatchDebounceMs   = 2000
+	DefaultStaleSessionHours      = 24
+	DefaultReviewLimit            = 10
+)
+
+// Settings is a typed snapshot of the tunable configuration. Every field holds
+// an effective value (default already applied), so consumers never re-implement
+// fallback logic. PruneStaleDays is the one exception: 0 means "use the
+// downstream PruneStaleMemories default", matching the historical behavior.
+type Settings struct {
+	MaxResponseTokens      int
+	MaxFieldChars          int
+	SearchExpandChars      int
+	TimelineWhyChars       int
+	BundleWhyChars         int
+	ContextPackMaxMemories int
+	ConflictThreshold      float64
+	GitSyncEnabled         bool
+	AutoCompactionEnabled  bool
+	CompactionIntervalMin  int
+	GraphWatcherEnabled    bool
+	GraphWatchDebounceMs   int
+	StaleSessionHours      int
+	DefaultReviewLimit     int
+	PruneStaleDays         int
+	GraphBoost             bool
+}
+
+// DefaultSettings returns the compiled-in defaults. It is the base for
+// loadSettings and the value carried by a Config built without LoadConfig
+// (e.g. unit tests that construct Config directly).
+func DefaultSettings() Settings {
+	return Settings{
+		MaxResponseTokens:      DefaultMaxResponseTokens,
+		MaxFieldChars:          DefaultMaxFieldChars,
+		SearchExpandChars:      DefaultSearchExpandChars,
+		TimelineWhyChars:       DefaultTimelineWhyChars,
+		BundleWhyChars:         DefaultBundleWhyChars,
+		ContextPackMaxMemories: DefaultContextPackMaxMemories,
+		ConflictThreshold:      DefaultConflictThreshold,
+		GitSyncEnabled:         false,
+		AutoCompactionEnabled:  true,
+		CompactionIntervalMin:  DefaultCompactionIntervalMin,
+		GraphWatcherEnabled:    true,
+		GraphWatchDebounceMs:   DefaultGraphWatchDebounceMs,
+		StaleSessionHours:      DefaultStaleSessionHours,
+		DefaultReviewLimit:     DefaultReviewLimit,
+		PruneStaleDays:         0,
+		GraphBoost:             true,
+	}
+}
+
+// loadSettings overlays the merged viper values onto the compiled defaults,
+// preserving the historical fallback rules: non-positive integers/floats keep
+// the default, booleans are taken as-is, and prune_stale_days keeps 0 to signal
+// "use the downstream default". max_response_tokens is read without a guard so
+// an explicit 0 still means "unlimited".
+func loadSettings() Settings {
+	s := DefaultSettings()
+	// max_response_tokens is read without a positive guard: the key has a
+	// viper default (4000), and an explicitly configured 0 means "unlimited",
+	// matching the historical resolveTokenBudget behavior.
+	s.MaxResponseTokens = viper.GetInt("max_response_tokens")
+	if v := viper.GetInt("max_field_chars"); v > 0 {
+		s.MaxFieldChars = v
+	}
+	if v := viper.GetInt("search_expand_chars"); v > 0 {
+		s.SearchExpandChars = v
+	}
+	if v := viper.GetInt("timeline_why_chars"); v > 0 {
+		s.TimelineWhyChars = v
+	}
+	if v := viper.GetInt("bundle_why_chars"); v > 0 {
+		s.BundleWhyChars = v
+	}
+	if v := viper.GetInt("context_pack_max_memories"); v > 0 {
+		s.ContextPackMaxMemories = v
+	}
+	if v := viper.GetFloat64("conflict_threshold"); v > 0 {
+		s.ConflictThreshold = v
+	}
+	if v := viper.GetInt("compaction_interval_minutes"); v > 0 {
+		s.CompactionIntervalMin = v
+	}
+	if v := viper.GetInt("graph_watch_debounce_ms"); v > 0 {
+		s.GraphWatchDebounceMs = v
+	}
+	if v := viper.GetInt("stale_session_hours"); v > 0 {
+		s.StaleSessionHours = v
+	}
+	if v := viper.GetInt("default_review_limit"); v > 0 {
+		s.DefaultReviewLimit = v
+	}
+	s.GitSyncEnabled = viper.GetBool("git_sync_enabled")
+	s.AutoCompactionEnabled = viper.GetBool("auto_compaction_enabled")
+	s.GraphWatcherEnabled = viper.GetBool("graph_watcher_enabled")
+	s.GraphBoost = viper.GetBool("graph_boost")
+	s.PruneStaleDays = viper.GetInt("prune_stale_days")
+	return s
 }
 
 // LoadGlobalAndLocalConfig loads default, global (~/.sv-memory/config.yaml),
@@ -148,6 +267,27 @@ func RoutingEnabled(recipe string) bool {
 	return viper.GetBool(key)
 }
 
+// Get returns the effective value of a configuration key from the merged
+// global+local store, and whether the key is set. It lets the CLI config
+// commands inspect values without importing viper directly.
+func Get(key string) (interface{}, bool) {
+	if !viper.IsSet(key) {
+		return nil, false
+	}
+	return viper.Get(key), true
+}
+
+// BundleWhyChars returns the configured Auto-Boot rationale truncation cap,
+// falling back to the compiled default when bundle_why_chars is unset or
+// non-positive. Exposed so the memory package delegates the read here instead
+// of importing viper itself.
+func BundleWhyChars() int {
+	if v := viper.GetInt("bundle_why_chars"); v > 0 {
+		return v
+	}
+	return DefaultBundleWhyChars
+}
+
 // gitCommandTimeout bounds how long any git helper may wait before giving up.
 // Git runs on the hot path of every sv_mem_save; a hung git process (e.g. on a
 // locked or networked repository) must not block the CLI indefinitely.
@@ -219,6 +359,7 @@ func LoadConfig(cwd string) (*Config, error) {
 		ProjectID: projID,
 		ProjName:  projName,
 		ProjPath:  gitRoot,
+		Settings:  loadSettings(),
 	}, nil
 }
 

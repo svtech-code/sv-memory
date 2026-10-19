@@ -113,6 +113,67 @@ func TestViperConfig(t *testing.T) {
 	}
 }
 
+func TestDefaultSettingsMatchesConstants(t *testing.T) {
+	s := DefaultSettings()
+	if s.MaxResponseTokens != DefaultMaxResponseTokens ||
+		s.MaxFieldChars != DefaultMaxFieldChars ||
+		s.SearchExpandChars != DefaultSearchExpandChars ||
+		s.TimelineWhyChars != DefaultTimelineWhyChars ||
+		s.BundleWhyChars != DefaultBundleWhyChars ||
+		s.ContextPackMaxMemories != DefaultContextPackMaxMemories ||
+		s.CompactionIntervalMin != DefaultCompactionIntervalMin ||
+		s.GraphWatchDebounceMs != DefaultGraphWatchDebounceMs ||
+		s.StaleSessionHours != DefaultStaleSessionHours ||
+		s.DefaultReviewLimit != DefaultReviewLimit {
+		t.Fatalf("DefaultSettings ints diverge from constants: %+v", s)
+	}
+	if s.ConflictThreshold != DefaultConflictThreshold {
+		t.Errorf("ConflictThreshold = %v, want %v", s.ConflictThreshold, DefaultConflictThreshold)
+	}
+	if !s.AutoCompactionEnabled || !s.GraphWatcherEnabled || !s.GraphBoost {
+		t.Errorf("expected boolean defaults to be true: %+v", s)
+	}
+	if s.GitSyncEnabled {
+		t.Error("GitSyncEnabled should default false")
+	}
+	if s.PruneStaleDays != 0 {
+		t.Errorf("PruneStaleDays = %d, want 0 (downstream default)", s.PruneStaleDays)
+	}
+}
+
+func TestSettingsLoadsOverridesFromLocalConfig(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "sv-mem-settings-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	overrides := map[string]interface{}{
+		"conflict_threshold": 0.6,
+		"max_field_chars":    500,
+		"git_sync_enabled":   true,
+	}
+	for key, val := range overrides {
+		if werr := WriteConfigKey(tempDir, key, val, true); werr != nil {
+			t.Fatalf("failed to write %s: %v", key, werr)
+		}
+	}
+
+	cfg, err := LoadConfig(tempDir)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+	if cfg.Settings.ConflictThreshold != 0.6 {
+		t.Errorf("ConflictThreshold = %v, want 0.6", cfg.Settings.ConflictThreshold)
+	}
+	if cfg.Settings.MaxFieldChars != 500 {
+		t.Errorf("MaxFieldChars = %d, want 500", cfg.Settings.MaxFieldChars)
+	}
+	if !cfg.Settings.GitSyncEnabled {
+		t.Error("GitSyncEnabled should be true after override")
+	}
+}
+
 func TestGitMetadata(t *testing.T) {
 	tempDir := t.TempDir()
 	for _, args := range [][]string{

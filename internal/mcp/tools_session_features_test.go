@@ -9,7 +9,6 @@ import (
 	"time"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
-	"github.com/spf13/viper"
 	"github.com/svtech-code/sv-memory/internal/graph"
 	"github.com/svtech-code/sv-memory/internal/memory"
 )
@@ -102,8 +101,7 @@ func TestSessionStartAutoClosesStaleSessions(t *testing.T) {
 	}
 
 	// Set stale_session_hours to 1 so the 2-hour-old session is stale.
-	viper.Set("stale_session_hours", 1)
-	defer viper.Set("stale_session_hours", 0)
+	cfg.Settings.StaleSessionHours = 1
 
 	// Start a new session — should auto-close the stale one.
 	srv := NewServer(pool, cfg)

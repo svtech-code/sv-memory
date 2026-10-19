@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-
-	"github.com/spf13/viper"
 )
 
 // Preflight verdicts: BLOCK means a pinned rule/invariant directly contradicts
@@ -73,23 +71,15 @@ func preflightCandidates(db *sql.DB, projectID, tokensJoined string, limit int) 
 	return out, rows.Err()
 }
 
-// PreflightThreshold returns the Jaccard similarity at or above which an
-// existing rule is considered in conflict with a proposal. It follows the
-// conflict_threshold config used by the conflict scan, falling back to 0.45.
-func PreflightThreshold() float64 {
-	if v := viper.GetFloat64("conflict_threshold"); v > 0 {
-		return v
-	}
-	return 0.45
-}
-
 // PreflightCheck deterministically validates a proposal (title/what) against
 // the project's rules and invariants: standards, decisions, and architecture
 // memories. A pinned memory above the similarity threshold is a BLOCK (an
 // invariant the agent must not silently violate); a non-pinned overlap is a
-// WARN (review before proceeding). The check is pure SQLite + Jaccard, so the
-// default path costs zero external LLM calls.
-func PreflightCheck(db *sql.DB, projectID, title, what string) (*PreflightResult, error) {
+// WARN (review before proceeding). The threshold comes from the caller (the
+// configured conflict_threshold) so the memory package never reads config
+// directly. The check is pure SQLite + Jaccard, so the default path costs zero
+// external LLM calls.
+func PreflightCheck(db *sql.DB, projectID, title, what string, threshold float64) (*PreflightResult, error) {
 	tokens := tokenizeTitle(title + " " + what)
 	if len(tokens) == 0 {
 		return &PreflightResult{Verdict: PreflightPass}, nil
@@ -104,7 +94,6 @@ func PreflightCheck(db *sql.DB, projectID, title, what string) (*PreflightResult
 		return nil, err
 	}
 
-	threshold := PreflightThreshold()
 	result := &PreflightResult{Verdict: PreflightPass}
 	for _, c := range candidates {
 		sim := jaccardSimilarity(tokens, tokenizeTitle(c.What))
@@ -131,8 +120,8 @@ func PreflightCheck(db *sql.DB, projectID, title, what string) (*PreflightResult
 // configured agent CLI, mirroring the semantic recall / conflict-judge
 // infrastructure. It fails open: when the agent is unavailable it returns the
 // deterministic verdict unchanged (never degrading a working check).
-func SemanticPreflight(ctx context.Context, db *sql.DB, projectID, title, what, agent string) (*PreflightResult, error) {
-	det, err := PreflightCheck(db, projectID, title, what)
+func SemanticPreflight(ctx context.Context, db *sql.DB, projectID, title, what, agent string, threshold float64) (*PreflightResult, error) {
+	det, err := PreflightCheck(db, projectID, title, what, threshold)
 	if err != nil {
 		return nil, err
 	}

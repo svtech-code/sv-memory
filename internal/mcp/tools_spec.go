@@ -107,7 +107,7 @@ func (s *Server) handleProposeSpec(ctx context.Context, req mcp.CallToolRequest)
 	})
 
 	// Pre-flight check against rules/invariants (deterministic, zero LLM cost).
-	preflight, pfErr := memory.PreflightCheck(s.pool.Reader, s.cfg.ProjectID, title, what)
+	preflight, pfErr := memory.PreflightCheck(s.pool.Reader, s.cfg.ProjectID, title, what, s.cfg.Settings.ConflictThreshold)
 
 	return s.respond(req, renderProposedChange(c, reqSummary, preflight, pfErr)), nil
 }
@@ -288,9 +288,9 @@ func (s *Server) handleValidateDecision(ctx context.Context, req mcp.CallToolReq
 // runPreflight runs the deterministic or semantic pre-flight check.
 func (s *Server) runPreflight(ctx context.Context, semantic bool, agent string, c *memory.Change) (*memory.PreflightResult, error) {
 	if semantic {
-		return memory.SemanticPreflight(ctx, s.pool.Reader, s.cfg.ProjectID, c.Title, c.What, agent)
+		return memory.SemanticPreflight(ctx, s.pool.Reader, s.cfg.ProjectID, c.Title, c.What, agent, s.cfg.Settings.ConflictThreshold)
 	}
-	return memory.PreflightCheck(s.pool.Reader, s.cfg.ProjectID, c.Title, c.What)
+	return memory.PreflightCheck(s.pool.Reader, s.cfg.ProjectID, c.Title, c.What, s.cfg.Settings.ConflictThreshold)
 }
 
 func renderValidation(c *memory.Change, semantic bool, preflight *memory.PreflightResult, reqIssues []memory.RequirementIssue) string {
@@ -472,7 +472,7 @@ func (s *Server) handleCommitSpec(ctx context.Context, req mcp.CallToolRequest) 
 	}
 
 	// Pre-flight gate: a BLOCK requires an explicit force override.
-	preflight, pfErr := memory.PreflightCheck(s.pool.Writer, s.cfg.ProjectID, c.Title, c.What)
+	preflight, pfErr := memory.PreflightCheck(s.pool.Writer, s.cfg.ProjectID, c.Title, c.What, s.cfg.Settings.ConflictThreshold)
 	if pfErr != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to run pre-flight gate: %v", pfErr)), nil
 	}

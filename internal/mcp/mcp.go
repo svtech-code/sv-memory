@@ -13,7 +13,6 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	"github.com/spf13/viper"
 
 	"github.com/svtech-code/sv-memory/internal/config"
 	"github.com/svtech-code/sv-memory/internal/db"
@@ -216,15 +215,15 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if viper.GetBool("auto_compaction_enabled") {
-		memory.StartAutoCompaction(ctx, pool.Writer, cfg.ProjectID, viper.GetInt("compaction_interval_minutes"))
+	if cfg.Settings.AutoCompactionEnabled {
+		memory.StartAutoCompaction(ctx, pool.Writer, cfg.ProjectID, cfg.Settings.CompactionIntervalMin)
 	}
 
 	// Start the background file watcher to keep the graph fresh without
 	// requiring DetectStaleFiles per query. Default enabled; disable via
 	// `sv-memory configure set graph_watcher_enabled false`.
-	if viper.GetBool("graph_watcher_enabled") {
-		debounceMs := viper.GetInt("graph_watch_debounce_ms")
+	if cfg.Settings.GraphWatcherEnabled {
+		debounceMs := cfg.Settings.GraphWatchDebounceMs
 		debounce := time.Duration(debounceMs) * time.Millisecond
 		s.fileWatcher = graph.StartWatcher(ctx, pool.Writer, cfg.ProjectID, cfg.ProjPath,
 			graph.WatcherConfig{Debounce: debounce})

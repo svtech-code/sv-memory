@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/spf13/viper"
 
 	"github.com/svtech-code/sv-memory/internal/graph"
 	"github.com/svtech-code/sv-memory/internal/memory"
@@ -22,11 +21,8 @@ func (s *Server) handleSessionStart(ctx context.Context, req mcp.CallToolRequest
 	s.maybeSyncFromGit()
 
 	// Auto-close stale sessions (leaked when the user exits an agent without
-	// calling sv_mem_session_end). Configurable via stale_session_hours.
-	staleHours := viper.GetInt("stale_session_hours")
-	if staleHours <= 0 {
-		staleHours = 24
-	}
+	// calling sv_mem_session_end). Tunable via stale_session_hours.
+	staleHours := s.cfg.Settings.StaleSessionHours
 	if closed, cErr := memory.CloseStaleSessions(s.pool.Writer, s.cfg.ProjectID, time.Duration(staleHours)*time.Hour); cErr == nil && closed > 0 {
 		debugLog("auto-closed %d stale session(s)", closed)
 	}
@@ -249,7 +245,7 @@ func (s *Server) handleStats(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	// Auto-Boot bundle + bulk-returning read tools have injected since the last
 	// sv_mem_session_start, so the agent can decide when to compact. Read before
 	// respond() so this call's own output is not counted.
-	budget := viper.GetInt("max_response_tokens")
+	budget := s.cfg.Settings.MaxResponseTokens
 	budgetStr := "unlimited"
 	if budget > 0 {
 		budgetStr = strconv.Itoa(budget)

@@ -9,8 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/viper"
-
+	"github.com/svtech-code/sv-memory/internal/config"
 	"github.com/svtech-code/sv-memory/internal/security"
 )
 
@@ -473,26 +472,11 @@ func renderActiveChangesSection(sb *strings.Builder, db *sql.DB, projectID strin
 	sb.WriteString("\nUse `sv_spec_list` to see all changes, `sv_spec_get(change_id=\"<slug>\")` to inspect one.\n")
 }
 
-// bundleWhyChars caps the rationale shown per memory in the Auto-Boot bundle
-// when withWhy is true, so long rationales don't bloat the session-start
-// response. The agent can drill down with sv_mem_get for full content.
-const bundleWhyChars = 300
-
-// bundleWhyCharsLimit returns the configured Auto-Boot rationale cap, falling
-// back to bundleWhyChars when the bundle_why_chars config key is unset or
-// non-positive. Tunable via ~/.sv-memory/config.yaml without recompiling.
-func bundleWhyCharsLimit() int {
-	if v := viper.GetInt("bundle_why_chars"); v > 0 {
-		return v
-	}
-	return bundleWhyChars
-}
-
-// BundleWhyCharsLimit is the exported form of bundleWhyCharsLimit, used by
-// renderers outside the memory package (e.g. the context-pack MCP tool) so the
-// why truncation cap stays consistent across the Auto-Boot bundle and packs.
+// BundleWhyCharsLimit returns the configured Auto-Boot rationale truncation
+// cap, delegated to config so the memory package never reads viper directly.
+// The same cap is used by the Auto-Boot bundle and the context-pack renderers.
 func BundleWhyCharsLimit() int {
-	return bundleWhyCharsLimit()
+	return config.BundleWhyChars()
 }
 
 // perSectionCaps selects up to each section's cap from its pool. When goalAware
@@ -588,7 +572,7 @@ func renderBundleCandidates(items []bundleCandidate, withWhy bool, reasons map[s
 			if r, ok := reasons[c.id]; ok && r != "" {
 				why += " — " + r
 			}
-			why = TruncateText(security.SanitizeText(why), bundleWhyCharsLimit())
+			why = TruncateText(security.SanitizeText(why), BundleWhyCharsLimit())
 			out = append(out, fmt.Sprintf("- **[%s] %s** (ID: %s)\n  *Why:* %s", strings.ToUpper(c.cat), security.SanitizeText(c.what), c.id, why))
 		} else {
 			out = append(out, fmt.Sprintf("- **[%s] %s** (ID: %s)", strings.ToUpper(c.cat), security.SanitizeText(c.what), c.id))

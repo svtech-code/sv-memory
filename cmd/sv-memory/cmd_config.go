@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/svtech-code/sv-memory/internal/config"
 )
@@ -19,10 +18,11 @@ var configGetCmd = &cobra.Command{
 		_, _ = config.LoadConfig(cwd)
 
 		key := args[0]
-		if !viper.IsSet(key) {
+		val, ok := config.Get(key)
+		if !ok {
 			return fmt.Errorf("configuration key %q is not set", key)
 		}
-		fmt.Printf("%s: %v\n", key, viper.Get(key))
+		fmt.Printf("%s: %v\n", key, val)
 		return nil
 	},
 }
@@ -130,7 +130,8 @@ var configListCmd = &cobra.Command{
 			"context_pack_max_memories", "graph_boost", "prune_stale_days",
 		}
 		for _, key := range keys {
-			fmt.Printf("  %-26s: %v\n", key, viper.Get(key))
+			val, _ := config.Get(key)
+			fmt.Printf("  %-26s: %v\n", key, val)
 		}
 		return nil
 	},

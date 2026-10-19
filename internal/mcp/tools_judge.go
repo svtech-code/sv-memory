@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/spf13/viper"
 
 	"github.com/svtech-code/sv-memory/internal/memory"
 )
@@ -88,7 +87,7 @@ func (s *Server) conflictsList(req mcp.CallToolRequest) (*mcp.CallToolResult, er
 
 func (s *Server) conflictsScan(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	apply := req.GetString("apply", "false") == "true"
-	found, err := memory.ScanConflicts(s.pool.Writer, s.cfg.ProjectID, apply, 100, scanThreshold(req))
+	found, err := memory.ScanConflicts(s.pool.Writer, s.cfg.ProjectID, apply, 100, s.scanThreshold(req))
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to scan conflicts: %v", err)), nil
 	}
@@ -101,8 +100,8 @@ func (s *Server) conflictsScan(ctx context.Context, req mcp.CallToolRequest) (*m
 
 // scanThreshold resolves the similarity threshold from the request, falling
 // back to the configured default.
-func scanThreshold(req mcp.CallToolRequest) float64 {
-	threshold := viper.GetFloat64("conflict_threshold")
+func (s *Server) scanThreshold(req mcp.CallToolRequest) float64 {
+	threshold := s.cfg.Settings.ConflictThreshold
 	if thresholdStr := req.GetString("threshold", ""); thresholdStr != "" {
 		if f, err := strconv.ParseFloat(thresholdStr, 64); err == nil {
 			threshold = f

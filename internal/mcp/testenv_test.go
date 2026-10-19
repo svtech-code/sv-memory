@@ -33,6 +33,7 @@ func setupTestEnv(t *testing.T) (string, *db.Pool, *config.Config) {
 		ProjectID: "mcp-test-proj-id",
 		ProjName:  "MCP Test Project",
 		ProjPath:  tempDir,
+		Settings:  config.DefaultSettings(),
 	}
 
 	// Register project

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/spf13/viper"
 
 	"github.com/svtech-code/sv-memory/internal/memory"
 )
@@ -179,7 +178,7 @@ func (s *Server) expandTopResult(sb *strings.Builder, id string) {
 	if gErr != nil || top == nil {
 		return
 	}
-	expandChars := configuredInt("search_expand_chars", searchExpandChars)
+	expandChars := s.cfg.Settings.SearchExpandChars
 	sb.WriteString("\n### Top result (expanded):\n")
 	fmt.Fprintf(sb, "- [%s] **%s** (ID: %s)\n", strings.ToUpper(top.Category), top.What, top.ID)
 	if top.Why != "" {
@@ -208,7 +207,7 @@ func escapeTableCell(s string) string {
 // is disabled, the path is empty, the node cannot be resolved, or the community
 // set collapses to just the node itself.
 func (s *Server) searchCommunityPaths(pathFilter string) map[string]bool {
-	if pathFilter == "" || !configuredBool("graph_boost", true) {
+	if pathFilter == "" || !s.cfg.Settings.GraphBoost {
 		return nil
 	}
 	node, err := memory.ResolveContextNode(s.pool.Reader, s.cfg.ProjectID, pathFilter)
@@ -256,7 +255,7 @@ func (s *Server) handleGet(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 	if err != nil {
 		return mcp.NewToolResultError("missing required field: id"), nil
 	}
-	maxChars := configuredInt("max_field_chars", maxFieldTruncateChars)
+	maxChars := s.cfg.Settings.MaxFieldChars
 	if maxCharsStr := req.GetString("max_chars", ""); maxCharsStr != "" {
 		if m, convErr := strconv.Atoi(maxCharsStr); convErr == nil && m >= 0 {
 			maxChars = m
@@ -332,7 +331,7 @@ func (s *Server) handleTimeline(ctx context.Context, req mcp.CallToolRequest) (*
 	}
 
 	var sb strings.Builder
-	renderTimelineCentral(&sb, s.pool.Reader, s.cfg.ProjectID, obsID)
+	renderTimelineCentral(&sb, s.pool.Reader, s.cfg.ProjectID, obsID, s.cfg.Settings.TimelineWhyChars)
 	renderTimelineNeighbors(&sb, prev, next)
 
 	return s.respond(req, sb.String()), nil
@@ -353,7 +352,7 @@ func neighborCount(raw string) int {
 
 // renderTimelineCentral surfaces the central observation with a short rationale
 // so the agent usually doesn't need a separate sv_mem_get call for context.
-func renderTimelineCentral(sb *strings.Builder, reader *sql.DB, projectID, obsID string) {
+func renderTimelineCentral(sb *strings.Builder, reader *sql.DB, projectID, obsID string, whyChars int) {
 	fmt.Fprintf(sb, "## Timeline around observation `%s`\n\n", obsID)
 	central, cerr := memory.GetMemory(reader, projectID, obsID)
 	if cerr != nil || central == nil {
@@ -363,7 +362,7 @@ func renderTimelineCentral(sb *strings.Builder, reader *sql.DB, projectID, obsID
 	fmt.Fprintf(sb, "- [%s] **%s** (ID: %s, %s)\n",
 		strings.ToUpper(central.Category), central.What, central.ID, central.CreatedAt.Format("2006-01-02 15:04"))
 	if central.Why != "" {
-		fmt.Fprintf(sb, "  *Why:* %s\n", truncateField(central.Why, configuredInt("timeline_why_chars", timelineWhyChars)))
+		fmt.Fprintf(sb, "  *Why:* %s\n", truncateField(central.Why, whyChars))
 	}
 	sb.WriteString("\n")
 }
@@ -434,7 +433,7 @@ func (s *Server) reviewMarkReviewed(req mcp.CallToolRequest) (*mcp.CallToolResul
 }
 
 func (s *Server) reviewPruneStale(req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	olderThanDays := viper.GetInt("prune_stale_days")
+	olderThanDays := s.cfg.Settings.PruneStaleDays
 	if dStr := req.GetString("older_than_days", ""); dStr != "" {
 		if d, convErr := strconv.Atoi(dStr); convErr == nil && d > 0 {
 			olderThanDays = d
@@ -474,7 +473,7 @@ func renderPruneReport(pruned []*memory.MemorySearchResult, apply bool) string {
 }
 
 func (s *Server) reviewList(req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	items, err := memory.ReviewMemories(s.pool.Reader, s.cfg.ProjectID, viper.GetInt("default_review_limit"))
+	items, err := memory.ReviewMemories(s.pool.Reader, s.cfg.ProjectID, s.cfg.Settings.DefaultReviewLimit)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to review memories: %v", err)), nil
 	}

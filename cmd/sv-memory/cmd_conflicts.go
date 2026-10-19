@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/svtech-code/sv-memory/internal/config"
 	"github.com/svtech-code/sv-memory/internal/db"
@@ -102,7 +101,7 @@ var conflictsScanCmd = &cobra.Command{
 		maxInsert, _ := cmd.Flags().GetInt("max-insert")
 		threshold, _ := cmd.Flags().GetFloat64("threshold")
 		if !cmd.Flags().Changed("threshold") {
-			threshold = viper.GetFloat64("conflict_threshold")
+			threshold = cfg.Settings.ConflictThreshold
 		}
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		semantic, _ := cmd.Flags().GetBool("semantic")

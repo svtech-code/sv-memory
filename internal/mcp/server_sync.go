@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/spf13/viper"
 	"github.com/svtech-code/sv-memory/internal/memory"
 )
 
@@ -65,7 +64,7 @@ func (s *Server) scheduleSync() {
 		}
 		s.debounceMu.Unlock()
 
-		if !viper.GetBool("git_sync_enabled") {
+		if !s.cfg.Settings.GitSyncEnabled {
 			// Best-effort write of the human-readable spec mirror since git sync is skipped.
 			_ = memory.WriteSpecMirror(s.pool.Writer, s.cfg.ProjectID, s.cfg.ProjPath)
 			return
@@ -93,7 +92,7 @@ func (s *Server) flushPendingSync() {
 	defer s.debounceMu.Unlock()
 	if s.syncTimer != nil {
 		s.syncTimer.Stop()
-		if viper.GetBool("git_sync_enabled") {
+		if s.cfg.Settings.GitSyncEnabled {
 			fmt.Fprintf(os.Stderr, "[sv-memory] Flushing pending Git sync...\n")
 			if err := memory.SyncToGitForceFull(s.pool.Writer, s.cfg.ProjectID, s.cfg.ProjPath); err != nil {
 				fmt.Fprintf(os.Stderr, "[sv-memory] Final syncToGit failed: %v\n", err)
