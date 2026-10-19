@@ -29,7 +29,7 @@ func (s *Server) getOrLoadGraph() (*graph.InMemoryGraph, error) {
 	// When the file watcher is active and reports no pending changes, the
 	// background sync has already kept the graph and cache up to date. Skip
 	// the O(n) DetectStaleFiles walk entirely.
-	if globalFileWatcher != nil && !globalFileWatcher.IsDirty() {
+	if s.fileWatcher != nil && !s.fileWatcher.IsDirty() {
 		if cached, ok := graph.GlobalGraphCache.Get(s.pool.Reader, s.cfg.ProjectID); ok {
 			return cached, nil
 		}

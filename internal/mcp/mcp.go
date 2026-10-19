@@ -133,17 +133,6 @@ var AllTools = []Tool{
 	{Name: "sv_graph_diff", Description: "Compare structural code elements (symbols, calls, imports, blast radius impact) between a Git base reference and the working tree. Use to review architectural impact before committing or opening a PR."},
 }
 
-// global shutdown state: the latest server instance's cleanup hook, invoked on
-// shutdown signals or when the stdio transport ends.
-var (
-	shutdownCleanup func()
-	cleanupMu       sync.Mutex
-
-	// globalFileWatcher is the background file watcher for the active project.
-	// Package-level so getOrLoadGraph can check IsDirty() without a Server ref.
-	globalFileWatcher *graph.FileWatcher
-)
-
 // Server holds the long-lived state shared by every MCP tool handler: the
 // connection pool, the active project config, the debounced Git sync state,
 // and the per-project graph load lock. Splitting this state onto the Server
@@ -152,6 +141,19 @@ var (
 type Server struct {
 	pool *db.Pool
 	cfg  *config.Config
+
+	// fileWatcher is the background watcher for the active project, assigned by
+	// StartServer before ServeStdio begins serving. It is set once before any
+	// tool handler can run and only read afterwards, so it needs no locking. It
+	// lets getOrLoadGraph skip the O(n) DetectStaleFiles walk when the watcher
+	// has already kept the graph fresh in the background.
+	fileWatcher *graph.FileWatcher
+
+	// cleanup releases background resources (the pending git-sync flush) at
+	// shutdown. Set at construction; invoked at most once via cleanupOnce by
+	// whichever shutdown path fires first (signal handler or ServeStdio return).
+	cleanup     func()
+	cleanupOnce sync.Once
 
 	// Git sync debounce/coalescing state.
 	syncMu       sync.Mutex
@@ -209,7 +211,7 @@ func (s *Server) cachedGitMetadata() gitMetadata {
 // Reads use the pool's Reader so concurrent tool calls scale; writes (save)
 // go through the Writer to keep SQLite serialized under WAL.
 func StartServer(pool *db.Pool, cfg *config.Config) error {
-	s := NewServer(pool, cfg)
+	s, ms := newServer(pool, cfg)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -224,45 +226,45 @@ func StartServer(pool *db.Pool, cfg *config.Config) error {
 	if viper.GetBool("graph_watcher_enabled") {
 		debounceMs := viper.GetInt("graph_watch_debounce_ms")
 		debounce := time.Duration(debounceMs) * time.Millisecond
-		globalFileWatcher = graph.StartWatcher(ctx, pool.Writer, cfg.ProjectID, cfg.ProjPath,
+		s.fileWatcher = graph.StartWatcher(ctx, pool.Writer, cfg.ProjectID, cfg.ProjPath,
 			graph.WatcherConfig{Debounce: debounce})
 	}
 
 	go func() {
 		<-ctx.Done()
 		debugLog("Shutdown signal received. Running cleanup...")
-		cleanupMu.Lock()
-		if shutdownCleanup != nil {
-			shutdownCleanup()
-		}
-		cleanupMu.Unlock()
+		s.runCleanup()
 		os.Exit(0)
 	}()
 
-	err := server.ServeStdio(s)
+	err := server.ServeStdio(ms)
 
-	cleanupMu.Lock()
-	if shutdownCleanup != nil {
-		shutdownCleanup()
-	}
-	cleanupMu.Unlock()
+	s.runCleanup()
 
 	return err
 }
 
-// NewServer initializes the MCP server, registers all tools, and returns it.
-// Split from StartServer for programmatic unit testing. Tool definitions and
-// handler wiring live here (single source of truth for the tool surface, kept
-// in sync with AllTools); the handlers themselves are Server methods defined
-// in the per-domain tools_*.go files.
-func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
+// runCleanup invokes the server's cleanup hook (pending git-sync flush) exactly
+// once, so the two shutdown paths (signal handler and ServeStdio return) cannot
+// flush twice when they race.
+func (s *Server) runCleanup() {
+	s.cleanupOnce.Do(func() {
+		if s.cleanup != nil {
+			s.cleanup()
+		}
+	})
+}
+
+// newServer builds the MCP protocol server together with its Server state.
+// Keeping the Server instance reachable here lets StartServer drive the file
+// watcher and the shutdown cleanup on the same instance, without package-level
+// globals. NewServer wraps it for callers (tests) that only need the protocol
+// server.
+func newServer(pool *db.Pool, cfg *config.Config) (*Server, *server.MCPServer) {
 	s := &Server{pool: pool, cfg: cfg}
+	s.cleanup = s.flushPendingSync
 
 	ms := server.NewMCPServer("sv-memory", "1.0.0", server.WithInstructions(serverInstructions))
-
-	cleanupMu.Lock()
-	shutdownCleanup = s.flushPendingSync
-	cleanupMu.Unlock()
 
 	registerCoreMemoryTools(ms, s)
 	registerSessionTools(ms, s)
@@ -273,6 +275,16 @@ func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
 	registerGraphAnalysisTools(ms, s)
 	registerReferenceTools(ms, s)
 
+	return s, ms
+}
+
+// NewServer initializes the MCP server, registers all tools, and returns it.
+// Split from StartServer for programmatic unit testing. Tool definitions and
+// handler wiring live here (single source of truth for the tool surface, kept
+// in sync with AllTools); the handlers themselves are Server methods defined
+// in the per-domain tools_*.go files.
+func NewServer(pool *db.Pool, cfg *config.Config) *server.MCPServer {
+	_, ms := newServer(pool, cfg)
 	return ms
 }
 
