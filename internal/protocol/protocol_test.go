@@ -117,11 +117,16 @@ func TestProtocolTemplateTeachesToolNameResolution(t *testing.T) {
 		"Tool-name resolution",
 		"sv-memory_sv_graph_explore",
 		"mcp__sv-memory__sv_graph_explore",
+		"YOU MUST ALWAYS call 'sv_mem_session_start' FIRST",
+		"Hook-managed on Claude Code / Antigravity",
 	}
 	for _, s := range required {
 		if !strings.Contains(protocolTemplate, s) {
-			t.Errorf("protocolTemplate is missing the tool-name resolution marker %q", s)
+			t.Errorf("protocolTemplate is missing the marker %q", s)
 		}
+	}
+	if strings.Contains(protocolTemplate, "Auto-managed on OpenCode") {
+		t.Error("protocolTemplate must not claim sessions are auto-managed on OpenCode")
 	}
 }
 

@@ -39,5 +39,5 @@ Config/docs-only changes are exempt.
 
 ## Session
 
-The session is auto-managed by the sv-memory `PreInvocation` hook — do NOT call
-`sv_mem_session_start`. Close it with `sv_mem_session_end` when done.
+On Antigravity, the `PreInvocation` hook auto-starts the session — if you see its header, do NOT call
+`sv_mem_session_start` (otherwise call `sv_mem_session_start` first). Close with `sv_mem_session_end`.

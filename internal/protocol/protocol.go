@@ -13,6 +13,7 @@ const protocolTemplate = `
 
 <CRITICAL_INSTRUCTIONS>
 - **Tool-name resolution:** Your MCP client prefixes sv-memory tool names with a server namespace. Match by the 'sv_*' suffix: 'sv_graph_explore' is exposed as 'sv-memory_sv_graph_explore' (OpenCode) or 'mcp__sv-memory__sv_graph_explore' (Claude Code); 'sv_mem_search' as 'sv-memory_sv_mem_search', etc. Always call the tool whose name ends with the referenced 'sv_*' name.
+- YOU MUST ALWAYS call 'sv_mem_session_start' FIRST at the beginning of a session to load the Auto-Boot Context Bundle (skip ONLY if a Claude Code or Antigravity hook already injected the active session bundle into your turn).
 - YOU MUST NEVER use native grep, find, cat, or read_file to understand codebase structure or search for symbols. YOU MUST ALWAYS use 'sv_graph_explore' or 'sv_graph_search' first. Native tools are ONLY for unindexed config/docs.
 - YOU MUST ALWAYS call 'sv_mem_save' immediately after making a design decision, fixing a complex bug, or establishing a convention. Do not wait for the user to ask.
 - YOU MUST ALWAYS initiate the Spec-Driven Decision Cycle ('sv_propose_spec') BEFORE writing code that changes behavior or architecture. NEVER skip this loop.
@@ -24,7 +25,7 @@ This project uses 'sv-memory' for persistent architectural memory, progress jour
 ## Session Lifecycle (REQUIRED, in this order):
 
 1. **Start:** Call 'sv_mem_session_start' at the beginning of work. It returns an **Auto-Boot Context Bundle** with the previous session summary, key architectural decisions, standards, recent bugfixes, last journals, and top graph hubs — read it and use it as your starting context.
-   - **Auto-managed on OpenCode:** the sv-memory plugin auto-starts the session and injects this bundle into your first request (its header shows the session ID). If you already see that header, skip 'sv_mem_session_start' — do not start a second session.
+   - **Hook-managed on Claude Code / Antigravity:** on those platforms, the lifecycle hook auto-starts the session and injects this bundle into your first turn (its header shows the session ID). If you already see that header, skip 'sv_mem_session_start' — on OpenCode, Cursor, Codex, Pi, and any other client without that header, you MUST call 'sv_mem_session_start' yourself.
 2. **Associate saves:** Pass 'session_id' to 'sv_mem_save' to group memories under the active session. If omitted, the active session is auto-detected.
 3. **Capture knowledge as you go:** Save journals, decisions, standards, and bugfixes with 'sv_mem_save' (see the Memory Capture Guidelines below). For evolving categories ('decision', 'standard', 'architecture', 'bugfix'), 'topic_key' is automatically derived if omitted to enable upsert semantics. Use 'sv_mem_capture_passive' for lightweight observations that do not need an explicit save decision.
 4. **End:** Call 'sv_mem_session_end(accomplished=...)' to save the summary and mark the session as completed in a single call (session_id is auto-detected if omitted). Alternatively, call 'sv_mem_session_summary' before 'sv_mem_session_end'.

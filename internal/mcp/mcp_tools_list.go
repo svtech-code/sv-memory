@@ -28,7 +28,7 @@ var AllTools = []Tool{
 	{Name: "sv_mem_save", Description: "TRIGGER: ALWAYS use this IMMEDIATELY after a complex bugfix, design decision, or new standard. Persist a decision, bugfix, journal, or standard to project memory (with optional topic_key upsert)."},
 	{Name: "sv_mem_update", Description: "Partially update an existing memory by ID (what, why, learned, where_path, impact, errors_faced, next_steps)."},
 	{Name: "sv_mem_suggest_topic_key", Description: "Generate a stable 'category/kebab-case' topic_key for upsert semantics."},
-	{Name: "sv_mem_session_start", Description: "USE WHEN: starting a coding session or after a context reset. Register the start of a coding session and receive the Auto-Boot Context Bundle (previous session summary, key decisions, standards, recent bugfixes, journals, top graph hubs)."},
+	{Name: "sv_mem_session_start", Description: "TRIGGER: ALWAYS call FIRST at the start of a session (unless a hook already injected the Auto-Boot bundle) or after a context reset. Register the session and receive the Auto-Boot Context Bundle (previous session summary, key decisions, standards, recent bugfixes, journals, top graph hubs)."},
 	{Name: "sv_mem_session_end", Description: "USE WHEN: finishing work or the session. End the active session with a summary to enable context recovery."},
 	{Name: "sv_mem_session_summary", Description: "USE WHEN: before ending a session and progress was made. Save the session goal, discoveries, accomplished work, and next steps."},
 	{Name: "sv_mem_context", Description: "USE WHEN: after a compaction or context reset to resume work. Recover the last completed session's goal, summary, and associated memories."},
@@ -121,7 +121,7 @@ func registerCoreMemoryTools(ms *server.MCPServer, s *Server) {
 func registerSessionTools(ms *server.MCPServer, s *Server) {
 	// 3. Tool: sv_mem_session_start
 	sessionStartTool := mcp.NewTool("sv_mem_session_start",
-		mcp.WithDescription("USE WHEN: starting a coding session or after a context reset. Register the start of a coding session and receive an Auto-Boot Context Bundle: previous session summary, key decisions, standards, recent bugfixes, journals, and top graph hubs. Enables session grouping and post-compaction context recovery."),
+		mcp.WithDescription("TRIGGER: ALWAYS call FIRST at the start of a session (unless a hook already injected the Auto-Boot bundle) or after a context reset. Register the session and receive an Auto-Boot Context Bundle: previous session summary, key decisions, standards, recent bugfixes, journals, and top graph hubs."),
 		mcp.WithString("goal", mcp.Description("Optional goal or objective for this session. When provided, the Auto-Boot bundle ranks the surfaced decisions/standards/bugfixes by relevance to it instead of pure recency.")),
 		mcp.WithString("directory", mcp.Description("Optional working directory (auto-detected from repo if omitted)")),
 		mcp.WithString("semantic", mcp.Description("When 'true' and a goal is given, re-rank the Auto-Boot bundle candidates with the configured agent CLI by semantic relevance (opt-in; fails open to the deterministic keyword ranking when the agent is unavailable). Default 'false'.")),

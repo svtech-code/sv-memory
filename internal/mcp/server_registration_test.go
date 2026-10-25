@@ -208,9 +208,14 @@ func TestServerInstructionsGuardsProtocolGuidance(t *testing.T) {
 		t.Fatalf("expected InitializeResult, got %T", resp.Result)
 	}
 
-	for _, marker := range []string{"sv_mem_search", "sv_graph_explore", "sv_mem_save", "sv_spec_list", "sv_commit_spec", "sv_* suffix"} {
+	for _, marker := range []string{"sv_mem_session_start", "sv_mem_search", "sv_graph_explore", "sv_mem_save", "sv_spec_list", "sv_commit_spec", "sv_* suffix"} {
 		if !strings.Contains(initResult.Instructions, marker) {
 			t.Errorf("initialize instructions missing marker %q", marker)
 		}
+	}
+
+	sessionStart := srv.GetTool("sv_mem_session_start")
+	if sessionStart == nil || !strings.HasPrefix(sessionStart.Tool.Description, "TRIGGER:") {
+		t.Errorf("sv_mem_session_start description must start with TRIGGER:, got %v", sessionStart)
 	}
 }

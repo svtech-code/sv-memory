@@ -261,7 +261,7 @@ func TestSkillParityAndSessionNotes(t *testing.T) {
 	}
 
 	cases := []skillCase{
-		{name: "opencode", content: hookScript(PlatformOpenCode, ModeStrict), wantAutoManaged: true},
+		{name: "opencode", content: hookScript(PlatformOpenCode, ModeStrict), wantAutoManaged: false},
 		{name: "antigravity", content: antigravitySkillScript(), wantAutoManaged: true},
 	}
 
@@ -274,7 +274,7 @@ func TestSkillParityAndSessionNotes(t *testing.T) {
 			}
 			if tc.wantAutoManaged {
 				if !strings.Contains(tc.content, "do not call `sv_mem_session_start` again") {
-					t.Error("opencode skill must contain auto-managed session note")
+					t.Errorf("%s skill must contain auto-managed session note", tc.name)
 				}
 			} else {
 				if strings.Contains(tc.content, "do not call `sv_mem_session_start` again") {
