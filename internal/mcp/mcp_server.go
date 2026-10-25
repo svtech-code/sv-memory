@@ -205,7 +205,10 @@ func newServer(pool *db.Pool, cfg *config.Config) (*Server, *server.MCPServer) {
 	s := &Server{pool: pool, cfg: cfg}
 	s.cleanup = s.flushPendingSync
 
-	ms := server.NewMCPServer("sv-memory", "1.0.0", server.WithInstructions(serverInstructions))
+	ms := server.NewMCPServer("sv-memory", "1.0.0",
+		server.WithInstructions(serverInstructions),
+		server.WithToolHandlerMiddleware(s.autoBootMiddleware),
+	)
 
 	registerCoreMemoryTools(ms, s)
 	registerSessionTools(ms, s)

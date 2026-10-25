@@ -1,12 +1,14 @@
 package mcp
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
 	"github.com/svtech-code/sv-memory/internal/memory"
 )
 
@@ -70,6 +72,33 @@ func (s *Server) respond(req mcp.CallToolRequest, text string) *mcp.CallToolResu
 	return mcp.NewToolResultText(final)
 }
 
+// autoBootMiddleware runs the lazy session auto-boot check before every tool
+// handler, so tools that do not build their response through respond (for
+// example sv_mem_capture_passive or sv_mem_judge) still start a session. It
+// prepends the one-time banner to the first non-error text result.
+func (s *Server) autoBootMiddleware(next server.ToolHandlerFunc) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		prefix := s.ensureSessionAutoBoot(req.Params.Name)
+		res, err := next(ctx, req)
+		if prefix != "" && res != nil && !res.IsError {
+			prependTextContent(res, prefix)
+		}
+		return res, err
+	}
+}
+
+// prependTextContent prepends prefix to the first text content block of a tool
+// result, leaving non-text blocks and the rest of the result untouched.
+func prependTextContent(res *mcp.CallToolResult, prefix string) {
+	for i, content := range res.Content {
+		if text, ok := content.(mcp.TextContent); ok {
+			text.Text = prefix + text.Text
+			res.Content[i] = text
+			return
+		}
+	}
+}
+
 // isSessionLifecycleTool reports whether toolName manages the session
 // lifecycle directly and therefore should not trigger lazy auto-boot.
 func isSessionLifecycleTool(toolName string) bool {
@@ -131,11 +160,13 @@ func (s *Server) ensureSessionAutoBoot(toolName string) string {
 
 // consumeLazySession returns and clears a session that was lazily auto-started
 // by ensureSessionAutoBoot so an explicit sv_mem_session_start call reuses it
-// instead of creating a duplicate session row.
-func (s *Server) consumeLazySession(goal string) *memory.Session {
+// instead of creating a duplicate session row. Explicit goal and directory
+// arguments are persisted on the adopted session; empty values preserve the
+// lazily recorded ones.
+func (s *Server) consumeLazySession(goal, dir string) *memory.Session {
 	s.autoBootMu.Lock()
 	defer s.autoBootMu.Unlock()
-	if s.lazySessionID == "" {
+	if s.lazySessionID == "" || s.pool == nil || s.cfg == nil {
 		return nil
 	}
 	id := s.lazySessionID
@@ -144,9 +175,21 @@ func (s *Server) consumeLazySession(goal string) *memory.Session {
 	if err != nil || active == nil || active.ID != id {
 		return nil
 	}
-	if goal != "" && s.pool != nil {
-		_, _ = s.pool.Writer.Exec(`UPDATE sessions SET goal = ? WHERE id = ?`, goal, id)
-		active.Goal = goal
+
+	newGoal, newDir := active.Goal, active.Directory
+	if goal != "" {
+		newGoal = goal
+	}
+	if dir != "" {
+		newDir = dir
+	}
+	if newGoal != active.Goal || newDir != active.Directory {
+		if _, execErr := s.pool.Writer.Exec(
+			`UPDATE sessions SET goal = ?, directory = ? WHERE id = ?`, newGoal, newDir, id); execErr != nil {
+			return active
+		}
+		active.Goal = newGoal
+		active.Directory = newDir
 	}
 	return active
 }

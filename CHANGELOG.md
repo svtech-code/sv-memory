@@ -5,6 +5,12 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+## [v0.28.0] - 2026-10-24
+
+### Added
+- **MCP server-side lazy session auto-boot**: When an agent skips `sv_mem_session_start` and calls any non-session tool while no session is active, the server now closes stale sessions, creates an active session, and prepends a one-time `[sv-memory Auto-Boot]` banner to the first tool response. A later `sv_mem_session_start` adopts that lazily created session instead of creating a duplicate. This keeps sessions working on every MCP client (OpenCode, Cursor, Codex, Pi, Antigravity, Claude Code) without a plugin.
+- **Adaptive cross-tool chaining nudges**: `sv_mem_session_start`, `sv_graph_search`, `sv_graph_explore` and `sv_mem_search` now end with a one-line, session-aware next step pointing to the complementary tool not yet used (`sv_graph_explore`, `sv_mem_search`, `sv_mem_get`, or the `sv_propose_spec` spec cycle).
+
 ### Changed
 - **Enforced complexity gates (`gocyclo <= 15`, `gocognit <= 25`, `funlen <= 100 lines / 60 statements`)**: `.golangci.yml` now treats these as errors for production code (test files are exempt), replacing the previous narrow per-function exclusions. The offending functions were decomposed into focused helpers across the graph, memory, MCP, hook, config, db and CLI packages; no behavior or public contract changed.
 - **Split monolithic files by responsibility**: `internal/mcp/mcp.go` registration now delegates to per-domain `register*Tools` functions; `hook.go` was split into `claude_code.go`, `antigravity.go` and `platforms.go`; `graph.ExportHTML` moved its template into `viz_template.go`; `graph_test.go`, `mcp_test.go`, `tools_spec_test.go`, `tools_features_test.go`, `hook_test.go` and `memory_test.go` were split into focused per-concern test files.
@@ -16,6 +22,11 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ### Removed
 - Unused `fileChangeSet` helper in `internal/graph/incremental.go`.
+
+### Fixed
+- **Lazy auto-boot now covers every non-session tool**: the auto-boot check moved into a server-wide tool handler middleware, so handlers that return raw text results (`sv_mem_capture_passive`, `sv_mem_judge`, `sv_mem_pin`, `sv_mem_delete`, `sv_graph_sync`, project merges) also start a session and surface the one-time banner. Previously only handlers routed through `respond` or `sv_mem_save` triggered it.
+- **Lazy session adoption preserves the explicit directory**: `sv_mem_session_start` now persists the requested `goal` and `directory` on the adopted session (instead of only the goal) and guards against a nil database pool in `consumeLazySession`.
+- **Stale OpenCode auto-session guidance**: removed the note claiming the deleted OpenCode TypeScript plugin auto-starts sessions from the injected protocol, `AGENTS.md`, the OpenCode skill and the Antigravity rule; `sv_mem_session_start` is now listed in `CRITICAL_INSTRUCTIONS` and its tool description uses the `TRIGGER:` prefix so OpenCode, Cursor, Codex, Pi and other MCP-native clients call it first.
 
 ## [v0.27.0] - 2026-10-18
 

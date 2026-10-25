@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
+	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/svtech-code/sv-memory/internal/graph"
 	"github.com/svtech-code/sv-memory/internal/memory"
 )
@@ -306,5 +308,102 @@ func TestAdaptiveCrossToolChainingNudges(t *testing.T) {
 	outExp := textContent(resExp.Content[0])
 	if !strings.Contains(outExp, "sv_mem_get") || !strings.Contains(outExp, "sv_propose_spec") {
 		t.Fatalf("expected sv_graph_explore to nudge sv_mem_get and sv_propose_spec, got:\n%s", outExp)
+	}
+}
+
+// callToolThroughServer invokes a tool through the MCPServer JSON-RPC path so
+// server-wide tool handler middleware (lazy auto-boot) is exercised, unlike
+// srv.GetTool(name).Handler which calls the raw handler directly.
+func callToolThroughServer(t *testing.T, srv *mcpserver.MCPServer, name string, args map[string]any) *mcpgo.CallToolResult {
+	t.Helper()
+	raw, err := json.Marshal(mcpgo.JSONRPCRequest{
+		JSONRPC: "2.0",
+		ID:      mcpgo.NewRequestId(int64(1)),
+		Request: mcpgo.Request{Method: "tools/call"},
+		Params:  mcpgo.CallToolParams{Name: name, Arguments: args},
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal tools/call request: %v", err)
+	}
+	msg := srv.HandleMessage(context.Background(), raw)
+	resp, ok := msg.(mcpgo.JSONRPCResponse)
+	if !ok {
+		t.Fatalf("expected JSONRPCResponse, got %T (%+v)", msg, msg)
+	}
+	result, ok := resp.Result.(*mcpgo.CallToolResult)
+	if !ok {
+		t.Fatalf("expected *CallToolResult, got %T", resp.Result)
+	}
+	if result.IsError {
+		t.Fatalf("%s returned a tool error: %s", name, textContent(result.Content[0]))
+	}
+	return result
+}
+
+// TestLazySessionAutoBootOnRawTool verifies the server-wide middleware triggers
+// lazy auto-boot even for handlers that bypass respond (raw text results).
+func TestLazySessionAutoBootOnRawTool(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	srv := NewServer(pool, cfg)
+	res := callToolThroughServer(t, srv, "sv_mem_capture_passive",
+		map[string]any{"what": "first call is not a search", "why": "regression coverage"})
+	out := textContent(res.Content[0])
+	if !strings.Contains(out, "[sv-memory Auto-Boot]") {
+		t.Fatalf("expected raw-result tool to include Auto-Boot banner, got:\n%s", out)
+	}
+
+	active, err := memory.GetActiveSession(pool.Reader, cfg.ProjectID)
+	if err != nil || active == nil {
+		t.Fatalf("expected an auto-created active session, err=%v", err)
+	}
+
+	second := callToolThroughServer(t, srv, "sv_mem_search", map[string]any{"query": "none"})
+	if out := textContent(second.Content[0]); strings.Contains(out, "[sv-memory Auto-Boot]") {
+		t.Fatalf("did not expect the Auto-Boot banner to repeat on a later tool call, got:\n%s", out)
+	}
+}
+
+// TestLazySessionAdoptionAppliesGoalAndDirectory verifies that an explicit
+// sv_mem_session_start adopts the lazily created session and persists the
+// requested goal and directory on that same row.
+func TestLazySessionAdoptionAppliesGoalAndDirectory(t *testing.T) {
+	tempDir, pool, cfg := setupTestEnv(t)
+	defer cleanupTestEnv(tempDir, pool)
+
+	srv := NewServer(pool, cfg)
+	callToolThroughServer(t, srv, "sv_mem_capture_passive",
+		map[string]any{"what": "trigger lazy boot", "why": "adoption test"})
+
+	active, err := memory.GetActiveSession(pool.Reader, cfg.ProjectID)
+	if err != nil || active == nil {
+		t.Fatalf("expected an auto-created active session, err=%v", err)
+	}
+
+	customDir := filepath.Join(tempDir, "custom-workdir")
+	res := callToolThroughServer(t, srv, "sv_mem_session_start",
+		map[string]any{"goal": "adopted goal", "directory": customDir})
+	out := textContent(res.Content[0])
+	if !strings.Contains(out, active.ID) {
+		t.Fatalf("expected sv_mem_session_start to reuse lazy session %s, got:\n%s", active.ID, out)
+	}
+
+	var goal, dir string
+	if scanErr := pool.Reader.QueryRow(
+		"SELECT goal, directory FROM sessions WHERE id = ?", active.ID).Scan(&goal, &dir); scanErr != nil {
+		t.Fatalf("failed reading adopted session: %v", scanErr)
+	}
+	if goal != "adopted goal" || dir != customDir {
+		t.Fatalf("expected goal=%q directory=%q, got goal=%q directory=%q", "adopted goal", customDir, goal, dir)
+	}
+
+	var activeCount int
+	if scanErr := pool.Reader.QueryRow(
+		"SELECT count(*) FROM sessions WHERE project_id = ? AND status = 'active'", cfg.ProjectID).Scan(&activeCount); scanErr != nil {
+		t.Fatalf("failed counting active sessions: %v", scanErr)
+	}
+	if activeCount != 1 {
+		t.Fatalf("expected exactly 1 active session, got %d", activeCount)
 	}
 }

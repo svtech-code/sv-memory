@@ -34,7 +34,7 @@ func (s *Server) handleSessionStart(ctx context.Context, req mcp.CallToolRequest
 	if dir == "" {
 		dir = s.cfg.ProjPath
 	}
-	session := s.consumeLazySession(goal)
+	session := s.consumeLazySession(goal, dir)
 	if session == nil {
 		var err error
 		session, err = memory.StartSession(s.pool.Writer, s.cfg.ProjectID, goal, dir)
