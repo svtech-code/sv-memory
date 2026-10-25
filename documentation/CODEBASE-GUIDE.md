@@ -133,6 +133,12 @@ After compaction:
                       + memories + recent user prompts (sv_mem_capture_prompt)
 ```
 
+**Lazy fallback:** a server-wide tool middleware (`autoBootMiddleware` in
+`internal/mcp/respond.go`) starts a session on the first non-session tool call
+when none is active, prepends a one-time `[sv-memory Auto-Boot]` banner, and
+lets a later `sv_mem_session_start` adopt that row (persisting its explicit
+goal/directory). Session-lifecycle tools never trigger it.
+
 ## Flow 5 — Conflict detection & judgment
 
 `sv_mem_conflicts` scans for similar memories and records relations.

@@ -5,6 +5,9 @@ Releases are tagged `vX.Y.Z`; the CI pipeline builds and publishes them automati
 
 ## [Unreleased]
 
+### Documentation
+- **v0.28.0 docs sync (EN/ES)**: documented the server-side lazy session auto-boot, session adoption and adaptive cross-tool chaining in `README`, `ARCHITECTURE`, `AGENT-SETUP` and the getting-started guides; resynced the canonical protocol template in `spect` (removing the stale duplicate `sv_graph_explore` rule and adding tool-name resolution, session-start trigger, workflow/idea lifecycle) and fixed stale `mcp.go` references plus missing split files in `CODEBASE-GUIDE_ES`.
+
 ## [v0.28.0] - 2026-10-24
 
 ### Added

@@ -62,6 +62,14 @@ Luego reinicia tu asistente para que recargue la configuración MCP y las nuevas
 
 ## Detalles por agente
 
+> **Fallback de sesión en todos los clientes:** los hooks son la vía preferida
+> para iniciar sesión con el Auto-Boot Context Bundle completo, pero no son
+> obligatorios. Si ningún hook inició una sesión, el servidor MCP la crea de
+> forma lazy en la primera llamada a una herramienta que no sea de sesión,
+> antepone un banner único `[sv-memory Auto-Boot]` y adopta esa fila cuando el
+> agente llama después a `sv_mem_session_start` (persistiendo su `goal`/
+> `directory` explícitos).
+
 ### Claude Code
 
 - **Config MCP:** si el CLI `claude` está en tu PATH, ejecuta el comando impreso

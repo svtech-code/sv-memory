@@ -62,6 +62,13 @@ Then restart your assistant so it reloads the MCP config and new tools. Verify w
 
 ## Per-agent details
 
+> **Session fallback on every client:** hooks are the preferred way to start a
+> session with the full Auto-Boot Context Bundle, but they are not required.
+> If no hook started a session, the MCP server lazily creates one on the first
+> non-session tool call, prepends a one-time `[sv-memory Auto-Boot]` banner, and
+> adopts that row when the agent later calls `sv_mem_session_start` (persisting
+> its explicit `goal`/`directory`).
+
 ### Claude Code
 
 - **MCP config:** if the `claude` CLI is on your PATH, run the printed

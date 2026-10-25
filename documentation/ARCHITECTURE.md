@@ -10,6 +10,7 @@ Sessions track coding work across agent interactions. Every session starts `acti
 [not created]
     │
     ▼  sv_mem_session_start / sv-memory session start
+    │  or first non-session tool call (lazy auto-boot)
  [active] ──────────────────────────────────────────────▶ [completed]
     │                                                       ▲
     │  sv_mem_session_end / sv-memory session end           │
@@ -20,7 +21,7 @@ Sessions track coding work across agent interactions. Every session starts `acti
 
 | State | Meaning | How it transitions |
 | :--- | :--- | :--- |
-| `active` | Session in progress, memories are being saved | Created by `StartSession` |
+| `active` | Session in progress, memories are being saved | `StartSession` (explicit or lazy auto-boot) |
 | `completed` | Session ended, summary saved | `EndSession`, `CloseStaleSessions` |
 
 ### Agent integration
@@ -28,18 +29,70 @@ Sessions track coding work across agent interactions. Every session starts `acti
 | Agent | Start | End | Prompt capture |
 | :--- | :--- | :--- | :--- |
 | Claude Code | Hook `SessionStart` (auto-start + bundle inject) | Hook `SessionEnd` (auto-close, idempotent) | Hook `UserPromptSubmit` |
-| OpenCode | MCP `instructions` + `AGENTS.md` | Protocol (`AGENTS.md`) | ❌ |
+| OpenCode | MCP `instructions` + `AGENTS.md` + server lazy auto-boot | Protocol (`AGENTS.md`) | ❌ |
 | Antigravity CLI | Hook `PreInvocation` (auto-start + bundle inject) | Protocol (`AGENTS.md`) | ❌ |
-| Cursor | Protocol (`AGENTS.md`) | Protocol (`AGENTS.md`) | ❌ |
-| Codex | MCP `instructions` + `AGENTS.md` | Protocol (`AGENTS.md`) | ❌ |
-| Pi | `AGENTS.md` (nativo) | Protocol (`AGENTS.md`) | ❌ |
+| Cursor | Protocol (`AGENTS.md`) + server lazy auto-boot | Protocol (`AGENTS.md`) | ❌ |
+| Codex | MCP `instructions` + `AGENTS.md` + server lazy auto-boot | Protocol (`AGENTS.md`) | ❌ |
+| Pi | `AGENTS.md` (nativo) + server lazy auto-boot | Protocol (`AGENTS.md`) | ❌ |
+
+### Lazy server-side auto-boot
+
+Every MCP client gets a session even when it forgets `sv_mem_session_start`. A
+server-wide tool handler middleware (`autoBootMiddleware`) runs the auto-boot
+check before the first non-session tool call:
+
+```text
+first non-session tool call (sv_mem_search, sv_graph_explore, sv_mem_save, ...)
+    │
+    ▼
+CloseStaleSessions(projectID, stale_session_hours)
+    │
+    ▼
+GetActiveSession() ── exists? ──▶ reuse it, no banner
+    │ none
+    ▼
+StartSession(projectID, goal="", directory=project path)
+    │
+    ▼
+prepend one-time "[sv-memory Auto-Boot]" banner to the tool response
+    │  (invites the agent to call sv_mem_session_start for the full bundle)
+    ▼
+later sv_mem_session_start ──▶ consumeLazySession: adopt the same row,
+                               persist explicit goal/directory
+```
+
+Session-lifecycle tools (`sv_mem_session_start`, `sv_mem_session_end`,
+`sv_mem_session_summary`, `sv_mem_context`) never trigger lazy auto-boot. The
+banner appears only once per server process; a later `sv_mem_session_start`
+adopts the lazily created row instead of creating a duplicate. Hooks remain the
+preferred path because they inject the full Auto-Boot Context Bundle before the
+first model turn, while lazy auto-boot is the client-agnostic safety net.
+
+**Key files:** `internal/mcp/respond.go` (`autoBootMiddleware`,
+`ensureSessionAutoBoot`, `consumeLazySession`), `internal/mcp/mcp_server.go`
+(middleware registration).
+
+### Adaptive cross-tool chaining
+
+The discovery tools close their responses with a one-line, session-aware next
+step so agents chain the protocol instead of stopping after one call:
+
+| Tool | Next-step nudge |
+| :--- | :--- |
+| `sv_mem_session_start` | `sv_mem_search` + `sv_graph_explore` / `sv_graph_search` |
+| `sv_graph_search` | `sv_graph_explore` + `sv_mem_search` |
+| `sv_mem_search` | `sv_mem_get` + `sv_graph_explore` (or `sv_propose_spec` if the graph was already explored) |
+| `sv_graph_explore` | `sv_mem_search` / `sv_mem_get`, then `sv_spec_list` → `sv_propose_spec` before changing behavior |
 
 ### Auto-close stale sessions
 
-When `sv_mem_session_start` is called and existing active sessions are older than `stale_session_hours` (default 24h), they are automatically closed. This prevents leaked sessions from accumulating when users exit agents without calling `sv_mem_session_end`.
+When a session starts — explicitly via `sv_mem_session_start` or lazily on the
+first tool call — existing active sessions older than `stale_session_hours`
+(default 24h) are automatically closed. This prevents leaked sessions from
+accumulating when users exit agents without calling `sv_mem_session_end`.
 
 ```text
-sv_mem_session_start
+sv_mem_session_start / lazy auto-boot
     │
     ▼
 CloseStaleSessions(projectID, 24h)
@@ -50,7 +103,8 @@ CloseStaleSessions(projectID, 24h)
 StartSession() → new active session
     │
     ▼
-GetAutoBootBundle() → inject context
+GetAutoBootBundle() → inject context (explicit start only; lazy start shows the
+                       one-time banner and lets the agent request the bundle)
 ```
 
 **Key file:** `internal/memory/memory_session.go` — `CloseStaleSessions`
@@ -196,6 +250,6 @@ An `fsnotify`-based watcher monitors the project directory for file changes. Whe
 
 ### Auto-freshness in context packs
 
-`sv_graph_explore` and `sv_graph_explore` call `SyncGraphIfHasChanges` before resolving nodes, ensuring snippets reflect the latest disk state without manual `sv_graph_sync`.
+`sv_graph_explore` calls `SyncGraphIfHasChanges` before resolving nodes, ensuring snippets reflect the latest disk state without manual `sv_graph_sync`.
 
 **Key files:** `internal/memory/sync.go`, `internal/graph/watcher.go`, `internal/graph/incremental.go`

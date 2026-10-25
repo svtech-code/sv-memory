@@ -78,130 +78,8 @@ Desarrollado bajo el ecosistema de **SVTech** como una herramienta gratuita y de
 - Calcula un `project_id` hex determinista de 16 caracteres (SHA256 de la ruta raíz del repositorio Git).
 - Registra la entrada del proyecto en la base de datos central SQLite.
 - Verifica la existencia de `AGENTS.md` o `.cursorrules`:
-  - Si existe alguno: Inyecta o actualiza el bloque `<!-- SV-MEMORY:START -->
-# SV-Memory Protocol Rules
-
-<CRITICAL_INSTRUCTIONS>
-- YOU MUST NEVER use native grep, find, cat, or read_file to understand codebase structure or search for symbols. YOU MUST ALWAYS use `sv_graph_explore`, `sv_graph_search`, or `sv_graph_explore` first. Native tools are ONLY for unindexed config/docs.
-- YOU MUST ALWAYS call `sv_mem_save` immediately after making a design decision, fixing a complex bug, or establishing a convention. Do not wait for the user to ask.
-- YOU MUST ALWAYS initiate the Spec-Driven Decision Cycle (`sv_propose_spec`) BEFORE writing code that changes behavior or architecture. NEVER skip this loop.
-- YOU MUST ALWAYS search memory (`sv_mem_search`) before answering questions about the project or proposing solutions.
-</CRITICAL_INSTRUCTIONS>
-
-This project uses 'sv-memory' for persistent architectural memory, progress journals, and structural context graph.
-
-## Session Lifecycle (REQUIRED, in this order):
-
-1. **Start:** Call 'sv_mem_session_start' at the beginning of work. It returns an **Auto-Boot Context Bundle** with the previous session summary, key architectural decisions, standards, recent bugfixes, last journals, and top graph hubs — read it and use it as your starting context.
-2. **Associate saves:** Pass 'session_id' to 'sv_mem_save' to group memories under the active session. If omitted, the active session is auto-detected.
-3. **Capture knowledge as you go:** Save journals, decisions, standards, and bugfixes with 'sv_mem_save' (see the Memory Capture Guidelines below). Use 'sv_mem_capture_passive' for lightweight observations that do not need an explicit save decision.
-4. **Summary:** Call 'sv_mem_session_summary' with goal, discoveries, accomplished work, and next steps before closing.
-5. **End:** Call 'sv_mem_session_end' to mark the session as completed and enable context recovery in the next session.
-
-After a compaction or context reset, call 'sv_mem_context' to recover the last session state (goal, summary, associated memories).
-
-## Tool Usage in Any Mode:
-
-The sv-memory tools (session, memory, graph, diagnostics) may be called in ANY operational mode — plan, build, or review. They persist only to the project memory store ('.sv-memory/'), which is project data, not source code. Do not skip memory capture, context recovery, or the session lifecycle because of the current mode.
-
-## Context Initialization (Search-Before-Work):
-
-Memory must be consulted before proposing or executing changes:
-- **Orientation:** On a new project, call 'sv_mem_stats' first — it is the cheapest overview of memory distribution (categories, counts, sessions).
-- **Targeted search:** Call 'sv_mem_search' with the topic keywords of your task (feature, component, style, module). Filter by category when relevant ('journal', 'postmortem', 'discussion', 'idea', 'qa', 'architecture', 'decision'). Avoid repeating redundant searches — the Auto-Boot Bundle already carries the previous session context.
-- **Proactive search:** On first user message referencing a project, feature, or problem, call 'sv_mem_search' with their keywords before responding. Never answer from assumptions alone — memory first, code second.
-
-## Progressive Disclosure (Token-Efficient Retrieval):
-
-Use the 3-layer pattern to minimise tokens:
-- **Layer 1 — Search:** Call 'sv_mem_search' to get a compact list (IDs + titles + topic keys) of relevant memories (~30 tokens/result).
-- **Layer 2 — Timeline:** Call 'sv_mem_timeline(observation_id=...)' to see chronological context around a specific memory (includes the central observation rationale).
-- **Layer 3 — Get full content:** Call 'sv_mem_get(id=...)' to retrieve the full content of a specific memory.
-Never dump all fields from search — drill down on demand. The top search result is already expanded inline, so only drill further when you need deeper detail.
-
-## Topic Keys (Upsert Semantics):
-
-- Use 'sv_mem_suggest_topic_key(category, what)' to generate a stable 'category/kebab-case' key.
-- Pass 'topic_key' to 'sv_mem_save' to enable upsert: saves to the same project+topic update in place (revision_count++) instead of creating a new record.
-- Use topic keys for evolving topics (architecture decisions, design systems, long-running features, recurring patterns). Skip for one-off bugs or single facts.
-- **Convention:** Always kebab-case in English. Examples: 'standard/design-system', 'architecture/component-card', 'decision/use-bun-instead-of-npm', 'standard/workflow-git-commits', 'bugfix/tab-transition-absolute-position'.
-
-## Memory Capture Guidelines (when to save what):
-
-Always persist design knowledge as structured memories with a topic_key, not just session journals:
-
-| Situation | Category | topic_key example |
-| :--- | :--- | :--- |
-| Visual style / design system / CSS / Tailwind tokens | 'standard' | standard/design-system |
-| Reusable component or UI pattern | 'architecture' | architecture/component-card |
-| Workflow / methodology / build & dev process | 'standard' | standard/workflow-dev-process |
-| Architectural decision made (and its rationale) | 'decision' | decision/... |
-| Code convention / naming / folder structure | 'standard' | standard/code-conventions |
-| Complex or non-obvious bug fixed | 'bugfix' | bugfix/... |
-| Relevant Q&A with lasting value | 'qa' | qa/... |
-| Rejected library or framework feature | 'decision' | decision/avoid-... |
-| Session progress checkpoint | 'journal' | journal/... |
-
-**Golden rule:** when you define, change, or reuse a style, component, methodology, or convention, save it as 'standard' or 'architecture' with a topic_key. A journal is not a substitute — journals document progress, 'standard'/'architecture'/'decision' preserve the "how" and the "why" for future sessions.
-
-## Graph — use it instead of grep/read on synced code:
-
-The sv-memory graph is a pre-computed structural index of the project (source, call paths, blast radius you would otherwise re-derive by reading). For any symbol or path the graph has synced, prefer graph tools over a raw grep/read loop: one call returns line-numbered source, structure, and consequences in far fewer tokens and round-trips.
-
-- **Explore first (read-equivalent):** Call 'sv_graph_explore' BEFORE reading or grepping a file. Pass one or more comma-separated symbols/paths; it returns each symbol's structural role, a surgical line-numbered source snippet (treat it as already read), the shortest call path between them, blast radius, and linked memories. 'sv_graph_explore(path="<file|pkg>")' is the same contract for a single path plus active changes and capabilities.
-- **Orient before touching code:** Call 'sv_graph_god_nodes' to see the most-connected hub nodes — these are the architectural hotspots any change may ripple through.
-- **Understand a module:** Call 'sv_graph_explain(node=...)' before refactoring, deleting, or restructuring a file/module. It reports the node's role, community, centrality, fan-in/fan-out, neighbors, and suggested questions.
-- **Inspect dependencies:** Call 'sv_graph_query(path_or_node=...)' to see a module's dependency sub-graph (imports/calls/depends_on) with depth, direction, and relation-type filters.
-- **Trace a connection:** Call 'sv_graph_path(source=..., target=...)' to find the shortest dependency path between two nodes.
-
-### Anti-patterns (don't):
-
-- **Don't re-verify graph results with grep.** They come from a full parse; re-checking with grep is slower, less accurate, and wastes context.
-- **Don't grep or read first** to find or understand synced code — ONE 'sv_graph_explore'/'sv_graph_explore' returns the relevant source in a single round-trip. Reach for raw Read/Grep only to confirm a specific detail the graph didn't cover, or for what the graph doesn't index (configs, docs).
-- **Don't hand-reconstruct a flow** — name both endpoints in one 'sv_graph_explore' call and it surfaces the path between them.
-- **Trust auto-freshness after editing:** context packs re-check the disk and auto-sync when files changed, so snippets stay current; re-run 'sv_graph_explore'/'sv_graph_explore' after your edit to see ripple effects instead of re-reading files.
-
-## Spec-Driven Decision Cycle (before proposing or changing behavior):
-
-Proposals go through a lifecycle before code is written. Use it for any behavior/architecture change, not just large features:
-- **Consult context:** 'sv_graph_explore(path="<file|pkg>", include_changes="true")' surfaces the node role, linked decisions/standards, and active changes affecting that path in one call.
-- **Propose:** 'sv_propose_spec(slug="<kebab-case>", title=..., what=..., where_path=...)' registers the change and runs a pre-flight check against rules/invariants (standards, decisions, architecture memories). A pinned rule that overlaps the proposal returns a BLOCK verdict.
-- **Validate:** 'sv_validate_decision(change_id=...)' re-checks a proposal after edits (PASS/WARN/BLOCK). Deterministic by default; pass semantic="true" to opt into agent re-ranking.
-- **Commit:** 'sv_commit_spec(change_id=...)' promotes the change into a durable decision/standard memory, links it to the change_id, wires the rationale_for edge, and stamps it applied. A pre-flight BLOCK rejects the commit unless force="true" explicitly overrides the invariant. Call after implementation, before 'sv_mem_session_end'.
-- Lifecycle states: 'draft' → 'proposed' → 'validated' → 'applied' (→ 'archived') | 'rejected'. Committed decisions get topic_key 'decision/<slug>'.
-- **Human-visible mirror:** every change is auto-projected to '.sv-memory/specs/changes/<slug>.md' (git-synced). Humans can edit those files; 'sv-memory specs import <slug>' reconciles the edits back into the store (the SQLite DB stays authoritative). 'sv-memory specs export/list/archive' manage the mirror.
-
-## Graph Refresh:
-
-Execute 'sv_graph_sync' after adding major new files, creating new packages, or modifying package structures/imports. The graph is rebuilt incrementally and communities/centrality are computed lazily when queried.
-
-## Memory Maintenance (periodic):
-
-- **Review:** Call 'sv_mem_review' to list stale, duplicate, or consolidation-candidate memories.
-- **Conflicts:** Call 'sv_mem_conflicts action=scan' to detect potential duplicate memories; judge them with 'sv_mem_judge' (supersedes / conflicts_with / relates_to) or with 'action=scan semantic=true' to LLM-judge candidates via the agent CLI. Keep relations coherent.
-- **Compare:** Call 'sv_mem_compare(id1, id2)' before judging two similar memories.
-- **Compact:** Call 'sv_mem_compact' periodically or after many topic-key upserts to consolidate revisions and keep search fast.
-
-## Tool Quick Reference:
-
-- **Session:** sv_mem_session_start, sv_mem_session_summary, sv_mem_session_end, sv_mem_context
-- **Memory CRUD:** sv_mem_save, sv_mem_update, sv_mem_get, sv_mem_delete, sv_mem_search, sv_mem_timeline
-- **Pin / Priority:** sv_mem_pin (action='unpin' to clear)
-- **Knowledge quality:** sv_mem_suggest_topic_key, sv_mem_judge, sv_mem_compare, sv_mem_compact, sv_mem_review, sv_mem_capture_passive, sv_mem_conflicts, sv_mem_stats, sv_mem_diagnose
-- **Web Ingest:** sv_mem_fetch_reference (fetch clean text from external URLs to save as context)
-- **User intent:** sv_mem_capture_prompt (record what the user asked, recoverable via sv_mem_context)
-- **Project admin:** sv_mem_merge_projects (merge project variants into a canonical project)
-- **Context Pack:** sv_graph_explore (one bounded call: graph role + linked memories + active changes for a file/package/symbol)
-- **Decision Engine:** sv_propose_spec, sv_validate_decision, sv_commit_spec (propose → validate → commit cycle with pre-flight checks)
-- **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive (human-readable Markdown projection of changes under .sv-memory/specs/)
-- **Graph:** sv_graph_explore, sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_report, sv_graph_viz, sv_graph_merge, sv_graph_search, sv_graph_communities, sv_graph_diff
-
-## Repository Restrictions & Commit Standards:
-
-- **Commit Format:** Always provide commit messages using the Conventional Commits format (e.g., 'feat(scope): description'). Use the project's configured commit language (default: English), unless the project specifies otherwise.
-- **Forbidden Actions:** You MUST NOT run 'git add', 'git commit', or 'git push' commands autonomously. The user must review changes and run these commands manually.
-<!-- SV-MEMORY:END -->`.
-  - Si no existe ninguno: Crea `AGENTS.md` con la plantilla completa del protocolo.
+  - Si existe alguno: Inyecta o actualiza el bloque `<!-- SV-MEMORY:START -->` … `<!-- SV-MEMORY:END -->` con la plantilla canónica del protocolo (ver §8, Plantilla de Protocolo del Agente).
+  - Si no existe ninguno: Crea `AGENTS.md` con la misma plantilla.
 - Escanea el directorio del proyecto y realiza una construcción inicial del grafo de conocimiento.
 - Sincroniza memorias desde `.sv-memory/chunks/` (contexto compartido por el equipo).
 
@@ -626,7 +504,7 @@ Genera un topic key estable en formato kebab-case antes de guardar.
 
 ### 4. `sv_mem_session_start`
 
-Registra una nueva sesión de codificación. Devuelve el Auto-Boot Context Bundle (resumen de la sesión anterior, decisiones clave, estándares, bugfixes recientes, postmortems, Q&A reciente, últimos diarios, hubs del grafo) limitado por el presupuesto de tokens. Cuando se proporciona un `goal`, las decisiones/estándares/bugfixes mostrados se ordenan por relevancia a él en lugar de por mera recencia. Cuando hay conflictos de decisión sin resolver, se añade una línea `⚠ Pending memory conflicts` para que el agente los revise antes de confiar en cualquiera de las partes.
+Registra una nueva sesión de codificación. Devuelve el Auto-Boot Context Bundle (resumen de la sesión anterior, decisiones clave, estándares, bugfixes recientes, postmortems, Q&A reciente, últimos diarios, hubs del grafo) limitado por el presupuesto de tokens. Cuando se proporciona un `goal`, las decisiones/estándares/bugfixes mostrados se ordenan por relevancia a él en lugar de por mera recencia. Cuando hay conflictos de decisión sin resolver, se añade una línea `⚠ Pending memory conflicts` para que el agente los revise antes de confiar en cualquiera de las partes. La descripción de la herramienta usa el prefijo `TRIGGER:` y, si el servidor ya auto-inició una sesión de forma lazy en la primera llamada a una herramienta que no sea de sesión, esta llamada adopta esa fila en lugar de duplicarla y persiste el `goal`/`directory` explícitos.
 
 - **Parámetros:**
   - `goal` (string, opcional): Objetivo de la sesión. Al definirlo, el Auto-Boot bundle ordena los candidatos de cada sección por relevancia a él (pinned primero, luego solapamiento de keywords, luego recencia).
@@ -1031,17 +909,28 @@ El almacén SQLite vive fuera del repositorio (`~/.config/sv-memory/storage.db`)
 
 ## 8. Plantilla de Protocolo del Agente
 
-Al inicializarse, `sv-memory` inyecta el siguiente bloque de protocolo en `AGENTS.md` o `.cursorrules` (fuente de la verdad: `internal/protocol/protocol.go`):
+> **Fuente de verdad:** `internal/protocol/protocol.go` (`protocolTemplate`). Este
+> espejo se refresca con `sv-memory init`; edita la plantilla Go, no esta copia.
 
 ```markdown
 <!-- SV-MEMORY:START -->
 # SV-Memory Protocol Rules
+
+<CRITICAL_INSTRUCTIONS>
+- **Tool-name resolution:** Your MCP client prefixes sv-memory tool names with a server namespace. Match by the 'sv_*' suffix: 'sv_graph_explore' is exposed as 'sv-memory_sv_graph_explore' (OpenCode) or 'mcp__sv-memory__sv_graph_explore' (Claude Code); 'sv_mem_search' as 'sv-memory_sv_mem_search', etc. Always call the tool whose name ends with the referenced 'sv_*' name.
+- YOU MUST ALWAYS call 'sv_mem_session_start' FIRST at the beginning of a session to load the Auto-Boot Context Bundle (skip ONLY if a Claude Code or Antigravity hook already injected the active session bundle into your turn).
+- YOU MUST NEVER use native grep, find, cat, or read_file to understand codebase structure or search for symbols. YOU MUST ALWAYS use 'sv_graph_explore' or 'sv_graph_search' first. Native tools are ONLY for unindexed config/docs.
+- YOU MUST ALWAYS call 'sv_mem_save' immediately after making a design decision, fixing a complex bug, or establishing a convention. Do not wait for the user to ask.
+- YOU MUST ALWAYS initiate the Spec-Driven Decision Cycle ('sv_propose_spec') BEFORE writing code that changes behavior or architecture. NEVER skip this loop.
+- YOU MUST ALWAYS search memory ('sv_mem_search') before answering questions about the project or proposing solutions.
+</CRITICAL_INSTRUCTIONS>
 
 This project uses 'sv-memory' for persistent architectural memory, progress journals, and structural context graph.
 
 ## Session Lifecycle (REQUIRED, in this order):
 
 1. **Start:** Call 'sv_mem_session_start' at the beginning of work. It returns an **Auto-Boot Context Bundle** with the previous session summary, key architectural decisions, standards, recent bugfixes, last journals, and top graph hubs — read it and use it as your starting context.
+   - **Hook-managed on Claude Code / Antigravity:** on those platforms, the lifecycle hook auto-starts the session and injects this bundle into your first turn (its header shows the session ID). If you already see that header, skip 'sv_mem_session_start' — on OpenCode, Cursor, Codex, Pi, and any other client without that header, you MUST call 'sv_mem_session_start' yourself.
 2. **Associate saves:** Pass 'session_id' to 'sv_mem_save' to group memories under the active session. If omitted, the active session is auto-detected.
 3. **Capture knowledge as you go:** Save journals, decisions, standards, and bugfixes with 'sv_mem_save' (see the Memory Capture Guidelines below). For evolving categories ('decision', 'standard', 'architecture', 'bugfix'), 'topic_key' is automatically derived if omitted to enable upsert semantics. Use 'sv_mem_capture_passive' for lightweight observations that do not need an explicit save decision.
 4. **End:** Call 'sv_mem_session_end(accomplished=...)' to save the summary and mark the session as completed in a single call (session_id is auto-detected if omitted). Alternatively, call 'sv_mem_session_summary' before 'sv_mem_session_end'.
@@ -1055,7 +944,7 @@ The sv-memory tools (session, memory, graph, diagnostics) may be called in ANY o
 ## Context Initialization (Search-Before-Work):
 
 Memory must be consulted before proposing or executing changes:
-- **Single-Call Context Pack (Recommended):** Call 'sv_graph_explore(path="<file|pkg>")' before reading or editing code. It surfaces the node role, linked decisions/standards, active changes, and capability state in one call.
+- **Graph-first (read-equivalent):** For code comprehension, prefer 'sv_graph_explore(path="<file|symbol>")' over reading raw source — the returned surgical snippets count as already read and carry blast radius + linked memories (see Graph below).
 - **Orientation:** On a new project, call 'sv_mem_stats' first — it is the cheapest overview of memory distribution (categories, counts, sessions).
 - **Targeted search:** Call 'sv_mem_search' with the topic keywords of your task (feature, component, style, module). Filter by category when relevant ('journal', 'postmortem', 'discussion', 'idea', 'qa', 'architecture', 'decision'). Avoid repeating redundant searches — the Auto-Boot Bundle already carries the previous session context.
 - **Proactive search:** On first user message referencing a project, feature, or problem, call 'sv_mem_search' with their keywords before responding. Never answer from assumptions alone — memory first, code second.
@@ -1084,45 +973,66 @@ Always persist design knowledge as structured memories with a topic_key, not jus
 | Visual style / design system / CSS / Tailwind tokens | 'standard' | standard/design-system |
 | Reusable component or UI pattern | 'architecture' | architecture/component-card |
 | Workflow / methodology / build & dev process | 'standard' | standard/workflow-dev-process |
+| User workflow preference / collaboration style (per project) | 'standard' | standard/user-workflow-... |
 | Architectural decision made (and its rationale) | 'decision' | decision/... |
 | Code convention / naming / folder structure | 'standard' | standard/code-conventions |
 | Complex or non-obvious bug fixed | 'bugfix' | bugfix/... |
+| Future feature idea / deferred improvement | 'idea' | idea/... |
 | Relevant Q&A with lasting value | 'qa' | qa/... |
 | Rejected library or framework feature | 'decision' | decision/avoid-... |
 | Session progress checkpoint | 'journal' | journal/... |
 
 **Golden rule:** when you define, change, or reuse a style, component, methodology, or convention, save it as 'standard' or 'architecture' with a topic_key. A journal is not a substitute — journals document progress, 'standard'/'architecture'/'decision' preserve the "how" and the "why" for future sessions.
+- **Autonomous User Workflow Learning (per project):** When the user expresses or corrects how they prefer to work in this project (e.g., phase-by-phase execution, testing/linting gates before commits, language preferences, review cadence), save it as 'standard' with topic_key 'standard/user-workflow-...' and pin it with 'sv_mem_pin' so every future session in this project adapts to their workflow automatically.
+- **Idea Lifecycle (never lose ideas):** Save brainstormed ideas or deferred improvements with category 'idea'. Unresolved ideas automatically surface in the Auto-Boot Context Bundle; once implemented or discarded, prefix their title ('what') with 'RESUELTO:' via 'sv_mem_update'.
 
 ## Graph — use it instead of grep/read on synced code:
 
 The sv-memory graph is a pre-computed structural index of the project (source, call paths, blast radius you would otherwise re-derive by reading). For any symbol or path the graph has synced, prefer graph tools over a raw grep/read loop: one call returns line-numbered source, structure, and consequences in far fewer tokens and round-trips.
 
 - **Explore first (read-equivalent):** Call 'sv_graph_explore' BEFORE reading or grepping a file. Pass one or more comma-separated symbols/paths; it returns each symbol's structural role, a surgical line-numbered source snippet (treat it as already read), the shortest call path between them, blast radius, and linked memories. 'sv_graph_explore(path="<file|pkg>")' is the same contract for a single path plus active changes and capabilities.
+- **Discover by pattern:** Call 'sv_graph_search(query="keyword")' to find nodes matching a text pattern across id/label/path when the exact symbol name is unknown. Then explore results with 'sv_graph_explore' or 'sv_graph_explain'.
 - **Orient before touching code:** Call 'sv_graph_god_nodes' to see the most-connected hub nodes — these are the architectural hotspots any change may ripple through.
 - **Understand a module:** Call 'sv_graph_explain(node=...)' before refactoring, deleting, or restructuring a file/module. It reports the node's role, community, centrality, fan-in/fan-out, neighbors, and suggested questions.
 - **Inspect dependencies:** Call 'sv_graph_query(path_or_node=...)' to see a module's dependency sub-graph (imports/calls/depends_on) with depth, direction, and relation-type filters.
 - **Trace a connection:** Call 'sv_graph_path(source=..., target=...)' to find the shortest dependency path between two nodes.
+- **Community structure:** Call 'sv_graph_communities()' to list top communities with auto-labels and member counts, or 'sv_graph_communities(community_id=N)' for per-member detail.
 
 ### Anti-patterns (don't):
 
 - **Don't re-verify graph results with grep.** They come from a full parse; re-checking with grep is slower, less accurate, and wastes context.
-- **Don't grep or read first** to find or understand synced code — ONE 'sv_graph_explore'/'sv_graph_explore' returns the relevant source in a single round-trip. Reach for raw Read/Grep only to confirm a specific detail the graph didn't cover, or for what the graph doesn't index (configs, docs).
+- **Don't grep or read first** to find or understand synced code — ONE 'sv_graph_explore' returns the relevant source in a single round-trip. Reach for raw Read/Grep only to confirm a specific detail the graph didn't cover, or for what the graph doesn't index (configs, docs).
 - **Don't hand-reconstruct a flow** — name both endpoints in one 'sv_graph_explore' call and it surfaces the path between them.
-- **Trust auto-freshness after editing:** context packs re-check the disk and auto-sync when files changed, so snippets stay current; re-run 'sv_graph_explore'/'sv_graph_explore' after your edit to see ripple effects instead of re-reading files.
+- **Trust auto-freshness after editing:** context packs re-check the disk and auto-sync when files changed, so snippets stay current; re-run 'sv_graph_explore' after your edit to see ripple effects instead of re-reading files.
 
-## Spec-Driven Decision Cycle (before proposing or changing behavior):
+## Spec-Driven Decision Cycle (MANDATORY before behavior/architecture changes):
 
-Proposals go through a lifecycle before code is written. Use it for any behavior/architecture change, not just large features:
-- **Consult context:** 'sv_graph_explore(path="<file|pkg>", include_changes="true")' surfaces the node role, linked decisions/standards, active changes, and the capabilities implemented at that path (with their requirements) in one call.
-- **Propose:** 'sv_propose_spec(slug="<kebab-case>", title=..., what=..., where_path=..., requirements=..., capability_path=...)' registers the change and runs a pre-flight check against rules/invariants (standards, decisions, architecture memories). A pinned rule that overlaps the proposal returns a BLOCK verdict. The optional 'requirements' param carries OpenSpec-style delta requirements (## ADDED/MODIFIED/REMOVED/RENAMED Requirements, ### Requirement:, #### Scenario: with GIVEN/WHEN/THEN/AND steps) targeting a single capability (defaults to the slug).
-- **Validate:** 'sv_validate_decision(change_id=...)' re-checks a proposal after edits (PASS/WARN/BLOCK) and validates the delta requirements (RFC 2119 keyword presence, MODIFIED scenario drops vs the current capability state). Deterministic by default; pass semantic="true" to opt into agent re-ranking.
-- **Commit:** 'sv_commit_spec(change_id=...)' promotes the change into a durable decision/standard memory, links it to the change_id, wires the rationale_for edge, merges the delta requirements into the capability's current state (.sv-memory/specs/capabilities/ + graph spec nodes), and stamps it applied. A pre-flight BLOCK or a requirements merge conflict rejects the commit unless force="true" explicitly overrides the invariant. Call after implementation, before 'sv_mem_session_end'.
-- Lifecycle states: 'draft' → 'proposed' → 'validated' → 'applied' (→ 'archived') | 'rejected'. Committed decisions get topic_key 'decision/<slug>'.
-- **Human-visible mirror:** every change is auto-projected to '.sv-memory/specs/changes/<slug>.md' (git-synced) including its delta requirements; the merged current state lives under '.sv-memory/specs/capabilities/<cap>/spec.md'. Humans can edit those files; 'sv-memory specs import <slug>' reconciles the edits back into the store (the SQLite DB stays authoritative). 'sv-memory specs export/list/archive/capabilities' manage the mirror.
+If the change touches behavior, contracts, APIs, or architecture — you MUST use this flow. Config/docs-only changes are exempt.
 
-## Graph Refresh:
 
-Execute 'sv_graph_sync' after adding major new files, creating new packages, or modifying package structures/imports. The graph is rebuilt incrementally and communities/centrality are computed lazily when queried.
+**When to use what:**
+- **Retrospective/Small (1 tool call):** If you just fixed a bug, defined a coding standard, or made a minor design choice, use 'sv_mem_save(category='decision'|'standard'|'bugfix')'.
+- **Prospective/Major (5 tool calls):** If you are about to implement a *new feature*, refactor a core API, or change the architecture, you MUST use the Spec Cycle.
+
+**The loop (5 tools, one cycle):**
+
+1. **List pending work:** 'sv_spec_list()' shows active changes with status and task progress.
+2. **Consult context + Propose:** 'sv_graph_explore(path="<file>", include_changes="true")' for context, then 'sv_propose_spec(slug=..., title=..., what=..., where_path=..., requirements=..., tasks=..., capability_path=...)' registers the change with pre-flight check (BLOCK/WARN/PASS). The 'requirements' param carries OpenSpec-style deltas (## ADDED/MODIFIED/REMOVED/RENAMED Requirements, ### Requirement:, #### Scenario: with GIVEN/WHEN/THEN/AND steps).
+3. **Get + Apply:** 'sv_spec_get(change_id="<slug>")' retrieves proposal/design/tasks. Implement code, then 'sv_update_spec(change_id=..., tasks=...)' marks completed checkboxes.
+4. **Validate:** 'sv_validate_decision(change_id=...)' re-checks after edits (PASS/WARN/BLOCK); validate delta requirements (RFC 2119, scenario consistency). 'semantic="true"' opts into agent re-ranking.
+5. **Commit:** 'sv_commit_spec(change_id=...)' promotes to durable decision memory, merges deltas into capability state (.sv-memory/specs/capabilities/ + graph spec nodes), stamps applied.
+
+- Lifecycle: 'draft' → 'proposed' → 'validated' → 'applied' (→ 'archived') | 'rejected'. Committed decisions get topic_key 'decision/<slug>'.
+- **Human-visible mirror:** every change is auto-projected to '.sv-memory/specs/changes/<slug>.md' and 'openspec/changes/<slug>/' (git-synced) including its delta requirements; the merged current state lives under '.sv-memory/specs/capabilities/<cap>/spec.md'. Humans can edit those files; 'sv-memory specs import <slug>' reconciles the edits back into the store (the SQLite DB stays authoritative). 'sv-memory specs export/list/archive/capabilities' manage the mirror.
+
+## Graph Auto-Sync:
+
+You do NOT need to call 'sv_graph_sync' manually. The graph is automatically and incrementally refreshed using an optimized mtime/size probe whenever you use 'sv_graph_explore'.
+
+
+## Architectural Review (sv_graph_diff):
+
+Before asking the user to commit your changes or finalizing a task, you MUST autonomously run 'sv_graph_diff(base_ref="HEAD")' to self-review the structural impact of your code (added dependencies, fan-out changes) and catch unintended side-effects.
 
 ## Memory Maintenance (periodic):
 
@@ -1133,25 +1043,23 @@ Execute 'sv_graph_sync' after adding major new files, creating new packages, or 
 
 ## Tool Quick Reference:
 
+- **Graph:** sv_graph_explore, sv_graph_search, sv_graph_communities, sv_graph_query, sv_graph_diff, sv_graph_explain, sv_graph_god_nodes, sv_graph_path (sv_graph_explore = ONE-call explore: source + call path + blast radius)
+- **Spec Flow:** sv_spec_list, sv_spec_get, sv_propose_spec, sv_update_spec, sv_validate_decision, sv_commit_spec (list → get → propose → update → validate → commit cycle)
+- **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive | capabilities (human-readable Markdown projection of changes and capability state under .sv-memory/specs/ and openspec/)
 - **Session:** sv_mem_session_start, sv_mem_session_summary, sv_mem_session_end, sv_mem_context
 - **Memory CRUD:** sv_mem_save, sv_mem_update, sv_mem_get, sv_mem_delete, sv_mem_search, sv_mem_timeline
 - **Pin / Priority:** sv_mem_pin (action='unpin' to clear)
-- **Knowledge quality:** sv_mem_suggest_topic_key, sv_mem_judge, sv_mem_compare, sv_mem_compact, sv_mem_review, sv_mem_capture_passive, sv_mem_conflicts, sv_mem_stats, sv_mem_diagnose
+- **Knowledge quality:** sv_mem_suggest_topic_key, sv_mem_judge, sv_mem_compact, sv_mem_review, sv_mem_capture_passive, sv_mem_conflicts, sv_mem_stats
 - **Web Ingest:** sv_mem_fetch_reference (fetch clean text from external URLs to save as context)
 - **User intent:** sv_mem_capture_prompt (record what the user asked, recoverable via sv_mem_context)
-- **Project admin:** sv_mem_merge_projects (merge project variants into a canonical project)
-- **Context Pack:** sv_graph_explore (one bounded call: graph role + linked memories + active changes + capabilities for a file/package/symbol)
-- **Decision Engine:** sv_propose_spec, sv_validate_decision, sv_commit_spec (propose → validate → commit cycle with pre-flight checks and delta requirements)
-- **Spec Mirror (CLI):** sv-memory specs export | import <slug> | list | archive | capabilities (human-readable Markdown projection of changes and capability state under .sv-memory/specs/)
-- **Graph:** sv_graph_explore, sv_graph_query, sv_graph_explain, sv_graph_god_nodes, sv_graph_path, sv_graph_sync, sv_graph_surprising_connections, sv_graph_report, sv_graph_viz, sv_graph_merge, sv_graph_search, sv_graph_communities
+- **Maintenance/admin (opt-in):** sv_mem_diagnose, sv_mem_compare, sv_mem_merge_projects, sv_graph_report, sv_graph_viz, sv_graph_merge, sv_graph_surprising_connections — registered only when SV_MEMORY_FULL_TOOLS=1
 
 ## Repository Restrictions & Commit Standards:
 
 - **Commit Format:** Always provide commit messages using the Conventional Commits format (e.g., 'feat(scope): description'). Use the project's configured commit language (default: English), unless the project specifies otherwise.
 - **Forbidden Actions:** You MUST NOT run 'git add', 'git commit', or 'git push' commands autonomously. The user must review changes and run these commands manually.
 <!-- SV-MEMORY:END -->
-
----
+```
 
 ## 9. Estructura del Proyecto
 
@@ -1283,10 +1191,10 @@ Las sesiones aíslan la creación de memoria por tareas y proporcionan un búfer
 └───────────────┘          └───────────────────┘          └───────────────┘         └─────────────┘
 ```
 
-1. **Inicio:** `sv_mem_session_start` inicia un registro en `sessions` con estado `'active'`.
+1. **Inicio:** `sv_mem_session_start` inicia un registro en `sessions` con estado `'active'`. Si el cliente lo omite, el servidor MCP crea la sesión de forma lazy en la primera llamada a una herramienta que no sea de sesión (banner único `[sv-memory Auto-Boot]`) y adopta esa misma fila en el inicio explícito posterior, persistiendo su `goal`/`directory`.
 2. **Ejecución:** Todas las memorias guardadas durante este tiempo se vinculan automáticamente al `session_id` para agregar una línea de tiempo.
 3. **Resumen:** El agente resume logros, descubrimientos, archivos modificados y próximos pasos mediante `sv_mem_session_summary`.
-4. **Fin:** `sv_mem_session_end` actualiza el estado a `'completed'` y bloquea la sesión.
+4. **Fin:** `sv_mem_session_end` actualiza el estado a `'completed'` y bloquea la sesión. Las sesiones que los clientes dejan abiertas se auto-cierran tras `stale_session_hours` (default 24h) en el siguiente inicio (explícito o lazy).
 
 ---
 

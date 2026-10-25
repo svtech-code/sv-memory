@@ -12,10 +12,10 @@ conflictos) y dónde mirar al extender el proyecto. Complementa la especificaci�
 | `cmd/sv-memory/` | CLI Cobra: registro del comando raíz, `init`, `mcp`, `setup`, `configure`, `hooks`, `permissions`, `graph`, `conflicts`, `projects` | `main.go`, `cmd_init.go`, `cmd_setup.go` |
 | `internal/config/` | Rutas, config YAML viper, asistente `configure` + escritores de config MCP (cursor/pi/codex/claude/opencode/antigravity) | `config.go`, `configure.go` |
 | `internal/db/` | Apertura/ajuste de SQLite, migraciones, pool WAL lector/escritor | `db.go`, `pool.go`, `migrations.go` |
-| `internal/graph/` | Escáner, construcción del grafo de dependencias (incremental + completo), BFS, comunidades Leiden, betweenness, god nodes, aristas AST de llamadas | `graph.go`, `incremental.go`, `relations.go`, `communities.go`, `leiden.go`, `memory.go` |
+| `internal/graph/` | Escáner, construcción del grafo de dependencias (incremental + completo), BFS, comunidades Leiden, betweenness, god nodes, aristas AST de llamadas | `graph.go`, `incremental.go`, `relations.go` (+ `relations_calls.go`, `relations_markdown.go`), `routing.go`, `communities.go`, `leiden.go`, `memory.go` |
 | `internal/graph/extractor/` | Extractor tree-sitter (símbolos, imports, refs AST de llamadas), fallbacks regex por lenguaje | `extractor.go`, `tree_sitter.go`, `lang_*.go`, `regex_*.go`, `patterns.go` |
-| `internal/mcp/` | Servidor MCP stdio + 42 handlers de herramientas | `mcp.go` (núcleo + registro `register*Tools`), `tools_graph*.go`, `tools_spec*.go`, `tools_search.go`, `server_sync.go`, `respond.go` |
-| `internal/memory/` | Memory CRUD, sesiones, dedup, conflictos, compactación, sync git, context pack, stats | `memory.go`, `save.go`, `memory_session.go`, `conflicts.go`, `contextpack.go`, `sync.go`, `prompts.go` |
+| `internal/mcp/` | Servidor MCP stdio + 42 handlers de herramientas | `mcp_server.go` (núcleo + ciclo de vida), `mcp_tools_list.go` (`Tool`/`AllTools` + `register*Tools`), `tools_graph*.go`, `tools_spec*.go`, `tools_search.go`, `server_sync.go`, `respond.go` |
+| `internal/memory/` | Memory CRUD, sesiones, dedup, conflictos, compactación, sync git, context pack, stats | `memory.go`, `save.go`, `memory_session.go`, `conflicts.go`, `contextpack.go` (+ `contextpack_explore.go`, `contextpack_render.go`), `sync.go`, `prompts.go` |
 | `internal/hook/` | Scripts/skills de hooks PreToolUse + ciclo de vida (Claude Code, OpenCode, Antigravity, Codex) | `hook.go` (núcleo), `claude_code.go`, `antigravity.go`, `platforms.go`, `templates.go`, `scripts/` |
 | `internal/protocol/` | Inyección de protocolo en AGENTS.md / `.cursorrules` | `protocol.go` |
 | `internal/perm/` | Gestión de allow-lists de herramientas MCP (Antigravity, Claude Code) | `perm.go` |
@@ -135,6 +135,14 @@ Tras la compactación:
                       + memorias + prompts de usuario recientes (sv_mem_capture_prompt)
 ```
 
+**Fallback lazy:** un middleware de herramientas a nivel de servidor
+(`autoBootMiddleware` en `internal/mcp/respond.go`) inicia una sesión en la
+primera llamada a una herramienta que no sea de sesión cuando no hay ninguna
+activa, antepone un banner único `[sv-memory Auto-Boot]` y permite que un
+`sv_mem_session_start` posterior adopte esa fila (persistiendo su
+goal/directory explícitos). Las herramientas del ciclo de vida nunca lo
+disparan.
+
 ## Flujo 5 — Detección de conflictos y juicio
 
 `sv_mem_conflicts` escanea memorias similares y registra relaciones.
@@ -232,9 +240,9 @@ wiring al grafo: `internal/graph/spec_link.go`.
 
 1. Registra el handler en `internal/mcp/tools_*.go` (un método de `Server`).
 2. Registra la herramienta en la función `register*Tools` correspondiente dentro
-   de `NewServer` (`internal/mcp/mcp.go`) con `mcp.NewTool`. Las definiciones de
-   herramientas deben permanecer en `mcp.go`; los tests de guardia parsean ese
-   archivo directamente.
+   de `NewServer` (`internal/mcp/mcp_server.go`) con `mcp.NewTool`. Las definiciones
+   de herramientas deben permanecer en `mcp_tools_list.go`; los tests de guardia
+   escanean las fuentes del paquete directamente.
 3. Añade una entrada correspondiente en `AllTools` (mismo archivo) — el test
    guardián `TestAllToolsMatchesRegisteredTools` exige el emparejamiento.
 4. Añade la función de store en `internal/memory/` (o `internal/graph/`).

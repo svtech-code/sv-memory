@@ -10,6 +10,7 @@ Las sesiones rastrean el trabajo de codificación a través de interacciones del
 [no creada]
     │
     ▼  sv_mem_session_start / sv-memory session start
+    │  o primera llamada a herramienta no-sesión (auto-boot lazy)
  [active] ──────────────────────────────────────────────▶ [completed]
     │                                                       ▲
     │  sv_mem_session_end / sv-memory session end           │
@@ -20,7 +21,7 @@ Las sesiones rastrean el trabajo de codificación a través de interacciones del
 
 | Estado | Significado | Cómo se transiciona |
 | :--- | :--- | :--- |
-| `active` | Sesión en progreso, se están guardando memorias | Creado por `StartSession` |
+| `active` | Sesión en progreso, se están guardando memorias | `StartSession` (explícito o auto-boot lazy) |
 | `completed` | Sesión terminada, resumen guardado | `EndSession`, `CloseStaleSessions` |
 
 ### Integración por agente
@@ -28,18 +29,74 @@ Las sesiones rastrean el trabajo de codificación a través de interacciones del
 | Agente | Inicio | Fin | Captura de prompts |
 | :--- | :--- | :--- | :--- |
 | Claude Code | Hook `SessionStart` (auto-start + inyecta bundle) | Hook `SessionEnd` (auto-close, idempotente) | Hook `UserPromptSubmit` |
-| OpenCode | `instructions` MCP + `AGENTS.md` | Protocolo (`AGENTS.md`) | ❌ |
+| OpenCode | `instructions` MCP + `AGENTS.md` + auto-boot lazy del servidor | Protocolo (`AGENTS.md`) | ❌ |
 | Antigravity CLI | Hook `PreInvocation` (auto-start + inyección de bundle) | Protocolo (`AGENTS.md`) | ❌ |
-| Cursor | Protocolo (`AGENTS.md`) | Protocolo (`AGENTS.md`) | ❌ |
-| Codex | `instructions` MCP + `AGENTS.md` | Protocolo (`AGENTS.md`) | ❌ |
-| Pi | `AGENTS.md` (nativo) | Protocolo (`AGENTS.md`) | ❌ |
+| Cursor | Protocolo (`AGENTS.md`) + auto-boot lazy del servidor | Protocolo (`AGENTS.md`) | ❌ |
+| Codex | `instructions` MCP + `AGENTS.md` + auto-boot lazy del servidor | Protocolo (`AGENTS.md`) | ❌ |
+| Pi | `AGENTS.md` (nativo) + auto-boot lazy del servidor | Protocolo (`AGENTS.md`) | ❌ |
+
+### Auto-boot lazy del lado del servidor
+
+Todo cliente MCP obtiene una sesión aunque olvide llamar
+`sv_mem_session_start`. Un middleware de herramientas a nivel de servidor
+(`autoBootMiddleware`) ejecuta el chequeo de auto-boot antes de la primera
+llamada a una herramienta que no sea de sesión:
+
+```text
+primera llamada no-sesión (sv_mem_search, sv_graph_explore, sv_mem_save, ...)
+    │
+    ▼
+CloseStaleSessions(projectID, stale_session_hours)
+    │
+    ▼
+GetActiveSession() ── ¿existe? ──▶ reutilizarla, sin banner
+    │ ninguna
+    ▼
+StartSession(projectID, goal="", directory=ruta del proyecto)
+    │
+    ▼
+anteponer un banner único "[sv-memory Auto-Boot]" a la respuesta
+    │  (invita al agente a llamar sv_mem_session_start para el bundle completo)
+    ▼
+más tarde sv_mem_session_start ──▶ consumeLazySession: adopta la misma fila,
+                                    persiste goal/directory explícitos
+```
+
+Las herramientas del ciclo de vida (`sv_mem_session_start`,
+`sv_mem_session_end`, `sv_mem_session_summary`, `sv_mem_context`) nunca
+disparan auto-boot lazy. El banner aparece una sola vez por proceso del
+servidor; un `sv_mem_session_start` posterior adopta la fila creada
+lazymente en lugar de duplicarla. Los hooks siguen siendo el camino preferido
+porque inyectan el Auto-Boot Context Bundle completo antes del primer turno
+del modelo; el auto-boot lazy es la red de seguridad independiente del cliente.
+
+**Archivos clave:** `internal/mcp/respond.go` (`autoBootMiddleware`,
+`ensureSessionAutoBoot`, `consumeLazySession`), `internal/mcp/mcp_server.go`
+(registro del middleware).
+
+### Encadenamiento adaptativo entre herramientas
+
+Las herramientas de descubrimiento cierran su respuesta con un próximo paso
+de una línea, consciente de la sesión, para que los agentes encadenen el
+protocolo en lugar de detenerse tras una llamada:
+
+| Herramienta | Próximo paso sugerido |
+| :--- | :--- |
+| `sv_mem_session_start` | `sv_mem_search` + `sv_graph_explore` / `sv_graph_search` |
+| `sv_graph_search` | `sv_graph_explore` + `sv_mem_search` |
+| `sv_mem_search` | `sv_mem_get` + `sv_graph_explore` (o `sv_propose_spec` si el grafo ya se exploró) |
+| `sv_graph_explore` | `sv_mem_search` / `sv_mem_get`, luego `sv_spec_list` → `sv_propose_spec` antes de cambiar comportamiento |
 
 ### Auto-cierre de sesiones stale
 
-Cuando `sv_mem_session_start` se llama y ya existen sesiones activas mayores a `stale_session_hours` (default 24h), se cierran automáticamente. Esto previere que sesiones fugadas se acumulen cuando el usuario sale del agente sin llamar `sv_mem_session_end`.
+Cuando se inicia una sesión —explícitamente vía `sv_mem_session_start` o
+lazymente en la primera llamada a una herramienta— las sesiones activas
+mayores a `stale_session_hours` (default 24h) se cierran automáticamente. Esto
+evita que sesiones fugadas se acumulen cuando el usuario sale del agente sin
+llamar `sv_mem_session_end`.
 
 ```text
-sv_mem_session_start
+sv_mem_session_start / auto-boot lazy
     │
     ▼
 CloseStaleSessions(projectID, 24h)
@@ -50,7 +107,9 @@ CloseStaleSessions(projectID, 24h)
 StartSession() → nueva sesión activa
     │
     ▼
-GetAutoBootBundle() → inyectar contexto
+GetAutoBootBundle() → inyectar contexto (solo en inicio explícito; el inicio
+                       lazy muestra el banner único y deja que el agente pida
+                       el bundle)
 ```
 
 **Archivo clave:** `internal/memory/memory_session.go` — `CloseStaleSessions`
@@ -196,6 +255,6 @@ Un watcher basado en `fsnotify` monitorea el directorio del proyecto por cambios
 
 ### Auto-freshness en context packs
 
-`sv_graph_explore` y `sv_graph_explore` llaman `SyncGraphIfHasChanges` antes de resolver nodos, asegurando que los snippets reflejen el estado más reciente del disco sin `sv_graph_sync` manual.
+`sv_graph_explore` llama `SyncGraphIfHasChanges` antes de resolver nodos, asegurando que los snippets reflejen el estado más reciente del disco sin `sv_graph_sync` manual.
 
 **Archivos clave:** `internal/memory/sync.go`, `internal/graph/watcher.go`, `internal/graph/incremental.go`
