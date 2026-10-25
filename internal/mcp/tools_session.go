@@ -34,14 +34,19 @@ func (s *Server) handleSessionStart(ctx context.Context, req mcp.CallToolRequest
 	if dir == "" {
 		dir = s.cfg.ProjPath
 	}
-	session, err := memory.StartSession(s.pool.Writer, s.cfg.ProjectID, goal, dir)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to start session: %v", err)), nil
+	session := s.consumeLazySession(goal)
+	if session == nil {
+		var err error
+		session, err = memory.StartSession(s.pool.Writer, s.cfg.ProjectID, goal, dir)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to start session: %v", err)), nil
+		}
 	}
 
 	// Reset the session token ledger so the Auto-Boot bundle below becomes the
 	// first counted injection of the new session (sv_mem_stats reports it).
 	s.ResetSessionTokens()
+	s.markSessionBooted()
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Session started (ID: %s). Use sv_mem_save with session_id=\"%s\" to associate memories, then sv_mem_session_end to close.\n\n", session.ID, session.ID)
@@ -69,6 +74,7 @@ func (s *Server) handleSessionStart(ctx context.Context, req mcp.CallToolRequest
 	// Route through the shared token-budget truncation (respond) so the
 	// largest pre-tool payload (Auto-Boot Bundle + Graph Hubs) is bounded by
 	// the global max_response_tokens default or a per-call token_budget.
+	sb.WriteString("\n\n*Next step: call `sv_mem_search(query=\"...\")` to check past decisions and `sv_graph_explore(path=\"<file|symbol>\")` (or `sv_graph_search(query=\"...\")`) BEFORE reading source files.*\n")
 	return s.respond(req, sb.String()), nil
 }
 

@@ -41,6 +41,7 @@ func (s *Server) handleSave(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 
 	// Auto-associate with active session if no explicit session_id provided
 	if sessionID == "" {
+		_ = s.ensureSessionAutoBoot("sv_mem_save")
 		if active, actErr := memory.GetActiveSession(s.pool.Reader, s.cfg.ProjectID); actErr == nil && active != nil {
 			sessionID = active.ID
 		}

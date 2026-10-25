@@ -142,6 +142,7 @@ func (s *Server) renderSearchResults(results []*memory.MemorySearchResult, where
 	if offset == 0 && len(results) > 0 {
 		s.expandTopResult(&sb, results[0].ID)
 	}
+	sb.WriteString(s.nextStepAfterMemorySearch())
 	return sb.String()
 }
 

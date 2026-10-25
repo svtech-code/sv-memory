@@ -27,5 +27,6 @@ func (s *Server) handleContextPack(ctx context.Context, req mcp.CallToolRequest)
 		return mcp.NewToolResultError(fmt.Sprintf("failed to build context pack: %v", err)), nil
 	}
 
-	return s.respond(req, memory.RenderContextPack(pack, memory.BundleWhyCharsLimit())), nil
+	rendered := memory.RenderContextPack(pack, memory.BundleWhyCharsLimit())
+	return s.respond(req, rendered+s.nextStepAfterGraphExplore()), nil
 }

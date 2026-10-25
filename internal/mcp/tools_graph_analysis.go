@@ -338,7 +338,7 @@ func (s *Server) handleGraphSearch(ctx context.Context, req mcp.CallToolRequest)
 		fmt.Fprintf(&sb, "| %d | `%s` | %s | `%s` | %d | %d | %d | %s |\n",
 			i+1, r.ID, codeOrPlain(r.Type), r.Path, r.Degree, r.FanIn, r.FanOut, commLabelStr(r.Community, commLabels))
 	}
-	sb.WriteString("\n*Drill down with `sv_graph_explain(node=\"<node>\")` or `sv_graph_query(path_or_node=\"<node>\")`.*\n")
+	sb.WriteString(s.nextStepAfterGraphSearch())
 
 	var allNodes []*graph.Node
 	for _, r := range results {

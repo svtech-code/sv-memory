@@ -108,6 +108,7 @@ func (s *Server) handleProposeSpec(ctx context.Context, req mcp.CallToolRequest)
 
 	// Pre-flight check against rules/invariants (deterministic, zero LLM cost).
 	preflight, pfErr := memory.PreflightCheck(s.pool.Reader, s.cfg.ProjectID, title, what, s.cfg.Settings.ConflictThreshold)
+	s.usedSpecFlow.Store(true)
 
 	return s.respond(req, renderProposedChange(c, reqSummary, preflight, pfErr)), nil
 }
@@ -339,6 +340,7 @@ func (s *Server) advanceToValidated(c *memory.Change, preflight *memory.Prefligh
 const maxDefaultAppliedSpecs = 5
 
 func (s *Server) handleSpecList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	s.usedSpecFlow.Store(true)
 	status := req.GetString("status", "")
 
 	changes, err := memory.ListChangesByStatus(s.pool.Reader, s.cfg.ProjectID, status)
@@ -397,6 +399,7 @@ func selectSpecChanges(changes []*memory.Change, status string) ([]*memory.Chang
 // (with checkbox progress), and rendered delta requirements. Mirrors
 // `openspec show` for MCP consumers.
 func (s *Server) handleSpecGet(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	s.usedSpecFlow.Store(true)
 	changeID, err := req.RequireString("change_id")
 	if err != nil {
 		return mcp.NewToolResultError("missing required field: change_id"), nil

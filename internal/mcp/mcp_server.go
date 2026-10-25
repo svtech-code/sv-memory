@@ -107,6 +107,18 @@ type Server struct {
 	// sv_mem_session_start. Reset on session start and reported by sv_mem_stats
 	// so the agent can decide when to compact.
 	sessionTokens atomic.Int64
+
+	// Lazy session auto-boot and per-session tool-chaining trackers.
+	// Ensures that any MCP client (OpenCode, Cursor, Codex, Pi, etc.) that
+	// skips sv_mem_session_start still gets an active session on the first
+	// tool call without creating duplicate sessions if sv_mem_session_start
+	// is called immediately afterwards.
+	autoBootMu       sync.Mutex
+	sessionBooted    atomic.Bool
+	lazySessionID    string
+	usedMemSearch    atomic.Bool
+	usedGraphExplore atomic.Bool
+	usedSpecFlow     atomic.Bool
 }
 
 // gitMetadata holds the branch, short commit, and author read from git for a
